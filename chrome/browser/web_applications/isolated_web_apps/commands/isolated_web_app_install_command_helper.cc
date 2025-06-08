@@ -17,7 +17,6 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
-#include "base/functional/overloaded.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
@@ -54,6 +53,7 @@
 #include "content/public/browser/storage_partition_config.h"
 #include "content/public/browser/web_contents.h"
 #include "crypto/random.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/manifest/manifest_util.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
 #include "url/gurl.h"
@@ -156,7 +156,7 @@ void CleanupLocationIfOwned(const base::FilePath& profile_dir,
                             const IsolatedWebAppStorageLocation& location,
                             base::OnceClosure closure) {
   std::visit(
-      base::Overloaded{
+      absl::Overload{
           [&](const IwaStorageOwnedBundle& location) {
             base::ThreadPool::PostTaskAndReply(
                 FROM_HERE,
@@ -190,7 +190,7 @@ void UpdateBundlePathAndCreateStorageLocation(
         std::move(callback));
   };
 
-  std::visit(base::Overloaded{
+  std::visit(absl::Overload{
                  [&](const IwaSourceBundleWithModeAndFileOp& bundle) {
                    switch (bundle.mode_and_file_op()) {
                      case IwaSourceBundleModeAndFileOp::kDevModeCopy:
@@ -264,7 +264,7 @@ KeyRotationLookupResult LookupRotatedKey(
   };
 
   const auto* kr_info =
-      IwaKeyDistributionInfoProvider::GetInstance()->GetKeyRotationInfo(
+      IwaKeyDistributionInfoProvider::GetInstance().GetKeyRotationInfo(
           web_bundle_id.id());
   if (!kr_info) {
     return KeyRotationLookupResult::kNoKeyRotation;
@@ -282,7 +282,7 @@ KeyRotationData GetKeyRotationData(
     const web_package::SignedWebBundleId& web_bundle_id,
     const IsolationData& isolation_data) {
   const auto* kr_info =
-      IwaKeyDistributionInfoProvider::GetInstance()->GetKeyRotationInfo(
+      IwaKeyDistributionInfoProvider::GetInstance().GetKeyRotationInfo(
           web_bundle_id.id());
   CHECK(kr_info && kr_info->public_key)
       << "`GetKeyRotationData()` must only be called if `LookupRotatedKey()` "
@@ -362,7 +362,7 @@ void IsolatedWebAppInstallCommandHelper::CheckTrustAndSignatures(
              std::optional<web_package::SignedWebBundleIntegrityBlock>,
              std::string>)> callback) {
   std::visit(
-      base::Overloaded{
+      absl::Overload{
           [&](const IwaSourceBundleWithMode& location) {
             CHECK(!url_info_.web_bundle_id().is_for_proxy_mode());
             if (location.dev_mode() && !IsIwaDevModeEnabled(profile)) {

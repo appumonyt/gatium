@@ -1860,12 +1860,9 @@ public class TabGridDialogMediatorUnitTest {
         resetForDataSharing(/* isShared= */ true, GROUP_MEMBER1);
         verify(mDialogController)
                 .addMessageCardItem(/* position= */ eq(0), mMessageCardModelCaptor.capture());
-        assertTrue(mModel.get(TabGridDialogProperties.SHOW_SHARE_BUTTON));
+        assertFalse(mModel.get(TabGridDialogProperties.SHOW_SHARE_BUTTON));
         assertFalse(mModel.get(TabGridDialogProperties.SHOW_SEND_FEEDBACK));
-        assertEquals(
-                R.string.tab_grid_manage_button_text,
-                mModel.get(TabGridDialogProperties.SHARE_BUTTON_STRING_RES));
-        assertFalse(mModel.get(TabGridDialogProperties.SHOW_IMAGE_TILES));
+        assertTrue(mModel.get(TabGridDialogProperties.SHOW_IMAGE_TILES));
         String text = mMessageCardModelCaptor.getValue().get(DESCRIPTION_TEXT).toString();
         assertTrue(text, text.contains("4"));
 
@@ -2046,7 +2043,7 @@ public class TabGridDialogMediatorUnitTest {
     public void onLongPress_tabGroupParityEnabled() {
         CancelLongPressTabItemEventListener cancelLongPress =
                 mMediator.onLongPressEvent(TAB1_ID, mCardView, mTabGridContextMenuCoordinator);
-        verify(mTabGridContextMenuCoordinator).showMenu(any(), eq(TAB1_ID), anyBoolean());
+        verify(mTabGridContextMenuCoordinator).showMenu(any(), eq(TAB1_ID));
 
         assertNotNull(cancelLongPress);
         cancelLongPress.cancelLongPress();
@@ -2057,7 +2054,7 @@ public class TabGridDialogMediatorUnitTest {
     public void onLongPress_tabGroupParityDisabled() {
         CancelLongPressTabItemEventListener cancelLongPress =
                 mMediator.onLongPressEvent(TAB1_ID, mCardView);
-        verify(mTabGridContextMenuCoordinator, never()).showMenu(any(), eq(TAB1_ID), anyBoolean());
+        verify(mTabGridContextMenuCoordinator, never()).showMenu(any(), eq(TAB1_ID));
         assertNull(cancelLongPress);
     }
 

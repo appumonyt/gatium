@@ -46,7 +46,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/expected.h"
 #include "base/version.h"
 #include "base/win/elevation_util.h"
@@ -331,7 +331,7 @@ bool TryGetModuleTimeDateStamp(void* module_load_address,
 }
 
 void ShowCloseBrowserFirstMessageBox() {
-  chrome::ShowWarningMessageBox(
+  chrome::ShowWarningMessageBoxAsync(
       nullptr, l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
       l10n_util::GetStringUTF16(IDS_UNINSTALL_CLOSE_APP));
 }

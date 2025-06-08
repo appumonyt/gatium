@@ -671,6 +671,7 @@ class TabListMediator implements TabListNotificationHandler {
                     updateTabGroupColorViewProvider(model, tab, newColor);
                     updateDescriptionString(tab, model);
                     updateActionButtonDescriptionString(tab, model);
+                    updateThumbnailFetcher(model, rootId);
                 }
 
                 @Override
@@ -1405,7 +1406,7 @@ class TabListMediator implements TabListNotificationHandler {
                 && mTabActionState != TabActionState.SELECTABLE
                 && PriceTrackingFeatures.isPriceAnnotationsEnabled(originalProfile)) {
             mListObserver =
-                    new ListObserver<Void>() {
+                    new ListObserver<>() {
                         @Override
                         public void onItemRangeInserted(
                                 ListObservable source, int index, int count) {
@@ -1669,7 +1670,7 @@ class TabListMediator implements TabListNotificationHandler {
 
         boolean isTabSelected = isTabSelected(mTabActionState, tab);
         boolean isInTabGroup = isTabInTabGroup(tab);
-        int tabGroupColorId = TabGroupColorUtils.INVALID_COLOR_ID;
+        @TabGroupColorId Integer tabGroupColorId = null;
         // Only update the color if the tab is a representation of a tab group, otherwise
         // hide the icon by setting the color to INVALID.
         if (isInTabGroup) {
@@ -2074,7 +2075,7 @@ class TabListMediator implements TabListNotificationHandler {
 
         updateFaviconForTab(tabInfo, tab, null, null);
 
-        int colorId = TabGroupColorUtils.INVALID_COLOR_ID;
+        @TabGroupColorId Integer colorId = null;
         if (isInTabGroup && mActionsOnAllRelatedTabs) {
             TabGroupModelFilter filter = mCurrentTabGroupModelFilterSupplier.get();
             colorId = filter.getTabGroupColorWithFallback(tab.getRootId());
@@ -2140,7 +2141,6 @@ class TabListMediator implements TabListNotificationHandler {
 
     private String getDomainForTab(Tab tab) {
         if (!mActionsOnAllRelatedTabs) return getDomain(tab);
-
         List<Tab> relatedTabs = getRelatedTabsForId(tab.getId());
 
         List<String> domainNames = new ArrayList<>();
@@ -3056,12 +3056,13 @@ class TabListMediator implements TabListNotificationHandler {
     }
 
     private void updateTabGroupColorViewProvider(
-            PropertyModel model, @NonNull Tab tab, @TabGroupColorId int colorId) {
+            PropertyModel model, @NonNull Tab tab, @Nullable @TabGroupColorId Integer colorId) {
         @Nullable TabGroupColorViewProvider provider = model.get(TAB_GROUP_COLOR_VIEW_PROVIDER);
 
         @Nullable Token tabGroupId = tab.getTabGroupId();
         if (!mActionsOnAllRelatedTabs || tabGroupId == null || !isTabInTabGroup(tab)) {
             // Not a group or not in group display mode.
+            model.set(TabProperties.TAB_GROUP_CARD_COLOR, null);
             model.set(TAB_GROUP_COLOR_VIEW_PROVIDER, null);
             if (provider != null) provider.destroy();
 
@@ -3073,7 +3074,11 @@ class TabListMediator implements TabListNotificationHandler {
     }
 
     private void updateTabGroupColorViewProvider(
-            PropertyModel model, @NonNull EitherGroupId groupId, @TabGroupColorId int colorId) {
+            PropertyModel model,
+            @NonNull EitherGroupId groupId,
+            @Nullable @TabGroupColorId Integer colorId) {
+        // Set tab group color.
+        model.set(TabProperties.TAB_GROUP_CARD_COLOR, colorId);
         assert colorId != TabGroupColorUtils.INVALID_COLOR_ID
                 : "Tab in tab group should always have valid colors.";
         assert mMode != TabListMode.STRIP : "Tab group colors are not applicable to strip mode.";

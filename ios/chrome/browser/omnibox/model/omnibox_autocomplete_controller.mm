@@ -63,12 +63,13 @@ using base::UserMetricsAction;
   metrics::OmniboxEventProto::OmniboxPosition _preferredOmniboxPosition;
 }
 
-- (instancetype)initWithOmniboxController:
-    (OmniboxControllerIOS*)omniboxController {
+- (instancetype)
+    initWithOmniboxController:(OmniboxControllerIOS*)omniboxController
+             omniboxEditModel:(OmniboxEditModelIOS*)omniboxEditModel {
   self = [super init];
   if (self) {
     _omniboxController = omniboxController;
-    _omniboxEditModel = omniboxController->edit_model();
+    _omniboxEditModel = omniboxEditModel;
 
     _autocompleteControllerObserverBridge =
         std::make_unique<AutocompleteControllerObserverBridge>(self);
@@ -112,6 +113,22 @@ using base::UserMetricsAction;
   return _omniboxController ? _omniboxController->client() : nullptr;
 }
 
+- (void)updatePopupSuggestions {
+  if (AutocompleteController* autocompleteController =
+          self.autocompleteController) {
+    BOOL isFocusing = autocompleteController->input().focus_type() ==
+                      metrics::OmniboxFocusType::INTERACTION_FOCUS;
+
+    self.hasSuggestions = !autocompleteController->result().empty();
+    [self.delegate
+        omniboxAutocompleteControllerDidUpdateSuggestions:self
+                                           hasSuggestions:self.hasSuggestions
+                                               isFocusing:isFocusing];
+    [self.debuggerDelegate omniboxAutocompleteController:self
+                       didUpdateWithSuggestionsAvailable:self.hasSuggestions];
+  }
+}
+
 #pragma mark - AutocompleteControllerObserver
 
 - (void)autocompleteController:(AutocompleteController*)autocompleteController
@@ -121,18 +138,22 @@ using base::UserMetricsAction;
   DCHECK(self.client);
 
   const bool popup_was_open = _omniboxEditModel->PopupIsOpen();
+
+  [self updatePopupSuggestions];
   if (defaultMatchChanged) {
     // The default match has changed, we need to let the OmniboxEditModelIOS
     // know about new inline autocomplete text (blue highlight).
-    if (autocompleteController->result().default_match()) {
-      _omniboxEditModel->OnCurrentMatchChanged();
+    if (const AutocompleteMatch* match =
+            autocompleteController->result().default_match()) {
+      // OnPopupDataChanged() resets edit model's `current_match_` early
+      // on.  Therefore, copy match.inline_autocompletion to a temp to preserve
+      // its value across the entire call.
+      _omniboxEditModel->OnPopupDataChanged(match->inline_autocompletion,
+                                            match->additional_text, *match);
     } else {
-      _omniboxEditModel->OnPopupResultChanged();
       _omniboxEditModel->OnPopupDataChanged(std::u16string(), std::u16string(),
                                             AutocompleteMatch());
     }
-  } else {
-    _omniboxEditModel->OnPopupResultChanged();
   }
 
   const bool popup_is_open = _omniboxEditModel->PopupIsOpen();
@@ -162,6 +183,15 @@ using base::UserMetricsAction;
   }
 }
 
+#pragma mark - AutocompleteResultWrapperDelegate
+
+- (void)autocompleteResultWrapper:(AutocompleteResultWrapper*)wrapper
+              didInvalidatePedals:(NSArray<id<AutocompleteSuggestionGroup>>*)
+                                      nonPedalSuggestionsGroups {
+  [self.delegate omniboxAutocompleteController:self
+                    didUpdateSuggestionsGroups:nonPedalSuggestionsGroups];
+}
+
 #pragma mark - Boolean Observer
 
 - (void)booleanDidChange:(id<ObservableBoolean>)observableBoolean {
@@ -175,24 +205,6 @@ using base::UserMetricsAction;
       autocompleteController->SetSteadyStateOmniboxPosition(
           _preferredOmniboxPosition);
     }
-  }
-}
-
-#pragma mark - OmniboxEditModel event
-
-- (void)updatePopupSuggestions {
-  if (AutocompleteController* autocompleteController =
-          self.autocompleteController) {
-    BOOL isFocusing = autocompleteController->input().focus_type() ==
-                      metrics::OmniboxFocusType::INTERACTION_FOCUS;
-
-    self.hasSuggestions = !autocompleteController->result().empty();
-    [self.delegate
-        omniboxAutocompleteControllerDidUpdateSuggestions:self
-                                           hasSuggestions:self.hasSuggestions
-                                               isFocusing:isFocusing];
-    [self.debuggerDelegate omniboxAutocompleteController:self
-                       didUpdateWithSuggestionsAvailable:self.hasSuggestions];
   }
 }
 
@@ -318,8 +330,6 @@ using base::UserMetricsAction;
 }
 
 - (void)setHasThumbnail:(BOOL)hasThumbnail {
-  [self.delegate omniboxAutocompleteController:self
-                         didUpdateHasThumbnail:hasThumbnail];
   self.autocompleteResultWrapper.hasThumbnail = hasThumbnail;
 }
 
@@ -327,24 +337,6 @@ using base::UserMetricsAction;
             isFirstUpdate:(BOOL)isFirstUpdate {
   [self.omniboxTextController previewSuggestion:suggestion
                                   isFirstUpdate:isFirstUpdate];
-}
-
-#pragma mark - OmniboxAutocomplete event
-
-- (void)updateWithSortedResults:(const AutocompleteResult&)results {
-  NSArray<id<AutocompleteSuggestionGroup>>* suggestionGroups =
-      [self.autocompleteResultWrapper wrapAutocompleteResultInGroups:results];
-  [self.delegate omniboxAutocompleteController:self
-                    didUpdateSuggestionsGroups:suggestionGroups];
-}
-
-#pragma mark - AutocompleteResultWrapperDelegate
-
-- (void)autocompleteResultWrapper:(AutocompleteResultWrapper*)wrapper
-              didInvalidatePedals:(NSArray<id<AutocompleteSuggestionGroup>>*)
-                                      nonPedalSuggestionsGroups {
-  [self.delegate omniboxAutocompleteController:self
-                    didUpdateSuggestionsGroups:nonPedalSuggestionsGroups];
 }
 
 #pragma mark - Private
@@ -360,6 +352,14 @@ using base::UserMetricsAction;
   OmniboxPopupSelection selection(
       autocompleteController->InjectAdHocMatch(match.value()));
   _omniboxEditModel->OpenSelection(selection, timestamp, disposition);
+}
+
+/// Wraps the suggestions and send them to the delegate.
+- (void)updateWithSortedResults:(const AutocompleteResult&)results {
+  NSArray<id<AutocompleteSuggestionGroup>>* suggestionGroups =
+      [self.autocompleteResultWrapper wrapAutocompleteResultInGroups:results];
+  [self.delegate omniboxAutocompleteController:self
+                    didUpdateSuggestionsGroups:suggestionGroups];
 }
 
 #pragma mark Clipboard match handling

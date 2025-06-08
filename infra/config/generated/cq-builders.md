@@ -596,6 +596,7 @@ builder.
 * [linux-utr-tester](https://ci.chromium.org/p/chromium/builders/try/linux-utr-tester) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""linux-utr-tester""))
 
   Location filters:
+  * [`//third_party/depot_tools/.+`](https://cs.chromium.org/chromium/src/third_party/depot_tools/)
   * [`//tools/utr/.+`](https://cs.chromium.org/chromium/src/tools/utr/)
   * [`//tools/mb/.+`](https://cs.chromium.org/chromium/src/tools/mb/)
 
@@ -775,6 +776,7 @@ builder.
 * [win-utr-tester](https://ci.chromium.org/p/chromium/builders/try/win-utr-tester) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""win-utr-tester""))
 
   Location filters:
+  * [`//third_party/depot_tools/.+`](https://cs.chromium.org/chromium/src/third_party/depot_tools/)
   * [`//tools/utr/.+`](https://cs.chromium.org/chromium/src/tools/utr/)
   * [`//tools/mb/.+`](https://cs.chromium.org/chromium/src/tools/mb/)
 
@@ -857,7 +859,7 @@ as required builders.
   * Experiment percentage: 10.0
 
 * [mac15-arm64-rel](https://ci.chromium.org/p/chromium/builders/try/mac15-arm64-rel) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""mac15-arm64-rel""))
-  * Experiment percentage: 100.0
+  * Experiment percentage: 1.0
 
 * [tricium-clang-tidy](https://ci.chromium.org/p/chromium/builders/try/tricium-clang-tidy) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""tricium-clang-tidy""))
   * Experiment percentage: 100.0

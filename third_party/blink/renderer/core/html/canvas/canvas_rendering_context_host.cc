@@ -144,22 +144,52 @@ bool CanvasRenderingContextHost::IsImageBitmapRenderingContext() const {
 }
 
 CanvasResourceProvider*
-CanvasRenderingContextHost::GetOrCreateCanvasResourceProvider() {
-  return GetOrCreateCanvasResourceProviderImpl();
-}
-
-CanvasResourceProvider*
-CanvasRenderingContextHost::GetOrCreateCanvasResourceProviderImpl() {
+CanvasRenderingContextHost::GetOrCreateCanvasResourceProviderForCanvas2D() {
+  CHECK(IsRenderingContext2D());
   auto* provider = ResourceProvider();
   if (!provider && !did_fail_to_create_resource_provider_) {
     if (IsValidImageSize()) {
-      if (IsWebGPU()) {
-        provider = CreateCanvasResourceProviderWebGPU();
-      } else if (IsWebGL()) {
-        provider = CreateCanvasResourceProviderWebGL();
-      } else {
-        provider = CreateCanvasResourceProvider2D();
-      }
+      provider = CreateCanvasResourceProvider2D();
+    }
+    if (!provider) {
+      did_fail_to_create_resource_provider_ = true;
+    } else if (provider->IsValid()) {
+      base::UmaHistogramBoolean("Blink.Canvas.ResourceProviderIsAccelerated",
+                                provider->IsAccelerated());
+      base::UmaHistogramEnumeration("Blink.Canvas.ResourceProviderType",
+                                    provider->GetType());
+    }
+  }
+  return provider;
+}
+
+CanvasResourceProvider*
+CanvasRenderingContextHost::GetOrCreateCanvasResourceProviderForWebGL() {
+  CHECK(IsWebGL());
+  auto* provider = ResourceProvider();
+  if (!provider && !did_fail_to_create_resource_provider_) {
+    if (IsValidImageSize()) {
+      provider = CreateCanvasResourceProviderWebGL();
+    }
+    if (!provider) {
+      did_fail_to_create_resource_provider_ = true;
+    } else if (provider->IsValid()) {
+      base::UmaHistogramBoolean("Blink.Canvas.ResourceProviderIsAccelerated",
+                                provider->IsAccelerated());
+      base::UmaHistogramEnumeration("Blink.Canvas.ResourceProviderType",
+                                    provider->GetType());
+    }
+  }
+  return provider;
+}
+
+CanvasResourceProvider*
+CanvasRenderingContextHost::GetOrCreateCanvasResourceProviderForWebGPU() {
+  CHECK(IsWebGPU());
+  auto* provider = ResourceProvider();
+  if (!provider && !did_fail_to_create_resource_provider_) {
+    if (IsValidImageSize()) {
+      provider = CreateCanvasResourceProviderWebGPU();
     }
     if (!provider) {
       did_fail_to_create_resource_provider_ = true;

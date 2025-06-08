@@ -7,18 +7,19 @@
 #include <optional>
 
 #include "base/test/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "chrome/browser/actor/actor_test_util.h"
-#include "chrome/browser/ui/tabs/test/mock_tab_interface.h"
 #include "chrome/common/actor.mojom.h"
 #include "chrome/common/actor/action_result.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_render_frame.mojom.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "components/tabs/public/mock_tab_interface.h"
 #include "content/public/test/navigation_simulator.h"
-#include "mojo/public/cpp/bindings/associated_receiver.h"
+#include "mojo/public/cpp/bindings/associated_receiver_set.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/mojom/window_features/window_features.mojom.h"
@@ -29,8 +30,9 @@ namespace actor {
 using ::optimization_guide::proto::BrowserAction;
 
 namespace {
-
 constexpr int kFakeContentNodeId = 123;
+constexpr char kActionResultHistogram[] =
+    "Actor.ActorCoordinator.Action.ResultCode";
 
 class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
  public:
@@ -72,15 +74,18 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
                   InvokeToolCallback callback) override {
     std::move(callback).Run(MakeOkResult());
   }
+  void StartActorJournal(
+      mojo::PendingAssociatedRemote<actor::mojom::JournalClient> client)
+      override {}
 
  private:
   void Bind(mojo::ScopedInterfaceEndpointHandle handle) {
-    receiver_.Bind(
-        mojo::PendingAssociatedReceiver<chrome::mojom::ChromeRenderFrame>(
-            std::move(handle)));
+    receivers_.Add(
+        this, mojo::PendingAssociatedReceiver<chrome::mojom::ChromeRenderFrame>(
+                  std::move(handle)));
   }
 
-  mojo::AssociatedReceiver<chrome::mojom::ChromeRenderFrame> receiver_{this};
+  mojo::AssociatedReceiverSet<chrome::mojom::ChromeRenderFrame> receivers_;
 };
 
 class ActorCoordinatorTest : public ChromeRenderViewHostTestHarness {
@@ -89,7 +94,10 @@ class ActorCoordinatorTest : public ChromeRenderViewHostTestHarness {
   ~ActorCoordinatorTest() override = default;
 
   void SetUp() override {
-    scoped_feature_list_.InitAndEnableFeature(features::kGlicActor);
+    scoped_feature_list_.InitWithFeaturesAndParameters(
+        /*enabled_features=*/{{features::kGlicActor,
+                               GetDefaultActorParamsForTesting()}},
+        /*disabled_features=*/{});
 
     ChromeRenderViewHostTestHarness::SetUp();
 
@@ -114,8 +122,7 @@ class ActorCoordinatorTest : public ChromeRenderViewHostTestHarness {
     fake_chrome_render_frame.OverrideBinder(main_rfh());
 
     base::test::TestFuture<mojom::ActionResultPtr> success;
-    ActorCoordinator coordinator(profile());
-    coordinator.StartTaskForTesting(GetTab());
+    ActorCoordinator coordinator(profile(), GetTab());
     BrowserAction action = std::move(make_action).Run();
     coordinator.Act(action, success.GetCallback());
     return IsOk(*success.Get());
@@ -127,6 +134,8 @@ class ActorCoordinatorTest : public ChromeRenderViewHostTestHarness {
 
   void AssociateTabInterface() { tab_state_.emplace(web_contents()); }
   void ClearTabInterface() { tab_state_.reset(); }
+
+  base::HistogramTester histograms_;
 
  private:
   struct TabState {
@@ -149,6 +158,8 @@ TEST_F(ActorCoordinatorTest, ActSucceedsOnSupportedUrl) {
       Act(GURL("http://localhost/"), base::BindLambdaForTesting([this]() {
             return MakeClick(*main_rfh(), kFakeContentNodeId);
           })));
+  histograms_.ExpectUniqueSample(kActionResultHistogram,
+                                 mojom::ActionResultCode::kOk, 1);
 }
 
 TEST_F(ActorCoordinatorTest, ActFailsOnUnsupportedUrl) {
@@ -163,8 +174,7 @@ TEST_F(ActorCoordinatorTest, ActFailsWhenTabDestroyed) {
       web_contents(), GURL("http://localhost/"));
 
   base::test::TestFuture<mojom::ActionResultPtr> result;
-  ActorCoordinator coordinator(profile());
-  coordinator.StartTaskForTesting(GetTab());
+  ActorCoordinator coordinator(profile(), GetTab());
 
   FakeChromeRenderFrame fake_chrome_render_frame;
   fake_chrome_render_frame.OverrideBinder(main_rfh());
@@ -176,6 +186,8 @@ TEST_F(ActorCoordinatorTest, ActFailsWhenTabDestroyed) {
   DeleteContents();
 
   ExpectErrorResult(result, mojom::ActionResultCode::kTabWentAway);
+  histograms_.ExpectUniqueSample(kActionResultHistogram,
+                                 mojom::ActionResultCode::kTabWentAway, 1);
 }
 
 TEST_F(ActorCoordinatorTest, CrossOriginNavigationBeforeAction) {
@@ -186,8 +198,7 @@ TEST_F(ActorCoordinatorTest, CrossOriginNavigationBeforeAction) {
   fake_chrome_render_frame.OverrideBinder(main_rfh());
 
   base::test::TestFuture<mojom::ActionResultPtr> result;
-  ActorCoordinator coordinator(profile());
-  coordinator.StartTaskForTesting(GetTab());
+  ActorCoordinator coordinator(profile(), GetTab());
   coordinator.Act(MakeClick(*main_rfh(), kFakeContentNodeId),
                   result.GetCallback());
 
@@ -199,6 +210,9 @@ TEST_F(ActorCoordinatorTest, CrossOriginNavigationBeforeAction) {
   // TODO(mcnee): We currently just fail, but this should do something more
   // graceful.
   ExpectErrorResult(result, mojom::ActionResultCode::kCrossOriginNavigation);
+  histograms_.ExpectUniqueSample(
+      kActionResultHistogram, mojom::ActionResultCode::kCrossOriginNavigation,
+      1);
 }
 
 }  // namespace

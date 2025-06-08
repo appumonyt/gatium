@@ -389,7 +389,7 @@ bool HTMLCanvasElement::PrepareTransferableResource(
   // If the context is lost, we don't know if we should be producing GPU or
   // software frames, until we get a new context, since the compositor will
   // be trying to get a new context and may change modes.
-  if (!GetOrCreateCanvasResourceProvider()) {
+  if (!GetOrCreateCanvasResourceProviderForCanvas2D()) {
     return false;
   }
 
@@ -439,7 +439,7 @@ bool HTMLCanvasElement::IsCanvas2DResourceValid() {
     return false;
   }
 
-  return !!GetOrCreateCanvasResourceProvider();
+  return !!GetOrCreateCanvasResourceProviderForCanvas2D();
 }
 
 void HTMLCanvasElement::Dispose() {
@@ -482,10 +482,16 @@ void HTMLCanvasElement::ParseAttribute(
       params.name == html_names::kHeightAttr) {
     Reset();
   }
-  if (params.name == html_names::kLayoutsubtreeAttr) {
-    setLayoutSubtree(EqualIgnoringASCIICase(params.new_value, "true"));
-  }
   HTMLElement::ParseAttribute(params);
+}
+
+void HTMLCanvasElement::AttributeChanged(
+    const AttributeModificationParams& params) {
+  HTMLElement::AttributeChanged(params);
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+      params.name == html_names::kLayoutsubtreeAttr) {
+    setLayoutSubtree(!params.new_value.IsNull());
+  }
 }
 
 LayoutObject* HTMLCanvasElement::CreateLayoutObject(
@@ -835,8 +841,8 @@ void HTMLCanvasElement::PreFinalizeFrame() {
   // buffered.
   // TODO(crbug.com/40280152): Analyze whether this call is redundant (i.e.,
   // whether the CRP is guaranteed to always be present).
-  if (!IsWebGL() && LowLatencyEnabled() && !dirty_rect_.IsEmpty()) {
-    GetOrCreateCanvasResourceProvider();
+  if (IsRenderingContext2D() && LowLatencyEnabled() && !dirty_rect_.IsEmpty()) {
+    GetOrCreateCanvasResourceProviderForCanvas2D();
   }
 }
 
@@ -859,8 +865,9 @@ void HTMLCanvasElement::PostFinalizeFrame(FlushReason reason) {
       }
       dirty_rect_ = gfx::Rect();
     }
-  } else if (LowLatencyEnabled() && frame_dispatcher_ &&
-             !dirty_rect_.IsEmpty() && GetOrCreateCanvasResourceProvider()) {
+  } else if (IsRenderingContext2D() && LowLatencyEnabled() &&
+             frame_dispatcher_ && !dirty_rect_.IsEmpty() &&
+             GetOrCreateCanvasResourceProviderForCanvas2D()) {
     if (scoped_refptr<CanvasResource> canvas_resource =
             ResourceProvider()->ProduceCanvasResource(reason)) {
       const gfx::Rect src_rect(Size());
@@ -1664,6 +1671,11 @@ void HTMLCanvasElement::SetHitTestRegions(
   hit_test_regions_ = std::move(hit_test_regions);
 }
 
+const VectorOf<HTMLCanvasElement::ElementHitTestRegion>&
+HTMLCanvasElement::GetHitTestRegions() const {
+  return hit_test_regions_;
+}
+
 void HTMLCanvasElement::NotifyGpuContextLost() {
   if (IsRenderingContext2D()) {
     context_->LoseContext(CanvasRenderingContext::kRealLostContext);
@@ -2212,7 +2224,7 @@ void HTMLCanvasElement::ReplaceExistingResourceProviderForCanvas2D() {
 
   // Bail out if it's not possible to create a new provider.
   CanvasResourceProvider* new_provider =
-      RecreateCanvasResourceProviderFor2DContext(
+      RecreateCanvasResourceProviderForCanvas2D(
           CHECK_DEREF(hibernation_handler_.get()));
   if (!new_provider) {
     return;
@@ -2224,73 +2236,73 @@ void HTMLCanvasElement::ReplaceExistingResourceProviderForCanvas2D() {
   UpdateMemoryUsage();
 }
 
-CanvasResourceProvider* HTMLCanvasElement::GetOrCreateCanvasResourceProvider() {
-  if (IsRenderingContext2D()) {
-    CanvasResourceProvider* resource_provider =
-        GetResourceProviderForCanvas2D();
-    if (context_->isContextLost() && !context_->IsContextBeingRestored()) {
-      DCHECK(!resource_provider);
+CanvasResourceProvider*
+HTMLCanvasElement::GetOrCreateCanvasResourceProviderForCanvas2D() {
+  CHECK(IsRenderingContext2D());
+  CanvasResourceProvider* resource_provider = GetResourceProviderForCanvas2D();
+  if (context_->isContextLost() && !context_->IsContextBeingRestored()) {
+    DCHECK(!resource_provider);
+    return nullptr;
+  }
+
+  if (resource_provider) {
+    if (!resource_provider->IsValid()) {
+      // The canvas context is not lost but the provider is invalid. This
+      // happens if the GPU process dies in the middle of a render task. The
+      // canvas is notified of GPU context losses via the
+      // `NotifyGpuContextLost` callback and restoration happens in
+      // `TryRestoreContextEvent`. Both callbacks are executed in their own
+      // separate task. If the GPU context goes invalid in the middle of a
+      // render task, the canvas won't immediately know about it and canvas
+      // APIs will continue using the provider that is now invalid. We can
+      // early return here, trying to re-create the provider right away would
+      // just fail. We need to let `TryRestoreContextEvent` wait for the GPU
+      // process to up again.
       return nullptr;
     }
-
-    if (resource_provider) {
-      if (!resource_provider->IsValid()) {
-        // The canvas context is not lost but the provider is invalid. This
-        // happens if the GPU process dies in the middle of a render task. The
-        // canvas is notified of GPU context losses via the
-        // `NotifyGpuContextLost` callback and restoration happens in
-        // `TryRestoreContextEvent`. Both callbacks are executed in their own
-        // separate task. If the GPU context goes invalid in the middle of a
-        // render task, the canvas won't immediately know about it and canvas
-        // APIs will continue using the provider that is now invalid. We can
-        // early return here, trying to re-create the provider right away would
-        // just fail. We need to let `TryRestoreContextEvent` wait for the GPU
-        // process to up again.
-        return nullptr;
-      }
-      return resource_provider;
-    }
-
-    if (did_fail_to_create_resource_provider_) {
-      return nullptr;
-    }
-
-    if (!IsValidImageSize()) {
-      did_fail_to_create_resource_provider_ = true;
-      if (!Size().IsEmpty() && context_) {
-        context_->LoseContext(CanvasRenderingContext::kInvalidCanvasSize);
-      }
-      return nullptr;
-    }
-
-    UpdatePreferred2DRasterMode();
-
-    if (!hibernation_handler_) {
-      hibernation_handler_ = std::make_unique<CanvasHibernationHandler>(*this);
-    }
-
-    resource_provider = RecreateCanvasResourceProviderFor2DContext(
-        CHECK_DEREF(hibernation_handler_.get()));
-
-    UpdateMemoryUsage();
-
-    if (context_) {
-      SetNeedsCompositingUpdate();
-    }
-
     return resource_provider;
   }
 
-  return CanvasRenderingContextHost::GetOrCreateCanvasResourceProvider();
+  if (did_fail_to_create_resource_provider_) {
+    return nullptr;
+  }
+
+  if (!IsValidImageSize()) {
+    did_fail_to_create_resource_provider_ = true;
+    if (!Size().IsEmpty() && context_) {
+      context_->LoseContext(CanvasRenderingContext::kInvalidCanvasSize);
+    }
+    return nullptr;
+  }
+
+  UpdatePreferred2DRasterMode();
+
+  if (!hibernation_handler_) {
+    hibernation_handler_ = std::make_unique<CanvasHibernationHandler>(*this);
+  }
+
+  resource_provider = RecreateCanvasResourceProviderForCanvas2D(
+      CHECK_DEREF(hibernation_handler_.get()));
+
+  UpdateMemoryUsage();
+
+  if (context_) {
+    SetNeedsCompositingUpdate();
+  }
+
+  return resource_provider;
 }
 
 CanvasResourceProvider*
-HTMLCanvasElement::RecreateCanvasResourceProviderFor2DContext(
+HTMLCanvasElement::RecreateCanvasResourceProviderForCanvas2D(
     CanvasHibernationHandler& hibernation_handler) {
-  // We call GetOrCreateCanvasResourceProviderImpl directly here to prevent a
-  // circular callstack.
-  CanvasResourceProvider* resource_provider =
-      GetOrCreateCanvasResourceProviderImpl();
+  CHECK(IsRenderingContext2D());
+
+  // We call
+  // CanvasRenderingContextHost::GetOrCreateCanvasResourceProviderForCanvas2D()
+  // directly here to prevent a circular callstack.
+  CanvasResourceProvider* resource_provider = CanvasRenderingContextHost::
+      GetOrCreateCanvasResourceProviderForCanvas2D();
   if (!resource_provider || !resource_provider->IsValid()) {
     return nullptr;
   }

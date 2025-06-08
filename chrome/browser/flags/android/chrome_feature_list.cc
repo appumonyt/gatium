@@ -185,6 +185,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &history::kOrganicRepeatableQueries,
     &history_clusters::internal::kJourneys,
     &history_clusters::internal::kOmniboxAction,
+    &kAccountForSuppressedKeyboardInsets,
     &kAdaptiveButtonInTopToolbarCustomizationV2,
     &kAdaptiveButtonInTopToolbarPageSummary,
     &kAllowTabClosingUponMinimization,
@@ -346,6 +347,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &kShortCircuitUnfocusAnimation,
     &kShowHomeButtonPolicyAndroid,
     &kShowNewTabAnimations,
+    &kShowTabListAnimations,
     &kPartnerCustomizationsUma,
     &kQuickDeleteAndroidSurvey,
     &kReadAloud,
@@ -387,6 +389,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &kTabStripTransitionInDesktopWindow,
     &kTabSwitcherColorBlendAnimate,
     &kTabArchivalDragDropAndroid,
+    &kTabCollectionAndroid,
     &kTabSwitcherDragDropAndroid,
     &kTabSwitcherForeignFaviconSupport,
     &kTabWindowManagerReportIndicesMismatch,
@@ -398,6 +401,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &kUmaBackgroundSessions,
     &kUpdateCompositorForSurfaceControl,
     &kUseActivityManagerForTabActivation,
+    &kUseInitialNetworkStateAtStartup,
     &kUseLibunwindstackNativeUnwinderAndroid,
     &kWebOtpCrossDeviceSimpleString,
     &kWebApkMinShellVersion,
@@ -439,6 +443,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &segmentation_platform::features::kAndroidAppIntegrationModule,
     &segmentation_platform::features::kContextualPageActions,
     &segmentation_platform::features::kContextualPageActionShareModel,
+    &segmentation_platform::features::kContextualPageActionTabGrouping,
     &segmentation_platform::features::kEducationalTipModule,
     &segmentation_platform::features::kSegmentationPlatformEphemeralCardRanker,
     &segmentation_platform::features::
@@ -476,6 +481,10 @@ static jlong JNI_ChromeFeatureMap_GetNativeMap(JNIEnv* env) {
 }
 
 // Alphabetical:
+
+BASE_FEATURE(kAccountForSuppressedKeyboardInsets,
+             "AccountForSuppressedKeyboardInsets",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAdaptiveButtonInTopToolbarCustomizationV2,
              "AdaptiveButtonInTopToolbarCustomizationV2",
@@ -571,7 +580,7 @@ BASE_FEATURE(kAndroidOpenPdfInlineBackport,
 
 BASE_FEATURE(kAndroidPdfAssistContent,
              "AndroidPdfAssistContent",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAndroidTabGroupsColorUpdateGM3,
              "AndroidTabGroupsColorUpdateGM3",
@@ -818,13 +827,11 @@ BASE_FEATURE(kCCTToolbarRefactor,
 
 BASE_FEATURE(kChangeUnfocusedPriority,
              "ChangeUnfocusedPriority",
-             base::FEATURE_DISABLED_BY_DEFAULT
-);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kDisableInstanceLimit,
              "DisableInstanceLimit",
-             base::FEATURE_DISABLED_BY_DEFAULT
-);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kDontAutoHideBrowserControls,
              "DontAutoHideBrowserControls",
@@ -1128,6 +1135,10 @@ BASE_FEATURE(kShowNewTabAnimations,
              "ShowNewTabAnimations",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kShowTabListAnimations,
+             "ShowTabListAnimations",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kPartnerCustomizationsUma,
              "PartnerCustomizationsUma",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -1143,8 +1154,8 @@ BASE_FEATURE(kReadAloudAudioOverviews,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kReadAloudAudioOverviewsFeedback,
-              "ReadAloudAudioOverviewsFeedback",
-              base::FEATURE_DISABLED_BY_DEFAULT);
+             "ReadAloudAudioOverviewsFeedback",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kReadAloudInOverflowMenuInCCT,
              "ReadAloudInOverflowMenuInCCT",
@@ -1282,6 +1293,10 @@ BASE_FEATURE(kTabArchivalDragDropAndroid,
              "TabArchivalDragDropAndroid",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kTabCollectionAndroid,
+             "TabCollectionAndroid",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kTabSwitcherDragDropAndroid,
              "TabSwitcherDragDropAndroid",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -1339,6 +1354,12 @@ BASE_FEATURE(kUpdateCompositorForSurfaceControl,
 BASE_FEATURE(kUseActivityManagerForTabActivation,
              "UseActivityManagerForTabActivation",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Whether to use initial network state during initialization to speed up
+// startup.
+BASE_FEATURE(kUseInitialNetworkStateAtStartup,
+             "UseInitialNetworkStateAtStartup",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Use the LibunwindstackNativeUnwinderAndroid for only browser main thread, and
 // only on Android.

@@ -2349,6 +2349,25 @@ Your Google account may have other forms of browsing history like searches and a
         Downloaded PDFs automatically open with <ph name="APP_NAME">%1$s<ex>Drive PDF Viewer</ex></ph>
       </message>
 
+      <!-- Download warning bypass dialog -->
+      <message name="IDS_DOWNLOAD_WARNING_BYPASS_DIALOG_TEXT" desc="Text of the dialog for asking user to confirm that they want to bypass a download warning.">
+        This file contains malware or comes from a suspicious site
+      </message>
+      <message name="IDS_DOWNLOAD_WARNING_BYPASS_DIALOG_ACTION_DOWNLOAD" desc="Label for the button to confirm that the user wants to bypass a download warning.">
+        Download anyway
+      </message>
+      <message name="IDS_DOWNLOAD_WARNING_BYPASS_DIALOG_ACTION_LEARN_MORE" desc="Label for the button to open a help page about download warnings.">
+        Learn more
+      </message>
+
+      <!-- Download Home dangerous warning -->
+      <message name="IDS_DOWNLOAD_WARNING_HEED_MENU_ACTION_DELETE" desc="Label for the menu item to heed a download warning shown in the downloads list by removing the file from download history.">
+        Delete from history
+      </message>
+      <message name="IDS_DOWNLOAD_WARNING_BYPASS_MENU_ACTION_DOWNLOAD" desc="Label for the menu item to bypass a download warning shown in the downloads list and download the dangerous file anyway.">
+        Download
+      </message>
+
       <!-- About Chrome preferences -->
       <message name="IDS_PREFS_ABOUT_CHROME" desc="Title for the About Chrome page. [CHAR_LIMIT=32]">
         About Chrome
@@ -2586,6 +2605,9 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_SYNC_PAYMENTS_INTEGRATION" desc="Title for preference which enables import of Google Pay data for Autofill. 'Google Pay' should not be translated as it is the product name.">
         Payment methods, offers, and addresses using Google Pay
       </message>
+      <message name="IDS_SYNC_PAYMENTS_AND_INFO_INTEGRATION" desc="Title for preference which enables import of Google Wallet data for Autofill. 'Google Wallet' should not be translated as it is the product name.">
+        Payment methods and other info from Google Wallet
+      </message>
       <message name="IDS_ACCOUNT_SETTINGS_TITLE" desc="Title for the account settings page. [CHAR_LIMIT=32]">
         Account
       </message>
@@ -2612,6 +2634,9 @@ Your Google account may have other forms of browsing history like searches and a
       </message>
       <message name="IDS_ACCOUNT_SECTION_PAYMENTS_TOGGLE" desc="Google Pay data for Autofill, one of the data types that we allow syncing. 'Google Pay' should not be translated as it is the product name. Shown on next to the toggle that controls whether Google Pay data for Autofill should be saved in the Google Account and synced across devices.">
         Payment methods, offers, and addresses using Google Pay
+      </message>
+      <message name="IDS_ACCOUNT_SECTION_PAYMENTS_AND_INFO_TOGGLE" desc="Google Wallet data for Autofill, one of the data types that we allow syncing. 'Google Wallet' should not be translated as it is the product name. Shown on next to the toggle that controls whether payments and other data from Google Wallet, for use in Autofill, should be saved in the Google Account and synced across devices.">
+        Payment methods and other info from Google Wallet
       </message>
       <message name="IDS_ACCOUNT_SECTION_SETTINGS_TOGGLE" desc="Settings, one of the data types that we allow syncing. Shown on next to the toggle that controls whether Settings should be saved in the Google Account and synced across devices.">
         Settings
@@ -4491,6 +4516,9 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_MENU_REVIEW_PDF_WITH_AI" desc="Menu item to review a PDF file with AI.">
         Review PDF with AI
       </message>
+      <message name="IDS_MENU_PIN_TAB" desc="Menu item for pinning a tab.">
+        Pin tab
+      </message>
 
       <!-- Bookmarks strings -->
       <message name="IDS_BOOKMARKS" desc="Title of the bookmarks page, which shows a list of the user's bookmarks. [CHAR_LIMIT=18]">
@@ -4954,6 +4982,9 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_MIC" desc="Content description for the voice search button.">
         Start voice search
+      </message>
+      <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_COMPOSEPLATE" is_accessibility_with_no_ui="true" desc="Content description for the composeplate.">
+        Start search
       </message>
       <message name="IDS_ACCESSIBILITY_BTN_LENS_CAMERA" desc="Content description for the Lens button. When the user taps the button, they can perform a 'search with your camera or photos', which opens the Google Lens app.">
         Search with your camera using Google Lens
@@ -5844,6 +5875,9 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_IPH_TAB_SWITCHER_XR" desc="The in-product-help message to notify the user about the new tab switcher on an XR device.">
         Your open tabs now have an updated look in XR
+      </message>
+      <message name="IDS_IPH_TAB_TEARING_XR" desc="The in-product-help message to notify the user about the new tab switcher on an XR device.">
+        Pinch, hold, and drag to open tabs in a new window
       </message>
 
       <!-- Search Widget strings -->
@@ -6808,6 +6842,9 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <!-- Data Sharing Owner Manage Flow -->
       <message name ="IDS_COLLABORATION_MANAGE_GROUP_TITLE" desc="The Title for the manage flow dialog for a shared group.">
         Manage access
+      </message>
+      <message name ="IDS_COLLABORATION_MANAGE_ICON" desc="The text for the manage icon." formatter_data="android_java">
+        Manage icon
       </message>
       <message name ="IDS_COLLABORATION_MANAGE_STOP_SHARING_OPTION" desc="The Label for the manage flow stop sharing option and confirmation button.">
         Stop sharing

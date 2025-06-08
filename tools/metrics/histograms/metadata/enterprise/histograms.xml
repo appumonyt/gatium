@@ -84,6 +84,17 @@ chromium-metrics-reviews@google.com.
   <variant name="Text" summary="Content analysis of pasted text."/>
 </variants>
 
+<variants name="DeepScanAccessPoint">
+  <variant name="Download" summary="Initiated from downloading 1+ file(s)"/>
+  <variant name="DragAndDrop"
+      summary="Initiated from drag-and-dropping text or 1+ file(s)"/>
+  <variant name="FileTransfer"
+      summary="Initiated from transferring 1+ file(s) in ChromeOS"/>
+  <variant name="Paste" summary="Initiated from pasting text"/>
+  <variant name="Print" summary="Initiated from printing a page"/>
+  <variant name="Upload" summary="Initiated from uploading 1+ file(s)"/>
+</variants>
+
 <variants name="Enterprise_CrdSessionType">
   <variant name="RemoteAccess"
       summary="A CRD session where the admin has exclusive control of the
@@ -396,8 +407,9 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.CBCMRemoteCommand.Executed"
-    enum="RemoteCommandExecutionStatus" expires_after="2024-10-01">
-  <owner>anthonyvd@chromium.org</owner>
+    enum="RemoteCommandExecutionStatus" expires_after="2025-11-01">
+  <owner>nicolaso@chromium.org</owner>
+  <owner>zmin@chromium.org</owner>
   <owner>cbe-eng@google.com</owner>
   <summary>
     Events for counting status of executed CBCM remote commands. The metric
@@ -407,8 +419,9 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.CBCMRemoteCommand.Received"
-    enum="RemoteCommandReceivedStatus" expires_after="2025-03-30">
-  <owner>anthonyvd@chromium.org</owner>
+    enum="RemoteCommandReceivedStatus" expires_after="2025-11-01">
+  <owner>nicolaso@chromium.org</owner>
+  <owner>zmin@chromium.org</owner>
   <owner>cbe-eng@google.com</owner>
   <summary>
     Events for counting received CBCM remote commands. The metric includes
@@ -419,8 +432,9 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.CBCMRemoteCommandInvalidations"
-    enum="EnterprisePolicyInvalidations" expires_after="2025-03-02">
-  <owner>anthonyvd@chromium.org</owner>
+    enum="EnterprisePolicyInvalidations" expires_after="2025-11-01">
+  <owner>nicolaso@chromium.org</owner>
+  <owner>zmin@chromium.org</owner>
   <owner>cbe-eng@google.com</owner>
   <summary>
     Events for counting CBCM remote commands invalidations received with and
@@ -726,7 +740,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.DeviceRemoteCommand.Crd.Result"
-    enum="EnterpriseCrdSessionResultCode" expires_after="2025-11-16">
+    enum="EnterpriseCrdSessionResultCode" expires_after="2025-11-01">
   <owner>macinashutosh@google.com</owner>
   <owner>chromeos-commercial-crd@google.com</owner>
   <summary>Reports success/failure when a session is attempted.</summary>
@@ -734,7 +748,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Enterprise.DeviceRemoteCommand.Crd.{Enterprise_CrdSessionType}.{Enterprise_UserSessionType}.Result"
-    enum="EnterpriseCrdSessionResultCode" expires_after="2025-10-19">
+    enum="EnterpriseCrdSessionResultCode" expires_after="2025-11-01">
   <owner>macinashutosh@google.com</owner>
   <owner>chromeos-commercial-crd@google.com</owner>
   <summary>
@@ -748,7 +762,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Enterprise.DeviceRemoteCommand.Crd.{Enterprise_CrdSessionType}.{Enterprise_UserSessionType}.SessionDuration"
-    units="minutes" expires_after="2025-08-18">
+    units="minutes" expires_after="2025-11-01">
   <owner>macinashutosh@google.com</owner>
   <owner>chromeos-commercial-crd@google.com</owner>
   <summary>
@@ -765,7 +779,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Enterprise.DeviceRemoteCommand.Executed{Enterprise_RemoteCommandType}"
-    enum="RemoteCommandExecutionStatus" expires_after="2025-10-19">
+    enum="RemoteCommandExecutionStatus" expires_after="2025-11-01">
   <owner>asumaneev@google.com</owner>
   <owner>chromeos-commercial-remote-management@google.com</owner>
   <summary>
@@ -781,7 +795,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.DeviceRemoteCommand.FetchSupportPacket.Failure"
-    enum="EnterpriseFetchSupportPacketFailureType" expires_after="2026-02-10">
+    enum="EnterpriseFetchSupportPacketFailureType" expires_after="2025-11-01">
   <owner>iremuguz@google.com</owner>
   <owner>chromeos-commercial-supportability@google.com</owner>
   <summary>
@@ -795,7 +809,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.DeviceRemoteCommand.Received"
-    enum="RemoteCommandReceivedStatus" expires_after="2025-10-05">
+    enum="RemoteCommandReceivedStatus" expires_after="2025-11-01">
   <owner>asumaneev@google.com</owner>
   <owner>chromeos-commercial-remote-management@google.com</owner>
   <summary>
@@ -807,7 +821,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.DeviceRemoteCommandInvalidations"
-    enum="EnterprisePolicyInvalidations" expires_after="2025-10-05">
+    enum="EnterprisePolicyInvalidations" expires_after="2025-11-01">
   <owner>asumaneev@google.com</owner>
   <owner>chromeos-commercial-remote-management@google.com</owner>
   <summary>
@@ -2417,6 +2431,23 @@ chromium-metrics-reviews@google.com.
   </token>
 </histogram>
 
+<histogram
+    name="Enterprise.IframeDlpRulesSupport.{DeepScanAccessPoint}.UrlChainSize"
+    units="count" expires_after="2026-06-04">
+  <owner>haihan@google.com</owner>
+  <owner>nancylanxiao@google.com</owner>
+  <owner>cbe-cep-eng@google.com</owner>
+  <summary>
+    Records the size of the url chain, from the iframe where the content
+    analysis request for {DeepScanAccessPoint} was triggered from all the way to
+    the tab url, inclusive.
+
+    A size of 1 means that the action did not come from an iFrame, and the chain
+    size limit is set to `kMaxFrameUrls`.
+  </summary>
+  <token key="DeepScanAccessPoint" variants="DeepScanAccessPoint"/>
+</histogram>
+
 <histogram name="Enterprise.InstallAttributes.ValidOnEnrolledDevice"
     enum="Boolean" expires_after="2026-04-06">
   <owner>igorcov@chromium.org</owner>
@@ -3761,7 +3792,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Enterprise.UserRemoteCommand.Executed{Enterprise_RemoteCommandType}"
-    enum="RemoteCommandExecutionStatus" expires_after="2025-10-19">
+    enum="RemoteCommandExecutionStatus" expires_after="2025-11-01">
   <owner>asumaneev@google.com</owner>
   <owner>chromeos-commercial-remote-management@google.com</owner>
   <summary>
@@ -3777,7 +3808,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.UserRemoteCommand.Received"
-    enum="RemoteCommandReceivedStatus" expires_after="2025-10-19">
+    enum="RemoteCommandReceivedStatus" expires_after="2025-11-01">
   <owner>asumaneev@google.com</owner>
   <owner>chromeos-commercial-remote-management@google.com</owner>
   <summary>
@@ -3789,7 +3820,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Enterprise.UserRemoteCommandInvalidations"
-    enum="EnterprisePolicyInvalidations" expires_after="2025-10-19">
+    enum="EnterprisePolicyInvalidations" expires_after="2025-11-01">
   <owner>asumaneev@google.com</owner>
   <owner>chromeos-commercial-remote-management@google.com</owner>
   <summary>

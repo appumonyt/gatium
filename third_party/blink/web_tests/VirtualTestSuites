@@ -284,7 +284,7 @@
     "exclusive_tests": "ALL",
     "args": ["--enable-features=AggregationServiceMultipleCloudProviders:allowlist/https%3A%2F%2Fweb-platform%2Etest%3A8444%2Chttps%3A%2F%2Fwww1%2Eweb-platform%2Etest%3A8444"],
     "owners": ["linnan@chromium.org"],
-    "expires": "June 3, 2025"
+    "expires": "December 3, 2025"
   },
   {
     "prefix": "off-main-thread-css-paint",
@@ -1008,7 +1008,7 @@
       "fast/parser"
     ],
     "args": ["--disable-features=DOMPartsAPI,DOMPartsAPIMinimal"],
-    "expires": "Jun 1, 2025"
+    "expires": "Jun 1, 2026"
   },
   {
     "prefix": "dom-parts-minimal",
@@ -1018,7 +1018,7 @@
       "external/wpt/dom/parts"
     ],
     "args": ["--enable-features=DOMPartsAPIMinimal"],
-    "expires": "Jun 1, 2025"
+    "expires": "Jun 1, 2026"
   },
   {
     "prefix": "backface-visibility-interop",
@@ -1262,7 +1262,7 @@
     "platforms": ["Linux", "Mac", "Win"],
     "bases": ["external/wpt/html/semantics/popovers"],
     "args": ["--disable-blink-features=HTMLAnchorAttribute"],
-    "expires": "Jun 1, 2025"
+    "expires": "Jun 1, 2026"
   },
   {
     "prefix": "interest-target-no-partial-interest",
@@ -1282,7 +1282,7 @@
       "external/wpt/html/semantics/interactive-elements/the-dialog-element"
     ],
     "args": ["--disable-blink-features=DialogCloseWhenOpenRemoved"],
-    "expires": "Jun 1, 2025"
+    "expires": "Jun 1, 2026"
   },
   {
     "prefix": "parakeet",
@@ -1430,7 +1430,7 @@
     "bases": ["http/tests/low-priority-async-script-execution"],
     "args": ["--enable-features=LCPScriptObserver,LowPriorityAsyncScriptExecution:low_pri_async_exec_timeout/100ms/low_pri_async_exec_exclude_lcp_influencers/true"],
     "owners": [
-      "alexnj@chromium.org",
+      "alexnj@google.com",
       "chikamune@chromium.org"
     ],
     "expires": "Mar 1, 2026"
@@ -1785,7 +1785,7 @@
     "platforms": ["Linux", "Mac", "Win"],
     "bases": ["external/wpt/custom-elements/registries/"],
     "args": ["--disable-blink-features=ScopedCustomElementRegistry"],
-    "expires": "Jun 1, 2025"
+    "expires": "Jun 1, 2026"
   },
 
   "This individual test must be run separately from others, because it makes a",
@@ -1866,7 +1866,7 @@
       "http/tests/inspector-protocol/service-worker/tentative/static-router"
     ],
     "args": ["--enable-features=ServiceWorkerStaticRouterTimingInfo"],
-    "expires": "Jun 5, 2025",
+    "expires": "Dec 5, 2025",
     "owners": ["suzukikeita@chromium.org", "yyanagisawa@chromium.org", "sisidovski@chromium.org"]
   },
   {
@@ -1965,7 +1965,7 @@
     ],
     "expires": "Apr 1, 2026",
     "owners": [
-      "alexnj@chromium.org",
+      "alexnj@google.com",
       "kouhei@chromium.org",
       "yoichio@chromium.org"
     ]
@@ -1987,7 +1987,7 @@
     ],
     "expires": "Sep 10, 2026",
     "owners": [
-      "alexnj@chromium.org",
+      "alexnj@google.com",
       "chikamune@chromium.org"
     ]
   },
@@ -2003,33 +2003,6 @@
     ],
     "args": ["--enable-blink-features=NonStandardAppearanceValueSliderVertical"],
     "owners": ["dizhangg@chromium.org"],
-    "expires": "Jul 1, 2025"
-  },
-  {
-    "prefix": "url-non-special",
-    "platforms": ["Linux"],
-    "bases": [
-      "external/wpt/fetch/data-urls/processing.any.js",
-      "external/wpt/html/infrastructure/urls/resolving-urls/query-encoding/windows-1251.html",
-      "external/wpt/html/infrastructure/urls/resolving-urls/query-encoding/windows-1252.html",
-      "external/wpt/html/semantics/links/links-created-by-a-and-area-elements/non-special-url-getter-setter.window.js",
-      "external/wpt/url",
-      "fast/dom/HTMLAnchorElement/set-href-attribute-hash.html",
-      "fast/dom/HTMLAnchorElement/set-href-attribute-hostname.html",
-      "fast/dom/HTMLAnchorElement/set-href-attribute-port.html",
-      "fast/dom/HTMLAnchorElement/set-href-attribute-search.html",
-      "fast/domurl/url-hash.html",
-      "fast/loader/javascript-url-hierarchical-execution.html",
-      "fast/loader/url-parse-1.html",
-      "fast/url/invalid-urls-utf8.html",
-      "fast/url/mailto.html",
-      "fast/url/segments.html",
-      "http/tests/security/base-url-data.html",
-      "http/tests/security/base-url-javascript-invalid.html",
-      "http/tests/security/base-url-javascript-valid.html"
-    ],
-    "args": ["--enable-features=StandardCompliantNonSpecialSchemeURLParsing"],
-    "owners": ["hayato@chromium.org"],
     "expires": "Jul 1, 2025"
   },
   {
@@ -3067,7 +3040,7 @@
     ],
     "expires": "Jan 14, 2026",
     "owners": [
-      "alexnj@chromium.org"
+      "alexnj@google.com"
     ]
   },
   {
@@ -3081,22 +3054,6 @@
     "args": ["--enable-blink-features=DocumentPictureInPictureUserActivation"],
     "expires": "Dec 1, 2024",
     "owners": ["steimel@chromium.org", "liberato@chromium.org"]
-  },
-  {
-    "prefix": "keyboard-focusable-scrollers-opt-out",
-    "owners": ["dizhangg@google.com"],
-    "platforms": ["Linux", "Mac", "Win"],
-    "bases": [
-      "shadow-dom/focus-navigation/focus-navigation-scroller-delegatesFocus.html",
-      "shadow-dom/focus-navigation/focus-navigation-scroller-interactive-child.html",
-      "shadow-dom/focus-navigation/focus-navigation-scroller-tabindex.html",
-      "shadow-dom/focus-navigation/focus-scroller-layout-update.html"
-    ],
-    "args": [
-      "--enable-blink-features=KeyboardFocusableScrollers",
-      "--enable-blink-features=KeyboardFocusableScrollersOptOut"
-    ],
-    "expires": "May 1, 2025"
   },
   {
     "prefix": "shadow-realm-enabled",
@@ -4097,50 +4054,6 @@
       "syg@chromium.org",
       "samuelmaddock@electronjs.org"
     ]
-  },{
-    "prefix": "select-option-accessibility-target-size-disabled",
-    "platforms": ["Linux", "Win"],
-    "bases": [
-      "fast/forms/select-popup/popup-menu-accessibility-minimum-target-size.html",
-      "fast/forms/select-popup/popup-menu-appearance.html",
-      "fast/forms/select-popup/popup-menu-appearance-single-option.html",
-      "fast/forms/select-popup/popup-menu-appearance-long.html",
-      "fast/forms/select-popup/popup-menu-appearance-zero-font-size.html",
-      "fast/forms/select-popup/popup-menu-appearance-transform.html"
-    ],
-    "args": ["--disable-features=SelectOptionAccessibilityTargetSize"],
-    "expires": "Jun 1, 2025",
-    "owners": ["masonf@chromium.org", "stephanie.zhang@microsoft.com", "sajos@microsoft.com"]
-  },
-  {
-    "prefix": "force-taller-select-popup-disabled",
-    "platforms": ["Linux", "Win"],
-    "bases": [
-      "fast/forms/select-popup/popup-menu-accessibility-minimum-target-size.html",
-      "fast/forms/select-popup/popup-menu-appearance.html",
-      "fast/forms/select-popup/popup-menu-appearance-single-option.html",
-      "fast/forms/select-popup/popup-menu-appearance-long.html",
-      "fast/forms/select-popup/popup-menu-appearance-zero-font-size.html",
-      "fast/forms/select-popup/popup-menu-appearance-transform.html"
-    ],
-    "args": ["--disable-features=ForceTallerSelectPopup"],
-    "expires": "Jun 1, 2025",
-    "owners": ["tkent@chromium.org", "stephanie.zhang@microsoft.com", "sajos@microsoft.com"]
-  },
-  {
-    "prefix": "both-taller-select-popup-options-disabled",
-    "platforms": ["Linux", "Win"],
-    "bases": [
-      "fast/forms/select-popup/popup-menu-accessibility-minimum-target-size.html",
-      "fast/forms/select-popup/popup-menu-appearance.html",
-      "fast/forms/select-popup/popup-menu-appearance-single-option.html",
-      "fast/forms/select-popup/popup-menu-appearance-long.html",
-      "fast/forms/select-popup/popup-menu-appearance-zero-font-size.html",
-      "fast/forms/select-popup/popup-menu-appearance-transform.html"
-    ],
-    "args": ["--disable-features=SelectOptionAccessibilityTargetSize,ForceTallerSelectPopup"],
-    "expires": "Jun 1, 2025",
-    "owners": ["masonf@chromium.org", "stephanie.zhang@microsoft.com", "sajos@microsoft.com"]
   },
   {
     "prefix": "partitioned-popins-disabled",
@@ -4420,6 +4333,20 @@
       "--enable-features=RemovePurposeHeaderForPrefetch"
     ],
     "expires": "Nov 27, 2025"
+  },
+  {
+    "prefix": "do-not-hide-visited-color",
+    "owners": ["sesse@google.com"],
+    "platforms": ["Linux"],
+    "bases": [
+      "external/wpt/css/css-animations/",
+      "external/wpt/css/css-cascade/",
+      "external/wpt/css/css-color/",
+      "external/wpt/css/css-pseudo/"
+    ],
+    "args": [
+      "--enable-features=CSSDoNotHideVisitedColor"
+    ],
+    "expires": "Jun 3, 2026"
   }
-
 ]

@@ -39,7 +39,6 @@
 #include "storage/common/file_system/file_system_mount_option.h"
 #include "third_party/blink/public/common/indexeddb/indexeddb_key.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
-#include "url/gurl.h"
 
 namespace base {
 class WaitableEvent;
@@ -224,6 +223,7 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
         int64_t index_id,
         const blink::IndexedDBKeyRange& key_range,
         blink::mojom::IDBCursorDirection) override;
+    blink::mojom::IDBValuePtr BuildMojoValue(IndexedDBValue value) override;
 
     Status PutExternalObjectsIfNeeded(const std::string& object_store_data_key,
                                       std::vector<IndexedDBExternalObject>*);

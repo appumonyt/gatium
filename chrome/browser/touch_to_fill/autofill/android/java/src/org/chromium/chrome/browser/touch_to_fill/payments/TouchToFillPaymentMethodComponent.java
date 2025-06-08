@@ -34,6 +34,12 @@ interface TouchToFillPaymentMethodComponent {
         void showPaymentMethodSettings();
 
         /**
+         * Causes navigation to the payment methods settings page and scrolls to the loyalty card
+         * settings preference.
+         */
+        void showGoogleWalletSettings();
+
+        /**
          * Called when the user selects a card.
          *
          * @param uniqueId A backend id of the card.
@@ -61,6 +67,9 @@ interface TouchToFillPaymentMethodComponent {
          * @param loyaltyCardNumber of the selected loyalty card.
          */
         void loyaltyCardSuggestionSelected(String loyaltyCardNumber);
+
+        /** Called when the user clicks the "Manage loyalty cards" button. */
+        void openPassesManagementUi();
     }
 
     /**
@@ -72,15 +81,13 @@ interface TouchToFillPaymentMethodComponent {
      * @param delegate A {@link Delegate} that handles interaction events.
      * @param bottomSheetFocusHelper that restores the focus to the element that was focused before
      *     the bottom sheet.
-     * @param passesManagementUiOpener that opens the Google Wallet passes management UI.
      */
     void initialize(
             Context context,
             AutofillImageFetcher imageFetcher,
             BottomSheetController sheetController,
             Delegate delegate,
-            BottomSheetFocusHelper bottomSheetFocusHelper,
-            Runnable passesManagementUiOpener);
+            BottomSheetFocusHelper bottomSheetFocusHelper);
 
     /**
      * Displays a new credit card bottom sheet.

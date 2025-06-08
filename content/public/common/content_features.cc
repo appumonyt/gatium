@@ -1000,6 +1000,13 @@ BASE_FEATURE(kServiceWorkerPaymentApps,
              "ServiceWorkerPaymentApps",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// If enabled, UI thread tasks can check ServiceWorker registration information
+// from the thread pool without waiting for running the receiving task. Please
+// see crbug.com/421530699 for more details.
+BASE_FEATURE(kServiceWorkerBackgroundUpdateForRegisteredStorageKeys,
+             "ServiceWorkerBackgroundUpdateForRegisteredStorageKeys",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // http://tc39.github.io/ecmascript_sharedmem/shmem.html
 // This feature is also enabled independently of this flag for cross-origin
 // isolated renderers.
@@ -1357,6 +1364,12 @@ BASE_FEATURE(kAccessibilityPageZoomV2,
              "AccessibilityPageZoomV2",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Enables populating the supplemental description information via the
+// Android supplemental description API.
+BASE_FEATURE(kAccessibilityPopulateSupplementalDescriptionApi,
+             "kAccessibilityPopulateSupplementalDescriptionApi",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Enables the use of a unified code path for AXTree snapshots.
 BASE_FEATURE(kAccessibilityUnifiedSnapshots,
              "AccessibilityUnifiedSnapshots",
@@ -1406,11 +1419,7 @@ BASE_FEATURE(kReduceGpuPriorityOnBackground,
 // it won't work.
 BASE_FEATURE(kUserMediaScreenCapturing,
              "UserMediaScreenCapturing",
-#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#else
              base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
 #endif  // BUILDFLAG(IS_ANDROID)
 

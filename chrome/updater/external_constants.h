@@ -38,11 +38,11 @@ class ExternalConstants : public base::RefCountedThreadSafe<ExternalConstants> {
   // The URL to send crash reports to.
   virtual GURL CrashUploadURL() const = 0;
 
-  // The URL to fetch device management policies.
-  virtual GURL DeviceManagementURL() const = 0;
-
   // The URL for the app logos.
   virtual GURL AppLogoURL() const = 0;
+
+  // The URL for remote event logging.
+  virtual GURL EventLoggingURL() const = 0;
 
   // True if client update protocol signing of update checks is enabled.
   virtual bool UseCUP() const = 0;

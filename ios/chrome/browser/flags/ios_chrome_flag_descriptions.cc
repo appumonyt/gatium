@@ -409,6 +409,12 @@ const char kDefaultBrowserBannerPromoDescription[] =
     "When enabled, the default browser banner promo will show when conditions "
     "are met.";
 
+const char kDefaultBrowserPromoPropensityModelName[] =
+    "Default Browser promo propensity model";
+const char kDefaultBrowserPromoPropensityModelDescription[] =
+    "When enabled, a propensity model will help make the determination of "
+    "whether to show a default browser promo";
+
 const char kDefaultBrowserTriggerCriteriaExperimentName[] =
     "Show default browser promo trigger criteria experiment";
 const char kDefaultBrowserTriggerCriteriaExperimentDescription[] =
@@ -440,6 +446,12 @@ const char kEnableFeedHeaderSettingsName[] =
     "Enables the feed header settings.";
 const char kEnableFeedHeaderSettingsDescription[] =
     "When enabled, some UI elements of the feed header can be modified.";
+
+const char kDisableAutofillStrikeSystemName[] =
+    "Disable the Autofill strike system";
+const char kDisableAutofillStrikeSystemDescription[] =
+    "When enabled, the Autofill strike system will not block a feature from "
+    "being offered.";
 
 const char kDisableLensCameraName[] = "Disable Lens camera experience";
 const char kDisableLensCameraDescription[] =
@@ -638,6 +650,12 @@ extern const char kIOSEnableRealtimeEventReportingName[] =
 extern const char kIOSEnableRealtimeEventReportingDescription[] =
     "When enabled, realtime events will be reported to the user's "
     "organization.";
+
+const char kIOSFillRecoveryPasswordName[] =
+    "Enable autofilling with a recovery password";
+const char kIOSFillRecoveryPasswordDescription[] =
+    "When enabled, users will be able to attempt to log in using a recovery "
+    "password if the main one didn't work.";
 
 const char kIOSKeyboardAccessoryUpgradeName[] =
     "Enable the keyboard accessory upgrade on iOS";

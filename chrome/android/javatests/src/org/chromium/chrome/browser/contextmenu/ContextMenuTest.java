@@ -322,7 +322,7 @@ public class ContextMenuTest {
     public void testLongPressOnImage_notAllowedByPolicy() throws TimeoutException {
         doAnswer(sCopyIsNotAllowedByPolicy)
                 .when(mDataProtectionBridgeMock)
-                .verifyCopyImageIsAllowedByPolicy(anyString(), any(), any());
+                .verifyGenericCopyImageActionIsAllowedByPolicy(anyString(), any(), any());
 
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
@@ -347,7 +347,7 @@ public class ContextMenuTest {
                 R.id.contextmenu_open_image_in_new_tab);
 
         verify(mDataProtectionBridgeMock)
-                .verifyCopyImageIsAllowedByPolicy(anyString(), any(), any());
+                .verifyGenericCopyImageActionIsAllowedByPolicy(anyString(), any(), any());
     }
 
     @Test
@@ -357,7 +357,7 @@ public class ContextMenuTest {
     public void testOpenInEphemeralTab_notAllowedByPolicy() throws TimeoutException {
         doAnswer(sCopyIsNotAllowedByPolicy)
                 .when(mDataProtectionBridgeMock)
-                .verifyCopyImageIsAllowedByPolicy(anyString(), any(), any());
+                .verifyGenericCopyImageActionIsAllowedByPolicy(anyString(), any(), any());
 
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
@@ -382,7 +382,7 @@ public class ContextMenuTest {
                 R.id.contextmenu_open_image_in_ephemeral_tab);
 
         verify(mDataProtectionBridgeMock)
-                .verifyCopyImageIsAllowedByPolicy(anyString(), any(), any());
+                .verifyGenericCopyImageActionIsAllowedByPolicy(anyString(), any(), any());
         verify(mItemDelegate, Mockito.never()).onOpenInEphemeralTab(any(), anyString());
     }
 
@@ -699,7 +699,9 @@ public class ContextMenuTest {
     @LargeTest
     @Restriction(DeviceFormFactor.DESKTOP)
     @EnableFeatures({ChromeFeatureList.CONTEXT_MENU_EMPTY_SPACE})
+    @DisableFeatures({UiAndroidFeatures.ANDROID_WINDOW_OCCLUSION})
     public void testSavePage() throws TimeoutException {
+        DeviceInput.setSupportsPrecisionPointerForTesting(true);
         Tab tab = sDownloadTestRule.getActivity().getActivityTab();
         int callCount = sDownloadTestRule.getChromeDownloadCallCount();
         ContextMenuUtils.selectContextMenuItemFromRightClick(
@@ -713,7 +715,7 @@ public class ContextMenuTest {
         Assert.assertTrue(sDownloadTestRule.waitForChromeDownloadToFinish(callCount));
         Assert.assertTrue(
                 sDownloadTestRule.hasDownloadedRegex(
-                        ".*chrome_test_data_android_contextmenu_context_menu_test.html.mht"));
+                        ".*chrome_test_data_android_contextmenu_context_menu_test.html"));
     }
 
     @Test

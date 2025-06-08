@@ -1476,7 +1476,7 @@ useful for Chirp alerts (go/crca-alerts). -->
 
 <histogram
     name="SafeBrowsing.GmsSafeBrowsingApi.JavaValidationResult{Protocol}"
-    enum="SafeBrowsingApiJavaValidationResult" expires_after="2025-06-22">
+    enum="SafeBrowsingApiJavaValidationResult" expires_after="2026-06-03">
   <owner>xinghuilu@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>
@@ -1846,21 +1846,6 @@ useful for Chirp alerts (go/crca-alerts). -->
   </summary>
 </histogram>
 
-<histogram name="SafeBrowsing.HPRT.Network.Time.{NetError}" units="ms"
-    expires_after="2025-06-22">
-  <owner>xinghuilu@chromium.org</owner>
-  <owner>chrome-counter-abuse-alerts@google.com</owner>
-  <summary>
-    Logs the roundtrip time it took to perform a Safe Browsing hash-prefix
-    real-time lookup when the net error is {NetError}. Logged on each resource
-    check for which a lookup request is sent to the server.
-  </summary>
-  <token key="NetError">
-    <variant name="ConnectionClosed" summary="ERR_CONNECTION_CLOSED"/>
-    <variant name="NameNotResolved" summary="ERR_NAME_NOT_RESOLVED"/>
-  </token>
-</histogram>
-
 <histogram name="SafeBrowsing.HPRT.Network.{ResponseSource}Result"
     enum="CombinedHttpResponseAndNetErrorCode" expires_after="2025-11-16">
   <owner>thefrog@chromium.org</owner>
@@ -1976,26 +1961,17 @@ useful for Chirp alerts (go/crca-alerts). -->
   </summary>
 </histogram>
 
-<histogram name="SafeBrowsing.HPRT.ThreatInfoSize{SourceDetails}"
-    units="verdicts" expires_after="2025-07-13">
+<histogram name="SafeBrowsing.HPRT.ThreatInfoSize" units="verdicts"
+    expires_after="2026-07-13">
   <owner>thefrog@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>
     Logs the number of unsafe threat type verdicts received in the check
     response (including cached results) that are relevant to hash-prefix
-    real-time checks. {SourceDetails}
+    real-time checks. Logged each time a lookup request completes without errors
+    or when the request does not need to be sent because all the results are in
+    the local cache.
   </summary>
-  <token key="SourceDetails">
-    <variant name=""
-        summary="Logged each time a lookup request completes without errors
-                 or when the request does not need to be sent because all the
-                 results are in the local cache."/>
-    <variant name=".LocalCache"
-        summary="Logged each time a lookup request does not need to be sent
-                 because all the results are in the local cache."/>
-    <variant name=".NetworkRequest"
-        summary="Logged each time a lookup request completes without errors."/>
-  </token>
 </histogram>
 
 <histogram name="SafeBrowsing.IOS.IsCheckCompletedOnShouldAllowResponse"
@@ -2517,6 +2493,18 @@ useful for Chirp alerts (go/crca-alerts). -->
   <token key="UserCategory" variants="RealTimeUrlCheckUserCategory"/>
 </histogram>
 
+<histogram name="SafeBrowsing.RT.CacheManager.CleanupReachedThreshold"
+    units="entries" expires_after="2025-11-23">
+  <owner>thefrog@chromium.org</owner>
+  <owner>chrome-counter-abuse-alerts@google.com</owner>
+  <summary>
+    Records whether a cleanup task trying to remove origin-keyed expired
+    real-time URL verdict cache entries per reached the maximum number of
+    origins that can be removed per cleanup task. Logged each time a cleanup
+    task is run.
+  </summary>
+</histogram>
+
 <histogram name="SafeBrowsing.RT.CacheManager.CleanUpTime" units="ms"
     expires_after="2025-11-15">
   <owner>xinghuilu@chromium.org</owner>
@@ -2527,13 +2515,14 @@ useful for Chirp alerts (go/crca-alerts). -->
   </summary>
 </histogram>
 
-<histogram name="SafeBrowsing.RT.CacheManager.RealTimeVerdictCount"
+<histogram name="SafeBrowsing.RT.CacheManager.RealTimeVerdictCount2"
     units="entries" expires_after="2025-11-15">
   <owner>xinghuilu@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>
     Records the number of real time URL verdicts stored for this profile. Logged
-    each time a new real time url verdict is cached.
+    each time a cleanup task is run. It counts both the expired and unexpired
+    entries.
   </summary>
 </histogram>
 
@@ -2854,7 +2843,7 @@ useful for Chirp alerts (go/crca-alerts). -->
 </histogram>
 
 <histogram name="SafeBrowsing.RT.Request.UserPopulation{UserCategory}"
-    enum="SafeBrowsingUserPopulation" expires_after="2025-07-06">
+    enum="SafeBrowsingUserPopulation" expires_after="2026-06-03">
   <owner>xinghuilu@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>
@@ -3495,7 +3484,7 @@ useful for Chirp alerts (go/crca-alerts). -->
 
 <histogram
     name="SafeBrowsing.V4ProcessFullUpdate.AdditionsHashesCount2{SafeBrowsing_V4Store_Metrics}"
-    units="entries" expires_after="2025-07-06">
+    units="entries" expires_after="2026-06-03">
   <owner>xinghuilu@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>

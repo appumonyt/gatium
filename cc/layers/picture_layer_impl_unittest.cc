@@ -87,7 +87,6 @@ class PictureLayerImplTest : public TestLayerTreeHostBase {
   LayerTreeSettings CreateSettings() override {
     auto settings = TestLayerTreeHostBase::CreateSettings();
     settings.commit_to_active_tree = false;
-    settings.create_low_res_tiling = true;
     return settings;
   }
 
@@ -348,7 +347,6 @@ class NoLowResPictureLayerImplTest : public LegacySWPictureLayerImplTest {
  public:
   LayerTreeSettings CreateSettings() override {
     LayerTreeSettings settings = LegacySWPictureLayerImplTest::CreateSettings();
-    settings.create_low_res_tiling = false;
     return settings;
   }
 };
@@ -3657,16 +3655,10 @@ TEST_F(NoLowResPictureLayerImplTest, AllHighResRequiredEvenIfNotChanged) {
 
   // Since there is no invalidation, pending tree should have no tiles.
   EXPECT_TRUE(pending_layer()->HighResTiling()->AllTilesForTesting().empty());
-  if (host_impl()->settings().create_low_res_tiling)
-    EXPECT_TRUE(pending_layer()->LowResTiling()->AllTilesForTesting().empty());
 
   active_layer()->HighResTiling()->UpdateAllRequiredStateForTesting();
-  if (host_impl()->settings().create_low_res_tiling)
-    active_layer()->LowResTiling()->UpdateAllRequiredStateForTesting();
 
   AssertAllTilesRequired(active_layer()->HighResTiling());
-  if (host_impl()->settings().create_low_res_tiling)
-    AssertNoTilesRequired(active_layer()->LowResTiling());
 }
 
 TEST_F(NoLowResPictureLayerImplTest, NothingRequiredIfActiveMissingTiles) {
@@ -3684,8 +3676,7 @@ TEST_F(NoLowResPictureLayerImplTest, NothingRequiredIfActiveMissingTiles) {
 
   // Active layer has tilings.
   EXPECT_TRUE(active_layer()->CanHaveTilings());
-  EXPECT_EQ(active_layer()->tilings()->num_tilings(),
-            host_impl()->settings().create_low_res_tiling ? 2u : 1u);
+  EXPECT_EQ(active_layer()->tilings()->num_tilings(), 1u);
   // Simulate scrolling past the end of recorded content on the active layer,
   // where the recordings are so far away that no tiles are created.
   gfx::Rect visible_rect(0, 3000, 1000, 1000);
@@ -3696,13 +3687,8 @@ TEST_F(NoLowResPictureLayerImplTest, NothingRequiredIfActiveMissingTiles) {
   // Since the active layer has no tiles at all, the pending layer doesn't
   // need content in order to activate.
   pending_layer()->HighResTiling()->UpdateAllRequiredStateForTesting();
-  if (host_impl()->settings().create_low_res_tiling)
-    pending_layer()->LowResTiling()->UpdateAllRequiredStateForTesting();
 
   EXPECT_EQ(pending_layer()->HighResTiling()->AllTilesForTesting().size(), 0u);
-  if (host_impl()->settings().create_low_res_tiling) {
-    EXPECT_EQ(pending_layer()->LowResTiling()->AllTilesForTesting().size(), 0u);
-  }
 }
 
 TEST_F(NoLowResPictureLayerImplTest, CleanUpTilings) {
@@ -3946,10 +3932,10 @@ TEST_F(PictureLayerImplTestWithDelegatingRenderer,
 }
 
 class OcclusionTrackingPictureLayerImplTest
-    : public LegacySWPictureLayerImplTest {
+    : public NoLowResPictureLayerImplTest {
  public:
   LayerTreeSettings CreateSettings() override {
-    LayerTreeSettings settings = LegacySWPictureLayerImplTest::CreateSettings();
+    LayerTreeSettings settings = NoLowResPictureLayerImplTest::CreateSettings();
     settings.use_occlusion_for_tile_prioritization = true;
     return settings;
   }
@@ -3979,12 +3965,8 @@ class OcclusionTrackingPictureLayerImplTest
 
         bool last_tile_is_occluded = last_tile.is_occluded();
         if (!last_tile_is_occluded) {
-          TilePriority::PriorityBin tile_priority_bin =
-              prioritized_tile.priority().priority_bin;
-          TilePriority::PriorityBin last_tile_priority_bin =
-              last_tile.priority().priority_bin;
-
-          EXPECT_TRUE(tile_priority_bin < last_tile_priority_bin ||
+          EXPECT_TRUE(prioritized_tile.priority().IsHigherPriorityThan(
+                          last_tile.priority()) ||
                       tile->required_for_activation() ||
                       tile->contents_scale_key() !=
                           last_tile.tile()->contents_scale_key())
@@ -4436,7 +4418,7 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
   pending_occluding_layer->NoteLayerPropertyChanged();
 
   EXPECT_EQ(1u, pending_layer()->num_tilings());
-  EXPECT_EQ(2u, active_layer()->num_tilings());
+  EXPECT_EQ(1u, active_layer()->num_tilings());
 
   host_impl()->AdvanceToNextFrame(base::Milliseconds(1));
   // UpdateDrawProperties with the occluding layer.
@@ -4456,7 +4438,7 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
   auto expected_occluded_tile_count_on_active =
       std::to_array<size_t>({12u, 3u});
   auto total_expected_occluded_tile_count_on_trees =
-      std::to_array<size_t>({15u, 4u});
+      std::to_array<size_t>({12u, 4u});
 
   // Verify number of occluded tiles on the pending layer for each tiling.
   for (size_t i = 0; i < pending_layer()->num_tilings(); ++i) {

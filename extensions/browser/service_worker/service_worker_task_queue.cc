@@ -133,8 +133,7 @@ void ServiceWorkerTaskQueue::DidStartWorkerForScope(
   const WorkerId worker_id = {extension_id, process_id, version_id, thread_id};
   ServiceWorkerState* worker_state = GetWorkerState(context_id);
   DCHECK(worker_state);
-  worker_state->DidStartWorkerForScope(worker_id, start_time,
-                                       ProcessManager::Get(browser_context_));
+  worker_state->DidStartWorkerForScope(worker_id, start_time);
   RunPendingTasksIfWorkerReady(context_id);
 }
 
@@ -250,8 +249,7 @@ void ServiceWorkerTaskQueue::DidStartServiceWorkerContext(
   ServiceWorkerState* worker_state = GetWorkerState(context_id);
   DCHECK(worker_state);
 
-  worker_state->DidStartServiceWorkerContext(
-      worker_id, ProcessManager::Get(browser_context_));
+  worker_state->DidStartServiceWorkerContext(worker_id);
   RunPendingTasksIfWorkerReady(context_id);
 }
 
@@ -440,7 +438,9 @@ void ServiceWorkerTaskQueue::ActivateExtension(const Extension* extension) {
   StartObserving(service_worker_context);
 
   auto [worker_state_iter, inserted] = worker_state_map_.try_emplace(
-      context_id, std::make_unique<ServiceWorkerState>(service_worker_context));
+      context_id,
+      std::make_unique<ServiceWorkerState>(
+          service_worker_context, ProcessManager::Get(browser_context_)));
   if (inserted) {
     worker_state_observations_.AddObservation(worker_state_iter->second.get());
   }
@@ -576,9 +576,7 @@ void ServiceWorkerTaskQueue::DeactivateExtension(const Extension* extension) {
 
 void ServiceWorkerTaskQueue::RunTasksAfterStartWorker(
     const SequencedContextId& context_id) {
-  if (context_id.browser_context_id != browser_context_->UniqueId()) {
-    return;
-  }
+  CHECK_EQ(context_id.browser_context_id, browser_context_->UniqueId());
 
   ServiceWorkerState* worker_state = GetWorkerState(context_id);
   DCHECK_NE(ServiceWorkerState::BrowserState::kStarted,

@@ -327,6 +327,9 @@
         "Linux": "experimental",
         "default": "",
       },
+      origin_trial_feature_name: "AIPromptAPIMultimodalInput",
+      origin_trial_os: ["win", "mac", "linux"],
+      origin_trial_allows_third_party: true,
       implied_by: ["AIPromptAPIMultimodalInput"],
     },
     {
@@ -352,6 +355,9 @@
         "Linux": "experimental",
         "default": "",
       },
+      origin_trial_feature_name: "AIPromptAPIMultimodalInput",
+      origin_trial_os: ["win", "mac", "linux"],
+      origin_trial_allows_third_party: true,
       base_feature_status: "enabled",
       copied_from_base_feature_if: "overridden",
     },
@@ -385,9 +391,9 @@
     {
       name: "AISummarizationAPI",
       status: {
-        "Win": "experimental",
-        "Mac": "experimental",
-        "Linux": "experimental",
+        "Win": "stable",
+        "Mac": "stable",
+        "Linux": "stable",
         "default": "",
       },
       origin_trial_feature_name: "AISummarizationAPI",
@@ -415,6 +421,10 @@
     {
       name: "AIWriterAPIForWorkers",
       public: true,
+    },
+    {
+      name: "AlignZoomToCenter",
+      status: "stable",
     },
     {
       name: "AllowContentInitiatedDataUrlNavigations",
@@ -479,7 +489,7 @@
     {
       // https://drafts.csswg.org/web-animations-2/#triggers
       name: "AnimationTrigger",
-      status: "test",
+      status: "experimental",
     },
     {
       name: "AnimationWorklet",
@@ -555,8 +565,10 @@
     },
     {
       name: "AudioOutputDevices",
-      // Android does not yet support switching of audio output devices
+      // Android support for switching audio output devices is not stable
       status: {"Android": "", "default": "stable"},
+      public: true,
+      base_feature: "none"
     },
     {
       name: "AudioVideoTracks",
@@ -935,6 +947,10 @@
       status: "stable",
     },
     {
+      name: "ClipElementVisibleBoundsInLocalRoot",
+      status: "stable",
+    },
+    {
       name: "ClipPathNestedRasterOptimization",
       status: "stable",
     },
@@ -1230,6 +1246,11 @@
       status: "experimental",
     },
     {
+      // Allows getComputedStyle() and similar to get information about :visited colors.
+      // Only safe if PartitionVisitedLinkDatabaseWithSelfLinks is enabled.
+      name: "CSSDoNotHideVisitedColor",
+    },
+    {
       name: "CSSDynamicRangeLimit",
       status: "stable",
     },
@@ -1339,6 +1360,11 @@
     {
       name: "CSSMixins",
       status: "test",
+    },
+    {
+      // Kill switch for crbug.com/378966977
+      name: "CSSNegatedFeatureless",
+      status: "stable",
     },
     {
       name: "CSSNestedPseudoElements",
@@ -1563,12 +1589,6 @@
       status: "experimental",
     },
     {
-      // TODO(https://crbug.com/1411581):
-      // https://w3c.github.io/csswg-drafts/css-inline-3/#propdef-leading-trim
-      name: "CSSTextBoxTrim",
-      status: "stable",
-    },
-    {
       // crbug.com/1463890, crbug.com/1463891: CSS `text-spacing` shorthand
       name: "CSSTextSpacing",
       depends_on: ["CSSTextAutoSpace"],
@@ -1586,6 +1606,10 @@
       // of the custom property being referenced.
       name: "CSSTypeAgnosticVarFallback",
       status: "stable",
+    },
+    {
+      name: "CSSTypedArithmetic",
+      status: "experimental",
     },
     // Support for `user-select:contain`.
     {
@@ -2414,10 +2438,6 @@
       name: "ForceReduceMotion",
     },
     {
-      name: "ForceTallerSelectPopup",
-      status: {"ChromeOS": "stable"},
-    },
-    {
       // TODO(crbug.com/1419161): Remove this feature after M113 has been stable
       // for a few weeks or more. This is a kill switch that, when enabled, goes
       // back to the old behavior, which was to restore the state for <input>
@@ -2885,6 +2905,10 @@
     },
     {
       name: "LayoutIsAnonymousBlockFix",
+      status: "stable",
+    },
+    {
+      name: "LayoutMinSizeAutoIndefinite",
       status: "stable",
     },
     {
@@ -4409,13 +4433,6 @@
       status: "stable",
     },
     {
-      // Sets the minimum target size of <option> in <select> to 24x24 CSS
-      // pixels to meet Accessibility standards.
-      // https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html
-      name: "SelectOptionAccessibilityTargetSize",
-      status: "stable",
-    },
-    {
       // Makes the HTML parser allow most tags inside of <select> instead of
       // only <option>, <optgroup>, and <hr>.
       // https://github.com/whatwg/html/issues/10310
@@ -4470,6 +4487,12 @@
     {
       name: "ServiceWorkerClientLifecycleState",
       status: "experimental",
+    },
+    {
+      // Support for Service Worker APIs in Dedicated Workers.
+      // See https://chromestatus.com/feature/6497653025931264
+      // See https://issues.chromium.org/issues/40364838
+      name: "ServiceWorkerInDedicatedWorker",
     },
     {
       name: "ServiceWorkerStaticRouterTimingInfo",
@@ -4610,7 +4633,6 @@
     {
       name: "SoftNavigationHeuristics",
       status: "experimental",
-      depends_on: ["NavigationId","SoftNavigationDetectionAdvancedPaintAttribution"],
       origin_trial_allows_third_party: true,
       origin_trial_feature_name: "SoftNavigationHeuristics",
     },
@@ -4636,14 +4658,6 @@
       status: "stable",
     },
     {
-      name: "SpeculationRulesPointerDownHeuristics",
-      base_feature_status: "enabled",
-    },
-    {
-      name: "SpeculationRulesPointerHoverHeuristics",
-      base_feature_status: "enabled",
-    },
-    {
       name: "SpeculationRulesPrefetchWithSubresources",
     },
     {
@@ -4652,8 +4666,7 @@
       name: "SpeculationRulesTargetHint",
       origin_trial_feature_name: "SpeculationRulesTargetHint",
       base_feature: "Prerender2InNewTab",
-      status: "experimental",
-      base_feature_status: "enabled",
+      status: "stable",
       copied_from_base_feature_if: "overridden",
     },
     {
@@ -4672,6 +4685,11 @@
       name: "StableBlinkFeatures",
       status: "stable",
       base_feature: "none",
+    },
+    // Killswitch for https://crbug.com/40915318
+    {
+      name: "StandardHistoryStateEmptyUrlHandling",
+      status: "stable",
     },
     {
       // See https://github.com/w3c/csswg-drafts/issues/9398
@@ -5029,21 +5047,10 @@
       origin_trial_allows_third_party: true,
       base_feature_status: "enabled",
       copied_from_base_feature_if: "overridden",
-      implied_by: ["TranslationAPIV1"],
     },
     {
       name: "TranslationAPIForWorkers",
       public: true,
-    },
-    {
-      name: "TranslationAPIV1",
-      status: {
-        "Win": "experimental",
-        "Mac": "experimental",
-        "Linux": "experimental",
-        "default": "",
-      },
-      copied_from_base_feature_if: "overridden",
     },
     {
       // Ensures symbols are treated as word boundaries during traversal.
@@ -5389,6 +5396,7 @@
     {
       name: "WebAuthenticationImmediateGet",
       origin_trial_feature_name: "WebAuthenticationImmediateGet",
+      origin_trial_os: ["win", "mac", "linux", "chromeos"],
       base_feature: "none",
       public: true,
     },
@@ -5694,7 +5702,7 @@
       name: "WebXRDepthPerformance",
       depends_on: ["WebXR"],
       public: true,
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "WebXREnabledFeatures",
@@ -5775,6 +5783,10 @@
       name: "WebXRSpecParity",
       depends_on: ["WebXR"],
       public: true,
+      status: "experimental",
+    },
+    {
+      name: "WidthAndHeightAsPresentationAttributesOnNestedSvg",
       status: "experimental",
     },
     // If enabled, window.default[Ss]tatus will be supported. This is disabled

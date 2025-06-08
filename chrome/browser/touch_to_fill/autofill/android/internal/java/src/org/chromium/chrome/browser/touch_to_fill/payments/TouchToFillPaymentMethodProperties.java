@@ -47,11 +47,14 @@ class TouchToFillPaymentMethodProperties {
         // method available.
         int FILL_BUTTON = 4;
 
+        // A button that redirects the user to the Wallet settings in Chrome.
+        int WALLET_SETTINGS_BUTTON = 5;
+
         // A footer section containing additional actions.
-        int FOOTER = 5;
+        int FOOTER = 6;
 
         // A section with a terms label is present when card benefits are available.
-        int TERMS_LABEL = 6;
+        int TERMS_LABEL = 7;
     }
 
     /** Metadata associated with a card's image. */
@@ -176,6 +179,21 @@ class TouchToFillPaymentMethodProperties {
         static final PropertyKey[] ALL_KEYS = {IMAGE_DRAWABLE_ID, TITLE_ID, SUBTITLE_ID};
 
         private HeaderProperties() {}
+    }
+
+    /**
+     * Properties defined here reflect the visible state of a button in the TouchToFill sheet for
+     * payments.
+     */
+    static class ButtonProperties {
+        static final PropertyModel.ReadableIntPropertyKey TEXT_ID =
+                new PropertyModel.ReadableIntPropertyKey("text_id");
+        static final PropertyModel.ReadableObjectPropertyKey<Runnable> ON_CLICK_ACTION =
+                new ReadableObjectPropertyKey<>("open_click_action");
+
+        static final PropertyKey[] ALL_KEYS = {TEXT_ID, ON_CLICK_ACTION};
+
+        private ButtonProperties() {}
     }
 
     /**

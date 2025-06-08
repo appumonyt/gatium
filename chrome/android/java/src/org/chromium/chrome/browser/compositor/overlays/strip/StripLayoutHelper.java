@@ -98,6 +98,7 @@ import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilterObserver;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelUtils;
+import org.chromium.chrome.browser.tasks.tab_management.GroupSharedState;
 import org.chromium.chrome.browser.tasks.tab_management.TabBubbler;
 import org.chromium.chrome.browser.tasks.tab_management.TabCardLabelData;
 import org.chromium.chrome.browser.tasks.tab_management.TabGroupListBottomSheetCoordinator;
@@ -702,7 +703,7 @@ public class StripLayoutHelper
         // Create tab menu
         mCloseButtonMenu = new ListPopupWindow(mContext);
         mCloseButtonMenu.setAdapter(
-                new ArrayAdapter<String>(
+                new ArrayAdapter<>(
                         mContext,
                         R.layout.one_line_list_item,
                         new String[] {
@@ -1294,7 +1295,10 @@ public class StripLayoutHelper
                     0,
                     () ->
                             attemptToShowTabStripIph(
-                                    groupTitle, /* tab= */ null, IphType.TAB_GROUP_SYNC));
+                                    groupTitle,
+                                    /* tab= */ null,
+                                    IphType.TAB_GROUP_SYNC,
+                                    /* enableSnoozeMode= */ false));
             mLastSyncedGroupRootIdForIph = Tab.INVALID_TAB_ID;
         }
 
@@ -1320,17 +1324,21 @@ public class StripLayoutHelper
      * @param tab The tab to show the IPH on. Pass in {@code null} if the IPH is not tied to a
      *     particular tab.
      * @param iphType The type of the IPH to be shown.
+     * @param enableSnoozeMode Whether to enable snooze mode on the IPH.
      * @return true if {@code showIphOnTabStrip} should be executed immediately; false to retry at a
      *     later time.
      */
     // TODO:(crbug.com/375271955) Ensure sync IPH doesn't show when joining a collaboration group.
     private boolean attemptToShowTabStripIph(
-            StripLayoutGroupTitle groupTitle, @Nullable StripLayoutTab tab, @IphType int iphType) {
+            @Nullable StripLayoutGroupTitle groupTitle,
+            @Nullable StripLayoutTab tab,
+            @IphType int iphType,
+            boolean enableSnoozeMode) {
         // Remove the showTabStrip callback from the queue, as showing IPH is not applicable in
         // these cases.
         if (mModel.isIncognito()
                 || mModel.getProfile() == null
-                || groupTitle == null
+                || (tab == null && groupTitle == null)
                 || !mTabStripIphController.wouldTriggerIph(iphType)) {
             return true;
         }
@@ -1346,7 +1354,7 @@ public class StripLayoutHelper
         }
 
         mTabStripIphController.showIphOnTabStrip(
-                groupTitle, tab, mToolbarContainerView, iphType, mHeight);
+                groupTitle, tab, mToolbarContainerView, iphType, mHeight, enableSnoozeMode);
         return true;
     }
 
@@ -1582,6 +1590,21 @@ public class StripLayoutHelper
             } else {
                 bringSelectedTabToVisibleArea(time, animate);
             }
+        }
+
+        // 5. Trigger IPH for tab tearing on XR if applicable.
+        if (XrUtils.isXrDevice()
+                && mStripTabs.length > 1
+                && !onStartup
+                && !closureCancelled
+                && stripTab != null) {
+            mQueuedIphList.add(
+                    () ->
+                            attemptToShowTabStripIph(
+                                    /* groupTitle */ null,
+                                    stripTab,
+                                    IphType.TAB_TEARING_XR,
+                                    /* enableSnoozeMode= */ true));
         }
 
         mUpdateHost.requestUpdate();
@@ -2194,6 +2217,21 @@ public class StripLayoutHelper
         mTabContextMenuCoordinator.showMenu(anchorRectProvider, tab.getTabId());
     }
 
+    /**
+     * Opens the context menu for the keyboard-focused view, if applicable.
+     *
+     * @return Whether the context menu was successfully opened.
+     */
+    public boolean openKeyboardFocusedContextMenu() {
+        List<VirtualView> virtualViews = new ArrayList<>();
+        getVirtualViews(virtualViews);
+        for (VirtualView view : virtualViews) {
+            if (!view.isKeyboardFocused()) continue;
+            return showContextMenu((StripLayoutView) view);
+        }
+        return false;
+    }
+
     /* package */ void showTabContextMenuForTesting(StripLayoutTab tab) {
         showTabContextMenu(tab);
     }
@@ -2226,10 +2264,11 @@ public class StripLayoutHelper
      */
     private void updateOrClearSharedState(GroupData groupData, StripLayoutGroupTitle groupTitle) {
         if (groupTitle == null) return;
-        if (TabShareUtils.hasMultipleCollaborators(groupData)) {
-            updateSharedTabGroup(groupData.groupToken.collaborationId, groupTitle);
-        } else {
+        @GroupSharedState int groupSharedState = TabShareUtils.discernSharedGroupState(groupData);
+        if (groupSharedState == GroupSharedState.NOT_SHARED) {
             clearSharedTabGroup(groupTitle);
+        } else {
+            updateSharedTabGroup(groupData.groupToken.collaborationId, groupTitle);
         }
     }
 
@@ -2246,10 +2285,7 @@ public class StripLayoutHelper
             if (savedTabGroup == null || savedTabGroup.collaborationId == null) return;
 
             GroupData groupData = mCollaborationService.getGroupData(savedTabGroup.collaborationId);
-
-            if (TabShareUtils.hasMultipleCollaborators(groupData)) {
-                updateSharedTabGroup(savedTabGroup.collaborationId, groupTitle);
-            }
+            updateOrClearSharedState(groupData, groupTitle);
         }
     }
 
@@ -2867,16 +2903,28 @@ public class StripLayoutHelper
         mUpdateHost.requestUpdate();
     }
 
-    private void showContextMenu(StripLayoutView clickedView) {
+    /**
+     * Show the context menu originating at {@param clickedView}, and returns true if a context menu
+     * was shown. (Note: this will return false if there is no context menu to be shown at {@param
+     * clickedView}.
+     *
+     * @param clickedView The view for which to show a context menu.
+     * @return Whether a context menu was shown.
+     */
+    private boolean showContextMenu(StripLayoutView clickedView) {
         if (clickedView instanceof StripLayoutTab clickedTab
                 && ChromeFeatureList.isEnabled(ChromeFeatureList.TAB_STRIP_CONTEXT_MENU)) {
             showTabContextMenu(clickedTab);
+            return true;
         } else if (clickedView instanceof CompositorButton button
                 && button.getType() == ButtonType.TAB_CLOSE) {
             showCloseButtonMenu((StripLayoutTab) button.getParentView());
+            return true;
         } else if (clickedView instanceof StripLayoutGroupTitle groupTitle) {
             showTabGroupContextMenu(groupTitle, /* shouldWaitForUpdate= */ false);
+            return true;
         }
+        return false;
     }
 
     private void handleTabClick(StripLayoutTab tab) {
@@ -4394,7 +4442,8 @@ public class StripLayoutHelper
                                     attemptToShowTabStripIph(
                                             groupTitle,
                                             /* tab= */ null,
-                                            IphType.GROUP_TITLE_NOTIFICATION_BUBBLE));
+                                            IphType.GROUP_TITLE_NOTIFICATION_BUBBLE,
+                                            /* enableSnoozeMode= */ false));
                 }
                 updateForCollapsedGroup = true;
             } else if (groupTitle != null && !groupTitle.isCollapsed()) {
@@ -4402,7 +4451,10 @@ public class StripLayoutHelper
                     mQueuedIphList.add(
                             () ->
                                     attemptToShowTabStripIph(
-                                            groupTitle, stripTab, IphType.TAB_NOTIFICATION_BUBBLE));
+                                            groupTitle,
+                                            stripTab,
+                                            IphType.TAB_NOTIFICATION_BUBBLE,
+                                            /* enableSnoozeMode= */ false));
                 }
             }
             // Update tab bubble and the related accessibility description.

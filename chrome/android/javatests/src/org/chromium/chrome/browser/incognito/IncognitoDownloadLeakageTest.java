@@ -92,9 +92,9 @@ public class IncognitoDownloadLeakageTest {
                 public void onAllDownloadsRetrieved(
                         List<DownloadItem> list, ProfileKey profileKey) {
                     if (profileKey.isOffTheRecord()) {
-                        mOffTheRecordDownloadItems = new ArrayList<DownloadItem>(list);
+                        mOffTheRecordDownloadItems = new ArrayList<>(list);
                     } else {
-                        mRegularDownloadItems = new ArrayList<DownloadItem>(list);
+                        mRegularDownloadItems = new ArrayList<>(list);
                     }
                     mRetrieveDownloadsCallback.notifyCalled();
                 }
@@ -211,7 +211,8 @@ public class IncognitoDownloadLeakageTest {
     @Test
     @LargeTest
     @UseMethodParameter(IncognitoDataTestUtils.TestParams.IncognitoToRegular.class)
-    public void testIncognitoDowloadEntriesNotVisibleInRegular(
+    @DisabledTest(message = "crbug.com/422225234")
+    public void testIncognitoDownloadEntriesNotVisibleInRegular(
             String incognitoActivityType, String regularActivityType) throws Exception {
         IncognitoDataTestUtils.ActivityType incognitoActivity =
                 IncognitoDataTestUtils.ActivityType.valueOf(incognitoActivityType);
@@ -257,7 +258,7 @@ public class IncognitoDownloadLeakageTest {
     @LargeTest
     @UseMethodParameter(IncognitoDataTestUtils.TestParams.IncognitoToIncognito.class)
     @DisabledTest(message = "crbug.com/391749002, crbug.com/40935094")
-    public void testIncognitoDowloadEntriesNotVisibleInAnotherIncognito(
+    public void testIncognitoDownloadEntriesNotVisibleInAnotherIncognito(
             String incognitoActivityType1, String incognitoActivityType2) throws Exception {
         IncognitoDataTestUtils.ActivityType incognitoActivity1 =
                 IncognitoDataTestUtils.ActivityType.valueOf(incognitoActivityType1);

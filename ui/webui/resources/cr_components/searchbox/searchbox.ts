@@ -143,7 +143,7 @@ export class SearchboxElement extends SearchboxElementBase {
 
       composeButtonEnabled: {
         type: Boolean,
-        value: () => loadTimeData.getBoolean('searchboxShowComposeButton'),
+        value: () => loadTimeData.getBoolean('searchboxShowComposeEntrypoint'),
         reflectToAttribute: true,
       },
 
@@ -358,7 +358,7 @@ export class SearchboxElement extends SearchboxElementBase {
     performance.measure('realbox-creation', 'realbox-creation-start');
   }
 
-  getSuggestionsElement(): HTMLElement {
+  getSuggestionsElement(): SearchboxDropdownElement {
     return this.$.matches;
   }
 
@@ -943,6 +943,12 @@ export class SearchboxElement extends SearchboxElementBase {
     this.isDeletingInput_ = lastInputValue.length > newInputValue.length &&
         lastInputValue.startsWith(newInputValue);
     this.lastInput_ = newInput;
+  }
+
+  private getThumbnailTabindex_(): string {
+    // If the thumbnail can't be deleted, returning an empty string will set the
+    // tabindex to nothing, which will make the thumbnail not focusable.
+    return this.isThumbnailDeletable_ ? '1' : '';
   }
 }
 

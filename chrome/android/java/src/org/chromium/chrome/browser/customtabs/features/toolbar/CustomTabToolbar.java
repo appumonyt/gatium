@@ -44,6 +44,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.ColorInt;
+import androidx.annotation.ColorRes;
 import androidx.annotation.DimenRes;
 import androidx.annotation.Dimension;
 import androidx.annotation.DrawableRes;
@@ -52,7 +53,9 @@ import androidx.annotation.Nullable;
 import androidx.annotation.Px;
 import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.content.res.AppCompatResources;
+import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.browser.customtabs.CustomTabsIntent.CloseButtonPosition;
+import androidx.browser.customtabs.ExperimentalOpenInBrowser;
 import androidx.core.view.MarginLayoutParamsCompat;
 import androidx.core.widget.ImageViewCompat;
 
@@ -67,7 +70,10 @@ import org.chromium.base.task.TaskTraits;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.browser_controls.BrowserStateBrowserControlsVisibilityDelegate;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider;
+import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider.CustomTabProfileType;
+import org.chromium.chrome.browser.browserservices.intents.CustomButtonParams.ButtonType;
 import org.chromium.chrome.browser.customtabs.CustomTabFeatureOverridesManager;
+import org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider.CustomTabsButtonState;
 import org.chromium.chrome.browser.customtabs.features.CustomTabDimensionUtils;
 import org.chromium.chrome.browser.customtabs.features.branding.ToolbarBrandingDelegate;
 import org.chromium.chrome.browser.customtabs.features.branding.ToolbarBrandingOverlayCoordinator;
@@ -100,6 +106,7 @@ import org.chromium.chrome.browser.theme.SurfaceColorUpdateUtils;
 import org.chromium.chrome.browser.theme.ThemeUtils;
 import org.chromium.chrome.browser.toolbar.LocationBarModel;
 import org.chromium.chrome.browser.toolbar.ToolbarProgressBar;
+import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarButtonVariant;
 import org.chromium.chrome.browser.toolbar.menu_button.MenuButton;
 import org.chromium.chrome.browser.toolbar.optional_button.ButtonData;
 import org.chromium.chrome.browser.toolbar.optional_button.OptionalButtonCoordinator;
@@ -406,9 +413,35 @@ public class CustomTabToolbar extends ToolbarLayout implements View.OnLongClickL
      * @param intentDataProvider {@link BrowserServicesIntentDataProvider} for accessing CCT intent
      *     data.
      */
+    @ExperimentalOpenInBrowser
     public void calculateToolbarWidthBeforeMeasure(
             Activity activity, BrowserServicesIntentDataProvider intentDataProvider) {
-        if (mIntentDataProvider == null) mIntentDataProvider = intentDataProvider;
+        if (mIntentDataProvider == null) {
+            mIntentDataProvider = intentDataProvider;
+            @CustomTabsButtonState
+            int shareState =
+                    switch (intentDataProvider.getShareButtonState()) {
+                        case CustomTabsIntent.SHARE_STATE_OFF -> CustomTabsButtonState
+                                .BUTTON_STATE_OFF;
+                        case CustomTabsIntent.SHARE_STATE_DEFAULT -> CustomTabsButtonState
+                                .BUTTON_STATE_DEFAULT;
+                        case CustomTabsIntent.SHARE_STATE_ON -> CustomTabsButtonState
+                                .BUTTON_STATE_ON;
+                        default -> CustomTabsButtonState.BUTTON_STATE_DEFAULT;
+                    };
+            @CustomTabsButtonState
+            int oibState =
+                    switch (intentDataProvider.getOpenInBrowserButtonState()) {
+                        case CustomTabsIntent.OPEN_IN_BROWSER_STATE_OFF -> CustomTabsButtonState
+                                .BUTTON_STATE_OFF;
+                        case CustomTabsIntent.OPEN_IN_BROWSER_STATE_DEFAULT -> CustomTabsButtonState
+                                .BUTTON_STATE_DEFAULT;
+                        case CustomTabsIntent.OPEN_IN_BROWSER_STATE_ON -> CustomTabsButtonState
+                                .BUTTON_STATE_ON;
+                        default -> CustomTabsButtonState.BUTTON_STATE_DEFAULT;
+                    };
+            mButtonVisibilityRule.setCustomButtonState(shareState, oibState);
+        }
         mButtonVisibilityRule.setToolbarWidth(
                 CustomTabDimensionUtils.getInitialWidth(activity, intentDataProvider));
     }
@@ -447,7 +480,7 @@ public class CustomTabToolbar extends ToolbarLayout implements View.OnLongClickL
 
     @Override
     protected void addCustomActionButton(
-            Drawable drawable, String description, OnClickListener listener) {
+            Drawable drawable, String description, OnClickListener listener, @ButtonType int type) {
         if (ChromeFeatureList.sCctToolbarRefactor.isEnabled()) return;
 
         ImageButton button =
@@ -474,12 +507,12 @@ public class CustomTabToolbar extends ToolbarLayout implements View.OnLongClickL
             // 16:act1:8 - 8:menu:16
             paddingStart = getDimensionPx(R.dimen.custom_tabs_toolbar_button_spacer_16);
             paddingEnd = getDimensionPx(R.dimen.custom_tabs_toolbar_button_spacer_8);
-            mButtonVisibilityRule.addButton(ButtonId.CUSTOM_1, button, true);
+            mButtonVisibilityRule.addButtonForCustomAction(ButtonId.CUSTOM_1, button, true, type);
         } else {
             // 24:act2:0 - 16:act1:8 - 8:menu:16
             paddingStart = getDimensionPx(R.dimen.custom_tabs_toolbar_button_spacer_24);
             paddingEnd = 0;
-            mButtonVisibilityRule.addButton(ButtonId.CUSTOM_2, button, true);
+            mButtonVisibilityRule.addButtonForCustomAction(ButtonId.CUSTOM_2, button, true, type);
 
             // The 2nd custom button disables optional button.
             mButtonVisibilityRule.addButton(ButtonId.MTB, /* view= */ null, /* visible= */ false);
@@ -1147,7 +1180,7 @@ public class CustomTabToolbar extends ToolbarLayout implements View.OnLongClickL
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        int measuredWidth = getMeasuredWidth();
+        int measuredWidth = MeasureSpec.getSize(widthMeasureSpec);
         if (measuredWidth > 0 && mToolbarWidth != measuredWidth) {
             mToolbarWidth = measuredWidth;
             if (mOnNewWidthMeasuredListener != null) {
@@ -1448,8 +1481,16 @@ public class CustomTabToolbar extends ToolbarLayout implements View.OnLongClickL
         }
 
         private void updateOptionalButton(ButtonData buttonData) {
-            if (hasMultipleDevButtons()) return;
             if (mOptionalButtonCoordinator == null) initializeOptionalButton();
+
+            // See if we should show an indicator if optional button cannot be shown. This check
+            // needs to be invoked _after_ optional button initialization is attempted, in order
+            // to determine its visibility in case it gets hidden due to toolbar width/button count
+            // constraints.
+            if (maybeShowAlternativeUiForOptionalButton(
+                    buttonData.getButtonSpec().getButtonVariant())) {
+                return;
+            }
 
             Tab tab = getCurrentTab();
             if (tab != null && mTrackerSupplier.get() == null) {
@@ -1458,9 +1499,26 @@ public class CustomTabToolbar extends ToolbarLayout implements View.OnLongClickL
             mOptionalButtonCoordinator.updateButton(buttonData, isIncognitoBranded());
         }
 
+        private boolean maybeShowAlternativeUiForOptionalButton(
+                @AdaptiveToolbarButtonVariant int buttonVariant) {
+            if (mOptionalButtonCoordinator == null || shouldShowOptionalButton()) return false;
+
+            boolean show = buttonVariant != AdaptiveToolbarButtonVariant.READER_MODE;
+            mMenuButton.findViewById(R.id.menu_dot).setVisibility(show ? View.VISIBLE : View.GONE);
+            return true;
+        }
+
         private void updateOptionalButtonTint() {
             if (mOptionalButtonCoordinator != null) {
                 mOptionalButtonCoordinator.setIconForegroundColor(mTint);
+                ImageView menuDot = mMenuButton.findViewById(R.id.menu_dot);
+                if (mIntentDataProvider.getCustomTabMode() == CustomTabProfileType.INCOGNITO) {
+                    @ColorRes int tint = R.color.default_icon_color_blue_light;
+                    ImageViewCompat.setImageTintList(
+                            menuDot, AppCompatResources.getColorStateList(getContext(), tint));
+                } else if (mIntentDataProvider.getColorProvider().hasCustomToolbarColor()) {
+                    ImageViewCompat.setImageTintList(menuDot, mTint);
+                }
             }
         }
 
@@ -1687,7 +1745,7 @@ public class CustomTabToolbar extends ToolbarLayout implements View.OnLongClickL
 
             if (hideUrlBar && mState == STATE_DOMAIN_AND_TITLE) {
                 mState = STATE_TITLE_ONLY;
-                mAnimDelegate.setTitleAnimationEnabled(false);
+                mAnimDelegate.disableTitleAnimation();
                 mUrlBar.setVisibility(View.GONE);
                 mTitleBar.setVisibility(View.VISIBLE);
                 LayoutParams lp = (LayoutParams) mTitleBar.getLayoutParams();

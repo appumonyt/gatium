@@ -41,6 +41,7 @@
 #include "ash/wm/wm_metrics.h"
 #include "base/containers/adapters.h"
 #include "base/containers/fixed_flat_map.h"
+#include "base/debug/crash_logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/types/cxx23_to_underlying.h"
@@ -1371,7 +1372,9 @@ void WindowState::OnWindowDestroying(aura::Window* window) {
   auto* widget = views::Widget::GetWidgetForNativeWindow(window);
   if (widget)
     Shell::Get()->focus_cycler()->RemoveWidget(widget);
-
+  if (delegate_) {
+    delegate_->OnWindowDestroying();
+  }
   current_state_->OnWindowDestroying(this);
   delegate_.reset();
 }

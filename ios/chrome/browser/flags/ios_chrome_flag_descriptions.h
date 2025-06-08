@@ -229,6 +229,9 @@ extern const char kDataSharingJoinOnlyDescription[];
 extern const char kDefaultBrowserBannerPromoName[];
 extern const char kDefaultBrowserBannerPromoDescription[];
 
+extern const char kDefaultBrowserPromoPropensityModelName[];
+extern const char kDefaultBrowserPromoPropensityModelDescription[];
+
 extern const char kDefaultBrowserTriggerCriteriaExperimentName[];
 extern const char kDefaultBrowserTriggerCriteriaExperimentDescription[];
 
@@ -255,6 +258,9 @@ extern const char kEnableFeedCardMenuSignInPromoDescription[];
 
 extern const char kEnableTraitCollectionRegistrationName[];
 extern const char kEnableTraitCollectionRegistrationDescription[];
+
+extern const char kDisableAutofillStrikeSystemName[];
+extern const char kDisableAutofillStrikeSystemDescription[];
 
 extern const char kDisableLensCameraName[];
 extern const char kDisableLensCameraDescription[];
@@ -366,6 +372,9 @@ extern const char kIOSEnablePasswordManagerTrustedVaultWidgetDescription[];
 
 extern const char kIOSEnableRealtimeEventReportingName[];
 extern const char kIOSEnableRealtimeEventReportingDescription[];
+
+extern const char kIOSFillRecoveryPasswordName[];
+extern const char kIOSFillRecoveryPasswordDescription[];
 
 extern const char kIOSKeyboardAccessoryUpgradeName[];
 extern const char kIOSKeyboardAccessoryUpgradeDescription[];

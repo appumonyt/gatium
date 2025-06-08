@@ -23,6 +23,7 @@
 #include "components/password_manager/core/browser/ui/saved_passwords_presenter.h"
 #include "components/password_manager/core/common/password_manager_constants.h"
 #include "components/password_manager/services/csv_password/fake_password_parser_service.h"
+#include "components/user_data_importer/utility/safari_data_import_manager.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -31,9 +32,22 @@
 
 namespace user_data_importer {
 
+class TestSafariDataImportManager : public SafariDataImportManager {
+ public:
+  TestSafariDataImportManager() = default;
+  ~TestSafariDataImportManager() override = default;
+
+  void ParseBookmarks(
+      const base::FilePath& bookmarks_html,
+      base::OnceCallback<void(BookmarkParsingResult)> callback) override {}
+};
+
 class SafariDataImporterTest : public testing::Test {
  public:
-  SafariDataImporterTest() : receiver_{&service_}, importer_(&presenter_) {
+  SafariDataImporterTest()
+      : receiver_{&service_},
+        importer_(&presenter_,
+                  std::make_unique<TestSafariDataImportManager>()) {
     mojo::PendingRemote<password_manager::mojom::CSVPasswordParser>
         pending_remote{receiver_.BindNewPipeAndPassRemote()};
     importer_.password_importer_->SetServiceForTesting(
@@ -103,8 +117,11 @@ class SafariDataImporterTest : public testing::Test {
 
   void ImportBookmarks(std::string html_data) {
     bookmarks_callback_called_ = false;
+    base::ScopedTempFile file;
+    ASSERT_TRUE(file.Create());
+    base::WriteFile(file.path(), html_data);
     importer_.ImportBookmarks(
-        std::move(html_data),
+        std::move(file),
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
         base::BindOnce(&SafariDataImporterTest::OnBookmarksConsumed,
@@ -113,10 +130,9 @@ class SafariDataImporterTest : public testing::Test {
         base::test::RunUntil([&]() { return bookmarks_callback_called_; }));
   }
 
-  void ImportHistory(std::string zip_file_name) {
+  void ImportHistory() {
     history_callback_called_ = false;
     importer_.ImportHistory(
-        std::move(zip_file_name),
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
         base::BindOnce(&SafariDataImporterTest::OnURLsConsumed,
@@ -137,13 +153,37 @@ class SafariDataImporterTest : public testing::Test {
         base::test::RunUntil([&]() { return passwords_callback_called_; }));
   }
 
+  void ExecuteImportPasswords() {
+    passwords_callback_called_ = false;
+    importer_.ContinueImport(
+        std::vector<int>(),
+        // Use of Unretained below is safe because the RunUntil loop below
+        // guarantees this outlives the tasks.
+        base::BindOnce(&SafariDataImporterTest::OnPasswordsConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnBookmarksConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnURLsConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnPaymentCardsConsumed,
+                       base::Unretained(this)));
+    ASSERT_TRUE(
+        base::test::RunUntil([&]() { return passwords_callback_called_; }));
+  }
+
   void ResolvePasswordConflicts(const std::vector<int>& selected_ids) {
     passwords_callback_called_ = false;
-    importer_.ResolvePasswordConflicts(
+    importer_.ContinueImport(
         selected_ids,
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
         base::BindOnce(&SafariDataImporterTest::OnPasswordsConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnBookmarksConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnURLsConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnPaymentCardsConsumed,
                        base::Unretained(this)));
     ASSERT_TRUE(
         base::test::RunUntil([&]() { return passwords_callback_called_; }));
@@ -167,7 +207,7 @@ class SafariDataImporterTest : public testing::Test {
     history_callback_called_ = false;
     payment_cards_callback_called_ = false;
 
-    importer_.Import(
+    importer_.StartImport(
         base::FilePath(FILE_PATH_LITERAL("/invalid/path/to/zip/file")),
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
@@ -261,7 +301,7 @@ TEST_F(SafariDataImporterTest, NoBookmark) {
 }
 
 TEST_F(SafariDataImporterTest, NoHistory) {
-  ImportHistory("");
+  ImportHistory();
 
   ASSERT_EQ(GetNumberOfURLsImported(), 0);
 }
@@ -287,9 +327,15 @@ TEST_F(SafariDataImporterTest, PasswordImport) {
       "http://example2.com,username1,password3,note3\n";
 
   ImportPasswords(kTestCSVInput);
-
   password_manager::ImportResults import_results = GetImportResults();
+  ASSERT_EQ(import_results.number_imported, 0u);
+  ASSERT_EQ(import_results.number_to_import, 3u);
+
+  // Confirm password import.
+  ExecuteImportPasswords();
+  import_results = GetImportResults();
   ASSERT_EQ(import_results.number_imported, 3u);
+  ASSERT_EQ(import_results.number_to_import, 0u);
 }
 
 TEST_F(SafariDataImporterTest, PasswordImportConflicts) {
@@ -307,12 +353,20 @@ TEST_F(SafariDataImporterTest, PasswordImportConflicts) {
   // Import 3 passwords.
   ImportPasswords(kTestCSVInput);
   password_manager::ImportResults import_results = GetImportResults();
+  ASSERT_EQ(import_results.number_imported, 0u);
+  ASSERT_EQ(import_results.number_to_import, 3u);
+
+  // Confirm password import.
+  ExecuteImportPasswords();
+  import_results = GetImportResults();
   ASSERT_EQ(import_results.number_imported, 3u);
+  ASSERT_EQ(import_results.number_to_import, 0u);
 
   // Attempt to import 2 conflicting passwords, which should fail.
   ImportPasswords(kTestCSVConflicts);
   import_results = GetImportResults();
   ASSERT_EQ(import_results.number_imported, 0u);
+  ASSERT_EQ(import_results.number_to_import, 0u);
   // 2 conflicting entries need to be displayed to the user.
   ASSERT_EQ(import_results.displayed_entries.size(), 2u);
 
@@ -323,6 +377,7 @@ TEST_F(SafariDataImporterTest, PasswordImportConflicts) {
   ResolvePasswordConflicts(selected_ids);
   import_results = GetImportResults();
   ASSERT_EQ(import_results.number_imported, 2u);
+  ASSERT_EQ(import_results.number_to_import, 0u);
 }
 
 TEST_F(SafariDataImporterTest, CallbacksAreCalled) {

@@ -43,8 +43,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
 #include "base/trace_event/memory_dump_manager.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/expected_macros.h"
 #include "build/build_config.h"
 #include "components/services/storage/indexed_db/locks/partitioned_lock.h"
@@ -2168,6 +2168,19 @@ Status BackingStore::Transaction::RenameIndex(int64_t object_store_id,
 
 void BackingStore::FlushForTesting() {
   db_->CompactAll();
+}
+
+blink::mojom::IDBValuePtr BackingStore::Transaction::BuildMojoValue(
+    IndexedDBValue value) {
+  auto mojo_value = blink::mojom::IDBValue::New();
+  if (!value.empty()) {
+    mojo_value->bits = std::move(value.bits);
+  }
+  IndexedDBExternalObject::ConvertToMojo(value.external_objects,
+                                         &mojo_value->external_objects);
+  backing_store_->bucket_context_->CreateAllExternalObjects(
+      value.external_objects, &mojo_value->external_objects);
+  return mojo_value;
 }
 
 StatusOr<IndexedDBValue> BackingStore::Transaction::GetRecord(

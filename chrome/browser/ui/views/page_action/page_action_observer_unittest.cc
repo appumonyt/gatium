@@ -6,7 +6,6 @@
 
 #include <optional>
 
-#include "chrome/browser/ui/tabs/test/mock_tab_interface.h"
 #include "chrome/browser/ui/views/page_action/page_action_controller.h"
 #include "chrome/browser/ui/views/page_action/page_action_model.h"
 #include "chrome/browser/ui/views/page_action/page_action_model_observer.h"
@@ -15,6 +14,7 @@
 #include "chrome/browser/ui/views/page_action/test_support/noop_page_action_metrics_recorder.h"
 #include "chrome/browser/ui/views/page_action/test_support/test_page_action_properties_provider.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/tabs/public/mock_tab_interface.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -116,7 +116,7 @@ class PageActionObserverTest : public ::testing::Test {
   PageActionObserverTest() : tab_(nullptr) {}
 
   void SetUp() override {
-    controller_ = std::make_unique<PageActionController>(
+    controller_ = std::make_unique<PageActionControllerImpl>(
         nullptr, &model_factory_, &metrics_factory_);
     controller_->Initialize(tab_, {kTestPageActionId},
                             TestPageActionPropertiesProvider(kTestProperties));
@@ -135,7 +135,7 @@ class PageActionObserverTest : public ::testing::Test {
   FakeTabInterface tab_;
   MockPageActionModelFactory model_factory_;
   NoopPageActionMetricsRecorderFactory metrics_factory_;
-  std::unique_ptr<PageActionController> controller_;
+  std::unique_ptr<PageActionControllerImpl> controller_;
 };
 
 TEST_F(PageActionObserverTest, OnPageActionIconShown) {

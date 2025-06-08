@@ -121,8 +121,7 @@ void AwFieldTrials::RegisterFeatureOverrides(base::FeatureList* feature_list) {
 
   // WebView does not support multiple processes, so don't try to call some
   // MediaDrm APIs in a separate process.
-  aw_feature_overrides.DisableFeature(
-      media::kAllowMediaCodecCallsInSeparateProcess);
+  aw_feature_overrides.DisableFeature(media::kMediaDrmQueryInSeparateProcess);
 
   aw_feature_overrides.DisableFeature(::features::kBackgroundFetch);
 
@@ -264,4 +263,9 @@ void AwFieldTrials::RegisterFeatureOverrides(base::FeatureList* feature_list) {
   // Disable draw cutout edge-to-edge on WebView. Safe area insets are not
   // handled correctly when WebView is drawing edge-to-edge.
   aw_feature_overrides.DisableFeature(features::kDrawCutoutEdgeToEdge);
+
+  // This is enabled for WebView to improve crbug.com/418159642.
+  // TODO(crbug.com/422161917): Revert this for the ablation study.
+  aw_feature_overrides.EnableFeature(
+      features::kServiceWorkerBackgroundUpdateForRegisteredStorageKeys);
 }

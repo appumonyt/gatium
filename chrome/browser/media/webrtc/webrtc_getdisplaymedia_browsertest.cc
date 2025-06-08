@@ -1627,7 +1627,9 @@ INSTANTIATE_TEST_SUITE_P(
         /*user_accepts=*/Bool()),
     &GetDisplayMediaConfersTransientActivationTest::GetDescription);
 
-IN_PROC_BROWSER_TEST_P(GetDisplayMediaConfersTransientActivationTest, RunTest) {
+// TODO(crbug.com/420406085): Re-enable the tests.
+IN_PROC_BROWSER_TEST_P(GetDisplayMediaConfersTransientActivationTest,
+                       DISABLED_RunTest) {
   // Setup
   ASSERT_TRUE(embedded_test_server()->Start());
   OpenTestPageInNewTab(kCapturedPageMain);
@@ -1697,8 +1699,9 @@ INSTANTIATE_TEST_SUITE_P(
         /*user_accepts=*/Bool()),
     &GetUserMediaDoesNotConferTransientActivationTest::GetDescription);
 
+// TODO(crbug.com/420406085): Re-enable the tests.
 IN_PROC_BROWSER_TEST_P(GetUserMediaDoesNotConferTransientActivationTest,
-                       RunTest) {
+                       DISABLED_RunTest) {
   if (!video_ && !audio_) {
     GTEST_SKIP();
   }

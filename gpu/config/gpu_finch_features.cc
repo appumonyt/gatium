@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/logging.h"
 #include "build/build_config.h"
 #include "gpu/config/gpu_switches.h"
 #include "ui/gl/gl_features.h"
@@ -384,6 +385,10 @@ const base::FeatureParam<bool> kSkiaGraphiteDawnBackendDebugLabels{
 // Whether the we should DumpWithoutCrashing when D3D related errors are detected.
 const base::FeatureParam<bool> kSkiaGraphiteDawnDumpWCOnD3DError{
     &kSkiaGraphite, "dawn_dumpwc_d3d_errors", true};
+
+// Whether the Dawn D3D11 flush should be delayed until the end of the frame.
+const base::FeatureParam<bool> kSkiaGraphiteDawnD3D11DelayFlush{
+    &kSkiaGraphite, "dawn_d3d11_delay_flush", true};
 
 BASE_FEATURE(kSkiaGraphiteDawnUseD3D12,
              "SkiaGraphiteDawnUseD3D12",

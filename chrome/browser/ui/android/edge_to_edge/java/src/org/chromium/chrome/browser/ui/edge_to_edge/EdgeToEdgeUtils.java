@@ -5,8 +5,10 @@
 package org.chromium.chrome.browser.ui.edge_to_edge;
 
 import android.app.Activity;
+import android.os.Build;
 import android.os.Build.VERSION_CODES;
 import android.view.Window;
+import android.view.WindowInsets;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.OptIn;
@@ -122,6 +124,11 @@ public class EdgeToEdgeUtils {
         return ChromeFeatureList.sEdgeToEdgeBottomChin.isEnabled();
     }
 
+    /** Whether the edge-to-edge feature is enabled on tablet. */
+    public static boolean isEdgeToEdgeTabletEnabled() {
+        return ChromeFeatureList.sEdgeToEdgeTablet.isEnabled();
+    }
+
     /**
      * Whether drawing the website that has `viewport-fit=cover` fully edge to edge, removing the
      * bottom chin.
@@ -200,7 +207,8 @@ public class EdgeToEdgeUtils {
                     IneligibilityReason.NUM_TYPES);
         }
 
-        if (DeviceFormFactor.isNonMultiDisplayContextOnTablet(activity)) {
+        if (!EdgeToEdgeUtils.isEdgeToEdgeTabletEnabled()
+                && DeviceFormFactor.isNonMultiDisplayContextOnTablet(activity)) {
             eligible = false;
             RecordHistogram.recordEnumeratedHistogram(
                     INELIGIBLE_REASON_HISTOGRAM,
@@ -489,6 +497,66 @@ public class EdgeToEdgeUtils {
                         " \nlastRawWindowInsets tappable: " + tappableInsetsString;
             }
 
+            String windowMetricsInsetsState = "";
+            String windowMetricsInsetsStateTappable = "";
+            String windowMetricsInsetsStateMandatoryGestures = "";
+            String windowMetricsInsetsStateSystemGestures = "";
+            String windowMetricsInsetsStateSystemOverlays = "";
+            if (Build.VERSION.SDK_INT >= VERSION_CODES.R) {
+                if (window != null
+                        && window.getWindowManager() != null
+                        && window.getWindowManager().getCurrentWindowMetrics() != null) {
+                    WindowInsets windowInsets =
+                            window.getWindowManager().getCurrentWindowMetrics().getWindowInsets();
+                    var insetsString =
+                            windowInsets == null
+                                    ? "null"
+                                    : windowInsets
+                                            .getInsets(WindowInsetsCompat.Type.systemBars())
+                                            .toString();
+                    windowMetricsInsetsState = " \nwindowMetricsInsets: " + insetsString;
+
+                    var insetsStringTappable =
+                            windowInsets == null
+                                    ? "null"
+                                    : windowInsets
+                                            .getInsets(WindowInsetsCompat.Type.tappableElement())
+                                            .toString();
+                    windowMetricsInsetsStateTappable =
+                            " \nwindowMetricsInsetsTappable: " + insetsStringTappable;
+
+                    var insetsStringMandatoryGestures =
+                            windowInsets == null
+                                    ? "null"
+                                    : windowInsets
+                                            .getInsets(
+                                                    WindowInsetsCompat.Type
+                                                            .mandatorySystemGestures())
+                                            .toString();
+                    windowMetricsInsetsStateMandatoryGestures =
+                            " \nwindowMetricsInsetsMandatoryGestures: "
+                                    + insetsStringMandatoryGestures;
+
+                    var insetsStringSystemGestures =
+                            windowInsets == null
+                                    ? "null"
+                                    : windowInsets
+                                            .getInsets(WindowInsetsCompat.Type.systemGestures())
+                                            .toString();
+                    windowMetricsInsetsStateSystemGestures =
+                            " \nwindowMetricsInsetsSystemGestures: " + insetsStringSystemGestures;
+
+                    var insetsStringSystemOverlays =
+                            windowInsets == null
+                                    ? "null"
+                                    : windowInsets
+                                            .getInsets(WindowInsetsCompat.Type.systemOverlays())
+                                            .toString();
+                    windowMetricsInsetsStateSystemOverlays =
+                            " \nwindowMetricsInsetsSystemOverlays: " + insetsStringSystemOverlays;
+                }
+            }
+
             // Ensure report is only sent once.
             mHasUploaded = true;
             reportUploadCallback.onResult(
@@ -498,7 +566,12 @@ public class EdgeToEdgeUtils {
                             + rootInsetsTappableState
                             + rawWindowInsetsState
                             + rawWindowInsetsIgnoringVisibilityState
-                            + rawWindowInsetsTappableState);
+                            + rawWindowInsetsTappableState
+                            + windowMetricsInsetsState
+                            + windowMetricsInsetsStateTappable
+                            + windowMetricsInsetsStateMandatoryGestures
+                            + windowMetricsInsetsStateSystemGestures
+                            + windowMetricsInsetsStateSystemOverlays);
         }
 
         /** Returns whether the the instance has uploaded any report. */

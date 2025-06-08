@@ -19,6 +19,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.notNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
@@ -3833,7 +3834,7 @@ public class StripLayoutHelperTest {
 
     @Test
     @EnableFeatures(ChromeFeatureList.DATA_SHARING)
-    public void testSharedGroupStateDuringStripBuild_OnlyOneCollaborator_AvatarNotShow() {
+    public void testSharedGroupStateDuringStripBuild_OnlyOneCollaborator_AvatarShow() {
         // Initialize shared tab group with only one collaborator during strip build.
         StripLayoutGroupTitle groupTitle =
                 createCollaborationGroup(
@@ -3842,8 +3843,8 @@ public class StripLayoutHelperTest {
                         /* start= */ 0,
                         /* end= */ 1);
 
-        // Verify group unshared and avatar resources cleared when only one collaborator.
-        verifySharedGroupState(groupTitle, false);
+        // Verify group shared and avatar resources are present when only one collaborator.
+        verifySharedGroupState(groupTitle, true);
     }
 
     @Test
@@ -3863,7 +3864,7 @@ public class StripLayoutHelperTest {
 
     @Test
     @EnableFeatures(ChromeFeatureList.DATA_SHARING)
-    public void testSharedGroupStateOnGroupAdded_OnlyOneCollaborator_AvatarNotShow() {
+    public void testSharedGroupStateOnGroupAdded_OnlyOneCollaborator_AvatarShow() {
         // Group shared but no other collaborator joined yet.
         StripLayoutGroupTitle groupTitle =
                 createCollaborationGroup(
@@ -3872,13 +3873,13 @@ public class StripLayoutHelperTest {
                         /* start= */ 0,
                         /* end= */ 1);
 
-        // Verify group unshared and avatar resources cleared when only one collaborator.
-        verifySharedGroupState(groupTitle, false);
+        // Verify group shared and avatar resources are present when only one collaborator.
+        verifySharedGroupState(groupTitle, true);
     }
 
     @Test
     @EnableFeatures(ChromeFeatureList.DATA_SHARING)
-    public void testSharedGroupStateOnGroupChanged_OnlyOneCollaborator_AvatarNotShow() {
+    public void testSharedGroupStateOnGroupChanged_OnlyOneCollaborator_AvatarShow() {
         // Group shared with multiple collaborators.
         StripLayoutGroupTitle groupTitle =
                 createCollaborationGroup(
@@ -3897,8 +3898,8 @@ public class StripLayoutHelperTest {
                         SharedGroupTestHelper.newGroupData(
                                 COLLABORATION_ID1, SharedGroupTestHelper.GROUP_MEMBER1));
 
-        // Verify group unshared and avatar resources cleared when only one collaborator.
-        verifySharedGroupState(groupTitle, false);
+        // Verify group shared and avatar resources are present when only one collaborator.
+        verifySharedGroupState(groupTitle, true);
     }
 
     @Test
@@ -3912,8 +3913,8 @@ public class StripLayoutHelperTest {
                         /* start= */ 0,
                         /* end= */ 1);
 
-        // Verify group unshared and avatar resources cleared when only one collaborator.
-        verifySharedGroupState(groupTitle, false);
+        // Verify group shared and avatar resources are present when only one collaborator.
+        verifySharedGroupState(groupTitle, true);
 
         // Populate face pile during SharedImageTilesCoordinator#updateCollaborationId.
         mSharedGroupTestHelper.mockGetGroupData(COLLABORATION_ID1, GROUP_MEMBER1, GROUP_MEMBER2);
@@ -3926,8 +3927,8 @@ public class StripLayoutHelperTest {
                                 COLLABORATION_ID1,
                                 SharedGroupTestHelper.GROUP_MEMBER1,
                                 SharedGroupTestHelper.GROUP_MEMBER2));
-
-        loadAvatarBitmap();
+        // 2 members + 1 member for single case.
+        loadAvatarBitmap(3);
 
         // Verify group shared state is updated and avatar resource is initialized.
         verifySharedGroupState(groupTitle, true);
@@ -4040,7 +4041,7 @@ public class StripLayoutHelperTest {
                                         SharedGroupTestHelper.GROUP_MEMBER1,
                                         SharedGroupTestHelper.GROUP_MEMBER2));
             }
-            loadAvatarBitmap();
+            loadAvatarBitmap(2);
         } else {
             if (!duringStripBuild) {
                 // Collaboration group added through Data sharing observer.
@@ -4051,24 +4052,18 @@ public class StripLayoutHelperTest {
                                 SharedGroupTestHelper.newGroupData(
                                         COLLABORATION_ID1, SharedGroupTestHelper.GROUP_MEMBER1));
             }
+            loadAvatarBitmap(1);
         }
         return groupTitle;
     }
 
-    private void loadAvatarBitmap() {
+    private void loadAvatarBitmap(int callCount) {
         ArgumentCaptor<DataSharingAvatarBitmapConfig> configCaptor =
                 ArgumentCaptor.forClass(DataSharingAvatarBitmapConfig.class);
-        verify(mDataSharingUiDelegate, times(2)).getAvatarBitmap(configCaptor.capture());
-        configCaptor
-                .getAllValues()
-                .get(0)
-                .getDataSharingAvatarCallback()
-                .onAvatarLoaded(mAvatarBitmap);
-        configCaptor
-                .getAllValues()
-                .get(1)
-                .getDataSharingAvatarCallback()
-                .onAvatarLoaded(mAvatarBitmap);
+        verify(mDataSharingUiDelegate, times(callCount)).getAvatarBitmap(configCaptor.capture());
+        for (var item : configCaptor.getAllValues()) {
+            item.getDataSharingAvatarCallback().onAvatarLoaded(mAvatarBitmap);
+        }
     }
 
     private void verifySharedGroupState(StripLayoutGroupTitle groupTitle, boolean shouldShare) {
@@ -5798,7 +5793,12 @@ public class StripLayoutHelperTest {
         // Verify tab group sync iph is first displayed.
         verify(mController)
                 .showIphOnTabStrip(
-                        eq(groupTitle2), eq(null), any(), eq(IphType.TAB_GROUP_SYNC), anyFloat());
+                        eq(groupTitle2),
+                        eq(null),
+                        any(),
+                        eq(IphType.TAB_GROUP_SYNC),
+                        anyFloat(),
+                        eq(false));
 
         // Trigger show iph the second time.
         mStripLayoutHelper.updateLayout(TIMESTAMP);
@@ -5809,7 +5809,8 @@ public class StripLayoutHelperTest {
                         eq(null),
                         any(),
                         eq(IphType.GROUP_TITLE_NOTIFICATION_BUBBLE),
-                        anyFloat());
+                        anyFloat(),
+                        eq(false));
     }
 
     @Test
@@ -5844,7 +5845,12 @@ public class StripLayoutHelperTest {
         // Verify tab group sync iph is first displayed.
         verify(mController)
                 .showIphOnTabStrip(
-                        eq(groupTitle2), eq(null), any(), eq(IphType.TAB_GROUP_SYNC), anyFloat());
+                        eq(groupTitle2),
+                        eq(null),
+                        any(),
+                        eq(IphType.TAB_GROUP_SYNC),
+                        anyFloat(),
+                        eq(false));
 
         // Trigger show iph the second time.
         mStripLayoutHelper.updateLayout(TIMESTAMP);
@@ -5855,7 +5861,8 @@ public class StripLayoutHelperTest {
                         eq(tab),
                         any(),
                         eq(IphType.TAB_NOTIFICATION_BUBBLE),
-                        anyFloat());
+                        anyFloat(),
+                        eq(false));
     }
 
     @Test
@@ -5877,7 +5884,12 @@ public class StripLayoutHelperTest {
         // Verify tab group sync iph is not shown due to collaboration.
         verify(mController, never())
                 .showIphOnTabStrip(
-                        eq(groupTitle), eq(null), any(), eq(IphType.TAB_GROUP_SYNC), anyFloat());
+                        eq(groupTitle),
+                        eq(null),
+                        any(),
+                        eq(IphType.TAB_GROUP_SYNC),
+                        anyFloat(),
+                        eq(false));
     }
 
     @Test
@@ -5896,7 +5908,12 @@ public class StripLayoutHelperTest {
         // Verify iph is displayed at the correct horizontal position.
         verify(mController)
                 .showIphOnTabStrip(
-                        eq(groupTitle), eq(null), any(), eq(IphType.TAB_GROUP_SYNC), anyFloat());
+                        eq(groupTitle),
+                        eq(null),
+                        any(),
+                        eq(IphType.TAB_GROUP_SYNC),
+                        anyFloat(),
+                        eq(false));
 
         // Change orientation.
         mStripLayoutHelper.onSizeChanged(
@@ -5904,6 +5921,32 @@ public class StripLayoutHelperTest {
 
         // Verify iph text bubble is dismissed on screen size change.
         verify(mController, times(2)).dismissTextBubble();
+    }
+
+    @Test
+    public void testTabTearingXrIph() {
+        XrUtils.setXrDeviceForTesting(true);
+        initializeTest(false, false, 0, 1);
+        mStripLayoutHelper.onSizeChanged(
+                SCREEN_WIDTH, SCREEN_HEIGHT, false, TIMESTAMP, PADDING_LEFT, PADDING_RIGHT, 0f);
+
+        // Create a new tab.
+        mModel.addTab("new tab");
+        mStripLayoutHelper.tabCreated(TIMESTAMP, 1, 0, true, false, false);
+
+        // Trigger show iph.
+        mStripLayoutHelper.finishAnimations();
+        mStripLayoutHelper.updateLayout(TIMESTAMP);
+
+        // Verify iph is displayed at the correct horizontal position.
+        verify(mController)
+                .showIphOnTabStrip(
+                        eq(null),
+                        notNull(),
+                        any(),
+                        eq(IphType.TAB_TEARING_XR),
+                        anyFloat(),
+                        eq(true));
     }
 
     @Test
@@ -6244,6 +6287,74 @@ public class StripLayoutHelperTest {
                 /* verticalAxisScroll= */ -2.4f,
                 /* isRtl= */ true,
                 /* expectedScrollDelta= */ StripLayoutHelper.SCROLL_SPEED_FACTOR);
+    }
+
+    @EnableFeatures({
+        ChromeFeatureList.ANDROID_KEYBOARD_A11Y,
+        ChromeFeatureList.TAB_STRIP_CONTEXT_MENU
+    })
+    @Test
+    public void testOpenContextMenu_notApplicable() {
+        initializeTest(false, false, 0);
+        setupForIndividualTabContextMenu();
+        assertFalse(
+                "If nothing is keyboard focused, expect context menu to not open",
+                mStripLayoutHelper.openKeyboardFocusedContextMenu());
+    }
+
+    @EnableFeatures({
+        ChromeFeatureList.ANDROID_KEYBOARD_A11Y,
+        ChromeFeatureList.TAB_STRIP_CONTEXT_MENU
+    })
+    @Test
+    public void testOpenContextMenu_tab() {
+        initializeTest(false, false, 0);
+        setupForIndividualTabContextMenu();
+        StripLayoutTab tabToFocus = mStripLayoutHelper.getStripLayoutTabsForTesting()[0];
+        tabToFocus.setKeyboardFocused(true);
+        assertTrue(
+                "Expected openKeyboardFocusedContextMenu to return true if tab context menu opened",
+                mStripLayoutHelper.openKeyboardFocusedContextMenu());
+        verify(mTabContextMenuCoordinator, times(1)).showMenu(any(), anyInt());
+    }
+
+    @EnableFeatures({
+        ChromeFeatureList.ANDROID_KEYBOARD_A11Y,
+        ChromeFeatureList.TAB_STRIP_CONTEXT_MENU
+    })
+    @Test
+    public void testOpenContextMenu_tabGroup() {
+        initializeTest(false, false, 0);
+        groupTabs(0, 1);
+        setupForGroupContextMenu();
+        StripLayoutGroupTitle groupTitle =
+                (StripLayoutGroupTitle) mStripLayoutHelper.getStripLayoutViewsForTesting()[0];
+        groupTitle.setKeyboardFocused(true);
+        assertTrue(
+                "Expected openKeyboardFocusedContextMenu to return true if tab context menu opened",
+                mStripLayoutHelper.openKeyboardFocusedContextMenu());
+        verify(mTabGroupContextMenuCoordinator, times(1)).showMenu(any(), any());
+    }
+
+    @EnableFeatures({
+        ChromeFeatureList.ANDROID_KEYBOARD_A11Y,
+        ChromeFeatureList.TAB_STRIP_CONTEXT_MENU
+    })
+    @Test
+    public void testOpenContextMenu_closeButton() {
+        initializeTest(false, false, 0);
+        // Set up a view for ListMenu to use (otherwise constructing the ListMenu will fail).
+        View tabView = new View(mActivity);
+        when(mModel.getTabAt(anyInt())).thenReturn(mTab);
+        when(mTab.getView()).thenReturn(tabView);
+        StripLayoutTab parentTab = mStripLayoutHelper.getStripLayoutTabsForTesting()[0];
+        parentTab.getCloseButton().setKeyboardFocused(true);
+        assertTrue(
+                "Expected openKeyboardFocusedContextMenu to return true if tab context menu opened",
+                mStripLayoutHelper.openKeyboardFocusedContextMenu());
+        assertTrue(
+                "Expected close button context menu to be showing",
+                mStripLayoutHelper.isCloseButtonMenuShowingForTesting());
     }
 
     @Test

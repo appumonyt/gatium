@@ -549,6 +549,8 @@ static_library("browser") {
     "first_party_sets/first_party_sets_policy_service_factory.h",
     "flag_descriptions.cc",
     "flag_descriptions.h",
+    "font_family_cache.cc",
+    "font_family_cache.h",
     "gcm/gcm_product_util.cc",
     "gcm/gcm_product_util.h",
     "gcm/gcm_profile_service_factory.cc",
@@ -812,6 +814,8 @@ static_library("browser") {
     "net/proxy_config_monitor.h",
     "net/proxy_service_factory.cc",
     "net/proxy_service_factory.h",
+    "net/qwac_web_contents_observer.cc",
+    "net/qwac_web_contents_observer.h",
     "net/referrer.cc",
     "net/referrer.h",
     "net/secure_dns_config.cc",
@@ -1022,6 +1026,8 @@ static_library("browser") {
     "performance_manager/chrome_content_browser_client_performance_manager_part.cc",
     "performance_manager/decorators/helpers/page_live_state_decorator_helper.cc",
     "performance_manager/decorators/helpers/page_live_state_decorator_helper.h",
+    "performance_manager/mechanisms/termination_target_setter.cc",
+    "performance_manager/mechanisms/termination_target_setter.h",
     "performance_manager/mechanisms/working_set_trimmer.cc",
     "performance_manager/mechanisms/working_set_trimmer.h",
     "performance_manager/metrics/metrics_provider_common.cc",
@@ -1040,6 +1046,8 @@ static_library("browser") {
     "performance_manager/policies/keep_alive_dse_policy.h",
     "performance_manager/policies/policy_features.cc",
     "performance_manager/policies/policy_features.h",
+    "performance_manager/policies/termination_target_policy.cc",
+    "performance_manager/policies/termination_target_policy.h",
     "performance_manager/policies/working_set_trimmer_policy.cc",
     "performance_manager/policies/working_set_trimmer_policy.h",
     "performance_manager/public/chrome_browser_main_extra_parts_performance_manager.h",
@@ -2204,6 +2212,7 @@ static_library("browser") {
     "//components/lens:buildflags",
     "//components/lens:enterprise_policy",
     "//components/leveldb_proto",
+    "//components/link_header_util",
     "//components/live_caption:constants",
     "//components/live_caption:utils",
     "//components/lookalikes/core",
@@ -3294,8 +3303,9 @@ static_library("browser") {
       # TODO(crbug.com/40261269): Move to its own target in touch_to_fill/.
       "touch_to_fill/autofill/android/touch_to_fill_delegate_android_impl.cc",
       "touch_to_fill/autofill/android/touch_to_fill_delegate_android_impl.h",
-      "touch_to_fill/autofill/android/touch_to_fill_payment_method_controller.cc",
       "touch_to_fill/autofill/android/touch_to_fill_payment_method_controller.h",
+      "touch_to_fill/autofill/android/touch_to_fill_payment_method_controller_impl.cc",
+      "touch_to_fill/autofill/android/touch_to_fill_payment_method_controller_impl.h",
       "touch_to_fill/password_manager/touch_to_fill_controller.cc",
       "touch_to_fill/password_manager/touch_to_fill_controller.h",
       "touch_to_fill/password_manager/touch_to_fill_controller_autofill_delegate.cc",
@@ -3511,6 +3521,8 @@ static_library("browser") {
       "//components/subresource_filter/android",
       "//components/supervised_user/core/browser",
       "//components/supervised_user/core/browser:fetcher",
+      "//components/tabs",
+      "//components/tabs:public",
       "//components/thin_webview/internal",
       "//components/tpcd/metadata/browser",
       "//components/translate/content/android",
@@ -3809,8 +3821,6 @@ static_library("browser") {
       "first_run/first_run.h",
       "first_run/first_run_dialog.h",
       "first_run/first_run_internal.h",
-      "font_family_cache.cc",
-      "font_family_cache.h",
       "headless/chrome_browser_main_extra_parts_headless.cc",
       "headless/chrome_browser_main_extra_parts_headless.h",
       "hid/chrome_hid_delegate.cc",
@@ -4334,6 +4344,7 @@ static_library("browser") {
       "//chrome/browser/accessibility/tree_fixing:prefs",
       "//chrome/browser/accessibility/tree_fixing:service",
       "//chrome/browser/actor",
+      "//chrome/browser/actor:impl",
       "//chrome/browser/apps/app_service",
       "//chrome/browser/apps/link_capturing",
       "//chrome/browser/contextual_cueing",
@@ -4397,6 +4408,7 @@ static_library("browser") {
       "//chrome/browser/ui/views/zoom:impl",
       "//chrome/browser/ui/webui/access_code_cast",
       "//chrome/browser/ui/webui/access_code_cast:impl",
+      "//chrome/browser/ui/webui/actor_internals",
       "//chrome/browser/ui/webui/app_service_internals",
       "//chrome/browser/ui/webui/infobar_internals",
       "//chrome/browser/ui/webui/infobar_internals:impl",
@@ -6224,12 +6236,11 @@ static_library("browser") {
     ]
 
     deps += [
-      "//chrome/browser/ui/pdf/infobar:impl",
+      "//chrome/browser/ui/pdf/infobar",
       "//chrome/browser/updater:browser_updater_client",
       "//chrome/common/notifications",
       "//chrome/updater:browser_sources",
     ]
-    allow_circular_includes_from += [ "//chrome/browser/ui/pdf/infobar:impl" ]
 
     # Support for the recovery improved component.
     sources += [
@@ -6633,6 +6644,7 @@ static_library("browser") {
       "enterprise/watermark/settings.h",
     ]
     deps += [
+      "//chrome/browser/enterprise/watermark:watermark_view_lib",
       "//components/enterprise/watermarking",
       "//components/enterprise/watermarking/content",
     ]
@@ -6773,10 +6785,14 @@ static_library("browser") {
       "enterprise/connectors/analysis/content_analysis_delegate_base.h",
       "enterprise/connectors/analysis/content_analysis_dialog_controller.cc",
       "enterprise/connectors/analysis/content_analysis_dialog_controller.h",
+      "enterprise/connectors/analysis/content_analysis_dialog_delegate.cc",
+      "enterprise/connectors/analysis/content_analysis_dialog_delegate.h",
       "enterprise/connectors/analysis/content_analysis_downloads_delegate.cc",
       "enterprise/connectors/analysis/content_analysis_downloads_delegate.h",
       "enterprise/connectors/analysis/content_analysis_info.cc",
       "enterprise/connectors/analysis/content_analysis_info.h",
+      "enterprise/connectors/analysis/content_analysis_views.cc",
+      "enterprise/connectors/analysis/content_analysis_views.h",
       "enterprise/connectors/analysis/files_request_handler.cc",
       "enterprise/connectors/analysis/files_request_handler.h",
       "enterprise/connectors/analysis/page_print_analysis_request.cc",
@@ -7522,6 +7538,8 @@ static_library("browser") {
       "autocomplete/unscoped_extension_provider_delegate_impl.h",
       "browsing_data/counters/hosted_apps_counter.cc",
       "browsing_data/counters/hosted_apps_counter.h",
+      "clipboard/chrome_clipboard_permission_context_delegate.cc",
+      "clipboard/chrome_clipboard_permission_context_delegate.h",
       "controlled_frame/controlled_frame_media_access_handler.cc",
       "controlled_frame/controlled_frame_media_access_handler.h",
       "guest_view/app_view/chrome_app_view_guest_delegate.cc",
@@ -8201,7 +8219,17 @@ static_library("browser") {
       "supervised_user/supervised_user_extensions_manager.h",
     ]
 
-    deps += [ "//chrome/browser/ui/extensions" ]
+    deps += [
+      "//chrome/browser/ui/extensions",
+
+      # TODO(crbug.com/420905611): Remove this circular dependency when:
+      # - c/b/app_mode/app_mode_utils.h,
+      # - c/b/supervised_user/supervised_user_browser_utils.h and
+      # - c/b/signin/signin_promo_util.h
+      # ... get modularized.
+      "//chrome/browser/ui/extensions:impl",
+    ]
+    allow_circular_includes_from += [ "//chrome/browser/ui/extensions:impl" ]
 
     if (is_chromeos) {
       sources += [

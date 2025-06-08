@@ -38,6 +38,7 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/string_view_util.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/types/expected.h"
 #include "base/types/expected_macros.h"
@@ -192,6 +193,7 @@ constexpr char kOpCosTypeName[] = "cos";
 constexpr char kOpExpTypeName[] = "exp";
 constexpr char kOpFloorTypeName[] = "floor";
 constexpr char kOpIdentityTypeName[] = "identity";
+constexpr char kOpSignTypeName[] = "sign";
 constexpr char kOpSinTypeName[] = "sin";
 constexpr char kOpTanTypeName[] = "tan";
 constexpr char kOpErfTypeName[] = "erf";
@@ -1241,8 +1243,8 @@ ContextProperties GraphBuilderCoreml::GetContextProperties() {
        /*neg_input=*/{kFloatsAndInt32, kMaxRank},
        /*reciprocal_input=*/
        {DataTypeConstraint::kFloat16To32, kMaxRank},
-       // Sign is not implemented.
-       /*sign_input=*/{},
+       /*sign_input=*/
+       {kFloatsAndInt32, kMaxRank},
        /*sin_input=*/
        {DataTypeConstraint::kFloat16To32, kMaxRank},
        /*sqrt_input=*/
@@ -3002,8 +3004,10 @@ GraphBuilderCoreml::AddOperationForElementwiseUnary(
                                output_operand_id, block);
     }
     case mojom::ElementWiseUnary::Kind::kSign: {
-      // Sign is not implemented.
-      NOTREACHED();
+      CHECK(context_properties_.data_type_limits.sign_input.data_types.Has(
+          input_operand_data_type));
+      return AddUnaryOperation(kOpSignTypeName, input_operand_id,
+                               output_operand_id, block);
     }
     case mojom::ElementWiseUnary::Kind::kSin: {
       CHECK(context_properties_.data_type_limits.sin_input.data_types.Has(

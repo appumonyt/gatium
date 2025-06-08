@@ -245,6 +245,7 @@ public class WindowAndroid
                 trackOcclusion);
         mIntentRequestTracker = (IntentRequestTrackerImpl) tracker;
         mInsetObserver = insetObserver;
+        mApplicationBottomInsetSupplier.setInsetObserver(mInsetObserver);
     }
 
     /**
@@ -344,7 +345,7 @@ public class WindowAndroid
 
         var thresholds = new TrustedPresentationThresholds(Float.MIN_VALUE, Float.MIN_VALUE, 1);
         mOcclusionObserver =
-                new Consumer<Boolean>() {
+                new Consumer<>() {
                     @Override
                     public void accept(Boolean visible) {
                         mOcclusionSupplier.set(!visible);

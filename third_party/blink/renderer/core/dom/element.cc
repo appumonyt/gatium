@@ -2883,6 +2883,12 @@ gfx::Rect Element::VisibleBoundsInLocalRoot() const {
     return gfx::Rect();
   }
 
+  // TODO(crbug.com/41417572): Flag-guard. Remove once this change lands safely
+  // in stable.
+  if (RuntimeEnabledFeatures::ClipElementVisibleBoundsInLocalRootEnabled()) {
+    return VisibleBoundsRespectingClipsInLocalRoot();
+  }
+
   // We don't use absoluteBoundingBoxRect() because it can return an gfx::Rect
   // larger the actual size by 1px. crbug.com/470503
   PhysicalRect rect(
@@ -3145,7 +3151,11 @@ bool Element::toggleAttribute(const AtomicString& qualified_name,
   // https://dom.spec.whatwg.org/#dom-element-toggleattribute
   // 1. If qualifiedName does not match the Name production in XML, then throw
   // an "InvalidCharacterError" DOMException.
-  if (!Document::IsValidName(qualified_name)) {
+  bool is_valid =
+      RuntimeEnabledFeatures::RelaxDOMValidNamesEnabled()
+          ? Document::IsValidAttributeLocalNameNewSpec(qualified_name)
+          : Document::IsValidName(qualified_name);
+  if (!is_valid) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidCharacterError,
         "'" + qualified_name + "' is not a valid attribute name.");
@@ -9198,11 +9208,6 @@ PseudoElement* Element::GetPseudoElement(
     return data->GetPseudoElement(pseudo_id, view_transition_name);
   }
   return nullptr;
-}
-
-bool Element::HasViewTransitionGroupChildren() const {
-  ElementRareDataVector* data = GetElementRareData();
-  return data && data->HasViewTransitionGroupPseudoElement();
 }
 
 bool Element::HasScrollButtonOrMarkerGroupPseudos() const {

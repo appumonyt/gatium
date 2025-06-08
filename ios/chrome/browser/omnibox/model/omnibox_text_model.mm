@@ -4,16 +4,38 @@
 
 #import "ios/chrome/browser/omnibox/model/omnibox_text_model.h"
 
-@implementation OmniboxTextModel
+#import "base/metrics/user_metrics.h"
 
-- (instancetype)init {
-  self = [super init];
-  if (self) {
-    _focusState = OMNIBOX_FOCUS_NONE;
-    _pasteState = OmniboxPasteState::kNone;
+OmniboxTextModel::OmniboxTextModel()
+    : focus_state(OMNIBOX_FOCUS_NONE),
+      user_input_in_progress(false),
+      user_text(u""),
+      focus_resulted_in_navigation(false),
+      just_deleted_text(false),
+      inline_autocompletion(u""),
+      paste_state(OmniboxPasteState::kNone) {}
+
+OmniboxTextModel::~OmniboxTextModel() = default;
+
+bool OmniboxTextModel::SetInputInProgressNoNotify(bool in_progress) {
+  if (user_input_in_progress == in_progress) {
+    return false;
   }
 
-  return self;
+  user_input_in_progress = in_progress;
+  if (user_input_in_progress) {
+    time_user_first_modified_omnibox = base::TimeTicks::Now();
+    base::RecordAction(base::UserMetricsAction("OmniboxInputInProgress"));
+  }
+  return true;
 }
 
-@end
+bool OmniboxTextModel::HasFocus() {
+  return focus_state != OMNIBOX_FOCUS_NONE;
+}
+
+void OmniboxTextModel::KillFocus() {
+  focus_state = OMNIBOX_FOCUS_NONE;
+  last_omnibox_focus = base::TimeTicks();
+  paste_state = OmniboxPasteState::kNone;
+}

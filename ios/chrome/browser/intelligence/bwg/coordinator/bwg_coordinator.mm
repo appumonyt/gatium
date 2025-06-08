@@ -34,6 +34,12 @@
 
   // Returns the `_entryPoint` the coordinator was intialized from.
   bwg::EntryPoint _entryPoint;
+
+  // Pref service.
+  raw_ptr<PrefService> _prefService;
+
+  // FET(Feature engagement tracker) for promo updates.
+  raw_ptr<feature_engagement::Tracker> _tracker;
 }
 
 - (instancetype)initWithBaseViewController:(UIViewController*)viewController
@@ -49,22 +55,15 @@
 #pragma mark - ChromeCoordinator
 
 - (void)start {
-  PrefService* pref_service = self.profile->GetPrefs();
-  CHECK(pref_service);
+  _prefService = self.profile->GetPrefs();
+  CHECK(_prefService);
 
-  // If the user sees the GLIC feature, we can consider this feature as
-  // discovered. Therefore, we can mark the GLIC feature as used.
-  feature_engagement::Tracker* engagementTracker =
-      feature_engagement::TrackerFactory::GetForProfile(self.profile);
-  if (engagementTracker) {
-    engagementTracker->NotifyUsedEvent(
-        feature_engagement::kIPHIOSBWGPromoFeature);
-  }
+  _tracker = feature_engagement::TrackerFactory::GetForProfile(self.profile);
 
   _handler =
       HandlerForProtocol(self.browser->GetCommandDispatcher(), BWGCommands);
 
-  _mediator = [[BWGMediator alloc] initWithPrefService:pref_service
+  _mediator = [[BWGMediator alloc] initWithPrefService:_prefService
                                                browser:self.browser
                                     baseViewController:self.baseViewController];
   _mediator.delegate = self;
@@ -75,17 +74,31 @@
 }
 
 - (void)stop {
+  [self dismissPresentedViewWithCompletion:nil];
+  _navigationController = nil;
+  _handler = nil;
+  _mediator = nil;
+  _prefService = nil;
+  _tracker = nil;
   [super stop];
 }
 
 #pragma mark - BWGMediatorDelegate
 
 - (BOOL)maybePresentBWGFRE {
-  BOOL showPromo = _entryPoint == bwg::EntryPointPromo;
+  BOOL showPromo = [self shouldShowBWGPromo];
   BOOL showConsent = [self shouldShowBWGConsent];
 
   if (!showPromo && !showConsent) {
     return NO;
+  }
+
+  // If promo was shown outside the promos manager, ensure the promo doesn't
+  // show through the promos manager.
+  if (_entryPoint != bwg::EntryPointPromo) {
+    _prefService->SetBoolean(prefs::kIOSBWGManualPromo, true);
+    _tracker->UnregisterPriorityNotificationHandler(
+        feature_engagement::kIPHIOSBWGPromoFeature);
   }
 
   _navigationController =
@@ -100,6 +113,19 @@
   return YES;
 }
 
+- (void)dismissBWGConsentUIWithCompletion:(void (^)())completion {
+  [self dismissPresentedViewWithCompletion:completion];
+  _navigationController = nil;
+}
+
+- (BOOL)shouldShowBWGConsent {
+  return !_prefService->GetBoolean(prefs::kIOSBwgConsent);
+}
+
+- (void)dismissBWGFlow {
+  [_handler dismissBWGFlow];
+}
+
 #pragma mark - UISheetPresentationControllerDelegate
 
 // Handles the dismissal of the UI.
@@ -109,25 +135,32 @@
   [_handler dismissBWGFlow];
 }
 
-#pragma mark - BWGConsentMediatorDelegate
-
-// Dismisses the UI by stopping the coordinator.
-- (void)dismissBWGConsentUI {
-  [_handler dismissBWGFlow];
-}
-
-- (BOOL)shouldShowBWGConsent {
-  PrefService* prefService = self.profile->GetPrefs();
-  CHECK(prefService);
-  return !prefService->GetBoolean(prefs::kIOSBwgConsent);
-}
-
 #pragma mark - BWGNavigationControllerDelegate
 
 - (void)promoWasDismissed:(BWGNavigationController*)navigationController {
   if (_entryPoint == bwg::EntryPointPromo) {
     [self.promosUIHandler promoWasDismissed];
   }
+}
+
+#pragma mark - Private
+
+// Dismisses presented view.
+- (void)dismissPresentedViewWithCompletion:(void (^)())completion {
+  if (self.baseViewController.presentedViewController) {
+    [self.baseViewController dismissViewControllerAnimated:YES
+                                                completion:completion];
+  }
+}
+
+// If YES, BWG Promo should be shown.
+- (BOOL)shouldShowBWGPromo {
+  BOOL promoShownManually = _prefService->GetBoolean(prefs::kIOSBWGManualPromo);
+  BOOL promoTriggered = _tracker->HasEverTriggered(
+      feature_engagement::kIPHIOSBWGPromoFeature, true);
+  BOOL isPromoEntry = _entryPoint == bwg::EntryPointPromo;
+
+  return isPromoEntry || (!promoTriggered && !promoShownManually);
 }
 
 @end

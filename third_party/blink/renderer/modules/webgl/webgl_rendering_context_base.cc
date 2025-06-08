@@ -1887,11 +1887,11 @@ WebGLRenderingContextBase::PaintRenderingResultsToResource(
     SourceDrawingBuffer source_buffer,
     FlushReason reason) {
   if (was_dirty) {
-    Host()->GetOrCreateCanvasResourceProvider();
+    Host()->GetOrCreateCanvasResourceProviderForWebGL();
   }
   PaintRenderingResultsToCanvas(source_buffer);
   if (has_dispatcher && was_dirty &&
-      Host()->GetOrCreateCanvasResourceProvider()) {
+      Host()->GetOrCreateCanvasResourceProviderForWebGL()) {
     return Host()->ResourceProvider()->ProduceCanvasResource(reason);
   }
   return nullptr;
@@ -1926,7 +1926,7 @@ WebGLRenderingContextBase::PaintRenderingResultsToCanvasInternal(
   must_paint_to_canvas_ = false;
 
   CanvasResourceProvider* resource_provider =
-      Host()->GetOrCreateCanvasResourceProvider();
+      Host()->GetOrCreateCanvasResourceProviderForWebGL();
   if (!resource_provider)
     return nullptr;
 
@@ -6749,6 +6749,11 @@ void WebGLRenderingContextBase::texElement2D(GLenum target,
 void WebGLRenderingContextBase::setHitTestRegions(
     VectorOf<CanvasElementHitTestRegion> hit_test_regions,
     ExceptionState& exception_state) {
+  HTMLCanvasElement* canvas_element = canvas();
+  DCHECK(canvas_element);
+  canvas_element->GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kCanvasDrawElement);
+
   VectorOf<HTMLCanvasElement::ElementHitTestRegion> result;
   for (const auto& region : hit_test_regions) {
     if (!IsDrawElementEligible(region->element(), GL_TEXTURE_2D,

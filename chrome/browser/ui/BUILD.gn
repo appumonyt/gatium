@@ -830,8 +830,6 @@ static_library("ui") {
       "android/infobars/autofill_virtual_card_enrollment_infobar.h",
       "android/infobars/infobar_container_android.cc",
       "android/infobars/infobar_container_android.h",
-      "android/infobars/permission_infobar.cc",
-      "android/infobars/permission_infobar.h",
       "android/infobars/simple_confirm_infobar_builder.cc",
       "android/login_handler_android.cc",
       "android/logo/logo_bridge.cc",
@@ -950,6 +948,8 @@ static_library("ui") {
       sources += [
         "android/extensions/extension_keybinding_registry_android.cc",
         "android/extensions/extension_keybinding_registry_android.h",
+        "android/toolbar/extension_action_popup_contents.cc",
+        "android/toolbar/extension_action_popup_contents.h",
         "android/toolbar/extension_actions_bridge.cc",
         "android/toolbar/extension_actions_bridge.h",
         "android/toolbar/extension_actions_bridge_factory.cc",
@@ -1074,6 +1074,8 @@ static_library("ui") {
       "passwords/password_base_dialog_controller.h",
       "passwords/password_change_icon_views_controller.cc",
       "passwords/password_change_icon_views_controller.h",
+      "passwords/password_change_ui_controller.cc",
+      "passwords/password_change_ui_controller.h",
       "passwords/password_dialog_prompts.h",
       "passwords/password_generation_popup_controller.h",
       "passwords/password_generation_popup_controller_impl.cc",
@@ -1173,7 +1175,8 @@ static_library("ui") {
       "tab_sharing/tab_sharing_ui.h",
       "tabs/glic_nudge_controller.cc",
       "tabs/glic_nudge_controller.h",
-      "tabs/glic_nudge_observer.h",
+      "tabs/glic_nudge_delegate.cc",
+      "tabs/glic_nudge_delegate.h",
       "tabs/organization/logging_util.cc",
       "tabs/organization/logging_util.h",
       "tabs/organization/metrics.cc",
@@ -1610,6 +1613,7 @@ static_library("ui") {
       "//chrome/app/vector_icons",
       "//chrome/browser:shell_integration",
       "//chrome/browser/actor",
+      "//chrome/browser/actor:impl",
       "//chrome/browser/apps/app_service",
       "//chrome/browser/apps/app_service/app_icon",
       "//chrome/browser/apps/app_service/app_icon:util",
@@ -1712,6 +1716,7 @@ static_library("ui") {
       "//chrome/browser/ui/views/toolbar",
       "//chrome/browser/ui/views/zoom",
       "//chrome/browser/ui/webui:webui_util",
+      "//chrome/browser/ui/webui/actor_internals",
       "//chrome/browser/ui/webui/app_management",
       "//chrome/browser/ui/webui/commerce",
       "//chrome/browser/ui/webui/commerce:impl",
@@ -1895,7 +1900,7 @@ static_library("ui") {
 
       "//chrome/browser/ui:browser_list_impl",
       "//chrome/browser/ui/media_router:impl",
-      "//chrome/browser/actor",
+      "//chrome/browser/actor:impl",
       "//chrome/browser/ui/window_sizer:impl",
       "//chrome/browser/ui/webui/settings:impl",
       "//chrome/browser/ui/search_engine_choice:impl",
@@ -3242,11 +3247,7 @@ static_library("ui") {
   }
 
   if (is_win || is_mac) {
-    deps += [
-      "//chrome/browser/ui/pdf/infobar",
-      "//chrome/browser/ui/pdf/infobar:impl",
-    ]
-    allow_circular_includes_from += [ "//chrome/browser/ui/pdf/infobar:impl" ]
+    deps += [ "//chrome/browser/ui/pdf/infobar" ]
   }
 
   if (is_mac) {
@@ -4044,6 +4045,8 @@ static_library("ui") {
       "views/frame/picture_in_picture_browser_frame_view.h",
       "views/frame/scrim_view.cc",
       "views/frame/scrim_view.h",
+      "views/frame/multi_contents_drop_target_view.cc",
+      "views/frame/multi_contents_drop_target_view.h",
       "views/frame/system_menu_model_builder.cc",
       "views/frame/system_menu_model_builder.h",
       "views/frame/system_menu_model_delegate.cc",
@@ -4326,6 +4329,8 @@ static_library("ui") {
       "views/passwords/manage_passwords_icon_views.h",
       "views/passwords/manage_passwords_list_view.cc",
       "views/passwords/manage_passwords_list_view.h",
+      "views/passwords/manage_passwords_page_action_controller.cc",
+      "views/passwords/manage_passwords_page_action_controller.h",
       "views/passwords/manage_passwords_view.cc",
       "views/passwords/manage_passwords_view.h",
       "views/passwords/manage_passwords_view_ids.h",
@@ -5079,8 +5084,8 @@ static_library("ui") {
         "views/apps/app_window_native_widget_mac.mm",
         "views/apps/chrome_native_app_window_views_mac.h",
         "views/apps/chrome_native_app_window_views_mac.mm",
-        "views/apps/native_app_window_frame_view_mac.h",
-        "views/apps/native_app_window_frame_view_mac.mm",
+        "views/apps/native_app_window_frame_view_mac_client.h",
+        "views/apps/native_app_window_frame_view_mac_client.mm",
         "views/chrome_views_delegate_mac.cc",
         "views/desktop_capture/desktop_media_permission_pane_view_mac.h",
         "views/desktop_capture/desktop_media_permission_pane_view_mac.mm",
@@ -5258,7 +5263,6 @@ static_library("ui") {
 
   if (enable_extensions_core) {
     sources += [
-      "extensions/extension_install_ui.cc",
       "toolbar/toolbar_actions_model.cc",
       "toolbar/toolbar_actions_model.h",
       "toolbar/toolbar_actions_model_factory.cc",
@@ -5278,15 +5282,15 @@ static_library("ui") {
       "webui/plural_string_handler.cc",
       "webui/plural_string_handler.h",
     ]
-    deps += [ "//chrome/browser/extensions" ]
-    allow_circular_includes_from += [ "//chrome/browser/extensions" ]
+    deps += [
+      "//chrome/browser/extensions",
+      "//chrome/browser/ui/extensions",
+      "//chrome/browser/ui/extensions:impl",
+    ]
 
-    if (is_win || is_mac || is_linux || is_chromeos) {
-      sources += [ "extensions/extension_install_ui_desktop.cc" ]
-    }
-    if (is_android) {
-      sources += [ "extensions/extension_install_ui_android.cc" ]
-    }
+    # TODO(crbug.com/420905611): Verify whether this circular dependency declaration can
+    # be removed from here.
+    allow_circular_includes_from += [ "//chrome/browser/extensions" ]
   }
 
   if (enable_extensions) {
@@ -5301,6 +5305,7 @@ static_library("ui") {
       "//chrome/browser/ui/extensions",
       "//chrome/browser/ui/extensions:extension_enable_flow_delegate",
       "//chrome/browser/ui/extensions:extension_popup_types",
+      "//chrome/browser/ui/extensions:impl",
       "//chrome/browser/ui/web_applications",
       "//chrome/browser/ui/webui/extensions_zero_state_promo:mojo_bindings",
       "//chrome/browser/web_applications",
@@ -5323,24 +5328,10 @@ static_library("ui") {
     allow_circular_includes_from += [
       "//chrome/browser/apps/platform_apps",
       "//chrome/browser/apps/platform_apps/api",
+      "//chrome/browser/ui/extensions:impl",
     ]
 
     sources += [
-      "extensions/app_launch_params.cc",
-      "extensions/application_launch.cc",
-      "extensions/controlled_home_bubble_delegate.cc",
-      "extensions/extension_action_view_controller.cc",
-      "extensions/extension_enable_flow.cc",
-      "extensions/extension_installed_bubble_model.cc",
-      "extensions/extension_installed_waiter.cc",
-      "extensions/extension_settings_overridden_dialog.cc",
-      "extensions/extensions_overrides/simple_overrides.cc",
-      "extensions/hosted_app_browser_controller.cc",
-      "extensions/icon_with_badge_image_source.cc",
-      "extensions/installation_error_infobar_delegate.cc",
-      "extensions/mv2_disabled_dialog_controller.cc",
-      "extensions/settings_api_bubble_helpers.cc",
-      "extensions/settings_overridden_params_providers.cc",
       "extensions/web_file_handlers/multiclient_util.cc",
       "views/chrome_javascript_app_modal_view_factory_views.cc",
       "views/extensions/browser_action_drag_data.cc",
@@ -5917,8 +5908,6 @@ static_library("test_support") {
       "passwords/passwords_leak_dialog_delegate_mock.h",
       "passwords/passwords_model_delegate_mock.cc",
       "passwords/passwords_model_delegate_mock.h",
-      "tabs/test/mock_tab_interface.cc",
-      "tabs/test/mock_tab_interface.h",
       "test/popup_test_base.cc",
       "test/popup_test_base.h",
       "test/test_confirm_bubble_model.cc",

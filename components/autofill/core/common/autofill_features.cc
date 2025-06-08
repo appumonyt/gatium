@@ -332,13 +332,6 @@ BASE_FEATURE(kAutofillPaymentsFieldSwapping,
              "AutofillPaymentsFieldSwapping",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// When enabled, and upon receiving a signal that a select element has been
-// edited by the user, BrowserAutofillManager will record this correction, which
-// will affect many correctness metrics.
-BASE_FEATURE(kAutofillRecordCorrectionOfSelectElements,
-             "AutofillRecordCorrectionOfSelectElements",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // When enabled, chrome will support home and work addresses from account.
 // TODO: crbug.com/354706653 - Clean up when launched.
 BASE_FEATURE(kAutofillEnableSupportForHomeAndWork,
@@ -366,25 +359,6 @@ const base::FeatureParam<bool>
     kAutofillImprovedLabelsParamWithDifferentiatingLabelsInFrontParam{
         &kAutofillImprovedLabels,
         "autofill_improved_labels_with_differentiating_labels_in_front", false};
-
-// If enabled, we include a `FormFieldData`'s maxlength in crowdsourcing votes.
-// TODO(crbug.com/393995180): Clean up in M137.
-BASE_FEATURE(kAutofillIncludeMaxLengthInCrowdsourcing,
-             "AutofillIncludeMaxLengthInCrowdsourcing",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// If enabled, we include a <select>'s first, second, and last <option> in
-// crowdsourcing votes.
-// TODO(crbug.com/393999140): Clean up in M137.
-BASE_FEATURE(kAutofillIncludeSelectOptionsInCrowdsourcing,
-             "AutofillIncludeSelectOptionsInCrowdsourcing",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// If enabled, we include a `FormData`'s URL in crowdsourcing votes.
-// TODO(crbug.com/385043924): Clean up in M137.
-BASE_FEATURE(kAutofillIncludeUrlInCrowdsourcing,
-             "AutofillIncludeUrlInCrowdsourcing",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, the new suggestion generation logic is used.
 // TODO(crbug.com/409962888): Remove once launched.
@@ -465,13 +439,6 @@ BASE_FEATURE(kAutofillDisallowSlashDotLabels,
 // disambiguating address and credit card names is used.
 BASE_FEATURE(kAutofillDisambiguateContradictingFieldTypes,
              "AutofillDisambiguateContradictingFieldTypes",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-// If enabled, whenever form controls are removed from the DOM, the ChromeClient
-// is informed about this. This enables Autofill to trigger a reparsing of
-// forms.
-BASE_FEATURE(kAutofillDetectRemovedFormControls,
-             "AutofillDetectRemovedFormControls",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Replaces cached web elements in AutofillAgent and FormTracker by their
