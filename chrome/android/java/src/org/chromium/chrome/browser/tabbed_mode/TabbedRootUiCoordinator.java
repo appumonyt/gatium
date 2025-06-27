@@ -62,6 +62,7 @@ import org.chromium.chrome.browser.bookmarks.TabBookmarker;
 import org.chromium.chrome.browser.bookmarks.bar.BookmarkBarCoordinator;
 import org.chromium.chrome.browser.bookmarks.bar.BookmarkBarUtils;
 import org.chromium.chrome.browser.bookmarks.bar.BookmarkBarVisibilityProvider;
+import org.chromium.chrome.browser.bookmarks.bar.BookmarkBarVisibilityProvider.BookmarkBarVisibilityObserver;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsSizer;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider.ControlsPosition;
 import org.chromium.chrome.browser.collaboration.CollaborationControllerDelegateFactory;
@@ -181,6 +182,7 @@ import org.chromium.chrome.browser.ui.desktop_windowing.AppHeaderCoordinator;
 import org.chromium.chrome.browser.ui.desktop_windowing.AppHeaderUtils;
 import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeController;
 import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeControllerFactory;
+import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeUtils;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.ui.signin.FullscreenSigninPromoLauncher;
 import org.chromium.chrome.browser.ui.system.StatusBarColorController.StatusBarColorProvider;
@@ -196,10 +198,10 @@ import org.chromium.components.browser_ui.widget.MenuOrKeyboardActionController;
 import org.chromium.components.browser_ui.widget.TouchEventObserver;
 import org.chromium.components.browser_ui.widget.loading.LoadingFullscreenCoordinator;
 import org.chromium.components.browser_ui.widget.scrim.ScrimManager;
+import org.chromium.components.browser_ui.widget.scrim.ScrimManager.ScrimClient;
 import org.chromium.components.collaboration.CollaborationService;
 import org.chromium.components.feature_engagement.FeatureConstants;
 import org.chromium.components.feature_engagement.Tracker;
-import org.chromium.components.search_engines.SearchEnginesFeatures;
 import org.chromium.components.signin.AccountManagerFacadeProvider;
 import org.chromium.components.signin.base.CoreAccountInfo;
 import org.chromium.components.signin.identitymanager.ConsentLevel;
@@ -275,6 +277,8 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
     protected @Nullable InstantMessageDelegateImpl mInstantMessageDelegateImpl;
     private @Nullable BookmarkBarCoordinator mBookmarkBarCoordinator;
     private @Nullable BookmarkBarVisibilityProvider mBookmarkBarVisibilityProvider;
+    private @Nullable BookmarkBarVisibilityObserver mBookmarkBarVisibilityObserver;
+    private @Nullable Supplier<Integer> mBookmarkBarHeightSupplier;
     private @Nullable LoadingFullscreenCoordinator mLoadingFullscreenCoordinator;
     private @Nullable BookmarkOpener mBookmarkOpener;
     private final @NonNull ObservableSupplier<BookmarkManagerOpener> mBookmarkManagerOpenerSupplier;
@@ -377,6 +381,9 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
      * @param manualFillingComponentSupplier Supplies the {@link ManualFillingComponent} for
      *     interacting with non-popup filling UI.
      * @param edgeToEdgeManager Manages core edge-to-edge state and logic.
+     * @param bookmarkManagerOpenerSupplier Supplies {@link BookmarkManagerOpener}.
+     * @param xrSpaceModeObservableSupplier Supplies current XR space mode status. True for XR full
+     *     space mode, false otherwise.
      */
     public TabbedRootUiCoordinator(
             @NonNull AppCompatActivity activity,
@@ -425,7 +432,8 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
             @NonNull ObservableSupplier<Integer> overviewColorSupplier,
             @NonNull ManualFillingComponentSupplier manualFillingComponentSupplier,
             @NonNull EdgeToEdgeManager edgeToEdgeManager,
-            @NonNull ObservableSupplier<BookmarkManagerOpener> bookmarkManagerOpenerSupplier) {
+            @NonNull ObservableSupplier<BookmarkManagerOpener> bookmarkManagerOpenerSupplier,
+            @Nullable ObservableSupplier<Boolean> xrSpaceModeObservableSupplier) {
         super(
                 activity,
                 onOmniboxFocusChangedListener,
@@ -465,7 +473,8 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
                 backPressManager,
                 savedInstanceState,
                 overviewColorSupplier,
-                edgeToEdgeManager);
+                edgeToEdgeManager,
+                xrSpaceModeObservableSupplier);
         mInsetObserver = insetObserver;
         mBackButtonShouldCloseTabFn = backButtonShouldCloseTabFn;
         mSendToBackground = sendToBackground;
@@ -675,6 +684,7 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
 
         if (mBookmarkBarVisibilityProvider != null) {
             destroyBookmarkBarIfNecessary();
+            mBookmarkBarVisibilityProvider.removeObserver(mBookmarkBarVisibilityObserver);
             mBookmarkBarVisibilityProvider.destroy();
             mBookmarkBarVisibilityProvider = null;
         }
@@ -924,10 +934,15 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
         if (BookmarkBarUtils.isFeatureEnabled(mActivity)) {
             mBookmarkBarVisibilityProvider =
                     new BookmarkBarVisibilityProvider(
-                            mActivity,
-                            mActivityLifecycleDispatcher,
-                            mProfileSupplier,
-                            /* callback= */ this::updateBookmarkBarIfNecessary);
+                            mActivity, mActivityLifecycleDispatcher, mProfileSupplier);
+            mBookmarkBarVisibilityObserver =
+                    new BookmarkBarVisibilityObserver() {
+                        @Override
+                        public void onVisibilityChanged(boolean visibility) {
+                            updateBookmarkBarIfNecessary(visibility);
+                        }
+                    };
+            mBookmarkBarVisibilityProvider.addObserver(mBookmarkBarVisibilityObserver);
         }
     }
 
@@ -1022,7 +1037,8 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
 
     @Override
     protected ScrimManager buildScrimWidget() {
-        ScrimManager scrimManager = new ScrimManager(mActivity, mCoordinator);
+        ScrimManager scrimManager =
+                new ScrimManager(mActivity, mCoordinator, ScrimClient.TABBED_ROOT_UI_COORDINATOR);
         scrimManager
                 .getStatusBarColorSupplier()
                 .addObserver(mStatusBarColorController::setScrimColor);
@@ -1122,13 +1138,11 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
         // Initializes Privacy Sandbox related logic
         recordPrivacySandboxActivityType(profile);
 
-        boolean didTriggerPromo = maybeShowRequiredPromptsAndPromos(profile, intentWithEffect);
-
-        if (!didTriggerPromo) {
-            didTriggerPromo =
-                    RequestDesktopUtils.maybeShowDefaultEnableGlobalSettingMessage(
-                            profile, mMessageDispatcher, mActivity);
-        }
+        boolean didTriggerPromo =
+                maybeShowRequiredPromptsAndPromos(profile, intentWithEffect)
+                        || mMultiInstanceManager.showInstanceRestorationMessage(mMessageDispatcher)
+                        || RequestDesktopUtils.maybeShowDefaultEnableGlobalSettingMessage(
+                                profile, mMessageDispatcher, mActivity);
 
         if (!didTriggerPromo) {
             mToolbarButtonInProductHelpController.showColdStartIph();
@@ -1260,9 +1274,7 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
                         : 0;
         final int tabStripHeight = mToolbarManager.getTabStripHeightSupplier().get();
         final int bookmarkBarHeight =
-                mBookmarkBarCoordinator != null
-                        ? mBookmarkBarCoordinator.getHeightSupplier().get()
-                        : 0;
+                mBookmarkBarCoordinator != null ? mBookmarkBarCoordinator.getTopControlHeight() : 0;
         topControlsNewHeight =
                 bookmarkBarHeight + toolbarHeight + tabStripHeight + mStatusIndicatorHeight;
         if (tabStripHeight > 0 && !isTablet) {
@@ -1317,7 +1329,8 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
                         mTabObscuringHandlerSupplier.get(),
                         mStatusBarColorController::getStatusBarColorWithoutStatusIndicator,
                         mCanAnimateBrowserControls,
-                        layoutManager::requestUpdate);
+                        layoutManager::requestUpdate,
+                        mTopControlsStacker);
         layoutManager.addSceneOverlay(mStatusIndicatorCoordinator.getSceneLayer());
         mStatusIndicatorObserver =
                 new StatusIndicatorCoordinator.StatusIndicatorObserver() {
@@ -1372,6 +1385,9 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
 
     @Override
     protected Destroyable createEdgeToEdgeBottomChin() {
+        boolean defaultVisibility =
+                !DeviceFormFactor.isNonMultiDisplayContextOnTablet(mActivity)
+                        || EdgeToEdgeUtils.defaultVisibilityOfBottomChinOnTablet(mActivity);
         SystemBarColorHelper bottomChinColorHelper =
                 EdgeToEdgeControllerFactory.createBottomChin(
                         mActivity.findViewById(R.id.edge_to_edge_bottom_chin),
@@ -1382,7 +1398,7 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
                         mEdgeToEdgeControllerSupplier.get(),
                         mBottomControlsStacker,
                         mFullscreenManager,
-                        DeviceFormFactor.isNonMultiDisplayContextOnTablet(mActivity));
+                        defaultVisibility);
         mSystemBarColorHelperSupplier.set(bottomChinColorHelper);
         return bottomChinColorHelper;
     }
@@ -1566,7 +1582,7 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
 
     @Override
     protected boolean supportsEdgeToEdge() {
-        return EdgeToEdgeControllerFactory.isSupportedConfiguration(mActivity);
+        return EdgeToEdgeUtils.isEdgeToEdgeBottomChinEnabled(mActivity);
     }
 
     public StatusIndicatorCoordinator getStatusIndicatorCoordinatorForTesting() {
@@ -1606,11 +1622,9 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
      * @return whether a prompt or promo is actually displayed.
      */
     private boolean maybeShowRequiredPromptsAndPromos(Profile profile, boolean intentWithEffect) {
-        if (SearchEnginesFeatures.isEnabled(SearchEnginesFeatures.CLAY_BLOCKING)) {
-            if (ChoiceDialogCoordinator.maybeShow(
-                    mActivity, mModalDialogManagerSupplier.get(), mActivityLifecycleDispatcher)) {
-                return true;
-            }
+        if (ChoiceDialogCoordinator.maybeShow(
+                mActivity, mModalDialogManagerSupplier.get(), mActivityLifecycleDispatcher)) {
+            return true;
         }
 
         if (maybeTriggerPrivacySandboxPrompt(profile)) {
@@ -1741,18 +1755,22 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
             mBookmarkBarCoordinator =
                     new BookmarkBarCoordinator(
                             mActivity,
-                            mActivityLifecycleDispatcher,
                             mBrowserControlsManager,
-                            /* heightChangeCallback= */ (height) -> updateTopControlsHeight(),
+                            /* heightChangeCallback= */ result -> updateTopControlsHeight(),
                             mProfileSupplier,
                             /* viewStub= */ mActivity.findViewById(R.id.bookmark_bar_stub),
+                            mActivityTabProvider.get(),
                             mBookmarkOpener,
-                            mBookmarkManagerOpenerSupplier);
+                            mBookmarkManagerOpenerSupplier,
+                            mTopControlsStacker);
+            if (mBookmarkBarVisibilityProvider != null) {
+                mBookmarkBarVisibilityProvider.addObserver(mBookmarkBarCoordinator);
+            }
+            mBookmarkBarHeightSupplier = mBookmarkBarCoordinator::getTopControlHeight;
         }
 
         if (mToolbarManager != null) {
-            mToolbarManager.setBookmarkBarHeightSupplier(
-                    mBookmarkBarCoordinator.getHeightSupplier());
+            mToolbarManager.setBookmarkBarHeightSupplier(mBookmarkBarHeightSupplier);
         }
     }
 
@@ -1761,12 +1779,14 @@ public class TabbedRootUiCoordinator extends RootUiCoordinator {
 
         if (mBookmarkBarCoordinator != null) {
             view = mBookmarkBarCoordinator.getView();
+            if (mBookmarkBarVisibilityProvider != null) {
+                mBookmarkBarVisibilityProvider.removeObserver(mBookmarkBarCoordinator);
+            }
             mBookmarkBarCoordinator.destroy();
             mBookmarkBarCoordinator = null;
         }
 
         if (mBookmarkOpener != null) {
-            mBookmarkOpener.destroy();
             mBookmarkOpener = null;
         }
 

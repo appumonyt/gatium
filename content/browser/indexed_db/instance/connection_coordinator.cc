@@ -31,7 +31,6 @@
 #include "components/services/storage/privileged/mojom/indexed_db_client_state_checker.mojom.h"
 #include "content/browser/indexed_db/indexed_db_data_loss_info.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
-#include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
 #include "content/browser/indexed_db/indexed_db_reporting.h"
 #include "content/browser/indexed_db/instance/backing_store.h"
 #include "content/browser/indexed_db/instance/bucket_context.h"
@@ -128,8 +127,9 @@ class ConnectionCoordinator::ConnectionRequest {
     }
 
     std::vector<PartitionedLockManager::PartitionedLockRequest> lock_requests =
-        {{GetDatabaseLockId(db_->name()),
-          PartitionedLockManager::LockType::kExclusive}};
+        db_->BuildLockRequestsForTransaction(
+            blink::mojom::IDBTransactionMode::VersionChange,
+            /*scope=*/{});
     state_ = RequestState::kPendingLocks;
 
     db_->lock_manager().AcquireLocks(
@@ -524,19 +524,11 @@ class ConnectionCoordinator::DeleteRequest
     UMA_HISTOGRAM_ENUMERATION(
         indexed_db::kBackingStoreActionUmaName,
         indexed_db::IndexedDBAction::kDatabaseDeleteAttempt);
-    // This is used to check if this class is still alive after the destruction
-    // of the backing store, which can synchronously cause the system to be shut
-    // down if the disk is really bad.
     const int64_t old_version = db_->version();
-    base::WeakPtr<DeleteRequest> weak_ptr = weak_factory_.GetWeakPtr();
     if (db_->backing_store_db()) {
       saved_status_ = db_->backing_store_db()->DeleteDatabase(
           std::move(lock_receiver_.locks), std::move(on_database_deleted_));
       saved_status_.Log("WebCore.IndexedDB.BackingStore.DeleteDatabaseStatus");
-    }
-
-    if (!weak_ptr) {
-      return;
     }
 
     base::ScopedClosureRunner scoped_tasks_available(tasks_available_callback_);

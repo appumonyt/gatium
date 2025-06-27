@@ -16,11 +16,13 @@
 #import "ios/chrome/browser/reader_mode/model/features.h"
 #import "ios/chrome/browser/reader_mode/model/reader_mode_content_tab_helper.h"
 #import "ios/chrome/browser/reader_mode/model/reader_mode_distiller_page.h"
+#import "ios/chrome/browser/reader_mode/model/reader_mode_distiller_viewer.h"
 #import "ios/chrome/browser/reader_mode/model/reader_mode_java_script_feature.h"
 #import "ios/chrome/browser/shared/model/profile/profile_ios.h"
 #import "ios/chrome/browser/shared/model/url/url_util.h"
 #import "ios/chrome/browser/shared/public/commands/reader_mode_commands.h"
 #import "ios/chrome/browser/shared/public/commands/snackbar_commands.h"
+#import "ios/chrome/browser/snapshots/model/snapshot_tab_helper.h"
 #import "ios/web/navigation/wk_navigation_util.h"
 #import "ios/web/public/js_messaging/web_frames_manager.h"
 #import "ios/web/public/navigation/navigation_context.h"
@@ -258,6 +260,14 @@ void ReaderModeTabHelper::ResetUrlEligibility(const GURL& url) {
   }
 }
 
+void ReaderModeTabHelper::ReaderModeContentDidLoadData(
+    ReaderModeContentTabHelper* reader_mode_content_tab_helper) {
+  // Generic snapshot image generation on side-swipe has a long tail latency.
+  // Force update the snapshot storage to ensure that the latest snapshot is
+  // presented before a transition.
+  SnapshotTabHelper::FromWebState(web_state_)->UpdateSnapshotWithCallback(nil);
+}
+
 void ReaderModeTabHelper::ReaderModeContentDidCancelRequest(
     ReaderModeContentTabHelper* reader_mode_content_tab_helper,
     NSURLRequest* request,
@@ -405,9 +415,9 @@ void ReaderModeTabHelper::CreateReaderModeWebState() {
 
   std::unique_ptr<ReaderModeDistillerPage> distiller_page =
       std::make_unique<ReaderModeDistillerPage>(web_state_);
-  distiller_viewer_.reset(new OfflinePageDistillerViewer(
-      distiller_service_, std::move(distiller_page),
-      web_state_->GetLastCommittedURL(),
+  distiller_viewer_.reset(new ReaderModeDistillerViewer(
+      reader_mode_web_state_.get(), distiller_service_,
+      std::move(distiller_page), web_state_->GetLastCommittedURL(),
       base::BindRepeating(&ReaderModeTabHelper::PageDistillationCompleted,
                           weak_ptr_factory_.GetWeakPtr(),
                           base::TimeTicks::Now())));
@@ -421,6 +431,8 @@ void ReaderModeTabHelper::DestroyReaderModeWebState() {
   reader_mode_web_state_.reset();
   // Cancel any ongoing distillation task.
   distiller_viewer_.reset();
+  // Update the snapshot with the original web page.
+  SnapshotTabHelper::FromWebState(web_state_)->UpdateSnapshotWithCallback(nil);
 }
 
 void ReaderModeTabHelper::SetLastCommittedUrl(const GURL& url) {

@@ -54,6 +54,7 @@ import org.chromium.chrome.browser.tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabLaunchType;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tab_ui.TabContentManager;
+import org.chromium.chrome.browser.tabmodel.TabClosingSource;
 import org.chromium.chrome.browser.tabmodel.TabCreatorManager;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
@@ -201,8 +202,6 @@ public class LayoutManagerImpl
         public void didSelectTab(Tab tab, @TabSelectionType int type, int lastId) {
             if (type == TabSelectionType.FROM_OMNIBOX) {
                 switchToTab(tab, lastId);
-            } else if (tab.getId() != lastId) {
-                tabSelected(tab.getId(), lastId, tab.isIncognito());
             }
         }
 
@@ -230,9 +229,7 @@ public class LayoutManagerImpl
                 @TabCreationState int creationState,
                 boolean markedForSelection) {
             int tabId = tab.getId();
-            if (launchType == TabLaunchType.FROM_RESTORE) {
-                getActiveLayout().onTabRestored(time(), tabId);
-            } else {
+            if (launchType == TabLaunchType.FROM_RESTORE) return;
                 boolean incognito = tab.isIncognito();
                 boolean willBeSelected =
                         (launchType != TabLaunchType.FROM_LONGPRESS_BACKGROUND
@@ -260,21 +257,20 @@ public class LayoutManagerImpl
                         willBeSelected,
                         lastTapX,
                         lastTapY);
-            }
         }
 
         @Override
         public void willCloseAllTabs(boolean isIncognito) {
-            onTabsAllClosing(isIncognito);
+            tabsAllClosing(isIncognito);
         }
 
         @Override
-        public void onFinishingTabClosure(Tab tab) {
+        public void onFinishingTabClosure(Tab tab, @TabClosingSource int closingSource) {
             tabClosed(tab.getId(), tab.isIncognito(), false);
         }
 
         @Override
-        public void tabPendingClosure(Tab tab) {
+        public void tabPendingClosure(Tab tab, @TabClosingSource int closingSource) {
             tabClosed(tab.getId(), tab.isIncognito(), false);
         }
 
@@ -901,14 +897,6 @@ public class LayoutManagerImpl
         return new LayoutManagerChrome.LayoutManagerTabModelObserver();
     }
 
-    @VisibleForTesting
-    public void tabSelected(int tabId, int prevId, boolean incognito) {
-        // Update the model here so we properly set the right selected TabModel.
-        if (getActiveLayout() != null) {
-            getActiveLayout().onTabSelected(time(), tabId, prevId, incognito);
-        }
-    }
-
     /**
      * Should be called when a tab creating event is triggered (called before the tab is done being
      * created).
@@ -953,15 +941,14 @@ public class LayoutManagerImpl
 
     /**
      * Should be called when a tab closed event is triggered.
-     * @param id         The id of the closed tab.
-     * @param nextId     The id of the next tab that will be visible, if any.
-     * @param incognito  Whether or not the closed tab is incognito.
+     *
+     * @param id The id of the closed tab.
+     * @param nextId The id of the next tab that will be visible, if any.
+     * @param incognito Whether or not the closed tab is incognito.
      * @param tabRemoved Whether the tab was removed from the model (e.g. for reparenting), rather
-     *                   than closed and destroyed.
+     *     than closed and destroyed.
      */
-    protected void tabClosed(int id, int nextId, boolean incognito, boolean tabRemoved) {
-        if (getActiveLayout() != null) getActiveLayout().onTabClosed(time(), id, nextId, incognito);
-    }
+    protected void tabClosed(int id, int nextId, boolean incognito, boolean tabRemoved) {}
 
     private void tabClosed(int tabId, boolean incognito, boolean tabRemoved) {
         Tab currentTab =
@@ -972,28 +959,25 @@ public class LayoutManagerImpl
 
     /**
      * Called when a tab closure has been committed and all tab cleanup should happen.
-     * @param id        The id of the closed tab.
+     *
+     * @param id The id of the closed tab.
      * @param incognito Whether or not the closed tab is incognito.
      */
-    protected void tabClosureCommitted(int id, boolean incognito) {
-        if (getActiveLayout() != null) {
-            getActiveLayout().onTabClosureCommitted(time(), id, incognito);
-        }
-    }
+    protected void tabClosureCommitted(int id, boolean incognito) {}
 
     /**
      * Called when the selected tab model has switched.
+     *
      * @param incognito Whether or not the new current tab model is incognito.
      */
-    protected void tabModelSwitched(boolean incognito) {
-        if (getActiveLayout() != null) getActiveLayout().onTabModelSwitched(incognito);
-    }
+    protected void tabModelSwitched(boolean incognito) {}
 
-    public void onTabsAllClosing(boolean incognito) {
-        if (getActiveLayout() == null) return;
-
-        getActiveLayout().onTabsAllClosing(incognito);
-    }
+    /**
+     * Called when all tabs in a tab model start closing.
+     *
+     * @param incognito Whether or not the tabs are incognito.
+     */
+    protected void tabsAllClosing(boolean incognito) {}
 
     protected Supplier<TopUiThemeColorProvider> getTopUiThemeColorProvider() {
         return mTopUiThemeColorProvider;
@@ -1427,9 +1411,7 @@ public class LayoutManagerImpl
      * @param tab The tab that will be switched to.
      * @param lastTabId The id of the tab that was switched from.
      */
-    protected void switchToTab(Tab tab, int lastTabId) {
-        tabSelected(tab.getId(), lastTabId, tab.isIncognito());
-    }
+    protected void switchToTab(Tab tab, int lastTabId) {}
 
     // LayoutStateProvider implementation.
     @Override

@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_cookie_init.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_cookie_list_item.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -167,6 +168,121 @@ TEST_F(CookieStoreTest, SetByName) {
   EXPECT_EQ(1u, got.size());
   EXPECT_EQ("cookie-name", got[0].Name());
   EXPECT_EQ("cookie-value", got[0].Value());
+}
+
+TEST_F(CookieStoreTest, SetWithMixedCaseDomain) {
+  V8TestingScope v8_testing_scope((KURL(kDefaultUrl)));
+  CookieStore* cookie_store = CreateCookieStore(v8_testing_scope);
+
+  ScriptState* script_state = v8_testing_scope.GetScriptState();
+  ASSERT_TRUE(script_state);
+  ExceptionState exception_state(v8_testing_scope.GetIsolate());
+
+  std::vector<net::CanonicalCookie> got = GetAllCookies();
+  EXPECT_TRUE(got.empty());
+
+  CookieInit* set_options = CookieInit::Create();
+  set_options->setName("cookie-name");
+  set_options->setValue("cookie-value");
+  set_options->setDomain("ExAmPlE.CoM");
+
+  ScriptPromise<IDLUndefined> promise =
+      cookie_store->set(script_state, set_options, exception_state);
+  ScriptPromiseTester promise_tester(script_state, promise);
+  promise_tester.WaitUntilSettled();
+  EXPECT_FALSE(exception_state.HadException());
+  EXPECT_TRUE(promise_tester.IsFulfilled());
+  got = GetAllCookies();
+  EXPECT_EQ(1u, got.size());
+  EXPECT_EQ("cookie-name", got[0].Name());
+  EXPECT_EQ("cookie-value", got[0].Value());
+  EXPECT_EQ(".example.com", got[0].Domain());
+}
+
+TEST_F(CookieStoreTest, SetWithHttpPrefix) {
+  V8TestingScope v8_testing_scope((KURL(kDefaultUrl)));
+  CookieStore* cookie_store = CreateCookieStore(v8_testing_scope);
+
+  ScriptState* script_state = v8_testing_scope.GetScriptState();
+  ASSERT_TRUE(script_state);
+  DummyExceptionStateForTesting exception_state;
+
+  std::vector<net::CanonicalCookie> got = GetAllCookies();
+  EXPECT_TRUE(got.empty());
+
+  CookieInit* set_options = CookieInit::Create();
+  set_options->setName("__HtTp-name");
+  set_options->setValue("cookie-value");
+  set_options->setDomain("ExAmPlE.CoM");
+
+  ScriptPromise<IDLUndefined> promise =
+      cookie_store->set(script_state, set_options, exception_state);
+  ScriptPromiseTester promise_tester(script_state, promise, &exception_state);
+  promise_tester.WaitUntilSettled();
+  EXPECT_TRUE(exception_state.HadException());
+  EXPECT_EQ(
+      "Cookies with \"__Http-\" prefix cannot be set using the CookieStore "
+      "API.",
+      exception_state.Message());
+  EXPECT_TRUE(promise_tester.IsRejected());
+  got = GetAllCookies();
+  EXPECT_EQ(0u, got.size());
+}
+
+TEST_F(CookieStoreTest, SetWithHostHttpPrefix) {
+  V8TestingScope v8_testing_scope((KURL(kDefaultUrl)));
+  CookieStore* cookie_store = CreateCookieStore(v8_testing_scope);
+
+  ScriptState* script_state = v8_testing_scope.GetScriptState();
+  ASSERT_TRUE(script_state);
+  DummyExceptionStateForTesting exception_state;
+
+  std::vector<net::CanonicalCookie> got = GetAllCookies();
+  EXPECT_TRUE(got.empty());
+
+  CookieInit* set_options = CookieInit::Create();
+  set_options->setName("__HoStHtTp-name");
+  set_options->setValue("cookie-value");
+  set_options->setDomain("ExAmPlE.CoM");
+
+  ScriptPromise<IDLUndefined> promise =
+      cookie_store->set(script_state, set_options, exception_state);
+  ScriptPromiseTester promise_tester(script_state, promise, &exception_state);
+  promise_tester.WaitUntilSettled();
+  EXPECT_TRUE(exception_state.HadException());
+  EXPECT_EQ(
+      "Cookies with \"__HostHttp-\" prefix cannot be set using the CookieStore "
+      "API.",
+      exception_state.Message());
+  EXPECT_TRUE(promise_tester.IsRejected());
+  got = GetAllCookies();
+  EXPECT_EQ(0u, got.size());
+}
+
+TEST_F(CookieStoreTest, SetWithHostPrefixAndDomain) {
+  V8TestingScope v8_testing_scope((KURL(kDefaultUrl)));
+  CookieStore* cookie_store = CreateCookieStore(v8_testing_scope);
+
+  ScriptState* script_state = v8_testing_scope.GetScriptState();
+  ASSERT_TRUE(script_state);
+  ExceptionState exception_state(v8_testing_scope.GetIsolate());
+
+  std::vector<net::CanonicalCookie> got = GetAllCookies();
+  EXPECT_TRUE(got.empty());
+
+  CookieInit* set_options = CookieInit::Create();
+  set_options->setName("__HosT-name");
+  set_options->setValue("cookie-value");
+  set_options->setDomain("ExAmPlE.CoM");
+
+  ScriptPromise<IDLUndefined> promise =
+      cookie_store->set(script_state, set_options, exception_state);
+  ScriptPromiseTester promise_tester(script_state, promise, &exception_state);
+  promise_tester.WaitUntilSettled();
+  EXPECT_TRUE(exception_state.HadException());
+  EXPECT_TRUE(promise_tester.IsRejected());
+  got = GetAllCookies();
+  EXPECT_EQ(0u, got.size());
 }
 
 }  // namespace

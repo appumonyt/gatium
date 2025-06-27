@@ -83,12 +83,12 @@ void ValidateRequestForPut(const Request* request,
   const KURL& url = request->url();
   if (!url.ProtocolIsInHTTPFamily()) {
     exception_state.ThrowTypeError(
-        WTF::StrCat({"Request scheme '", url.Protocol(), "' is unsupported"}));
+        StrCat({"Request scheme '", url.Protocol(), "' is unsupported"}));
     return;
   }
   if (request->method() != http_names::kGET) {
-    exception_state.ThrowTypeError(WTF::StrCat(
-        {"Request method '", request->method(), "' is unsupported"}));
+    exception_state.ThrowTypeError(
+        StrCat({"Request method '", request->method(), "' is unsupported"}));
     return;
   }
   DCHECK(!request->HasBody());
@@ -215,16 +215,15 @@ class Cache::BarrierCallbackForPutResponse final
     if (resolver_->GetScriptState()->ContextIsValid()) {
       resolver_->RejectWithDOMException(
           DOMExceptionCode::kNetworkError,
-          WTF::StrCat({method_name_, " encountered a network error"}));
+          StrCat({method_name_, " encountered a network error"}));
     }
     Stop();
   }
 
   void AbortedResponse() {
     if (resolver_->GetScriptState()->ContextIsValid()) {
-      resolver_->RejectWithDOMException(
-          DOMExceptionCode::kAbortError,
-          WTF::StrCat({method_name_, " was aborted"}));
+      resolver_->RejectWithDOMException(DOMExceptionCode::kAbortError,
+                                        StrCat({method_name_, " was aborted"}));
     }
     Stop();
   }
@@ -459,9 +458,8 @@ class Cache::BarrierCallbackForPutComplete final
     if (!StillActive())
       return;
     completed_ = true;
-    resolver_->RejectWithDOMException(
-        DOMExceptionCode::kAbortError,
-        WTF::StrCat({method_name_, " was aborted"}));
+    resolver_->RejectWithDOMException(DOMExceptionCode::kAbortError,
+                                      StrCat({method_name_, " was aborted"}));
   }
 
   void Trace(Visitor* visitor) const {
@@ -919,7 +917,7 @@ ScriptPromise<V8UnionResponseOrUndefined> Cache::MatchImpl(
           [](base::TimeTicks start_time, const CacheQueryOptions* options,
              int64_t trace_id, Cache* self,
              ScriptPromiseResolver<V8UnionResponseOrUndefined>* resolver,
-             mojom::blink::MatchResultPtr result) {
+             mojom::blink::CacheStorageCache::MatchResult result) {
             base::TimeDelta elapsed = base::TimeTicks::Now() - start_time;
             UMA_HISTOGRAM_LONG_TIMES("ServiceWorkerCache.Cache.Renderer.Match",
                                      elapsed);
@@ -928,44 +926,46 @@ ScriptPromise<V8UnionResponseOrUndefined> Cache::MatchImpl(
                   "ServiceWorkerCache.Cache.Renderer.Match.IgnoreSearch",
                   elapsed);
             }
-            if (result->is_status()) {
+            if (!result.has_value()) {
               TRACE_EVENT_WITH_FLOW1(
                   "CacheStorage", "Cache::MatchImpl::Callback",
                   TRACE_ID_GLOBAL(trace_id), TRACE_EVENT_FLAG_FLOW_IN, "status",
-                  CacheStorageTracedValue(result->get_status()));
-              switch (result->get_status()) {
+                  CacheStorageTracedValue(result.error()));
+              switch (result.error()) {
                 case mojom::CacheStorageError::kErrorNotFound:
                   UMA_HISTOGRAM_LONG_TIMES(
                       "ServiceWorkerCache.Cache.Renderer.Match.Miss", elapsed);
                   resolver->Resolve();
                   break;
                 default:
-                  RejectCacheStorageWithError(resolver, result->get_status());
+                  RejectCacheStorageWithError(resolver, result.error());
                   break;
               }
             } else {
+              auto& match_response = result.value();
               UMA_HISTOGRAM_LONG_TIMES(
                   "ServiceWorkerCache.Cache.Renderer.Match.Hit", elapsed);
               ScriptState::Scope scope(resolver->GetScriptState());
-              if (result->is_eager_response()) {
+              if (match_response->is_eager_response()) {
                 TRACE_EVENT_WITH_FLOW1(
                     "CacheStorage", "Cache::MatchImpl::Callback",
                     TRACE_ID_GLOBAL(trace_id), TRACE_EVENT_FLAG_FLOW_IN,
                     "eager_response",
                     CacheStorageTracedValue(
-                        result->get_eager_response()->response));
-                resolver->Resolve(
-                    CreateEagerResponse(resolver->GetScriptState(),
-                                        std::move(result->get_eager_response()),
-                                        self->blob_client_list_));
+                        match_response->get_eager_response()->response));
+                resolver->Resolve(CreateEagerResponse(
+                    resolver->GetScriptState(),
+                    std::move(match_response->get_eager_response()),
+                    self->blob_client_list_));
               } else {
                 TRACE_EVENT_WITH_FLOW1(
                     "CacheStorage", "Cache::MatchImpl::Callback",
                     TRACE_ID_GLOBAL(trace_id), TRACE_EVENT_FLAG_FLOW_IN,
                     "response",
-                    CacheStorageTracedValue(result->get_response()));
-                resolver->Resolve(Response::Create(resolver->GetScriptState(),
-                                                   *result->get_response()));
+                    CacheStorageTracedValue(match_response->get_response()));
+                resolver->Resolve(
+                    Response::Create(resolver->GetScriptState(),
+                                     *match_response->get_response()));
               }
             }
           },
@@ -1013,26 +1013,25 @@ ScriptPromise<IDLSequence<Response>> Cache::MatchAllImpl(
           [](base::TimeTicks start_time, const CacheQueryOptions* options,
              int64_t trace_id, Cache* _,
              ScriptPromiseResolver<IDLSequence<Response>>* resolver,
-             mojom::blink::MatchAllResultPtr result) {
+             mojom::blink::CacheStorageCache::MatchAllResult result) {
             UMA_HISTOGRAM_LONG_TIMES(
                 "ServiceWorkerCache.Cache.Renderer.MatchAll",
                 base::TimeTicks::Now() - start_time);
-            if (result->is_status()) {
+            if (!result.has_value()) {
               TRACE_EVENT_WITH_FLOW1(
                   "CacheStorage", "Cache::MatchAllImpl::Callback",
                   TRACE_ID_GLOBAL(trace_id), TRACE_EVENT_FLAG_FLOW_IN, "status",
-                  CacheStorageTracedValue(result->get_status()));
-              RejectCacheStorageWithError(resolver, result->get_status());
+                  CacheStorageTracedValue(result.error()));
+              RejectCacheStorageWithError(resolver, result.error());
             } else {
               TRACE_EVENT_WITH_FLOW1(
                   "CacheStorage", "Cache::MatchAllImpl::Callback",
                   TRACE_ID_GLOBAL(trace_id), TRACE_EVENT_FLAG_FLOW_IN,
-                  "response_list",
-                  CacheStorageTracedValue(result->get_responses()));
+                  "response_list", CacheStorageTracedValue(result.value()));
               ScriptState::Scope scope(resolver->GetScriptState());
               HeapVector<Member<Response>> responses;
-              responses.ReserveInitialCapacity(result->get_responses().size());
-              for (auto& response : result->get_responses()) {
+              responses.ReserveInitialCapacity(result.value().size());
+              for (auto& response : result.value()) {
                 responses.push_back(
                     Response::Create(resolver->GetScriptState(), *response));
               }

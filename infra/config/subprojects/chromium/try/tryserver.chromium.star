@@ -17,9 +17,7 @@ try_.defaults.set(
     cores = 32,
     os = os.LINUX_DEFAULT,
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
-    reclient_enabled = False,
     service_account = try_.DEFAULT_SERVICE_ACCOUNT,
-    siso_enabled = True,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
 )
@@ -60,6 +58,9 @@ try_.builder(
         configs = ["ci/linux-official", "try_builder"],
     ),
     ssd = True,
+    # crbug.com/427503493: It produces large amount of dwo files (>700GB).
+    # Enabling remote linking without bytes avoids downloading them to the bot.
+    siso_remote_linking = True,
 )
 
 try_.builder(

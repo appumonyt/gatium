@@ -26,10 +26,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
-#include "crypto/ec_private_key.h"
+#include "crypto/evp.h"
 #include "crypto/hash.h"
-#include "crypto/rsa_private_key.h"
-#include "crypto/sha2.h"
+#include "crypto/keypair.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/ct_objects_extractor.h"
 #include "net/cert/ct_serialization.h"
@@ -217,13 +216,10 @@ std::unique_ptr<CertBuilder> CertBuilder::FromSubjectPublicKeyInfo(
   DCHECK(issuer);
   auto builder = std::make_unique<CertBuilder>(/*orig_cert=*/nullptr, issuer);
 
-  CBS cbs;
-  CBS_init(&cbs, spki_der.data(), spki_der.size());
-  builder->key_ = bssl::UniquePtr<EVP_PKEY>(EVP_parse_public_key(&cbs));
-  // Check that there was no error in `EVP_parse_public_key` and that it
-  // consumed the entire public key.
-  if (!builder->key_ || (CBS_len(&cbs) != 0))
+  builder->key_ = crypto::evp::PublicKeyFromBytes(spki_der);
+  if (!builder->key_) {
     return nullptr;
+  }
 
   return builder;
 }
@@ -1203,13 +1199,14 @@ void CertBuilder::Invalidate() {
 }
 
 void CertBuilder::GenerateECKey() {
-  auto private_key = crypto::ECPrivateKey::Create();
-  SetKey(bssl::UpRef(private_key->key()));
+  auto private_key = crypto::keypair::PrivateKey::GenerateEcP256();
+  SetKey(bssl::UpRef(private_key.key()));
 }
 
 void CertBuilder::GenerateRSAKey() {
-  auto private_key = crypto::RSAPrivateKey::Create(2048);
-  SetKey(bssl::UpRef(private_key->key()));
+  // TODO(https://crbug.com/426228064): Can we just use a hardcoded key here?
+  auto private_key = crypto::keypair::PrivateKey::GenerateRsa2048();
+  SetKey(bssl::UpRef(private_key.key()));
 }
 
 bool CertBuilder::UseKeyFromFile(const base::FilePath& key_file) {
@@ -1413,12 +1410,9 @@ void CertBuilder::BuildSctListExtension(const std::string& pre_tbs_certificate,
   for (const SctConfig& sct_config : sct_configs_) {
     ct::SignedEntryData entry;
     entry.type = ct::SignedEntryData::LOG_ENTRY_TYPE_PRECERT;
-    bssl::ScopedCBB issuer_spki_cbb;
-    ASSERT_TRUE(CBB_init(issuer_spki_cbb.get(), 32));
-    ASSERT_TRUE(
-        EVP_marshal_public_key(issuer_spki_cbb.get(), issuer_->GetKey()));
-    entry.issuer_key_hash = crypto::hash::Sha256(
-        base::as_byte_span(FinishCBB(issuer_spki_cbb.get())));
+    std::vector<uint8_t> issuer_spki =
+        crypto::evp::PublicKeyToBytes(issuer_->GetKey());
+    entry.issuer_key_hash = crypto::hash::Sha256(issuer_spki);
     entry.tbs_certificate = pre_tbs_certificate;
 
     std::string serialized_log_entry;

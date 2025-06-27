@@ -22,8 +22,10 @@
 #include "cc/animation/animation_timeline.h"
 #include "cc/animation/keyframe_effect.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
+#include "cc/input/browser_controls_offset_manager.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/mirror_layer_impl.h"
+#include "cc/layers/nine_patch_layer_impl.h"
 #include "cc/layers/nine_patch_thumb_scrollbar_layer_impl.h"
 #include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/layers/solid_color_layer_impl.h"
@@ -31,6 +33,7 @@
 #include "cc/layers/surface_layer_impl.h"
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/layers/tile_display_layer_impl.h"
+#include "cc/layers/ui_resource_layer_impl.h"
 #include "cc/layers/view_transition_content_layer_impl.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
@@ -60,11 +63,14 @@ int GenerateNextDisplayTreeId() {
   return next_id++;
 }
 
-cc::LayerTreeSettings GetDisplayTreeSettings(bool draw_mode_is_gpu) {
+cc::LayerTreeSettings GetDisplayTreeSettings(
+    mojom::LayerContextSettingsPtr remote_settings) {
   cc::LayerTreeSettings settings;
   settings.use_layer_lists = true;
   settings.trees_in_viz_in_viz_process = true;
-  settings.display_tree_draw_mode_is_gpu = draw_mode_is_gpu;
+  settings.display_tree_draw_mode_is_gpu = remote_settings->draw_mode_is_gpu;
+  settings.enable_edge_anti_aliasing =
+      remote_settings->enable_edge_anti_aliasing;
   return settings;
 }
 
@@ -84,8 +90,15 @@ base::expected<void, std::string> CreateLayer(
       layer = cc::MirrorLayerImpl::Create(&tree, id);
       break;
 
+    case cc::mojom::LayerType::kNinePatch:
+      layer = cc::NinePatchLayerImpl::Create(&tree, id);
+      break;
+
     case cc::mojom::LayerType::kNinePatchThumbScrollbar: {
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra &&
+              wire.layer_extra->is_nine_patch_thumb_scrollbar_layer_extra(),
+          "Invalid layer_extra type for NinePatchThumbScrollbarLayerImpl");
       auto& extra =
           wire.layer_extra->get_nine_patch_thumb_scrollbar_layer_extra();
       cc::ScrollbarOrientation orientation =
@@ -99,7 +112,9 @@ base::expected<void, std::string> CreateLayer(
     }
 
     case cc::mojom::LayerType::kPaintedScrollbar: {
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(wire.layer_extra &&
+                          wire.layer_extra->is_painted_scrollbar_layer_extra(),
+                      "Invalid layer_extra type for PaintedScrollbarLayerImpl");
       auto& extra = wire.layer_extra->get_painted_scrollbar_layer_extra();
       cc::ScrollbarOrientation orientation =
           extra->scrollbar_base_extra->is_horizontal_orientation
@@ -117,7 +132,10 @@ base::expected<void, std::string> CreateLayer(
       break;
 
     case cc::mojom::LayerType::kSolidColorScrollbar: {
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra &&
+              wire.layer_extra->is_solid_color_scrollbar_layer_extra(),
+          "Invalid layer_extra type for SolidColorScrollbarLayerImpl");
       auto& extra = wire.layer_extra->get_solid_color_scrollbar_layer_extra();
       cc::ScrollbarOrientation orientation =
           extra->scrollbar_base_extra->is_horizontal_orientation
@@ -135,12 +153,23 @@ base::expected<void, std::string> CreateLayer(
       layer = cc::SurfaceLayerImpl::Create(&tree, id, base::NullCallback());
       break;
 
+    case cc::mojom::LayerType::kSolidColor:
+      layer = cc::SolidColorLayerImpl::Create(&tree, id);
+      break;
+
     case cc::mojom::LayerType::kTexture:
       layer = cc::TextureLayerImpl::Create(&tree, id);
       break;
 
+    case cc::mojom::LayerType::kUIResource:
+      layer = cc::UIResourceLayerImpl::Create(&tree, id);
+      break;
+
     case cc::mojom::LayerType::kViewTransitionContent: {
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra &&
+              wire.layer_extra->is_view_transition_content_layer_extra(),
+          "Invalid layer_extra type for ViewTransitionContentLayerImpl");
       auto& extra = wire.layer_extra->get_view_transition_content_layer_extra();
       layer = cc::ViewTransitionContentLayerImpl::Create(
           &tree, id, extra->resource_id, extra->is_live_content_layer,
@@ -228,6 +257,9 @@ base::expected<void, std::string> UpdatePropertyTreeNode(
   node.SetTransformChanged(cc::DamageReason::kUntracked);
   if (!node.SetDamageReasonsForDeserialization(
           cc::DamageReasonSet::FromEnumBitmask(wire.damage_reasons_bit_mask))) {
+    // This error case shouldn't be reachable, since
+    // DamageReasonSet::FromEnumBitmask should already ignore any bits outside
+    // of the set's range.
     return base::unexpected("Invalid damage_reasons_bit_mask");
   }
   node.moved_by_safe_area_bottom = wire.moved_by_safe_area_bottom;
@@ -261,6 +293,28 @@ base::expected<void, std::string> UpdatePropertyTreeNode(
   }
   if (!IsPropertyTreeIndexValid(trees.effect_tree(), wire.target_id)) {
     return base::unexpected("Invalid target_id for effect node");
+  }
+  if (!IsOptionalPropertyTreeIndexValid(
+          trees.effect_tree(),
+          wire.closest_ancestor_with_cached_render_surface_id)) {
+    return base::unexpected(
+        "Invalid closest_ancestor_with_cached_render_surface_id for effect "
+        "node");
+  }
+  if (!IsOptionalPropertyTreeIndexValid(
+          trees.effect_tree(), wire.closest_ancestor_with_copy_request_id)) {
+    return base::unexpected(
+        "Invalid closest_ancestor_with_copy_request_id for effect node");
+  }
+  if (!IsOptionalPropertyTreeIndexValid(
+          trees.effect_tree(), wire.closest_ancestor_being_captured_id)) {
+    return base::unexpected(
+        "Invalid closest_ancestor_being_captured_id for effect node");
+  }
+  if (!IsOptionalPropertyTreeIndexValid(
+          trees.effect_tree(), wire.closest_ancestor_with_shared_element_id)) {
+    return base::unexpected(
+        "Invalid closest_ancestor_with_shared_element_id for effect node");
   }
   node.transform_id = wire.transform_id;
   node.clip_id = wire.clip_id;
@@ -479,6 +533,20 @@ void UpdateMirrorLayerExtra(const mojom::MirrorLayerExtraPtr& extra,
   layer.SetMirroredLayerId(extra->mirrored_layer_id);
 }
 
+base::expected<void, std::string> UpdateNinePatchLayerExtra(
+    const mojom::NinePatchLayerExtraPtr& extra,
+    cc::NinePatchLayerImpl& layer) {
+  if (!extra->ui_resource_id) {
+    return base::unexpected("Invalid ui_resource_id for NinePatchLayerImpl");
+  }
+  layer.SetUIResourceId(extra->ui_resource_id);
+  layer.SetImageBounds(extra->image_bounds);
+  layer.SetLayout(extra->image_aperture, extra->border, extra->layer_occlusion,
+                  extra->fill_center);
+  layer.SetUV(extra->uv_top_left, extra->uv_bottom_right);
+  return base::ok();
+}
+
 void UpdateTextureLayerExtra(const mojom::TextureLayerExtraPtr& extra,
                              cc::TextureLayerImpl& layer) {
   layer.SetBlendBackgroundColor(extra->blend_background_color);
@@ -502,6 +570,18 @@ void UpdateTextureLayerExtra(const mojom::TextureLayerExtraPtr& extra,
     layer.SetTransferableResource(extra->transferable_resource.value(),
                                   std::move(release_callback));
   }
+}
+
+base::expected<void, std::string> UpdateUIResourceLayerExtra(
+    const mojom::UIResourceLayerExtraPtr& extra,
+    cc::UIResourceLayerImpl& layer) {
+  if (!extra->ui_resource_id) {
+    return base::unexpected("Invalid ui_resource_id for UIResourceLayerImpl");
+  }
+  layer.SetUIResourceId(extra->ui_resource_id);
+  layer.SetImageBounds(extra->image_bounds);
+  layer.SetUV(extra->uv_top_left, extra->uv_bottom_right);
+  return base::ok();
 }
 
 void UpdateScrollbarLayerBaseExtra(
@@ -575,6 +655,9 @@ void UpdateSolidColorScrollbarLayerExtra(
   UpdateScrollbarLayerBaseExtra(
       extra->scrollbar_base_extra,
       static_cast<cc::ScrollbarLayerImplBase&>(layer));
+  layer.set_color(extra->color);
+  // thumb_thickness has no update method in SolidColorScrollbarLayerImpl
+  // so it is intentionally ignored here.
 }
 
 void UpdateSurfaceLayerExtra(const mojom::SurfaceLayerExtraPtr& extra,
@@ -596,12 +679,28 @@ void UpdateViewTransitionContentLayerExtra(
   layer.SetMaxExtentsRect(extra->max_extents_rect);
 }
 
+void UpdateTileDisplayLayerExtra(const mojom::TileDisplayLayerExtraPtr& extra,
+                                 cc::TileDisplayLayerImpl& layer) {
+  layer.SetSolidColor(extra->solid_color);
+  layer.SetIsBackdropFilterMask(extra->is_backdrop_filter_mask);
+  layer.SetIsDirectlyCompositedImage(extra->is_directly_composited_image);
+  layer.SetNearestNeighbor(extra->nearest_neighbor);
+}
+
 base::expected<void, std::string> UpdateLayer(const mojom::Layer& wire,
                                               cc::LayerImpl& layer) {
+  if (wire.type != layer.GetLayerType()) {
+    return base::unexpected("Incorrect layer type used in Layer update.");
+  }
   if (wire.contents_opaque && !wire.contents_opaque_for_text) {
     return base::unexpected(
         "Invalid contents_opaque_for_text: cannot be false if contents_opaque "
         "is true.");
+  }
+  if (wire.safe_opaque_background_color.isOpaque() != wire.contents_opaque) {
+    return base::unexpected(
+        "Invalid safe_opaque_background_color: opaqueness must agree with "
+        "contents_opaque");
   }
 
   layer.SetBounds(wire.bounds);
@@ -625,12 +724,6 @@ base::expected<void, std::string> UpdateLayer(const mojom::Layer& wire,
     layer.SetFilterQuality(wire.rare_properties->filter_quality);
     layer.SetDynamicRangeLimit(wire.rare_properties->dynamic_range_limit);
     layer.SetCaptureBounds(wire.rare_properties->capture_bounds);
-  }
-
-  if (layer.GetLayerType() == cc::mojom::LayerType::kTileDisplay) {
-    auto& tile_display_layer = static_cast<cc::TileDisplayLayerImpl&>(layer);
-    tile_display_layer.SetSolidColor(wire.solid_color);
-    tile_display_layer.SetIsBackdropFilterMask(wire.is_backdrop_filter_mask);
   }
 
   const cc::PropertyTrees& property_trees =
@@ -670,40 +763,81 @@ base::expected<void, std::string> UpdateLayer(const mojom::Layer& wire,
 
   switch (wire.type) {
     case cc::mojom::LayerType::kMirror:
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra && wire.layer_extra->is_mirror_layer_extra(),
+          "Invalid layer_extra type for MirrorLayerImpl");
       UpdateMirrorLayerExtra(wire.layer_extra->get_mirror_layer_extra(),
                              static_cast<cc::MirrorLayerImpl&>(layer));
       break;
+    case cc::mojom::LayerType::kNinePatch:
+      RETURN_IF_FALSE(
+          wire.layer_extra && wire.layer_extra->is_nine_patch_layer_extra(),
+          "Invalid layer_extra type for NinePatchLayerImpl");
+      RETURN_IF_ERROR(UpdateNinePatchLayerExtra(
+          wire.layer_extra->get_nine_patch_layer_extra(),
+          static_cast<cc::NinePatchLayerImpl&>(layer)));
+      break;
     case cc::mojom::LayerType::kNinePatchThumbScrollbar:
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra &&
+              wire.layer_extra->is_nine_patch_thumb_scrollbar_layer_extra(),
+          "Invalid layer_extra type for NinePatchThumbScrollbarLayerImpl");
       UpdateNinePatchThumbScrollbarLayerExtra(
           wire.layer_extra->get_nine_patch_thumb_scrollbar_layer_extra(),
           static_cast<cc::NinePatchThumbScrollbarLayerImpl&>(layer));
       break;
     case cc::mojom::LayerType::kPaintedScrollbar:
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(wire.layer_extra &&
+                          wire.layer_extra->is_painted_scrollbar_layer_extra(),
+                      "Invalid layer_extra type for PaintedScrollbarLayerImpl");
       UpdatePaintedScrollbarLayerExtra(
           wire.layer_extra->get_painted_scrollbar_layer_extra(),
           static_cast<cc::PaintedScrollbarLayerImpl&>(layer));
       break;
     case cc::mojom::LayerType::kSolidColorScrollbar:
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra &&
+              wire.layer_extra->is_solid_color_scrollbar_layer_extra(),
+          "Invalid layer_extra type for SolidColorScrollbarLayerImpl");
       UpdateSolidColorScrollbarLayerExtra(
           wire.layer_extra->get_solid_color_scrollbar_layer_extra(),
           static_cast<cc::SolidColorScrollbarLayerImpl&>(layer));
       break;
     case cc::mojom::LayerType::kSurface:
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra && wire.layer_extra->is_surface_layer_extra(),
+          "Invalid layer_extra type for SurfaceLayerImpl");
       UpdateSurfaceLayerExtra(wire.layer_extra->get_surface_layer_extra(),
                               static_cast<cc::SurfaceLayerImpl&>(layer));
       break;
     case cc::mojom::LayerType::kTexture:
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra && wire.layer_extra->is_texture_layer_extra(),
+          "Invalid layer_extra type for TextureLayerImpl");
       UpdateTextureLayerExtra(wire.layer_extra->get_texture_layer_extra(),
                               static_cast<cc::TextureLayerImpl&>(layer));
       break;
+    case cc::mojom::LayerType::kTileDisplay:
+      RETURN_IF_FALSE(
+          wire.layer_extra && wire.layer_extra->is_tile_display_layer_extra(),
+          "Invalid layer_extra type for TileDisplayLayerImpl");
+      UpdateTileDisplayLayerExtra(
+          wire.layer_extra->get_tile_display_layer_extra(),
+          static_cast<cc::TileDisplayLayerImpl&>(layer));
+      break;
+    case cc::mojom::LayerType::kUIResource:
+      RETURN_IF_FALSE(
+          wire.layer_extra && wire.layer_extra->is_ui_resource_layer_extra(),
+          "Invalid layer_extra type for UIResourceLayerImpl");
+      RETURN_IF_ERROR(UpdateUIResourceLayerExtra(
+          wire.layer_extra->get_ui_resource_layer_extra(),
+          static_cast<cc::UIResourceLayerImpl&>(layer)));
+      break;
     case cc::mojom::LayerType::kViewTransitionContent:
-      RETURN_IF_FALSE(wire.layer_extra, "Invalid layer_extra");
+      RETURN_IF_FALSE(
+          wire.layer_extra &&
+              wire.layer_extra->is_view_transition_content_layer_extra(),
+          "Invalid layer_extra type for ViewTransitionContentLayerImpl");
       UpdateViewTransitionContentLayerExtra(
           wire.layer_extra->get_view_transition_content_layer_extra(),
           static_cast<cc::ViewTransitionContentLayerImpl&>(layer));
@@ -744,8 +878,6 @@ base::expected<void, std::string> CreateOrUpdateLayers(
     if (!layer) {
       RETURN_IF_ERROR(CreateLayer(host_impl, layers, *wire, layer));
     }
-    // TODO(crbug.com/418022040): Make sure we support re-creating Layers with
-    // a previously used Id.
     RETURN_IF_ERROR(UpdateLayer(*wire, *layer));
   }
   for (auto id : *layer_order) {
@@ -1011,33 +1143,47 @@ DeserializeKeyframe(const mojom::AnimationKeyframeValue& value,
     if (value.is_scalar()) {
       keyframe = gfx::FloatKeyframe::Create(start_time, value.get_scalar(),
                                             std::move(timing_function));
+    } else {
+      return base::unexpected("Invalid keyframe type");
     }
   } else if constexpr (std::is_same_v<ValueType, SkColor>) {
     if (value.is_color()) {
       keyframe = gfx::ColorKeyframe::Create(start_time, value.get_color(),
                                             std::move(timing_function));
+    } else {
+      return base::unexpected("Invalid keyframe type");
     }
   } else if constexpr (std::is_same_v<ValueType, gfx::SizeF>) {
     if (value.is_size()) {
       keyframe = gfx::SizeKeyframe::Create(start_time, value.get_size(),
                                            std::move(timing_function));
+    } else {
+      return base::unexpected("Invalid keyframe type");
     }
   } else if constexpr (std::is_same_v<ValueType, gfx::Rect>) {
     if (value.is_rect()) {
       keyframe = gfx::RectKeyframe::Create(start_time, value.get_rect(),
                                            std::move(timing_function));
+    } else {
+      return base::unexpected("Invalid keyframe type");
     }
   } else if constexpr (std::is_same_v<ValueType, gfx::TransformOperations>) {
     if (value.is_transform()) {
       keyframe = gfx::TransformKeyframe::Create(
           start_time, DeserializeTransformOperations(value.get_transform()),
           std::move(timing_function));
+    } else {
+      return base::unexpected("Invalid keyframe type");
     }
   } else {
     static_assert(false, "Unsupported curve type");
   }
 
   if (!keyframe) {
+    // This case handles failures from `gfx::Keyframe::Create` calls above
+    // if the value was of the correct type but otherwise invalid, or if a
+    // new `ValueType` is added to the system without a corresponding
+    // `if constexpr` block and `Create` method here.
     return base::unexpected("Invalid keyframe value");
   }
   return keyframe;
@@ -1078,6 +1224,10 @@ base::expected<void, std::string> DeserializeAnimationCurve(
     const mojom::AnimationKeyframeModel& wire,
     cc::Animation& animation) {
   auto curve = CurveType::Create();
+  if (wire.playback_rate == 0.0) {
+    return base::unexpected("Invalid playback_rate: cannot be 0");
+  }
+
   curve->SetTimingFunction(DeserializeTimingFunction(*wire.timing_function));
   curve->set_scaled_duration(wire.scaled_duration);
   for (const auto& wire_keyframe : wire.keyframes) {
@@ -1123,7 +1273,7 @@ base::expected<void, std::string> DeserializeAnimation(
 
   for (const auto& wire_model : wire.keyframe_models) {
     if (wire_model->keyframes.empty()) {
-      return base::unexpected("Unexpected anmation with no keyframes");
+      return base::unexpected("Unexpected animation with no keyframes");
     }
     // We use the first keyframe to determine the curve type. All keyframes will
     // be validated against this type.
@@ -1163,9 +1313,10 @@ base::expected<void, std::string> DeserializeAnimationTimeline(
     const mojom::AnimationTimeline& wire,
     cc::AnimationHost& host) {
   scoped_refptr<cc::AnimationTimeline> timeline = host.GetTimelineById(wire.id);
+  bool add_new_timeline = false;
   if (!timeline) {
     timeline = cc::AnimationTimeline::Create(wire.id);
-    host.AddAnimationTimeline(timeline);
+    add_new_timeline = true;
   }
   for (int32_t id : wire.removed_animations) {
     if (auto* animation = timeline->GetAnimationById(id)) {
@@ -1174,6 +1325,9 @@ base::expected<void, std::string> DeserializeAnimationTimeline(
   }
   for (const auto& wire_animation : wire.new_animations) {
     RETURN_IF_ERROR(DeserializeAnimation(*wire_animation, *timeline));
+  }
+  if (add_new_timeline) {
+    host.AddAnimationTimeline(timeline);
   }
   return base::ok();
 }
@@ -1202,9 +1356,9 @@ base::expected<void, std::string> DeserializeAnimationUpdates(
 
 LayerContextImpl::LayerContextImpl(CompositorFrameSinkSupport* compositor_sink,
                                    mojom::PendingLayerContext& context,
-                                   bool draw_mode_is_gpu)
+                                   mojom::LayerContextSettingsPtr settings)
     : LayerContextImpl(compositor_sink,
-                       draw_mode_is_gpu,
+                       std::move(settings),
                        std::move(context.receiver),
                        std::move(context.client)) {
   // Always expect valid context receiver & client to be passed to the
@@ -1216,16 +1370,16 @@ LayerContextImpl::LayerContextImpl(CompositorFrameSinkSupport* compositor_sink,
 // static
 std::unique_ptr<LayerContextImpl> LayerContextImpl::CreateForTesting(
     CompositorFrameSinkSupport* compositor_sink,
-    bool draw_mode_is_gpu) {
+    mojom::LayerContextSettingsPtr settings) {
   return base::WrapUnique<LayerContextImpl>(new LayerContextImpl(
-      compositor_sink, draw_mode_is_gpu,
+      compositor_sink, std::move(settings),
       mojo::PendingAssociatedReceiver<mojom::LayerContext>(),
       mojo::PendingAssociatedRemote<mojom::LayerContextClient>()));
 }
 
 LayerContextImpl::LayerContextImpl(
     CompositorFrameSinkSupport* compositor_sink,
-    bool draw_mode_is_gpu,
+    mojom::LayerContextSettingsPtr settings,
     mojo::PendingAssociatedReceiver<mojom::LayerContext> receiver_pipe,
     mojo::PendingAssociatedRemote<mojom::LayerContextClient> client_pipe)
     : compositor_sink_(compositor_sink),
@@ -1233,7 +1387,7 @@ LayerContextImpl::LayerContextImpl(
           base::SingleThreadTaskRunner::GetCurrentDefault())),
       rendering_stats_(cc::RenderingStatsInstrumentation::Create()),
       host_impl_(cc::LayerTreeHostImpl::Create(
-          GetDisplayTreeSettings(draw_mode_is_gpu),
+          GetDisplayTreeSettings(std::move(settings)),
           this,
           task_runner_provider_.get(),
           rendering_stats_.get(),
@@ -1424,12 +1578,16 @@ void LayerContextImpl::DetachFromClient() {
 
 void LayerContextImpl::SetLocalSurfaceId(
     const LocalSurfaceId& local_surface_id) {
-  host_impl_->SetTargetLocalSurfaceId(local_surface_id);
+  // There are a few places that calls this. One is from LayerTreeHostImpl in
+  // TreesInViz mode in viz process, and it's unnecessary to call it. The
+  // others are from ui/aura/window.cc, and their frame_sink_ should not be
+  // LayerContextImpl.
+  NOTREACHED();
 }
 
 void LayerContextImpl::SubmitCompositorFrame(CompositorFrame frame,
                                              bool hit_test_data_changed) {
-  if (!host_impl_->target_local_surface_id().is_valid()) {
+  if (!host_impl_->GetCurrentLocalSurfaceId().is_valid()) {
     return;
   }
 
@@ -1441,9 +1599,9 @@ void LayerContextImpl::SubmitCompositorFrame(CompositorFrame frame,
   // TODO(vmiura): Implement other functionality from
   // AsyncLayerTreeFrameSink::SubmitCompositorFrame()
 
-  compositor_sink_->SubmitCompositorFrame(host_impl_->target_local_surface_id(),
-                                          std::move(frame),
-                                          std::move(hit_test_region_list), 0);
+  compositor_sink_->SubmitCompositorFrame(
+      host_impl_->GetCurrentLocalSurfaceId(), std::move(frame),
+      std::move(hit_test_region_list), 0);
 
   if (base::FeatureList::IsEnabled(features::kTreeAnimationsInViz)) {
     constexpr bool start_ready_animations = true;
@@ -1561,9 +1719,14 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
 
   if (update->local_surface_id_from_parent) {
     layers.SetLocalSurfaceIdFromParent(*update->local_surface_id_from_parent);
+    if (update->new_local_surface_id_request) {
+      layers.RequestNewLocalSurfaceId();
+    }
     host_impl_->UpdateChildLocalSurfaceId();
-    // TODO(zmo): Remove calling SetTargetLocalSurfaceId().
-    host_impl_->SetTargetLocalSurfaceId(*update->local_surface_id_from_parent);
+  }
+
+  if (update->target_local_surface_id) {
+    host_impl_->SetTargetLocalSurfaceId(*update->target_local_surface_id);
   }
 
   for (const auto& tiling : update->tilings) {
@@ -1616,11 +1779,33 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
       !std::isfinite(update->painted_device_scale_factor)) {
     return base::unexpected("Invalid painted device scale factor");
   }
+  if (update->max_safe_area_inset_bottom < 0 ||
+      !std::isfinite(update->max_safe_area_inset_bottom)) {
+    return base::unexpected("Invalid max safe area inset bottom");
+  }
+  if (layers.elastic_overscroll()->SetCurrent(update->elastic_overscroll)) {
+    layers.set_needs_update_draw_properties();
+  }
+  layers.SetBrowserControlsParams(update->browser_controls_params);
+  host_impl_->browser_controls_manager()->SetOffsetTagModifications(
+      update->browser_controls_offset_tag_modifications);
+
+  layers.set_display_transform_hint(update->display_transform_hint);
+  layers.SetMaxSafeAreaInsetBottom(update->max_safe_area_inset_bottom);
   layers.set_painted_device_scale_factor(update->painted_device_scale_factor);
   layers.SetDisplayColorSpaces(update->display_color_spaces);
   if (update->local_surface_id_from_parent) {
     layers.SetLocalSurfaceIdFromParent(*update->local_surface_id_from_parent);
   }
+
+  if (!(update->top_controls_shown_ratio >= 0 &&
+        update->top_controls_shown_ratio <= 1 &&
+        update->bottom_controls_shown_ratio >= 0 &&
+        update->bottom_controls_shown_ratio <= 1)) {
+    return base::unexpected("Invalid top/bottom controls shown ratios");
+  }
+  host_impl_->SetCurrentBrowserControlsShownRatio(
+      update->top_controls_shown_ratio, update->bottom_controls_shown_ratio);
 
   host_impl_->SetViewportDamage(update->viewport_damage_rect);
 
@@ -1722,21 +1907,26 @@ void LayerContextImpl::DoDraw(const BeginFrameArgs& begin_frame_args) {
 void LayerContextImpl::UpdateDisplayTiling(mojom::TilingPtr tiling,
                                            bool update_damage) {
   CHECK(receiver_);
+  auto result = DoUpdateDisplayTiling(std::move(tiling), update_damage);
+  if (!result.has_value()) {
+    receiver_->ReportBadMessage(result.error());
+  }
+}
+
+base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTiling(
+    mojom::TilingPtr tiling,
+    bool update_damage) {
   cc::LayerTreeImpl& layers = *host_impl_->active_tree();
   if (cc::LayerImpl* layer = layers.LayerById(tiling->layer_id)) {
     if (layer->GetLayerType() != cc::mojom::LayerType::kTileDisplay) {
-      receiver_->ReportBadMessage("Invalid tile update");
-      return;
+      return base::unexpected("Invalid tile update");
     }
 
-    auto result = DeserializeTiling(
-        host_impl_.get(), static_cast<cc::TileDisplayLayerImpl&>(*layer),
-        *tiling, update_damage);
-    if (!result.has_value()) {
-      receiver_->ReportBadMessage(result.error());
-      return;
-    }
+    return DeserializeTiling(host_impl_.get(),
+                             static_cast<cc::TileDisplayLayerImpl&>(*layer),
+                             *tiling, update_damage);
   }
+  return base::ok();
 }
 
 }  // namespace viz

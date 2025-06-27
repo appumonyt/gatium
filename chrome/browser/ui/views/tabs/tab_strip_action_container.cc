@@ -15,7 +15,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/tabs/organization/tab_declutter_controller.h"
@@ -272,8 +271,8 @@ TabStripActionContainer::TabStripActionContainer(
     product_specifications_button =
         std::make_unique<ProductSpecificationsButton>(
             tab_strip_controller, browser_window_interface->GetTabStripModel(),
-            browser_window_interface->GetFeatures()
-                .product_specifications_entry_point_controller(),
+            commerce::ProductSpecificationsEntryPointController::From(
+                browser_window_interface),
             /*render_tab_search_before_tab_strip_*/ false, this);
     product_specifications_button->SetProperty(views::kCrossAxisAlignmentKey,
                                                views::LayoutAlignment::kCenter);
@@ -504,7 +503,9 @@ void TabStripActionContainer::OnGlicButtonMouseDown() {
   // cache the results for future calls. Which is why the callback does nothing.
   glic::GlicKeyedService* glic_service =
       glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
-  glic_service->FetchZeroStateSuggestions(false, base::DoNothing());
+  glic_service->FetchZeroStateSuggestions(
+      /*is_first_run=*/false, /*supported_tools=*/std::nullopt,
+      base::DoNothing());
 }
 #endif  // BUILDFLAG(ENABLE_GLIC)
 

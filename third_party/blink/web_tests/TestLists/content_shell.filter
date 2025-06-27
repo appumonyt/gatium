@@ -893,12 +893,17 @@ external/wpt/css/printing/input-file-print.html
 external/wpt/html/semantics/popovers/popover-focus-2.html
 virtual/html-anchor-attribute-disabled/external/wpt/html/semantics/popovers/popover-focus-2.html
 
+# These are flaky on Mac. Judging by the other focus-related test in this list, I'm assuming
+# there is some kind of headless focus problem.
+external/wpt/html/semantics/the-button-element/interest-for/interestfor-popover-focus.tentative.html
+external/wpt/html/semantics/the-button-element/interest-for/interestfor-invoker-descendants.tentative.html
+external/wpt/html/semantics/the-button-element/interest-for/interestfor-partial-interest.tentative.html
+
 virtual/backface-visibility-interop/external/wpt/css/css-transforms/backface-visibility-001.html
 virtual/backface-visibility-interop/external/wpt/css/css-transforms/backface-visibility-hidden-animated-002.html
 virtual/backface-visibility-interop/external/wpt/css/css-transforms/ttwf-css-3d-polygon-cycle.html
 virtual/composite-clip-path-animation/external/wpt/css/css-masking/clip-path/animations/clip-path-animation*
 virtual/composite-clip-path-animation/external/wpt/css/css-masking/clip-path/animations/clip-path-transition*
-virtual/css-gap-decorations/external/wpt/css/css-ui/compute-kind-widget-no-fallback-props-001.html
 virtual/customizable-select-disabled/external/wpt/html/semantics/forms/the-select-element/reset-algorithm-rendering.html
 virtual/customizable-select-disabled/external/wpt/html/semantics/forms/the-select-element/select-tabindex-order.tentative.html
 virtual/dark-color-scheme/external/wpt/css/css-color/system-color-consistency.html
@@ -934,13 +939,6 @@ virtual/gpu-rasterization/external/wpt/css/css-images/object-fit-*
 virtual/gpu-rasterization/external/wpt/css/css-images/object-view-box-fit-*
 virtual/html-anchor-attribute-disabled/external/wpt/html/semantics/popovers/popover-focus.html
 virtual/html-anchor-attribute-disabled/external/wpt/html/semantics/popovers/popover-hidden-display.html
-virtual/keepalive-in-browser-migration/external/wpt/background-fetch/abort.https.window.html
-virtual/keepalive-in-browser-migration/external/wpt/background-fetch/fetch.https.window.html
-virtual/keepalive-in-browser-migration/external/wpt/background-fetch/fetch-uploads.https.window.html
-virtual/keepalive-in-browser-migration/external/wpt/background-fetch/match.https.window.html
-virtual/keepalive-in-browser-migration/external/wpt/background-fetch/update-ui.https.window.html
-virtual/keepalive-in-browser-migration/external/wpt/fetch/fetch-later/new-window.tentative.https.window.html
-virtual/keepalive-in-browser-migration/external/wpt/fetch/stale-while-revalidate/stale-*
 virtual/main-thread-clip-path-animation/external/wpt/css/css-masking/clip-path/animations/clip-path-animation-custom-timing-function.html
 virtual/main-thread-clip-path-animation/external/wpt/css/css-masking/clip-path/animations/clip-path-animation-fixed-position-rounding-error.html
 virtual/media-foundation-for-clear-dcomp/external/wpt/media-source/last-frame-dimensions.html

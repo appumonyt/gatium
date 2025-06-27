@@ -103,7 +103,7 @@ FakeChromeUserManager::AddUserWithAffiliationAndTypeAndProfile(
   return user;
 }
 
-user_manager::User* FakeChromeUserManager::AddKioskAppUser(
+user_manager::User* FakeChromeUserManager::AddKioskChromeAppUser(
     const AccountId& account_id) {
   user_manager::User* user =
       user_manager::User::CreateKioskChromeAppUser(account_id);
@@ -114,7 +114,7 @@ user_manager::User* FakeChromeUserManager::AddKioskAppUser(
   return user;
 }
 
-user_manager::User* FakeChromeUserManager::AddWebKioskAppUser(
+user_manager::User* FakeChromeUserManager::AddKioskWebAppUser(
     const AccountId& account_id) {
   user_manager::User* user =
       user_manager::User::CreateKioskWebAppUser(account_id);
@@ -130,6 +130,15 @@ user_manager::User* FakeChromeUserManager::AddKioskIwaUser(
   user_manager::User* user = user_manager::User::CreateKioskIwaUser(account_id);
   user->set_username_hash(
       user_manager::FakeUserManager::GetFakeUsernameHash(account_id));
+  user_storage_.emplace_back(user);
+  persisted_users_.push_back(user);
+  return user;
+}
+
+user_manager::User* FakeChromeUserManager::AddKioskArcvmAppUser(
+    const AccountId& account_id) {
+  user_manager::User* user =
+      user_manager::User::CreateKioskArcvmAppUser(account_id);
   user_storage_.emplace_back(user);
   persisted_users_.push_back(user);
   return user;

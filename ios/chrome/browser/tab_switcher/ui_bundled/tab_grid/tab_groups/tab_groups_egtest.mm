@@ -206,7 +206,9 @@ void UngroupGroupAtIndex(int group_cell_index) {
   [[EarlGrey selectElementWithMatcher:UngroupButton()]
       performAction:grey_tap()];
   // Tap a ungroup button again to confirm the deletion.
-  [[EarlGrey selectElementWithMatcher:UngroupConfirmationButton()]
+  [[EarlGrey selectElementWithMatcher:
+                 chrome_test_util::ActionSheetItemWithAccessibilityLabelId(
+                     IDS_IOS_CONTENT_CONTEXT_UNGROUP)]
       performAction:grey_tap()];
 }
 
@@ -276,14 +278,9 @@ UIViewController* TopPresentedViewController() {
 
 - (AppLaunchConfiguration)appConfigurationForTestCase {
   AppLaunchConfiguration config;
-  config.features_enabled.push_back(kTabGroupIndicator);
-  if ([self isRunningTest:@selector(testCloseFromSelectionSyncDisabled)]) {
-    config.features_disabled.push_back(kTabGroupSync);
-  } else {
-    config.features_enabled.push_back(kTabGroupSync);
-  }
   config.features_enabled.push_back(
       data_sharing::features::kDataSharingFeature);
+  config.features_enabled.push_back(kContainedTabGroup);
   return config;
 }
 
@@ -1358,6 +1355,10 @@ UIViewController* TopPresentedViewController() {
   if (![ChromeEarlGrey areMultipleWindowsSupported]) {
     EARL_GREY_TEST_SKIPPED(@"Multiple windows can't be opened.");
   }
+  if (@available(iOS 19.0, *)) {
+    // TODO(crbug.com/427699033): Re-enable test on iOS 26.
+    EARL_GREY_TEST_DISABLED(@"Test disabled on iOS 26.");
+  }
 
   // Create a group and open it.
   [ChromeEarlGreyUI openTabGrid];
@@ -1391,6 +1392,10 @@ UIViewController* TopPresentedViewController() {
   }
   if (![ChromeEarlGrey areMultipleWindowsSupported]) {
     EARL_GREY_TEST_SKIPPED(@"Multiple windows can't be opened.");
+  }
+  if (@available(iOS 19.0, *)) {
+    // TODO(crbug.com/427699033): Re-enable test on iOS 26.
+    EARL_GREY_TEST_DISABLED(@"Test disabled on iOS 26.");
   }
 
   // Create a first group.
@@ -1755,6 +1760,10 @@ UIViewController* TopPresentedViewController() {
   if (![ChromeEarlGrey areMultipleWindowsSupported]) {
     EARL_GREY_TEST_DISABLED(@"Multiple windows can't be opened.");
   }
+  if (@available(iOS 19.0, *)) {
+    // TODO(crbug.com/427699033): Re-enable test on iOS 26.
+    EARL_GREY_TEST_DISABLED(@"Test disabled on iOS 26.");
+  }
 
   [ChromeEarlGrey loadURL:GetQueryTitleURL(self.testServer, kTab2Title)];
 
@@ -1855,48 +1864,6 @@ UIViewController* TopPresentedViewController() {
   // Check that the snackbar is displayed.
   [[EarlGrey selectElementWithMatcher:TabGroupSnackBar(1)]
       assertWithMatcher:grey_sufficientlyVisible()];
-}
-
-// Tests closing a group in grid using the selection mode with kTabGroupSync
-// disabled.
-- (void)testCloseFromSelectionSyncDisabled {
-  if (@available(iOS 17, *)) {
-  } else if ([ChromeEarlGrey isIPadIdiom]) {
-    EARL_GREY_TEST_SKIPPED(@"Only available on iOS 17+ on iPad.");
-  }
-  // Create a tab cell with `Tab 1` as its title.
-  [ChromeEarlGrey loadURL:GetQueryTitleURL(self.testServer, kTab1Title)];
-  [ChromeEarlGreyUI openTabGrid];
-
-  CreateDefaultFirstGroupFromTabCellAtIndex(0);
-
-  // Tap on "Edit" then "Select tabs".
-  [[EarlGrey selectElementWithMatcher:TabGridEditButton()]
-      performAction:grey_tap()];
-  [[EarlGrey selectElementWithMatcher:TabGridSelectTabsMenuButton()]
-      performAction:grey_tap()];
-
-  // Select the group.
-  [[EarlGrey selectElementWithMatcher:TabGridGroupCellWithName(
-                                          l10n_util::GetPluralNSStringF(
-                                              IDS_IOS_TAB_GROUP_TABS_NUMBER, 1),
-                                          1)] performAction:grey_tap()];
-
-  // Tap on the "Close Tab" button and confirm.
-  [[EarlGrey
-      selectElementWithMatcher:chrome_test_util::TabGridEditCloseTabsButton()]
-      performAction:grey_tap()];
-  NSString* closeTabsButtonText =
-      base::SysUTF16ToNSString(l10n_util::GetPluralStringFUTF16(
-          IDS_IOS_TAB_GRID_CLOSE_ALL_TABS_CONFIRMATION,
-          /*number=*/1));
-  [[EarlGrey
-      selectElementWithMatcher:chrome_test_util::ButtonWithAccessibilityLabel(
-                                   closeTabsButtonText)]
-      performAction:grey_tap()];
-
-  // Make sure that the tab grid is empty.
-  [ChromeEarlGrey waitForMainTabCount:0 inWindowWithNumber:0];
 }
 
 // Tests renaming a group from the overflow menu in the group view.
@@ -2000,6 +1967,77 @@ UIViewController* TopPresentedViewController() {
   [[EarlGrey
       selectElementWithMatcher:GetMatcherForPinnedCellWithTitle(@"PinnedTab0")]
       assertWithMatcher:grey_sufficientlyVisible()];
+}
+
+// Tests that swiping on the toolbar to dismiss the TabGroup view works.
+- (void)testSwipeToDismissOnToolbar {
+  // Create a tab cell with `Tab 1` as its title.
+  [ChromeEarlGrey loadURL:GetQueryTitleURL(self.testServer, kTab1Title)];
+  [ChromeEarlGreyUI openTabGrid];
+
+  CreateDefaultFirstGroupFromTabCellAtIndex(0);
+
+  // Open the group view.
+  OpenTabGroupAtIndex(0);
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kTabGroupViewIdentifier)]
+      assertWithMatcher:grey_sufficientlyVisible()];
+
+  [[EarlGrey selectElementWithMatcher:TabGroupOverflowMenuButton()]
+      performAction:grey_swipeFastInDirection(kGREYDirectionDown)];
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kTabGroupViewIdentifier)]
+      assertWithMatcher:grey_notVisible()];
+}
+
+// Tests that swiping to dismiss the TabGroup view works.
+- (void)testSwipeToDismissOnScreen {
+  // Create a tab cell with `Tab 1` as its title.
+  [ChromeEarlGrey loadURL:GetQueryTitleURL(self.testServer, kTab1Title)];
+  [ChromeEarlGreyUI openTabGrid];
+
+  CreateDefaultFirstGroupFromTabCellAtIndex(0);
+
+  // Open the group view.
+  OpenTabGroupAtIndex(0);
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kTabGroupViewIdentifier)]
+      assertWithMatcher:grey_sufficientlyVisible()];
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kTabGroupViewIdentifier)]
+      performAction:grey_swipeFastInDirection(kGREYDirectionDown)];
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kTabGroupViewIdentifier)]
+      assertWithMatcher:grey_notVisible()];
+}
+
+// Tests that tapping on the background blur dismisses the TabGroup view.
+- (void)testTapOnBlur {
+  // Create a tab cell with `Tab 1` as its title.
+  [ChromeEarlGrey loadURL:GetQueryTitleURL(self.testServer, kTab1Title)];
+  [ChromeEarlGreyUI openTabGrid];
+
+  CreateDefaultFirstGroupFromTabCellAtIndex(0);
+
+  // Open the group view.
+  OpenTabGroupAtIndex(0);
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kTabGroupViewIdentifier)]
+      assertWithMatcher:grey_sufficientlyVisible()];
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kTabGroupViewIdentifier)]
+      performAction:grey_tapAtPoint(CGPointMake(0.01, 0.5))];
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kTabGroupViewIdentifier)]
+      assertWithMatcher:grey_notVisible()];
 }
 
 @end

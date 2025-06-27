@@ -40,6 +40,7 @@
 #include "components/omnibox/browser/autocomplete_match_type.h"
 #include "components/omnibox/browser/autocomplete_provider.h"
 #include "components/omnibox/browser/autocomplete_provider_client.h"
+#include "components/omnibox/browser/contextual_search_provider.h"
 #include "components/omnibox/browser/history_fuzzy_provider.h"
 #include "components/omnibox/browser/history_url_provider.h"
 #include "components/omnibox/browser/keyword_provider.h"
@@ -63,6 +64,7 @@
 #include "components/omnibox/browser/verbatim_match.h"
 #include "components/omnibox/common/omnibox_feature_configs.h"
 #include "components/omnibox/common/omnibox_features.h"
+#include "components/omnibox/common/omnibox_focus_state.h"
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/search_engine_type.h"
 #include "components/search_engines/template_url.h"
@@ -273,8 +275,9 @@ void OmniboxEditModel::RestoreState(const State* state) {
   // Restore the autocomplete controller's input, or clear it if this is a new
   // tab.
   input_ = state ? state->autocomplete_input : AutocompleteInput();
-  if (!state)
+  if (!state) {
     return;
+  }
 
   // The tab-management system saves the last-focused control for each tab and
   // restores it. That operation also updates this edit model's focus_state_
@@ -286,9 +289,20 @@ void OmniboxEditModel::RestoreState(const State* state) {
   // However, in some circumstances (if the last-focused control was destroyed),
   // the Omnibox will be focused by default, and the edit model's saved state
   // may be invalid. We make a check to guard against that.
-  bool saved_focus_state_invalid = focus_state_ == OMNIBOX_FOCUS_VISIBLE &&
-                                   state->focus_state == OMNIBOX_FOCUS_NONE;
-  if (!saved_focus_state_invalid) {
+  //
+  // The experiment with `features::kOmniboxRestoreInvisibleFocusOnly` explores
+  // only restoring focus when needed due to one of the states being the
+  // "invisible focus" state.
+  const bool saved_focus_state_invalid =
+      focus_state_ == OMNIBOX_FOCUS_VISIBLE &&
+      state->focus_state == OMNIBOX_FOCUS_NONE;
+  const bool invisible_focus_changed =
+      focus_state_ == OMNIBOX_FOCUS_INVISIBLE ||
+      state->focus_state == OMNIBOX_FOCUS_INVISIBLE;
+
+  if (base::FeatureList::IsEnabled(omnibox::kOmniboxRestoreInvisibleFocusOnly)
+          ? invisible_focus_changed
+          : !saved_focus_state_invalid) {
     SetFocusState(state->focus_state, OMNIBOX_FOCUS_CHANGE_TAB_SWITCH);
   }
 
@@ -1691,14 +1705,33 @@ gfx::Image OmniboxEditModel::GetMatchIconIfExtension(
 
 std::u16string OmniboxEditModel::GetSuggestionGroupHeaderText(
     const std::optional<omnibox::GroupId>& suggestion_group_id) const {
-  bool force_hide_row_header =
-      OmniboxFieldTrial::IsHideSuggestionGroupHeadersEnabledInContext(
-          autocomplete_controller()->input().current_page_classification());
+  if (suggestion_group_id.has_value()) {
+    bool force_hide_row_header =
+        OmniboxFieldTrial::IsHideSuggestionGroupHeadersEnabledInContext(
+            autocomplete_controller()->input().current_page_classification());
+    auto header_text =
+        autocomplete_controller()->result().GetHeaderForSuggestionGroup(
+            suggestion_group_id.value());
 
-  return suggestion_group_id.has_value() && !force_hide_row_header
-             ? autocomplete_controller()->result().GetHeaderForSuggestionGroup(
-                   suggestion_group_id.value())
-             : u"";
+    // Show contextual search suggestion group header if the Lens action has
+    // been moved to the Omnibox toolbelt.
+    bool has_toolbelt_lens_action =
+        autocomplete_controller()->contextual_search_provider() &&
+        autocomplete_controller()
+            ->contextual_search_provider()
+            ->HasToolbeltLensAction();
+    if (suggestion_group_id.value() == omnibox::GROUP_CONTEXTUAL_SEARCH &&
+        has_toolbelt_lens_action) {
+      // TODO(khalidpeer): Make direct use of `header_text` once we start
+      //     receiving a non-empty contextual search header from the server.
+      return header_text.empty()
+                 ? l10n_util::GetStringUTF16(
+                       IDS_CONTEXTUAL_SEARCH_OPEN_LENS_ACTION_LABEL)
+                 : header_text;
+    }
+    return force_hide_row_header ? u"" : header_text;
+  }
+  return u"";
 }
 
 bool OmniboxEditModel::PopupIsOpen() const {
@@ -1950,19 +1983,16 @@ std::u16string OmniboxEditModel::GetPopupAccessibilityLabelForCurrentSelection(
           controller_->client()->GetTemplateURLService(), false);
       std::u16string replacement_string =
           turl ? turl->short_name() : match.contents;
+      bool ask_keyword = turl && turl->is_ask_starter_pack();
       // For featured search engines, we also want to add the shortcut name.
       if (AutocompleteMatch::IsFeaturedSearchType(match.type)) {
-        int message_id = (turl && turl->starter_pack_id() ==
-                                      TemplateURLStarterPackData::kGemini)
-                             ? IDS_ACC_ASK_KEYWORD_MODE_WITH_SHORTCUT
-                             : IDS_ACC_KEYWORD_MODE_WITH_SHORTCUT;
+        int message_id = ask_keyword ? IDS_ACC_ASK_KEYWORD_MODE_WITH_SHORTCUT
+                                     : IDS_ACC_KEYWORD_MODE_WITH_SHORTCUT;
         return l10n_util::GetStringFUTF16(message_id, match.keyword,
                                           replacement_string);
       }
-      int message_id = (turl && turl->starter_pack_id() ==
-                                    TemplateURLStarterPackData::kGemini)
-                           ? IDS_ACC_ASK_KEYWORD_MODE
-                           : IDS_ACC_KEYWORD_MODE;
+      int message_id =
+          ask_keyword ? IDS_ACC_ASK_KEYWORD_MODE : IDS_ACC_KEYWORD_MODE;
       return l10n_util::GetStringFUTF16(message_id, replacement_string);
     }
     case OmniboxPopupSelection::FOCUSED_BUTTON_ACTION:
@@ -2612,6 +2642,8 @@ void OmniboxEditModel::OpenMatch(OmniboxPopupSelection selection,
     }
   }
 
+  TemplateURLService* template_url_service =
+      controller_->client()->GetTemplateURLService();
   if (action) {
     OmniboxAction::ExecutionContext context(
         *(autocomplete_controller()->autocomplete_provider_client()),
@@ -2619,6 +2651,19 @@ void OmniboxEditModel::OpenMatch(OmniboxPopupSelection selection,
                        controller_->client()->AsWeakPtr()),
         match_selection_timestamp, disposition);
     action->Execute(context);
+    if (context.enter_starter_pack_id_ != 0 && template_url_service) {
+      if (const TemplateURL* starter_pack_turl =
+              template_url_service->FindStarterPackTemplateURL(
+                  context.enter_starter_pack_id_)) {
+        // TODO(crbug.com/422575584): Use new KeywordModeEntryMethod.
+        EnterKeywordMode(
+            OmniboxEventProto::SELECT_SUGGESTION, starter_pack_turl,
+            AutocompleteMatch::GetKeywordPlaceholder(
+                starter_pack_turl,
+                controller_->client()->IsHistoryEmbeddingsEnabled()));
+        return;
+      }
+    }
   }
 
   if (disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB && view_) {
@@ -2629,8 +2674,6 @@ void OmniboxEditModel::OpenMatch(OmniboxPopupSelection selection,
   if (!action) {
     // Track whether the destination URL sends us to a search results page
     // using the default search provider.
-    TemplateURLService* template_url_service =
-        controller_->client()->GetTemplateURLService();
     if (template_url_service &&
         template_url_service->IsSearchResultsPageFromDefaultSearchProvider(
             match.destination_url)) {

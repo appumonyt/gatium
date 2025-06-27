@@ -16,7 +16,6 @@ import static org.chromium.ui.listmenu.ListMenuItemProperties.TITLE;
 
 import android.app.Activity;
 import android.graphics.Rect;
-import android.util.Pair;
 import android.view.View;
 
 import androidx.annotation.Nullable;
@@ -45,8 +44,6 @@ import org.chromium.base.test.util.Features.EnableFeatures;
 import org.chromium.blink_public.common.ContextMenuDataMediaType;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuItem.Item;
-import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator.ContextMenuGroup;
-import org.chromium.chrome.browser.contextmenu.ContextMenuCoordinator.ListItemType;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.components.browser_ui.widget.ContextMenuDialog;
@@ -63,6 +60,8 @@ import org.chromium.ui.base.TestActivity;
 import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.dragdrop.DragStateTracker;
+import org.chromium.ui.listmenu.ListItemType;
+import org.chromium.ui.listmenu.MenuModelBridge;
 import org.chromium.ui.modelutil.MVCListAdapter.ListItem;
 import org.chromium.ui.modelutil.MVCListAdapter.ModelList;
 import org.chromium.ui.modelutil.PropertyModel;
@@ -154,6 +153,7 @@ public class ContextMenuCoordinatorTest {
 
     @Mock ContextMenuNativeDelegate mNativeDelegate;
     @Mock WebContentsImpl mWebContentsMock;
+    @Mock private MenuModelBridge mMenuModelBridge;
 
     private ContextMenuCoordinator mCoordinator;
     private Activity mActivity;
@@ -171,6 +171,7 @@ public class ContextMenuCoordinatorTest {
         final ContextMenuParams params =
                 new ContextMenuParams(
                         0,
+                        mMenuModelBridge,
                         ContextMenuDataMediaType.IMAGE,
                         GURL.emptyGURL(),
                         GURL.emptyGURL(),
@@ -184,23 +185,23 @@ public class ContextMenuCoordinatorTest {
                         0,
                         0,
                         false,
-                        /* openedFromInterestTarget= */ false,
-                        /* interestTargetNodeID= */ 0,
+                        /* openedFromInterestFor= */ false,
+                        /* interestForNodeID= */ 0,
                         /* additionalNavigationParams= */ null);
-        List<Pair<Integer, ModelList>> rawItems = new ArrayList<>();
+        List<ModelList> rawItems = new ArrayList<>();
         // Link items
         ModelList groupOne = new ModelList();
         groupOne.add(createListItem(Item.OPEN_IN_NEW_TAB));
         groupOne.add(createListItem(Item.OPEN_IN_INCOGNITO_TAB));
         groupOne.add(createListItem(Item.SAVE_LINK_AS));
         groupOne.add(createShareListItem(Item.SHARE_LINK));
-        rawItems.add(new Pair<>(ContextMenuGroup.LINK, groupOne));
+        rawItems.add(groupOne);
         // Image Items
         ModelList groupTwo = new ModelList();
         groupTwo.add(createListItem(Item.OPEN_IMAGE_IN_NEW_TAB));
         groupTwo.add(createListItem(Item.SAVE_IMAGE));
         groupTwo.add(createShareListItem(Item.SHARE_IMAGE));
-        rawItems.add(new Pair<>(ContextMenuGroup.IMAGE, groupTwo));
+        rawItems.add(groupTwo);
 
         mCoordinator.initializeHeaderCoordinatorForTesting(
                 mActivity, params, mProfile, mNativeDelegate);
@@ -226,6 +227,7 @@ public class ContextMenuCoordinatorTest {
         final ContextMenuParams params =
                 new ContextMenuParams(
                         0,
+                        mMenuModelBridge,
                         ContextMenuDataMediaType.IMAGE,
                         GURL.emptyGURL(),
                         GURL.emptyGURL(),
@@ -239,23 +241,23 @@ public class ContextMenuCoordinatorTest {
                         0,
                         0,
                         false,
-                        /* openedFromInterestTarget= */ false,
-                        /* interestTargetNodeID= */ 0,
+                        /* openedFromInterestFor= */ false,
+                        /* interestForNodeID= */ 0,
                         /* additionalNavigationParams= */ null);
-        List<Pair<Integer, ModelList>> rawItems = new ArrayList<>();
+        List<ModelList> rawItems = new ArrayList<>();
         // Link items
         ModelList groupOne = new ModelList();
         groupOne.add(createListItem(Item.OPEN_IN_NEW_TAB));
         groupOne.add(createListItem(Item.OPEN_IN_INCOGNITO_TAB));
         groupOne.add(createListItem(Item.SAVE_LINK_AS, false));
         groupOne.add(createShareListItem(Item.SHARE_LINK));
-        rawItems.add(new Pair<>(ContextMenuGroup.LINK, groupOne));
+        rawItems.add(groupOne);
         // Image Items
         ModelList groupTwo = new ModelList();
         groupTwo.add(createListItem(Item.OPEN_IMAGE_IN_NEW_TAB));
         groupTwo.add(createListItem(Item.SAVE_IMAGE, false));
         groupTwo.add(createShareListItem(Item.SHARE_IMAGE));
-        rawItems.add(new Pair<>(ContextMenuGroup.IMAGE, groupTwo));
+        rawItems.add(groupTwo);
 
         mCoordinator.initializeHeaderCoordinatorForTesting(
                 mActivity, params, mProfile, mNativeDelegate);
@@ -286,6 +288,7 @@ public class ContextMenuCoordinatorTest {
         final ContextMenuParams params =
                 new ContextMenuParams(
                         0,
+                        mMenuModelBridge,
                         ContextMenuDataMediaType.IMAGE,
                         GURL.emptyGURL(),
                         GURL.emptyGURL(),
@@ -299,17 +302,17 @@ public class ContextMenuCoordinatorTest {
                         0,
                         0,
                         false,
-                        /* openedFromInterestTarget= */ false,
-                        /* interestTargetNodeID= */ 0,
+                        /* openedFromInterestFor= */ false,
+                        /* interestForNodeID= */ 0,
                         /* additionalNavigationParams= */ null);
-        List<Pair<Integer, ModelList>> rawItems = new ArrayList<>();
+        List<ModelList> rawItems = new ArrayList<>();
         // Link items
         ModelList groupOne = new ModelList();
         groupOne.add(createListItem(Item.OPEN_IN_NEW_TAB));
         groupOne.add(createListItem(Item.OPEN_IN_INCOGNITO_TAB));
         groupOne.add(createListItem(Item.SAVE_LINK_AS));
         groupOne.add(createShareListItem(Item.SHARE_LINK));
-        rawItems.add(new Pair<>(ContextMenuGroup.LINK, groupOne));
+        rawItems.add(groupOne);
 
         mCoordinator.initializeHeaderCoordinatorForTesting(
                 mActivity, params, mProfile, mNativeDelegate);
@@ -328,6 +331,7 @@ public class ContextMenuCoordinatorTest {
         final ContextMenuParams params =
                 new ContextMenuParams(
                         0,
+                        mMenuModelBridge,
                         ContextMenuDataMediaType.VIDEO,
                         GURL.emptyGURL(),
                         GURL.emptyGURL(),
@@ -341,14 +345,14 @@ public class ContextMenuCoordinatorTest {
                         0,
                         0,
                         false,
-                        /* openedFromInterestTarget= */ false,
-                        /* interestTargetNodeID= */ 0,
+                        /* openedFromInterestFor= */ false,
+                        /* interestForNodeID= */ 0,
                         /* additionalNavigationParams= */ null);
-        List<Pair<Integer, ModelList>> rawItems = new ArrayList<>();
+        List<ModelList> rawItems = new ArrayList<>();
         // Video items
         ModelList groupOne = new ModelList();
         groupOne.add(createListItem(Item.SAVE_VIDEO));
-        rawItems.add(new Pair<>(ContextMenuGroup.LINK, groupOne));
+        rawItems.add(groupOne);
 
         mCoordinator.initializeHeaderCoordinatorForTesting(
                 mActivity, params, mProfile, mNativeDelegate);
@@ -608,6 +612,7 @@ public class ContextMenuCoordinatorTest {
         final ContextMenuParams params =
                 new ContextMenuParams(
                         0,
+                        mMenuModelBridge,
                         ContextMenuDataMediaType.IMAGE,
                         GURL.emptyGURL(),
                         GURL.emptyGURL(),
@@ -621,14 +626,14 @@ public class ContextMenuCoordinatorTest {
                         triggeringTouchYDp,
                         0,
                         false,
-                        /* openedFromInterestTarget= */ false,
-                        /* interestTargetNodeID= */ 0,
+                        /* openedFromInterestFor= */ false,
+                        /* interestForNodeID= */ 0,
                         /* additionalNavigationParams= */ null);
 
         final WindowAndroid windowAndroid = Mockito.mock(WindowAndroid.class);
         doReturn(new WeakReference<>(mActivity)).when(windowAndroid).getActivity();
 
-        List<Pair<Integer, ModelList>> rawItems = new ArrayList<>();
+        List<ModelList> rawItems = new ArrayList<>();
 
         mCoordinator.displayMenu(
                 windowAndroid, mWebContentsMock, params, rawItems, null, null, null);

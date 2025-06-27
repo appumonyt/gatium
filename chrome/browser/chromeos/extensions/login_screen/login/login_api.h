@@ -12,25 +12,21 @@
 
 namespace extensions {
 
+namespace internal {
+class LoginAsyncFunctionBase : public ExtensionFunction {
+ protected:
+  ~LoginAsyncFunctionBase() override;
+
+  // ExtensionFunction:
+  void OnResult(base::expected<void, std::string> result);
+};
+}  // namespace internal
+
 class ExtensionFunctionWithOptionalErrorResult : public ExtensionFunction {
  protected:
   ~ExtensionFunctionWithOptionalErrorResult() override;
 
   void OnResult(const std::optional<std::string>& error);
-};
-
-class ExtensionFunctionWithStringResult : public ExtensionFunction {
- protected:
-  ~ExtensionFunctionWithStringResult() override;
-
-  void OnResult(const std::string& result);
-};
-
-class ExtensionFunctionWithVoidResult : public ExtensionFunction {
- protected:
-  ~ExtensionFunctionWithVoidResult() override;
-
-  void OnResult();
 };
 
 class LoginLaunchManagedGuestSessionFunction
@@ -75,8 +71,7 @@ class LoginExitCurrentSessionFunction
   ResponseAction Run() override;
 };
 
-class LoginFetchDataForNextLoginAttemptFunction
-    : public ExtensionFunctionWithStringResult {
+class LoginFetchDataForNextLoginAttemptFunction : public ExtensionFunction {
  public:
   LoginFetchDataForNextLoginAttemptFunction();
 
@@ -96,8 +91,7 @@ class LoginFetchDataForNextLoginAttemptFunction
   ResponseAction Run() override;
 };
 
-class LoginLockManagedGuestSessionFunction
-    : public ExtensionFunctionWithOptionalErrorResult {
+class LoginLockManagedGuestSessionFunction : public ExtensionFunction {
  public:
   LoginLockManagedGuestSessionFunction();
 
@@ -118,7 +112,7 @@ class LoginLockManagedGuestSessionFunction
 };
 
 class LoginUnlockManagedGuestSessionFunction
-    : public ExtensionFunctionWithOptionalErrorResult {
+    : public internal::LoginAsyncFunctionBase {
  public:
   LoginUnlockManagedGuestSessionFunction();
 
@@ -160,7 +154,7 @@ class LoginLockCurrentSessionFunction
 };
 
 class LoginUnlockCurrentSessionFunction
-    : public ExtensionFunctionWithOptionalErrorResult {
+    : public internal::LoginAsyncFunctionBase {
  public:
   LoginUnlockCurrentSessionFunction();
 
@@ -283,8 +277,7 @@ class LoginEndSharedSessionFunction
   ResponseAction Run() override;
 };
 
-class LoginSetDataForNextLoginAttemptFunction
-    : public ExtensionFunctionWithVoidResult {
+class LoginSetDataForNextLoginAttemptFunction : public ExtensionFunction {
  public:
   LoginSetDataForNextLoginAttemptFunction();
 

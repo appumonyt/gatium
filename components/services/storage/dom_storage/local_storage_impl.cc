@@ -337,8 +337,10 @@ class LocalStorageImpl::StorageAreaHolder final
 LocalStorageImpl::LocalStorageImpl(
     const base::FilePath& storage_root,
     scoped_refptr<base::SequencedTaskRunner> task_runner,
+    DestructLocalStorageCallback destruct_callback,
     mojo::PendingReceiver<mojom::LocalStorageControl> receiver)
-    : directory_(storage_root.empty() ? storage_root
+    : destruct_callback_(std::move(destruct_callback)),
+      directory_(storage_root.empty() ? storage_root
                                       : storage_root.Append(kLocalStoragePath)),
       database_task_runner_(base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::WithBaseSyncPrimitives(),
@@ -350,8 +352,12 @@ LocalStorageImpl::LocalStorageImpl(
       ->RegisterDumpProviderWithSequencedTaskRunner(
           this, "LocalStorage", task_runner, MemoryDumpProvider::Options());
 
-  if (receiver)
+  if (receiver) {
     control_receiver_.Bind(std::move(receiver));
+    control_receiver_.set_disconnect_handler(
+        base::BindOnce(&LocalStorageImpl::OnReceiverDisconnected,
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
 }
 
 void LocalStorageImpl::BindStorageArea(
@@ -431,18 +437,6 @@ void LocalStorageImpl::Flush() {
 
   for (const auto& it : areas_)
     it.second->storage_area()->ScheduleImmediateCommit();
-}
-
-void LocalStorageImpl::NeedsFlushForTesting(
-    NeedsFlushForTestingCallback callback) {
-  if (connection_state_ != CONNECTION_FINISHED) {
-    std::move(callback).Run(false);
-    return;
-  }
-
-  std::move(callback).Run(std::ranges::any_of(areas_, [](const auto& iter) {
-    return iter.second->storage_area()->has_changes_to_commit();
-  }));
 }
 
 void LocalStorageImpl::FlushStorageKeyForTesting(
@@ -588,6 +582,13 @@ bool LocalStorageImpl::OnMemoryDump(
   return true;
 }
 
+base::FilePath LocalStorageImpl::GetStoragePath() const {
+  if (directory_.empty()) {
+    return directory_;
+  }
+  return directory_.DirName();
+}
+
 void LocalStorageImpl::SetDatabaseOpenCallbackForTesting(
     base::OnceClosure callback) {
   RunWhenConnected(std::move(callback));
@@ -606,13 +607,11 @@ void LocalStorageImpl::ForceFakeOpenStorageAreaForTesting(
 LocalStorageImpl::~LocalStorageImpl() {
   DCHECK_EQ(connection_state_, CONNECTION_SHUTDOWN);
   // ShutDown() should run before this destructor and clear `areas_`. If this
-  // didn't occur, collect a crash dump to help diagnose the issue.
-  // TODO(crbug.com/396030877): Remove this DWOC and workaround once the issue
-  // is resolved.
+  // didn't occur, as a workaround, we clear the `areas_`to avoid a UaF crash
+  // in the StorageAreaHolder d'tor which tries to access `this`'s state.
+  // TODO(crbug.com/396030877): Remove this workaround once the issue is
+  // resolved.
   if (!areas_.empty()) {
-    base::debug::DumpWithoutCrashing();
-    // Clear `areas_`to avoid a UaF crash in the StorageAreaHolder d'tor which
-    // tries to access `this`'s state.
     areas_.clear();
   }
   base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
@@ -1092,6 +1091,10 @@ void LocalStorageImpl::OnGotMetaDataToDeleteStaleStorageAreas(
             }
           },
           stale_storage_keys.size()));
+}
+
+void LocalStorageImpl::OnReceiverDisconnected() {
+  std::move(destruct_callback_).Run(this);
 }
 
 }  // namespace storage

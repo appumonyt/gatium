@@ -31,10 +31,8 @@ ci.defaults.set(
     contact_team_email = "chrome-sanitizer-builder-owners@google.com",
     execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
     health_spec = health_spec.DEFAULT,
-    reclient_enabled = False,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
     shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
-    siso_enabled = True,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
@@ -106,7 +104,6 @@ linux_memory_builder(
         short_name = "bld",
     ),
     cq_mirrors_console_view = "mirrors",
-    siso_enabled = True,
 )
 
 linux_memory_builder(
@@ -154,7 +151,7 @@ linux_memory_builder(
                 # These are very slow on the ASAN trybot for some reason.
                 # crbug.com/1257927
                 swarming = targets.swarming(
-                    shards = 50,
+                    shards = 55,
                 ),
             ),
             "components_unittests": targets.mixin(
@@ -448,8 +445,8 @@ linux_memory_builder(
             ),
             "content_browsertests": targets.mixin(
                 swarming = targets.swarming(
-                    # https://crbug.com/1471857
-                    shards = 14,
+                    # https://crbug.com/1471857, crbug.com/409823026
+                    shards = 28,
                 ),
             ),
             "gin_unittests": targets.remove(
@@ -691,7 +688,7 @@ linux_memory_builder(
         per_test_modifications = {
             "browser_tests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 35,
+                    shards = 40,
                 ),
             ),
             "content_browsertests": targets.mixin(
@@ -1384,7 +1381,7 @@ ci.builder(
                     "--test-launcher-jobs=3",
                 ],
                 swarming = targets.swarming(
-                    shards = 9,
+                    shards = 12,
                 ),
             ),
             "net_unittests": targets.mixin(
@@ -1530,6 +1527,7 @@ ci.builder(
     executable = "recipe:chrome_codeql_query_runner",
     # Run once daily at 5am Pacific/1 PM UTC
     schedule = "0 13 * * *",
+    triggered_by = [],
     cores = 32,
     ssd = True,
     gardener_rotations = args.ignore_default(None),

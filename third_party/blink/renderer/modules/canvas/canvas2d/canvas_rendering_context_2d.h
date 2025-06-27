@@ -35,7 +35,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "cc/paint/paint_record.h"
 #include "third_party/blink/public/common/privacy_budget/identifiable_token.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_element_hit_test_region.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_canvas_element_hit_test_region.h"
 #include "third_party/blink/renderer/core/canvas_interventions/canvas_interventions_enums.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_context_creation_attributes_core.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
@@ -158,7 +158,23 @@ class MODULES_EXPORT CanvasRenderingContext2D final
 
   // CanvasRenderingContext implementation
   int AllocatedBufferCountPerPixel() override {
-    return (Host() && Host()->ResourceProvider()) ? 1 : 0;
+    if (!Host()) {
+      return 0;
+    }
+
+    int buffer_count = 0;
+    auto* provider = Host()->GetResourceProviderForCanvas2D();
+    if (provider) {
+      buffer_count = 1;
+      if (provider->IsAccelerated()) {
+        // The number of internal GPU buffers vary between one (stable
+        // non-displayed state) and three (triple-buffered animations).
+        // Adding 2 is a pessimistic but relevant estimate.
+        // Note: These buffers might be allocated in GPU memory.
+        buffer_count += 2;
+      }
+    }
+    return buffer_count;
   }
 
   int Width() const final;
@@ -202,7 +218,8 @@ class MODULES_EXPORT CanvasRenderingContext2D final
 
   bool IsPaintable() const final;
 
-  void WillDrawImage(CanvasImageSource*) const final;
+  void WillDrawImage(CanvasImageSource*,
+                     bool image_is_texture_backed) const final;
 
   std::optional<cc::PaintRecord> FlushCanvas(FlushReason) override;
 

@@ -42,7 +42,6 @@
 #include "components/variations/pref_names.h"
 #include "components/variations/proto/variations_seed.pb.h"
 #include "components/variations/seed_response.h"
-#include "components/variations/synthetic_trial_registry.h"
 #include "components/variations/variations_safe_seed_store_local_state.h"
 #include "components/variations/variations_seed_simulator.h"
 #include "components/variations/variations_switches.h"
@@ -344,11 +343,9 @@ VariationsService::VariationsService(
     std::unique_ptr<web_resource::ResourceRequestAllowedNotifier> notifier,
     PrefService* local_state,
     metrics::MetricsStateManager* state_manager,
-    const UIStringOverrider& ui_string_overrider,
-    SyntheticTrialRegistry* synthetic_trial_registry)
+    const UIStringOverrider& ui_string_overrider)
     : client_(std::move(client)),
       local_state_(local_state),
-      synthetic_trial_registry_(synthetic_trial_registry),
       state_manager_(state_manager),
       policy_pref_service_(local_state),
       resource_request_allowed_notifier_(std::move(notifier)),
@@ -599,15 +596,13 @@ std::unique_ptr<VariationsService> VariationsService::Create(
     const char* disable_network_switch,
     const UIStringOverrider& ui_string_overrider,
     web_resource::ResourceRequestAllowedNotifier::NetworkConnectionTrackerGetter
-        network_connection_tracker_getter,
-    SyntheticTrialRegistry* synthetic_trial_registry) {
+        network_connection_tracker_getter) {
   return base::WrapUnique(new VariationsService(
       std::move(client),
       std::make_unique<web_resource::ResourceRequestAllowedNotifier>(
           local_state, disable_network_switch,
           std::move(network_connection_tracker_getter)),
-      local_state, state_manager, ui_string_overrider,
-      synthetic_trial_registry));
+      local_state, state_manager, ui_string_overrider));
 }
 
 // static
@@ -737,7 +732,9 @@ void VariationsService::OnSeedStoreResult(bool is_delta_compressed,
   }
 
   if (store_success) {
-    RecordSuccessfulFetch();
+    // When the new seed is stored, the active seed will be stored as the safe
+    // seed.
+    RecordSuccessfulFetchNewSeed();
 
     // Now, do simulation to determine if there are any kill-switches that were
     // activated by this seed.
@@ -877,16 +874,8 @@ void VariationsService::OnSimpleLoaderComplete(
   }
 
   if (response_code == net::HTTP_NOT_MODIFIED) {
-    RecordSuccessfulFetch();
-
-    // Update the seed date value in local state (used for expiry check on
-    // next start up), since 304 is a successful response. Note that the
-    // serial number included in the request is always that of the latest
-    // seed, even when running in safe mode, so it's appropriate to always
-    // modify the latest seed's date.
     // TODO(crbug.com/420652919): Reject responses without a date.
-    field_trial_creator_.seed_store()->UpdateSeedDateAndLogDayChange(
-        response_date.value_or(base::Time()));
+    RecordSuccessfulFetchSeedNotModified(response_date.value_or(base::Time()));
     return;
   }
 
@@ -961,13 +950,31 @@ bool VariationsService::CallMaybeRetryOverHTTPForTesting() {
   return MaybeRetryOverHTTP();
 }
 
-void VariationsService::RecordSuccessfulFetch() {
+void VariationsService::RecordSuccessfulFetchNewSeed() {
+  safe_seed_manager_.RecordSuccessfulFetch(field_trial_creator_.seed_store());
+}
+
+void VariationsService::RecordSuccessfulFetchSeedNotModified(
+    base::Time response_date) {
+  // Update the client-side fetch time to the current time.
   field_trial_creator_.seed_store()->RecordLastFetchTime(base::Time::Now());
   safe_seed_manager_.RecordSuccessfulFetch(field_trial_creator_.seed_store());
+
+  // Update the seed date value in local state (used for expiry check on
+  // next start up), since 304 is a successful response. Note that the
+  // serial number included in the request is always that of the latest
+  // seed, even when running in safe mode, so it's appropriate to always
+  // modify the latest seed's date.
+  field_trial_creator_.seed_store()->UpdateSeedDateAndLogDayChange(
+      response_date);
 }
 
 VariationsSeedStore* VariationsService::GetSeedStoreForTesting() {
   return field_trial_creator_.seed_store();
+}
+
+base::Time VariationsService::GetLatestSeedFetchTime() {
+  return field_trial_creator_.seed_store()->GetLatestSeedFetchTime();
 }
 
 std::unique_ptr<ClientFilterableState>
@@ -992,8 +999,8 @@ bool VariationsService::SetUpFieldTrials(
 
   return field_trial_creator_.SetUpFieldTrials(
       variation_ids, command_line_variation_ids, extra_overrides,
-      std::move(feature_list), state_manager_, synthetic_trial_registry_,
-      platform_field_trials, &safe_seed_manager_,
+      std::move(feature_list), state_manager_, platform_field_trials,
+      &safe_seed_manager_,
       /*add_entropy_source_to_variations_ids=*/true, *entropy_providers_);
 }
 

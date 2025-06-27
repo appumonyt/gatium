@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/paint/decoration_line_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/svg_object_painter.h"
+#include "third_party/blink/renderer/core/paint/text_decoration_info.h"
 #include "third_party/blink/renderer/core/paint/text_paint_style.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_detector.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
@@ -482,13 +483,14 @@ void TextPainter::SetEmphasisMark(const AtomicString& emphasis_mark,
 void TextPainter::PaintDecorationLine(
     const TextDecorationInfo& decoration_info,
     const Color& line_color,
+    const AutoDarkMode& auto_dark_mode,
     const TextFragmentPaintInfo* fragment_paint_info) {
-  DecorationLinePainter decoration_painter(graphics_context_, decoration_info);
+  const DecorationGeometry& geometry = decoration_info.GetGeometry();
   if (fragment_paint_info &&
       decoration_info.TargetStyle().TextDecorationSkipInk() ==
           ETextDecorationSkipInk::kAuto) {
     // In order to ignore intersects less than 0.5px, inflate by -0.5.
-    gfx::RectF decoration_bounds = decoration_info.Bounds();
+    gfx::RectF decoration_bounds = DecorationLinePainter::Bounds(geometry);
     decoration_bounds.Inset(gfx::InsetsF::VH(0.5, 0));
     ClipDecorationsStripe(
         *fragment_paint_info,
@@ -498,6 +500,7 @@ void TextPainter::PaintDecorationLine(
                  kDecorationClipMaxDilation));
   }
 
+  DecorationLinePainter decoration_painter(graphics_context_);
   if (svg_text_paint_state_.has_value() &&
       !decoration_info.HasDecorationOverride()) {
     SvgPaints paints;
@@ -508,10 +511,10 @@ void TextPainter::PaintDecorationLine(
     const OrderedPaints ordered_paints =
         OrderPaints(paints, state.Style().PaintOrder());
     DrawPaintOrderPasses(ordered_paints, [&](const cc::PaintFlags& flags) {
-      decoration_painter.Paint(line_color, &flags);
+      decoration_painter.Paint(geometry, line_color, auto_dark_mode, &flags);
     });
   } else {
-    decoration_painter.Paint(line_color, nullptr);
+    decoration_painter.Paint(geometry, line_color, auto_dark_mode, nullptr);
   }
 }
 

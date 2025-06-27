@@ -8,18 +8,28 @@
 #include <iosfwd>
 #include <memory>
 
+#include "base/callback_list.h"
+#include "base/functional/callback.h"
+#include "base/types/pass_key.h"
+#include "chrome/browser/actor/task_id.h"
+
 namespace actor {
 
-class ActorCoordinator;
+class ActorKeyedService;
+class ExecutionEngine;
 
 // Represents a task that Chrome is executing on behalf of the user.
 class ActorTask {
  public:
   ActorTask();
-  explicit ActorTask(std::unique_ptr<ActorCoordinator> actor_coordinator);
+  explicit ActorTask(std::unique_ptr<ExecutionEngine> execution_engine);
   ActorTask(const ActorTask&) = delete;
   ActorTask& operator=(const ActorTask&) = delete;
   ~ActorTask();
+
+  // Can only be called by ActorKeyedService
+  void SetId(base::PassKey<ActorKeyedService>, TaskId id);
+  TaskId id() { return id_; }
 
   // Once state leaves kCreated it should never go back. One state enters
   // kFinished it should never change. We may want to add a kCancelled in the
@@ -38,16 +48,36 @@ class ActorTask {
   // Sets State to kFinished and cancels any pending actions.
   void Stop();
 
+  // Pause() is called to indicate that the user is pausing server-driven
+  // actuation. This will cancel any ongoing actuation.
+  void Pause();
+
+  // Resume() indicates the user wants server-driven actuation to resume. The
+  // caller is responsible for sending new state to the server (e.g. APC).
+  void Resume();
+
   bool IsPaused() const;
 
-  ActorCoordinator* GetActorCoordinator() const;
+  ExecutionEngine* GetExecutionEngine() const;
+
+  // Register for this callback to detect changes to actor task states.
+  using TaskStateChangeCallback =
+      base::RepeatingCallback<void(TaskId, ActorTask::State)>;
+  base::CallbackListSubscription RegisterTaskStateChange(
+      TaskStateChangeCallback callback);
 
  private:
   State state_ = State::kCreated;
 
   // There are multiple possible execution engines. For now we only support
-  // ActorCoordinator.
-  std::unique_ptr<ActorCoordinator> actor_coordinator_;
+  // ExecutionEngine.
+  std::unique_ptr<ExecutionEngine> execution_engine_;
+
+  TaskId id_;
+
+  using TaskStateChangeCallbackList =
+      base::RepeatingCallbackList<void(TaskId, ActorTask::State)>;
+  TaskStateChangeCallbackList task_state_change_callback_list_;
 };
 
 std::ostream& operator<<(std::ostream& os, const ActorTask::State& state);

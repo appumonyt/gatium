@@ -132,6 +132,10 @@ BASE_DECLARE_FEATURE(kBiometricsAuthForPwdFill);
 // passwords.
 BASE_DECLARE_FEATURE(kSetLeakCheckRequestCriticality);
 
+// Shows recovery password for the improved password change flow in the
+// management UI.
+BASE_DECLARE_FEATURE(kShowRecoveryPassword);
+
 // Displays at least the decryptable and never saved logins in the password
 // manager
 BASE_DECLARE_FEATURE(kSkipUndecryptablePasswords);
@@ -139,6 +143,9 @@ BASE_DECLARE_FEATURE(kSkipUndecryptablePasswords);
 // Starts passwords resync after undecryptable passwords were removed. This flag
 // is enabled by default and should be treaded as a killswitch.
 BASE_DECLARE_FEATURE(kTriggerPasswordResyncAfterDeletingUndecryptablePasswords);
+
+// Starts passwords resync when undecryptable passwords are detected.
+BASE_DECLARE_FEATURE(kTriggerPasswordResyncWhenUndecryptablePasswordsDetected);
 
 #if BUILDFLAG(IS_ANDROID)
 // The feature flag for the Identity Check feature. The feature makes biometric

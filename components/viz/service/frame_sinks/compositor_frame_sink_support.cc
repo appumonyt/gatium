@@ -584,9 +584,9 @@ bool CompositorFrameSinkSupport::WantsAnimateOnlyBeginFrames() const {
 
 void CompositorFrameSinkSupport::BindLayerContext(
     mojom::PendingLayerContext& context,
-    bool draw_mode_is_gpu) {
+    mojom::LayerContextSettingsPtr settings) {
   layer_context_ =
-      std::make_unique<LayerContextImpl>(this, context, draw_mode_is_gpu);
+      std::make_unique<LayerContextImpl>(this, context, std::move(settings));
 }
 
 void CompositorFrameSinkSupport::SetThreads(
@@ -1697,7 +1697,7 @@ void CompositorFrameSinkSupport::DestroySelf() {
   // DestroyCompositorFrameSink takes the FrameSinkId by reference and may
   // dereference it after destroying `this`.
   FrameSinkId frame_sink_id = frame_sink_id_;
-  frame_sink_manager_->DestroyCompositorFrameSink(frame_sink_id,
+  frame_sink_manager_->DestroyCompositorFrameSink(frame_sink_id, std::nullopt,
                                                   base::DoNothing());
 }
 

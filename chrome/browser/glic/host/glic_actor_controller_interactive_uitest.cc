@@ -12,20 +12,23 @@
 #include "base/test/bind.h"
 #include "base/test/protobuf_matchers.h"
 #include "base/test/scoped_feature_list.h"
-#include "chrome/browser/actor/actor_coordinator.h"
 #include "chrome/browser/actor/actor_test_util.h"
+#include "chrome/browser/actor/execution_engine.h"
+#include "chrome/browser/devtools/devtools_window_testing.h"
 #include "chrome/browser/glic/host/context/glic_page_context_fetcher.h"
 #include "chrome/browser/glic/host/glic.mojom-shared.h"
 #include "chrome/browser/glic/test_support/interactive_glic_test.h"
 #include "chrome/browser/glic/test_support/interactive_test_util.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/common/chrome_features.h"
+#include "chrome/common/webui_url_constants.h"
 #include "chrome/test/interaction/interactive_browser_test.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/proto/features/actions_data.pb.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "net/dns/mock_host_resolver.h"
 #include "ui/base/interaction/element_identifier.h"
 
 namespace glic::test {
@@ -39,6 +42,13 @@ using ::optimization_guide::proto::ClickAction;
 using ::optimization_guide::proto::ContentAttributes;
 using ::optimization_guide::proto::ContentNode;
 
+constexpr char kActivateSurfaceIncompatibilityNotice[] =
+    "Programmatic window activation does not work on the Weston reference "
+    "implementation of Wayland used on Linux testbots. It also doesn't work "
+    "reliably on Linux in general. For this reason, some of these tests which "
+    "use ActivateSurface() may be skipped on machine configurations which do "
+    "not reliably support them.";
+
 std::string EncodeActionProto(const BrowserAction& action) {
   return base::Base64Encode(action.SerializeAsString());
 }
@@ -48,14 +58,19 @@ class GlicActorControllerUiTest : public test::InteractiveGlicTest {
   using ActionProtoProvider = base::OnceCallback<std::string()>;
 
   GlicActorControllerUiTest() {
-    scoped_feature_list_.InitWithFeaturesAndParameters(
-        {{features::kGlicActor, actor::GetDefaultActorParamsForTesting()},
-         {optimization_guide::features::
-              kAnnotatedPageContentWithActionableElements,
-          {}}},
-        {});
+    scoped_feature_list_.InitWithFeatures(
+        /*enabled_features=*/{features::kGlicActor,
+                              optimization_guide::features::
+                                  kAnnotatedPageContentWithActionableElements},
+        /*disabled_features=*/{});
   }
   ~GlicActorControllerUiTest() override = default;
+
+  void SetUpOnMainThread() override {
+    // Add rule for resolving cross origin host names.
+    InteractiveGlicTest::SetUpOnMainThread();
+    host_resolver()->AddRule("*", "127.0.0.1");
+  }
 
   // Executes a BrowserAction and verifies it succeeds. Optionally takes an
   // error reason which, when provided, causes failure if the action is
@@ -255,6 +270,14 @@ class GlicActorControllerUiTest : public test::InteractiveGlicTest {
     });
   }
 
+  // Returns a callback that builds an encoded proto for a click action on a
+  // specific coordinate
+  ActionProtoProvider ClickActionProvider(const gfx::Point& coordinate) {
+    return base::BindLambdaForTesting([coordinate]() {
+      return EncodeActionProto(actor::MakeClick(coordinate));
+    });
+  }
+
   // Returns a callback that simply encodes the given action.
   ActionProtoProvider PassthroughProvider(const BrowserAction& action) {
     return base::BindLambdaForTesting(
@@ -317,7 +340,7 @@ class GlicActorControllerUiTest : public test::InteractiveGlicTest {
 
       auto options = mojom::GetTabContextOptions::New();
       options->include_annotated_page_content = true;
-      FocusedTabData data = glic_service->GetFocusedTabData();
+      FocusedTabData data = glic_service->sharing_manager().GetFocusedTabData();
       if (data.focus()) {
         FetchPageContext(
             data.focus(), *options,
@@ -345,23 +368,33 @@ class GlicActorControllerUiTest : public test::InteractiveGlicTest {
           const auto* glic_service =
               GlicKeyedService::Get(tab_contents->GetBrowserContext());
           return glic_service &&
-                 glic_service->IsActorCoordinatorActingOnTab(tab_contents);
+                 glic_service->IsExecutionEngineActingOnTab(tab_contents);
         },
         expected)));
   }
 
-  // Check ActorCoordinator caches the last apc observation.
-  auto CheckActorCoordinatorHasAnnotatedPageContentCache() {
+  // Check ExecutionEngine caches the last apc observation.
+  auto CheckExecutionEngineHasAnnotatedPageContentCache() {
     return Steps(Do([&]() {
       GlicKeyedService* glic_service =
           GlicKeyedServiceFactory::GetGlicKeyedService(browser()->GetProfile());
       ASSERT_TRUE(glic_service);
 
       const AnnotatedPageContent& cached_apc =
-          *glic_service->GetActorCoordinatorForTesting(nullptr)
+          *glic_service->GetExecutionEngineForTesting(/*tab=*/nullptr)
                .GetLastObservedPageContent();
       EXPECT_THAT(*annotated_page_content_, EqualsProto(cached_apc));
     }));
+  }
+
+  auto OpenDevToolsWindow(ui::ElementIdentifier contents_to_inspect) {
+    return Steps(InAnyContext(
+        WithElement(contents_to_inspect, [](ui::TrackedElement* el) {
+          content::WebContents* contents =
+              AsInstrumentedWebContents(el)->web_contents();
+          DevToolsWindowTesting::OpenDevToolsWindowSync(contents,
+                                                        /*is_docked=*/false);
+        })));
   }
 
  private:
@@ -420,7 +453,45 @@ IN_PROC_BROWSER_TEST_F(GlicActorControllerUiTest,
   RunTestSequence(InitializeWithOpenGlicWindow(),
                   StartActorTaskInNewTab(task_url, kNewActorTabId),
                   GetPageContextFromFocusedTab(),
-                  CheckActorCoordinatorHasAnnotatedPageContentCache());
+                  CheckExecutionEngineHasAnnotatedPageContentCache());
+}
+
+IN_PROC_BROWSER_TEST_F(GlicActorControllerUiTest,
+                       ToctouCheckFailWhenCrossOriginTargetFrameChange) {
+  DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kNewActorTabId);
+  const GURL task_url =
+      embedded_test_server()->GetURL("/actor/two_cross_origin_iframes.html");
+  BrowserAction navigate = actor::MakeNavigate(task_url.spec());
+
+  RunTestSequence(
+      InitializeWithOpenGlicWindow(),
+      StartActorTaskInNewTab(task_url, kNewActorTabId),
+      ExecuteAction(ClickActionProvider({10, 10}), UpdatedContextOptions()),
+      GetPageContextFromFocusedTab(),
+      CheckExecutionEngineHasAnnotatedPageContentCache(),
+      ExecuteJs(kNewActorTabId,
+                "()=>{document.getElementById('topframe').remove();}"),
+      ExecuteAction(ClickActionProvider({10, 10}), UpdatedContextOptions(),
+                    glic::mojom::ActInFocusedTabErrorReason::kTargetNotFound));
+}
+
+IN_PROC_BROWSER_TEST_F(GlicActorControllerUiTest,
+                       ToctouCheckFailWhenSameSiteTargetFrameChange) {
+  DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kNewActorTabId);
+  const GURL task_url =
+      embedded_test_server()->GetURL("/actor/two_same_site_iframes.html");
+  BrowserAction navigate = actor::MakeNavigate(task_url.spec());
+
+  RunTestSequence(
+      InitializeWithOpenGlicWindow(),
+      StartActorTaskInNewTab(task_url, kNewActorTabId),
+      ExecuteAction(ClickActionProvider({10, 10}), UpdatedContextOptions()),
+      GetPageContextFromFocusedTab(),
+      CheckExecutionEngineHasAnnotatedPageContentCache(),
+      ExecuteJs(kNewActorTabId,
+                "()=>{document.getElementById('topframe').remove();}"),
+      ExecuteAction(ClickActionProvider({10, 10}), UpdatedContextOptions(),
+                    glic::mojom::ActInFocusedTabErrorReason::kTargetNotFound));
 }
 
 IN_PROC_BROWSER_TEST_F(GlicActorControllerUiTest,
@@ -659,6 +730,41 @@ IN_PROC_BROWSER_TEST_F(GlicActorControllerUiTest,
                   PauseActorTask(),
                   ResumeActorTask(UpdatedContextOptions(), true),
                   ResumeActorTask(UpdatedContextOptions(), false));
+}
+
+IN_PROC_BROWSER_TEST_F(GlicActorControllerUiTest, GetPageContextWithoutFocus) {
+  DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kNewActorTabId);
+  DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kOtherTabId);
+
+  const GURL task_url =
+      embedded_test_server()->GetURL("/actor/page_with_clickable_element.html");
+
+  RunTestSequence(
+      InitializeWithOpenGlicWindow(),
+      StartActorTaskInNewTab(task_url, kNewActorTabId),
+      SetOnIncompatibleAction(OnIncompatibleAction::kSkipTest,
+                              kActivateSurfaceIncompatibilityNotice),
+      AddInstrumentedTab(kOtherTabId, GURL(chrome::kChromeUISettingsURL)),
+      FocusWebContents(kOtherTabId),
+      // After waiting, this should get the context for `kNewActorTabId`, not
+      // the currently focused settings page. The choice of the settings page is
+      // to make ExecuteAction fail if we try to fetch the page context of the
+      // wrong tab.
+      ExecuteAction(actor::MakeWait(), AnnotationsOnlyContextOptions()));
+}
+
+IN_PROC_BROWSER_TEST_F(GlicActorControllerUiTest, StartTaskWithDevtoolsOpen) {
+  DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kNewActorTabId);
+
+  const GURL task_url =
+      embedded_test_server()->GetURL("/actor/page_with_clickable_element.html");
+
+  // Ensure a new tab can be created without crashing when the most recently
+  // focused browser window is not a normal tabbed browser (e.g. a DevTools
+  // window).
+  RunTestSequence(InitializeWithOpenGlicWindow(),
+                  OpenDevToolsWindow(kGlicContentsElementId),
+                  StartActorTaskInNewTab(task_url, kNewActorTabId));
 }
 
 class GlicActorControllerWithActorDisabledUiTest

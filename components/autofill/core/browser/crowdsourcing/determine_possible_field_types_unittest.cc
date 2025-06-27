@@ -349,7 +349,7 @@ class DeterminePossibleFieldTypesForUploadTest : public ::testing::Test {
  public:
   DeterminePossibleFieldTypesForUploadTest() {
     scoped_feature_list_.InitWithFeatures(
-        {features::kAutofillAiWithDataSchema,
+        {features::kAutofillAiWithDataSchema, features::kAutofillAiNoTagTypes,
          features::kAutofillAiVoteForFormatStringsFromSingleFields,
          features::kAutofillAiVoteForFormatStringsFromMultipleFields,
          features::kAutofillEnableLoyaltyCardsFilling},
@@ -732,10 +732,9 @@ TEST_F(DeterminePossibleFieldTypesForUploadTest, CrowdsourceAutofillAiTypes) {
       ExtractDatesInFields(form_structure->fields()), "en-US", *form_structure);
 
   EXPECT_THAT(form_structure->fields()[0]->possible_types(),
-              UnorderedElementsAre(PASSPORT_NAME_TAG, NAME_FIRST));
-  EXPECT_THAT(
-      form_structure->fields()[1]->possible_types(),
-      UnorderedElementsAre(PASSPORT_NAME_TAG, NAME_LAST, NAME_LAST_SECOND));
+              UnorderedElementsAre(NAME_FIRST));
+  EXPECT_THAT(form_structure->fields()[1]->possible_types(),
+              UnorderedElementsAre(NAME_LAST, NAME_LAST_SECOND));
   EXPECT_THAT(form_structure->fields()[2]->possible_types(),
               UnorderedElementsAre(PASSPORT_NUMBER));
   EXPECT_THAT(form_structure->fields()[3]->possible_types(),
@@ -1016,14 +1015,8 @@ INSTANTIATE_TEST_SUITE_P(
           {"Date", "12", {{2025, 12, 31}}, {"MM", "M"}},
           {"Date", "31", {{2025, 12, 31}}, {"DD", "D"}}}},
         {{{"Date", "31", {{2025, 12, 31}}, {"DD", "D"}},
-          {"/", "12", {{2025, 12, 31}}, {"MM", "M"}},
-          {"/", "2025", {{2025, 12, 31}}, {"YYYY"}}}},
-        {{{"Date", "31", {{2025, 12, 31}}, {"DD", "D"}},
-          {".", "12", {{2025, 12, 31}}, {"MM", "M"}},
-          {".", "2025", {{2025, 12, 31}}, {"YYYY"}}}},
-        {{{"Date", "31", {{2025, 12, 31}}, {"DD", "D"}},
-          {".", "12", {{2025, 12, 31}}, {"MM", "M"}},
-          {".", "2025", {{2025, 12, 31}}, {"YYYY"}}}},
+          {"", "12", {{2025, 12, 31}}, {"MM", "M"}},
+          {"", "2025", {{2025, 12, 31}}, {"YYYY"}}}},
         {{{"Date", "31", {{2025, 01, 31}}, {"DD"}},
           {"Date", "01", {{2025, 01, 31}}, {"MM"}},
           {"Date", "2025", {{2025, 01, 31}}, {"YYYY"}}}},
@@ -1107,10 +1100,12 @@ class DetermineAvailableFieldTypesTest : public ::testing::Test {
  public:
   DetermineAvailableFieldTypesTest() {
     features_.InitWithFeatures(
-        {features::kAutofillAiWithDataSchema,
-         features::kAutofillEnableLoyaltyCardsFilling,
-         features::kAutofillEnableEmailOrLoyaltyCardsFilling},
-        {});
+        /*enabled_features=*/{features::kAutofillAiWithDataSchema,
+                              features::kAutofillAiNoTagTypes,
+                              features::kAutofillEnableLoyaltyCardsFilling,
+                              features::
+                                  kAutofillEnableEmailOrLoyaltyCardsFilling},
+        /*disabled_features=*/{});
   }
 
  protected:
@@ -1126,11 +1121,11 @@ TEST_F(DetermineAvailableFieldTypesTest, Entities) {
       /*loyalty_cards=*/{},
       /*last_unlocked_credit_card_cvc=*/u"",
       /*app_locale=*/"en-US");
-  EXPECT_THAT(available_types,
-              UnorderedElementsAre(
-                  NAME_FULL, NAME_FIRST, NAME_LAST, NAME_LAST_SECOND,
-                  PASSPORT_NAME_TAG, PASSPORT_NUMBER, PASSPORT_EXPIRATION_DATE,
-                  PASSPORT_ISSUE_DATE, PASSPORT_ISSUING_COUNTRY));
+  EXPECT_THAT(
+      available_types,
+      UnorderedElementsAre(NAME_FULL, NAME_FIRST, NAME_LAST, NAME_LAST_SECOND,
+                           PASSPORT_NUMBER, PASSPORT_EXPIRATION_DATE,
+                           PASSPORT_ISSUE_DATE, PASSPORT_ISSUING_COUNTRY));
 }
 
 // Tests that loyalty cards are included in the set of available field types.

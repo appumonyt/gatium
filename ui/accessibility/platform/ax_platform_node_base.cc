@@ -161,8 +161,16 @@ AXPlatformNode* AXPlatformNodeBase::GetFromUniqueId(int32_t unique_id) {
 }
 
 // static
-size_t AXPlatformNodeBase::GetInstanceCountForTesting() {
+size_t AXPlatformNodeBase::GetInstanceCount() {
   return GetUniqueIdMap().size();
+}
+
+// static
+size_t AXPlatformNodeBase::ResetInstanceCountForTesting() {
+  auto& id_map = GetUniqueIdMap();
+  const auto result = id_map.size();
+  id_map.clear();
+  return result;
 }
 
 // static
@@ -1093,12 +1101,12 @@ void AXPlatformNodeBase::ComputeAttributes(PlatformAttributeList* attributes) {
         break;
       case ax::mojom::DescriptionFrom::kTitle:
       case ax::mojom::DescriptionFrom::kPopoverTarget:
-      case ax::mojom::DescriptionFrom::kInterestTarget:
+      case ax::mojom::DescriptionFrom::kInterestFor:
         // The following types of markup are mapped to "tooltip":
         // * The title attribute.
         // * A popover=something related via the `popovertarget` attribute.
         // * A tooltip related via aria-describedby (see kRelatedElement above).
-        // * An interesttarget pointing to plain content.
+        // * An interestfor pointing to plain content.
         from = "tooltip";
         break;
       case ax::mojom::DescriptionFrom::kNone:
@@ -1186,7 +1194,7 @@ void AXPlatformNodeBase::ComputeAttributes(PlatformAttributeList* attributes) {
       DCHECK(!GetName().empty());
       break;
     case ax::mojom::NameFrom::kPopoverTarget:
-    case ax::mojom::NameFrom::kInterestTarget:
+    case ax::mojom::NameFrom::kInterestFor:
     case ax::mojom::NameFrom::kTitle:
       from = "tooltip";
       DCHECK(!GetName().empty());
@@ -1238,8 +1246,8 @@ void AXPlatformNodeBase::ComputeAttributes(PlatformAttributeList* attributes) {
     AddAttributeToList("haspopup", "menu", attributes);
   }
 
-  if (HasState(ax::mojom::State::kHasInterestTarget)) {
-    AddAttributeToList("has-interest-target", "true", attributes);
+  if (HasState(ax::mojom::State::kHasInterestFor)) {
+    AddAttributeToList("has-interest-for", "true", attributes);
   }
 
   // Expose the aria-ispopup attribute.
@@ -1480,8 +1488,8 @@ void AXPlatformNodeBase::ComputeAttributes(PlatformAttributeList* attributes) {
       case ax::mojom::DetailsFrom::kPopoverTarget:
         AddAttributeToList("details-from", "popover-target", attributes);
         break;
-      case ax::mojom::DetailsFrom::kInterestTarget:
-        AddAttributeToList("details-from", "interest-target", attributes);
+      case ax::mojom::DetailsFrom::kInterestFor:
+        AddAttributeToList("details-from", "interest-for", attributes);
         break;
       case ax::mojom::DetailsFrom::kCommandfor:
         AddAttributeToList("details-from", "command-for", attributes);
@@ -1589,8 +1597,9 @@ void AXPlatformNodeBase::UpdateComputedHypertext() const {
   // the character index of each embedded object character to the id of the
   // child object it points to.
   std::u16string hypertext;
-  for (AXPlatformNodeChildIterator child_iter = AXPlatformNodeChildrenBegin();
-       child_iter != AXPlatformNodeChildrenEnd(); ++child_iter) {
+  for (AXPlatformNodeChildIterator child_iter = AXPlatformNodeChildrenBegin(),
+                                   child_end = AXPlatformNodeChildrenEnd();
+       child_iter != child_end; ++child_iter) {
     // Similar to Firefox, we don't expose text nodes in IAccessible2 and ATK
     // hypertext with the embedded object character. We copy all of their text
     // instead.
@@ -1714,9 +1723,9 @@ int32_t AXPlatformNodeBase::GetHypertextOffsetFromChild(
   // cross-tree traversal is necessary.
   if (child->IsText()) {
     int32_t hypertext_offset = 0;
-    for (auto child_iter = AXPlatformNodeChildrenBegin();
-         child_iter != AXPlatformNodeChildrenEnd() && child_iter.get() != child;
-         ++child_iter) {
+    for (auto child_iter = AXPlatformNodeChildrenBegin(),
+              child_end = AXPlatformNodeChildrenEnd();
+         child_iter != child_end && child_iter.get() != child; ++child_iter) {
       if (child_iter->IsText()) {
         hypertext_offset +=
             static_cast<int32_t>(child_iter->GetHypertext().size());
@@ -1742,8 +1751,9 @@ int AXPlatformNodeBase::HypertextOffsetFromChildIndex(int child_index) const {
   // would be the case if we were to call GetChildAtIndex on each child.
   int hypertext_offset = 0;
   int endpoint_child_index = 0;
-  for (AXPlatformNodeChildIterator child_iter = AXPlatformNodeChildrenBegin();
-       child_iter != AXPlatformNodeChildrenEnd(); ++child_iter) {
+  for (AXPlatformNodeChildIterator child_iter = AXPlatformNodeChildrenBegin(),
+                                   child_end = AXPlatformNodeChildrenEnd();
+       child_iter != child_end; ++child_iter) {
     if (endpoint_child_index >= child_index) {
       break;
     }
@@ -1866,8 +1876,9 @@ int AXPlatformNodeBase::GetHypertextOffsetFromEndpoint(
   // We can safely assume that the endpoint is in another part of the tree or
   // at common parent, and that this object is a descendant of common parent.
   std::optional<size_t> endpoint_index_in_common_parent;
-  for (auto child_iter = common_parent->AXPlatformNodeChildrenBegin();
-       child_iter != common_parent->AXPlatformNodeChildrenEnd(); ++child_iter) {
+  for (auto child_iter = common_parent->AXPlatformNodeChildrenBegin(),
+            child_end = common_parent->AXPlatformNodeChildrenEnd();
+       child_iter != child_end; ++child_iter) {
     if (endpoint_object->IsDescendantOf(child_iter.get())) {
       endpoint_index_in_common_parent = child_iter->GetIndexInParent();
       break;
@@ -1912,10 +1923,9 @@ AXPlatformNodeBase::AXPosition AXPlatformNodeBase::HypertextOffsetToEndpoint(
   }
 
   int current_hypertext_offset = hypertext_offset;
-  for (auto child_iter = AXPlatformNodeChildrenBegin();
-       child_iter != AXPlatformNodeChildrenEnd() &&
-       current_hypertext_offset >= 0;
-       ++child_iter) {
+  for (auto child_iter = AXPlatformNodeChildrenBegin(),
+            child_end = AXPlatformNodeChildrenEnd();
+       child_iter != child_end && current_hypertext_offset >= 0; ++child_iter) {
     int child_text_len = 1;
     if (child_iter->IsText())
       child_text_len =
@@ -2452,9 +2462,9 @@ int AXPlatformNodeBase::GetSelectedItems(
     int max_items,
     std::vector<AXPlatformNodeBase*>* out_selected_items) const {
   int selected_count = 0;
-  for (auto child_iter = AXPlatformNodeChildrenBegin();
-       child_iter != AXPlatformNodeChildrenEnd() && selected_count < max_items;
-       ++child_iter) {
+  for (auto child_iter = AXPlatformNodeChildrenBegin(),
+            child_end = AXPlatformNodeChildrenEnd();
+       child_iter != child_end && selected_count < max_items; ++child_iter) {
     if (!IsItemLike(child_iter->GetRole())) {
       selected_count += child_iter->GetSelectedItems(max_items - selected_count,
                                                      out_selected_items);

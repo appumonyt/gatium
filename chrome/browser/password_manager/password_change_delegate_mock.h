@@ -21,6 +21,7 @@ class PasswordChangeDelegateMock final : public PasswordChangeDelegate {
   ~PasswordChangeDelegateMock() override;
 
   MOCK_METHOD(void, StartPasswordChangeFlow, (), (override));
+  MOCK_METHOD(void, CancelPasswordChangeFlow, (), (override));
   MOCK_METHOD(bool,
               IsPasswordChangeOngoing,
               (content::WebContents*),
@@ -30,8 +31,8 @@ class PasswordChangeDelegateMock final : public PasswordChangeDelegate {
               (),
               (const override));
   MOCK_METHOD(void, Stop, (), (override));
-  MOCK_METHOD(void, Restart, (), (override));
   MOCK_METHOD(void, OpenPasswordChangeTab, (), (override));
+  MOCK_METHOD(void, OpenPasswordDetails, (), (override));
   MOCK_METHOD(void,
               OnPasswordFormSubmission,
               (content::WebContents*),

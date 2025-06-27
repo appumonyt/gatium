@@ -265,6 +265,25 @@ if (is_android) {
     ]
   }
 
+  android_library("versioning_java") {
+    resources_package = "org.chromium.chrome.browser.data_sharing.ui.versioning"
+    sources = [
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersioningMessageBanner.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersioningModalDialog.java",
+    ]
+    deps = [
+      "//base:callback_java",
+      "//base:supplier_java",
+      "//chrome/android:chrome_app_java_resources",
+      "//chrome/browser/profiles/android:java",
+      "//chrome/browser/tab_group_sync:factory_java",
+      "//components/messages/android:java",
+      "//components/saved_tab_groups/public:java",
+      "//third_party/androidx:androidx_core_core_java",
+      "//ui/android:ui_no_recycler_view_java",
+    ]
+  }
+
   android_library("internal_library_java") {
     resources_package = "org.chromium.chrome.browser.data_sharing"
     sources = [
@@ -308,12 +327,15 @@ if (is_android) {
       "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingTabGroupUtilsUnitTest.java",
       "android/java/src/org/chromium/chrome/browser/data_sharing/InstantMessageDelegateImplUnitTest.java",
       "android/java/src/org/chromium/chrome/browser/data_sharing/ui/shared_image_tiles/SharedImageTilesCoordinatorUnitTest.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersioningMessageBannerUnitTest.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersioningModalDialogUnitTest.java",
     ]
     deps = [
       ":data_sharing_public_java",
       ":internal_library_java",
       ":java",
       ":shared_image_tiles_java",
+      ":versioning_java",
       "//base:base_java",
       "//base:base_java_test_support",
       "//base:base_junit_test_support",
@@ -337,6 +359,7 @@ if (is_android) {
       "//components/saved_tab_groups/public:test_support_java",
       "//components/signin/public/android:java",
       "//content/public/android:content_full_java",
+      "//google_apis/gaia/android:java",
       "//third_party/android_deps:robolectric_all_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/androidx:androidx_test_core_java",
@@ -370,6 +393,7 @@ if (is_android) {
       "//components/saved_tab_groups/public:java",
       "//components/signin/public/android:java",
       "//content/public/android:content_full_java",
+      "//google_apis/gaia/android:java",
       "//third_party/android_deps:robolectric_all_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/androidx:androidx_test_core_java",

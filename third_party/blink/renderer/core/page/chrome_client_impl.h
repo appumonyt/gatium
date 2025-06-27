@@ -158,6 +158,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   float WindowToViewportScalar(LocalFrame*, const float) const override;
   const display::ScreenInfo& GetScreenInfo(LocalFrame&) const override;
   const display::ScreenInfos& GetScreenInfos(LocalFrame&) const override;
+  const display::ScreenInfo& GetOriginalScreenInfo(LocalFrame&) const override;
   float InputEventsScaleForEmulation() const override;
   void ContentsSizeChanged(LocalFrame*, const gfx::Size&) const override;
   bool DoubleTapToZoomEnabled() const override;
@@ -307,9 +308,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   void NotifyPresentationTime(LocalFrame& frame,
                               ReportTimeCallback callback) override;
-
-  void RequestBeginMainFrameNotExpected(LocalFrame& frame,
-                                        bool request) override;
 
   void DidUpdateTextAutosizerPageInfo(
       const mojom::blink::TextAutosizerPageInfo& page_info) override;

@@ -167,6 +167,12 @@ BASE_FEATURE(kOpaqueResponseBlockingErrorsForAllFetches,
 // https://tools.ietf.org/html/draft-davidben-http-client-hint-reliability-02#section-4.3
 BASE_FEATURE(kAcceptCHFrame, "AcceptCHFrame", base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Enable offloading the network layer to check enabled client hints.
+// See crbug.com/406407746 for details.
+BASE_FEATURE(kOffloadAcceptCHFrameCheck,
+             "OffloadAcceptCHFrameCheck",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // https://fetch.spec.whatwg.org/#cors-non-wildcard-request-header-name
 BASE_FEATURE(kCorsNonWildcardRequestHeadersSupport,
              "CorsNonWildcardRequestHeadersSupport",
@@ -442,8 +448,14 @@ BASE_FEATURE_PARAM(std::string,
                    "");
 // When enabled, a `Sec-Fetch-Frame-Top` header will be emitted on
 // outgoing requests.
-BASE_FEATURE(kFrameAncestorHeaders,
-             "FrameAncestorHeaders",
+BASE_FEATURE(kFrameTopHeader,
+             "FrameTopHeader",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// When enabled, a `Sec-Fetch-Frame-Ancestors` header will be emitted on
+// outgoing requests.
+BASE_FEATURE(kFrameAncestorsHeader,
+             "FrameAncestorsHeader",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kUpdateRequestForCorsRedirect,
@@ -574,6 +586,12 @@ BASE_FEATURE(kIncreaseCookieAccessCacheSize,
              "IncreaseCookieAccessCacheSize",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE_PARAM(int,
+                   kCookieAccessCacheSize,
+                   &kIncreaseCookieAccessCacheSize,
+                   "cookie-access-cache-size",
+                   100);
+
 BASE_FEATURE(kPopulatePermissionsPolicyOnRequest,
              "PopulatePermissionsPolicyOnRequest",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -591,6 +609,10 @@ BASE_FEATURE(kDeviceBoundSessionAccessObserverSharedRemote,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kCSPScriptSrcV2, "ScriptSrcV2", base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kCSPScriptSrcHashesInV1,
+             "ScriptSrcHashesV1",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kCacheSharingForPervasiveScripts,
              "CacheSharingForPervasiveScripts",
@@ -616,5 +638,9 @@ BASE_FEATURE_PARAM(size_t,
                    &kSharedDictionaryCache,
                    /*name=*/"max_size",
                    1'000'000);
+
+BASE_FEATURE(kNetworkServiceTaskScheduler,
+             "NetworkServiceTaskScheduler",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace network::features

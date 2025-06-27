@@ -43,6 +43,7 @@
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/site_for_cookies.h"
 #include "net/device_bound_sessions/session_key.h"
+#include "net/device_bound_sessions/session_service.h"
 #include "net/device_bound_sessions/session_usage.h"
 #include "net/dns/public/secure_dns_policy.h"
 #include "net/filter/source_stream_type.h"
@@ -523,16 +524,14 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   // The time at which the returned response was requested.  For cached
   // responses, this is the last time the cache entry was validated.
-  const base::Time& request_time() const { return response_info_.request_time; }
+  base::Time request_time() const { return response_info_.request_time; }
 
   // The time at which the returned response was generated.  For cached
   // responses, this is the last time the cache entry was validated.
-  const base::Time& response_time() const {
-    return response_info_.response_time;
-  }
+  base::Time response_time() const { return response_info_.response_time; }
 
   // Like response_time, but ignoring revalidations.
-  const base::Time& original_response_time() const {
+  base::Time original_response_time() const {
     return response_info_.original_response_time;
   }
 
@@ -955,13 +954,15 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   // Returns all the device bound sessions that have deferred this
   // request.
-  const base::flat_set<device_bound_sessions::SessionKey>&
+  const base::flat_map<device_bound_sessions::SessionKey,
+                       device_bound_sessions::SessionService::RefreshResult>&
   device_bound_session_deferrals() const {
     return device_bound_session_deferrals_;
   }
   void AddDeviceBoundSessionDeferral(
-      const device_bound_sessions::SessionKey& deferral) {
-    device_bound_session_deferrals_.insert(deferral);
+      const device_bound_sessions::SessionKey& deferral,
+      const device_bound_sessions::SessionService::RefreshResult result) {
+    device_bound_session_deferrals_[deferral] = result;
   }
 
  protected:
@@ -1258,8 +1259,10 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   // How existing device bound sessions interacted with this request
   device_bound_sessions::SessionUsage device_bound_session_usage_ =
       device_bound_sessions::SessionUsage::kUnknown;
-  // Which device bound sessions have deferred this request.
-  base::flat_set<device_bound_sessions::SessionKey>
+  // Which device bound sessions have deferred this request, and the
+  // result of that refresh.
+  base::flat_map<device_bound_sessions::SessionKey,
+                 device_bound_sessions::SessionService::RefreshResult>
       device_bound_session_deferrals_;
 
   THREAD_CHECKER(thread_checker_);

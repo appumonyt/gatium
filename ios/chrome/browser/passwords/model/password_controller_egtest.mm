@@ -253,13 +253,13 @@ void LoginOnUff() {
   }
 
 // TODO(crbug.com/371189341): Test fails on device.
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_SIMULATOR
   if ([self isRunningTest:@selector
             (testPasswordGenerationWhileSignedInWithError)]) {
     config.features_enabled.push_back(
         syncer::kSyncTrustedVaultInfobarImprovements);
   }
-#endif  // TARGET_IPHONE_SIMULATOR
+#endif  // TARGET_OS_SIMULATOR
 
   // The proactive password suggestion bottom sheet isn't tested here, it
   // is tested in its own suite in password_suggestion_egtest.mm.
@@ -508,7 +508,7 @@ void LoginOnUff() {
 
 // Tests password generation flow.
 // TODO(crbug.com/40260214): The test fails on simulator.
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_SIMULATOR
 #define MAYBE_testPasswordGeneration FLAKY_testPasswordGeneration
 #else
 #define MAYBE_testPasswordGeneration testPasswordGeneration
@@ -583,7 +583,7 @@ void LoginOnUff() {
 // Tests that password generation is not offered for signed in users with
 // passwords toggle disabled.
 // TODO(crbug.com/371189341): Test fails on device.
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_SIMULATOR
 #define MAYBE_testPasswordGenerationWhileSignedInWithPasswordsDisabled \
   testPasswordGenerationWhileSignedInWithPasswordsDisabled
 #else
@@ -626,7 +626,7 @@ void LoginOnUff() {
 // Tests that password generation is not offered for signed in users with an
 // encryption error; missing passphrase.
 // TODO(crbug.com/371189341): Test fails on device.
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_SIMULATOR
 #define MAYBE_testPasswordGenerationWhileSignedInWithError \
   testPasswordGenerationWhileSignedInWithError
 #else
@@ -825,8 +825,8 @@ void LoginOnUff() {
 
   const Event& event = requests[0].events(0);
   GREYAssertTrue(event.has_login_event(), @"Wrong event type.");
-  GREYAssertEqual(self.testServer->GetURL("/"), event.login_event().url(),
-                  @"Wrong URL reported to server.");
+  GREYAssertEqual(self.testServer->GetURL("/simple_login_form.html"),
+                  event.login_event().url(), @"Wrong URL reported to server.");
   // The `test-username` portion of the email will be masked, but the domain
   // part shouldn't be.
   GREYAssertTrue(
@@ -868,8 +868,8 @@ void LoginOnUff() {
                   @"Wrong number of leaked identities.");
 
   const Identity& identity = event.password_breach_event().identities(0);
-  GREYAssertEqual(self.testServer->GetURL("/"), identity.url(),
-                  @"Wrong URL reported for leaked identity.");
+  GREYAssertEqual(self.testServer->GetURL("/simple_login_form.html"),
+                  identity.url(), @"Wrong URL reported for leaked identity.");
   // The `test-username` portion of the email will be masked, but the domain
   // part shouldn't be.
   GREYAssertTrue(identity.username().ends_with("@test-domain.com"),

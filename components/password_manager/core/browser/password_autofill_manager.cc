@@ -149,13 +149,18 @@ PasswordAutofillManager::~PasswordAutofillManager() {
 
 void PasswordAutofillManager::ShowSuggestions(
     const autofill::TriggeringField& triggering_field) {
+  gfx::RectF bounds =
+      base::FeatureList::IsEnabled(
+          autofill::features::kAutofillAndPasswordsInSameSurface)
+          ? triggering_field
+                .bounds  // Already transformed in ContentAutofillDriver.
+          : password_manager_driver_->TransformToRootCoordinates(
+                triggering_field.bounds);
   OnShowPasswordSuggestions(
       triggering_field.element_id, triggering_field.trigger_source,
       triggering_field.text_direction, triggering_field.typed_username,
       ShowWebAuthnCredentials(triggering_field.show_webauthn_credentials),
-      ShowIdentityCredentials(true),
-      password_manager_driver_->TransformToRootCoordinates(
-          triggering_field.bounds));
+      ShowIdentityCredentials(true), bounds);
 }
 
 #if BUILDFLAG(IS_ANDROID)

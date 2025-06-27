@@ -98,6 +98,49 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabUtilBrowserTest, GetTabById) {
   EXPECT_EQ(found_contents, active_contents);
 }
 
+IN_PROC_BROWSER_TEST_F(ExtensionTabUtilBrowserTest,
+                       OpenOptionsPageFromWebContents) {
+  // Load an extension with an options page that opens in a tab.
+  const Extension* options_in_tab =
+      LoadExtension(test_data_dir_.AppendASCII("options_page"));
+  ASSERT_TRUE(options_in_tab);
+  ASSERT_TRUE(OptionsPageInfo::HasOptionsPage(options_in_tab));
+
+  content::WebContents* active_contents = GetActiveWebContents();
+  ASSERT_TRUE(active_contents);
+
+  EXPECT_TRUE(ExtensionTabUtil::OpenOptionsPageFromWebContents(
+      options_in_tab, active_contents));
+
+  EXPECT_EQ(GetActiveWebContents()->GetURL(),
+            OptionsPageInfo::GetOptionsPage(options_in_tab));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionTabUtilBrowserTest,
+                       OpenOptionsPageFromWebContentsInView) {
+  // Load an extension with an options page that opens in the
+  // chrome://extensions page in a view.
+  const Extension* options_in_view =
+      LoadExtension(test_data_dir_.AppendASCII("options_page_in_view"));
+  ASSERT_TRUE(options_in_view);
+  ASSERT_TRUE(OptionsPageInfo::HasOptionsPage(options_in_view));
+
+  content::WebContents* active_contents = GetActiveWebContents();
+  ASSERT_TRUE(active_contents);
+
+  EXPECT_TRUE(ExtensionTabUtil::OpenOptionsPageFromWebContents(
+      options_in_view, active_contents));
+
+  GURL expected_url;
+#if BUILDFLAG(IS_ANDROID)
+  expected_url = OptionsPageInfo::GetOptionsPage(options_in_view);
+#else
+  expected_url = GURL("chrome://extensions?options=" + options_in_view->id());
+#endif
+
+  EXPECT_EQ(GetActiveWebContents()->GetURL(), expected_url);
+}
+
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 // TODO(crbug.com/41370170): Fix and re-enable.
 IN_PROC_BROWSER_TEST_F(ExtensionTabUtilBrowserTest,
@@ -152,7 +195,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabUtilBrowserTest,
   // the options page, and we don't want to arbitrarily close extension content.
   // Regression test for crbug.com/587581.
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(), options_in_tab->ResolveExtensionURL("other.html")));
+      browser(), options_in_tab->GetResourceURL("other.html")));
   EXPECT_TRUE(ExtensionTabUtil::OpenOptionsPage(options_in_tab, browser()));
   EXPECT_EQ(3, browser()->tab_strip_model()->count());
   EXPECT_TRUE(content::WaitForLoadStop(

@@ -9,7 +9,6 @@
 #include <memory>
 
 #include "ash/constants/ash_constants.h"
-#include "ash/constants/ash_features.h"
 #include "ash/focus/focus_cycler.h"
 #include "ash/public/cpp/message_center/arc_notification_constants.h"
 #include "ash/public/cpp/shelf_types.h"
@@ -89,10 +88,6 @@ AshMessagePopupCollection::NotifierCollisionHandler::
 
 void AshMessagePopupCollection::NotifierCollisionHandler::
     OnPopupCollectionHeightChanged() {
-  if (!features::IsNotifierCollisionEnabled()) {
-    return;
-  }
-
   // Ignore changes happen to the popup collection height when bubble changes is
   // being handled. This is to avoid crashes (b/305781721) when we handle both
   // the bubble and the collection height changes at the same time.
@@ -125,13 +120,6 @@ void AshMessagePopupCollection::NotifierCollisionHandler::
 
 int AshMessagePopupCollection::NotifierCollisionHandler::
     CalculateBaselineOffset() {
-  // Baseline pre-notifier collision does not consider corner anchored shelf pod
-  // bubbles or slider bubbles to set its offset.
-  if (!features::IsNotifierCollisionEnabled()) {
-    surface_type_ = NotifierCollisionSurfaceType::kExtendedHotseat;
-    return CalculateExtendedHotseatOffset();
-  }
-
   auto* status_area =
       StatusAreaWidget::ForWindow(popup_collection_->shelf_->GetWindow());
   auto* current_open_shelf_pod_bubble =
@@ -180,10 +168,6 @@ void AshMessagePopupCollection::NotifierCollisionHandler::
 
 void AshMessagePopupCollection::NotifierCollisionHandler::
     HandleBubbleVisibilityOrBoundsChanged() {
-  if (!features::IsNotifierCollisionEnabled()) {
-    return;
-  }
-
   // This is to make sure that we don't close the bubble through
   // `OnPopupCollectionHeightChanged()` to avoid crashes (b/305781721).
   base::AutoReset<bool> reset(&is_handling_bubble_change_, true);
@@ -483,6 +467,10 @@ void AshMessagePopupCollection::ClosePopupItem(PopupItem& item) {
   auto lock = TrayBackgroundView::DisableCloseBubbleOnWindowActivated();
 
   message_center::MessagePopupCollection::ClosePopupItem(item);
+}
+
+bool AshMessagePopupCollection::CanUseTransformForBoundsAnimation() const {
+  return true;
 }
 
 bool AshMessagePopupCollection::IsWidgetAPopupNotification(

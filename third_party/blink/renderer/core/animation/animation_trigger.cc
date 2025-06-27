@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/core/animation/animation.h"
 #include "third_party/blink/renderer/core/animation/css/css_animation.h"
 #include "third_party/blink/renderer/core/animation/deferred_timeline.h"
+#include "third_party/blink/renderer/core/animation/document_animations.h"
 #include "third_party/blink/renderer/core/animation/document_timeline.h"
 #include "third_party/blink/renderer/core/animation/scroll_timeline.h"
 #include "third_party/blink/renderer/core/animation/scroll_timeline_util.h"
@@ -17,6 +18,7 @@
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 
@@ -106,13 +108,13 @@ bool ValidateBoundary(ExecutionContext* execution_context,
 }
 
 AnimationTrigger::AnimationTrigger(AnimationTimeline* timeline,
-                                   Type type,
+                                   Behavior behavior,
                                    RangeBoundary* range_start,
                                    RangeBoundary* range_end,
                                    RangeBoundary* exit_range_start,
                                    RangeBoundary* exit_range_end)
     : timeline_(timeline),
-      type_(type),
+      behavior_(behavior),
       range_start_(range_start),
       range_end_(range_end),
       exit_range_start_(exit_range_start),
@@ -144,7 +146,7 @@ AnimationTrigger* AnimationTrigger::Create(ExecutionContext* execution_context,
     timeline = &To<LocalDOMWindow>(execution_context)->document()->Timeline();
   }
   return MakeGarbageCollected<AnimationTrigger>(
-      timeline, options->type(), options->rangeStart(), options->rangeEnd(),
+      timeline, options->behavior(), options->rangeStart(), options->rangeEnd(),
       options->exitRangeStart(), options->exitRangeEnd());
 }
 
@@ -165,18 +167,42 @@ const RangeBoundary* AnimationTrigger::exitRangeEnd(
   return exit_range_end_;
 }
 
-double ComputeTriggerBoundary(
-    std::optional<TimelineOffset> offset,
-    double default_value,
-    const ScrollTimeline& timeline,
-    const TimelineRange::ScrollOffsets& range_offsets) {
+double ComputeTriggerBoundary(std::optional<TimelineOffset> offset,
+                              double default_value,
+                              const ScrollTimeline& timeline,
+                              const TimelineRange::ScrollOffsets& range_offsets,
+                              Element& timeline_source) {
   if (offset) {
-    double range = range_offsets.end - range_offsets.start;
-    return range_offsets.start +
-           (timeline.IsViewTimeline()
-                ? range * To<ViewTimeline>(timeline).ToFractionalOffset(*offset)
-                : MinimumValueForLength(offset->offset, LayoutUnit(range)));
+    // |range_offsets| is in physical pixels. Get the range values in CSS
+    // pixels.
+    double range_start_in_css = AdjustForAbsoluteZoom::AdjustScroll(
+        range_offsets.start, *timeline_source.GetLayoutBox());
+    double range_in_css = AdjustForAbsoluteZoom::AdjustScroll(
+        range_offsets.end - range_offsets.start,
+        *timeline_source.GetLayoutBox());
+
+    LayoutUnit range_offset_in_css;
+    if (timeline.IsViewTimeline()) {
+      // |offset| is in CSS pixels but ToFractionalOffset works with Physical
+      // pixels, adjust to physical pixels to get the fraction of the timeline
+      // range.
+      TimelineOffset offset_in_physical(
+          offset->name,
+          offset->offset.Zoom(
+              timeline_source.GetLayoutBox()->StyleRef().EffectiveZoom()),
+          offset->style_dependent_offset);
+
+      double fraction =
+          To<ViewTimeline>(timeline).ToFractionalOffset(offset_in_physical);
+      range_offset_in_css = LayoutUnit(fraction * range_in_css);
+    } else {
+      range_offset_in_css =
+          MinimumValueForLength(offset->offset, LayoutUnit(range_in_css));
+    }
+
+    return range_start_in_css + range_offset_in_css;
   }
+
   return default_value;
 }
 
@@ -212,6 +238,10 @@ AnimationTrigger::CalculateTriggerBoundaries() {
   if (!timeline_source) {
     return std::nullopt;
   }
+
+  current_offset = AdjustForAbsoluteZoom::AdjustScroll(
+      *current_offset, *timeline_source->GetLayoutObject());
+
   if (IsA<LayoutView>(timeline_source->GetLayoutObject())) {
     // If the source is the root document, it isn't an "Element", so we need
     // to work with its scrollingElement
@@ -249,15 +279,17 @@ AnimationTrigger::TriggerBoundaries AnimationTrigger::ComputeTriggerBoundaries(
   // the associated scroll container.
   // For a ViewTimeline, these correspond to the cover 0% and cover 100%
   // respectively.
-  const double default_start_position = timeline_state.scroll_offsets->start;
-  const double default_end_position = timeline_state.scroll_offsets->end;
+  const double default_start_position = AdjustForAbsoluteZoom::AdjustScroll(
+      timeline_state.scroll_offsets->start, *timeline_source.GetLayoutBox());
+  const double default_end_position = AdjustForAbsoluteZoom::AdjustScroll(
+      timeline_state.scroll_offsets->end, *timeline_source.GetLayoutBox());
 
   boundaries.start =
       ComputeTriggerBoundary(trigger_start, default_start_position, timeline,
-                             *timeline_state.scroll_offsets);
+                             *timeline_state.scroll_offsets, timeline_source);
   boundaries.end =
       ComputeTriggerBoundary(trigger_end, default_end_position, timeline,
-                             *timeline_state.scroll_offsets);
+                             *timeline_state.scroll_offsets, timeline_source);
 
   if (exit_start.IsAuto()) {
     // auto behavior: match the trigger range.
@@ -269,7 +301,7 @@ AnimationTrigger::TriggerBoundaries AnimationTrigger::ComputeTriggerBoundaries(
     double default_exit_start_offset = timeline_state.scroll_offsets->start;
     boundaries.exit_start =
         ComputeTriggerBoundary(offset, default_exit_start_offset, timeline,
-                               *timeline_state.scroll_offsets);
+                               *timeline_state.scroll_offsets, timeline_source);
   }
 
   if (exit_end.IsAuto()) {
@@ -279,7 +311,7 @@ AnimationTrigger::TriggerBoundaries AnimationTrigger::ComputeTriggerBoundaries(
     double default_exit_end_offset = timeline_state.scroll_offsets->end;
     boundaries.exit_end =
         ComputeTriggerBoundary(offset, default_exit_end_offset, timeline,
-                               *timeline_state.scroll_offsets);
+                               *timeline_state.scroll_offsets, timeline_source);
   }
 
   boundaries.current_offset = current_offset;
@@ -340,27 +372,27 @@ void AnimationTrigger::Update() {
 void AnimationTrigger::UpdateInternal(State old_state, State new_state) {
   UpdateType update_type = UpdateType::kNone;
 
-  switch (type_.AsEnum()) {
-    case Type::Enum::kOnce:
+  switch (behavior_.AsEnum()) {
+    case Behavior::Enum::kOnce:
       if (new_state == State::kPrimary) {
         update_type = UpdateType::kUnpause;
       }
       break;
-    case Type::Enum::kRepeat:
+    case Behavior::Enum::kRepeat:
       if (new_state == State::kPrimary) {
         update_type = UpdateType::kPlay;
       } else {
         update_type = UpdateType::kReset;
       }
       break;
-    case Type::Enum::kAlternate:
+    case Behavior::Enum::kAlternate:
       if (old_state == State::kIdle) {
         update_type = UpdateType::kPlay;
       } else {
         update_type = UpdateType::kReverse;
       }
       break;
-    case Type::Enum::kState:
+    case Behavior::Enum::kState:
       if (new_state == State::kPrimary) {
         update_type = UpdateType::kUnpause;
       } else {
@@ -389,18 +421,18 @@ void AnimationTrigger::HandlePostTripAdd(Animation* animation,
     return;
   }
 
-  switch (type_.AsEnum()) {
-    case Type::Enum::kOnce:
+  switch (behavior_.AsEnum()) {
+    case Behavior::Enum::kOnce:
       animation->PlayInternal(Animation::AutoRewind::kEnabled, exception_state);
       break;
-    case Type::Enum::kRepeat:
+    case Behavior::Enum::kRepeat:
       animation->ResetPlayback();
       animation->SetPausedForTrigger(true);
       break;
-    case Type::Enum::kAlternate:
+    case Behavior::Enum::kAlternate:
       animation->ReverseInternal(exception_state);
       break;
-    case Type::Enum::kState:
+    case Behavior::Enum::kState:
       animation->PauseInternal(exception_state);
       animation->SetPausedForTrigger(true);
   };
@@ -427,10 +459,12 @@ void AnimationTrigger::addAnimation(Animation* animation,
   }
 
   animations_.insert(animation);
+  animation->AddTrigger(this);
 }
 
 void AnimationTrigger::removeAnimation(Animation* animation) {
   animations_.erase(animation);
+  animation->RemoveTrigger(this);
 }
 
 void AnimationTrigger::UpdateAnimations(

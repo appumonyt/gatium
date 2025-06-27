@@ -31,12 +31,12 @@ import org.chromium.base.Log;
 import org.chromium.base.MathUtils;
 import org.chromium.base.TraceEvent;
 import org.chromium.base.supplier.ObservableSupplier;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.composeplate.ComposeplateCoordinator;
 import org.chromium.chrome.browser.composeplate.ComposeplateMetricsUtils;
 import org.chromium.chrome.browser.composeplate.ComposeplateUtils;
 import org.chromium.chrome.browser.feed.FeedSurfaceScrollDelegate;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.lens.LensEntryPoint;
 import org.chromium.chrome.browser.lens.LensMetrics;
 import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
@@ -67,6 +67,8 @@ import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.MimeTypeUtils;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.text.EmptyTextWatcher;
+import org.chromium.ui.util.ColorUtils;
+import org.chromium.url.GURL;
 
 /**
  * Layout for the new tab page. This positions the page elements in the correct vertical positions.
@@ -148,12 +150,15 @@ public class NewTabPageLayout extends LinearLayout
     private TextView mFakeSearchBoxEditText;
     private Callback<Logo> mOnLogoAvailableCallback;
     private boolean mIsComposeplateEnabled;
+    private Supplier<GURL> mComposeplateUrlSupplier;
     private OnClickListener mVoiceSearchButtonClickListener;
     private OnClickListener mLensButtonClickListener;
     private @Nullable ComposeplateCoordinator mComposeplateCoordinator;
     // Previous visibility states for metrics.
-    private boolean mPreviousVoiceSearchButtonVisible;
-    private boolean mPreviousLensButtonVisible;
+    private Boolean mPreviousVoiceSearchButtonVisible;
+    private Boolean mPreviousLensButtonVisible;
+    private @Nullable ImageView mDseIconView;
+    private ViewGroup mFakeSearchBox;
 
     /** Constructor for inflating from XML. */
     public NewTabPageLayout(Context context, AttributeSet attrs) {
@@ -223,7 +228,8 @@ public class NewTabPageLayout extends LinearLayout
             Profile profile,
             WindowAndroid windowAndroid,
             boolean isTablet,
-            ObservableSupplier<Integer> tabStripHeightSupplier) {
+            ObservableSupplier<Integer> tabStripHeightSupplier,
+            Supplier<GURL> composeplateUrlSupplier) {
         TraceEvent.begin(TAG + ".initialize()");
         mScrollDelegate = scrollDelegate;
         mManager = manager;
@@ -233,7 +239,10 @@ public class NewTabPageLayout extends LinearLayout
         mWindowAndroid = windowAndroid;
         mIsTablet = isTablet;
         mTabStripHeightSupplier = tabStripHeightSupplier;
-        mIsComposeplateEnabled = ChromeFeatureList.sAndroidComposeplate.isEnabled() && !mIsTablet;
+        mIsComposeplateEnabled = ComposeplateUtils.isComposeplateEnabled(mIsTablet, profile);
+        if (mIsComposeplateEnabled) {
+            mComposeplateUrlSupplier = composeplateUrlSupplier;
+        }
 
         if (mIsTablet) {
             mDisplayStyleObserver = this::onDisplayStyleChanged;
@@ -263,24 +272,11 @@ public class NewTabPageLayout extends LinearLayout
                                 .getDimensionPixelSize(R.dimen.ntp_search_box_transition_end_offset)
                         : 0;
 
-        if (OmniboxFeatures.sOmniboxMobileParityUpdate.isEnabled()) {
-            var fakeboxView = findViewById(R.id.search_box);
-            var dseIconView = (ImageView) fakeboxView.findViewById(R.id.search_box_engine_icon);
-            dseIconView.setVisibility(VISIBLE);
-            ImageViewCompat.setImageTintList(dseIconView, null);
-            fakeboxView.setPaddingRelative(
-                    getResources()
-                            .getDimensionPixelSize(
-                                    R.dimen.fake_search_box_start_padding_with_dse_logo),
-                    fakeboxView.getPaddingTop(),
-                    fakeboxView.getPaddingEnd(),
-                    fakeboxView.getPaddingBottom());
-        }
-
         updateSearchBoxWidth();
         initializeLogoCoordinator(searchProviderHasLogo, searchProviderIsGoogle);
         initializeMostVisitedTilesCoordinator(
                 mProfile, lifecycleDispatcher, tileGroupDelegate, touchEnabledDelegate);
+        initializeDseIconView(searchProviderIsGoogle);
         initializeSearchBoxTextView();
         initializeVoiceSearchButton();
         initializeLensButton();
@@ -346,6 +342,44 @@ public class NewTabPageLayout extends LinearLayout
         TraceEvent.end(TAG + ".initializeSearchBoxTextView()");
     }
 
+    private void initializeDseIconView(boolean shouldShowDesIconView) {
+        if (!OmniboxFeatures.sOmniboxMobileParityUpdate.isEnabled()) return;
+
+        mFakeSearchBox = findViewById(R.id.search_box);
+        mDseIconView = mFakeSearchBox.findViewById(R.id.search_box_engine_icon);
+        ImageViewCompat.setImageTintList(mDseIconView, null);
+
+        setDseIconViewVisibility(shouldShowDesIconView);
+    }
+
+    private void setDseIconViewVisibility(boolean isVisible) {
+        if (mDseIconView == null) return;
+
+        int visibility = isVisible ? VISIBLE : GONE;
+        if (mDseIconView.getVisibility() == visibility) return;
+
+        mDseIconView.setVisibility(visibility);
+
+        if (isVisible) {
+            mFakeSearchBox.setPaddingRelative(
+                    getResources()
+                            .getDimensionPixelSize(
+                                    R.dimen.fake_search_box_start_padding_with_dse_logo),
+                    mFakeSearchBox.getPaddingTop(),
+                    mFakeSearchBox.getPaddingEnd(),
+                    mFakeSearchBox.getPaddingBottom());
+            mFakeSearchBoxEditText.setTextAppearance(
+                    R.style.TextAppearance_FakeSearchBoxTextMedium);
+        } else {
+            mFakeSearchBox.setPaddingRelative(
+                    getResources().getDimensionPixelSize(R.dimen.fake_search_box_start_padding),
+                    mFakeSearchBox.getPaddingTop(),
+                    mFakeSearchBox.getPaddingEnd(),
+                    mFakeSearchBox.getPaddingBottom());
+            mFakeSearchBoxEditText.setTextAppearance(R.style.TextAppearance_FakeSearchBoxText);
+        }
+    }
+
     private void initializeVoiceSearchButton() {
         TraceEvent.begin(TAG + ".initializeVoiceSearchButton()");
         mVoiceSearchButtonClickListener = v -> mManager.focusSearchBox(true, null);
@@ -369,13 +403,23 @@ public class NewTabPageLayout extends LinearLayout
         if (!mIsComposeplateEnabled) return;
 
         View.OnClickListener composeplateButtonClickListener =
-                v ->
-                        mManager.getNativePageHost()
-                                .loadUrl(
-                                        new LoadUrlParams(ComposeplateUtils.getComposeplateURL()),
-                                        /* incognito= */ false);
+                v -> {
+                    if (!mComposeplateUrlSupplier.hasValue()
+                            || mComposeplateUrlSupplier.get() == null) {
+                        return;
+                    }
+                    mManager.getNativePageHost()
+                            .loadUrl(
+                                    new LoadUrlParams(mComposeplateUrlSupplier.get()),
+                                    /* incognito= */ false);
+                };
         mSearchBoxCoordinator.setComposeplateButtonClickListener(
                 createEnhancedClickListener(composeplateButtonClickListener));
+        int iconRawResId =
+                ColorUtils.inNightMode(mContext)
+                        ? R.raw.composeplate_loop_dark
+                        : R.raw.composeplate_loop_light;
+        mSearchBoxCoordinator.setComposeplateButtonIconRawResId(iconRawResId);
 
         ViewGroup composeplateView =
                 (ViewGroup) ((ViewStub) findViewById(R.id.composeplate_view_stub)).inflate();
@@ -457,8 +501,6 @@ public class NewTabPageLayout extends LinearLayout
                 mIsInMultiWindowModeOnTablet ? DoodleSize.TABLET_SPLIT_SCREEN : DoodleSize.REGULAR);
         mLogoCoordinator.initWithNative(mProfile);
         setSearchProviderInfo(searchProviderHasLogo, searchProviderIsGoogle);
-        setSearchProviderTopMargin();
-        setSearchProviderBottomMargin();
     }
 
     private void initializeMostVisitedTilesCoordinator(
@@ -473,7 +515,6 @@ public class NewTabPageLayout extends LinearLayout
                         mActivity,
                         activityLifecycleDispatcher,
                         mMvTilesContainerLayout,
-                        mWindowAndroid,
                         () -> mSnapshotTileGridChanged = true,
                         () -> {
                             if (mUrlFocusChangePercent == 1f) mTileCountChanged = true;
@@ -668,6 +709,12 @@ public class NewTabPageLayout extends LinearLayout
         // Hide or show the views above the most visited tiles as needed, including search box, and
         // spacers. The visibility of Logo is handled by LogoCoordinator.
         mSearchBoxCoordinator.setVisibility(mSearchProviderHasLogo);
+        if (mDseIconView != null) {
+            setDseIconViewVisibility(mSearchProviderIsGoogle);
+        }
+        if (mIsComposeplateEnabled) {
+            updateActionButtonVisibility();
+        }
 
         onUrlFocusAnimationChanged();
 
@@ -911,7 +958,6 @@ public class NewTabPageLayout extends LinearLayout
                 mSearchBoxCoordinator.isLensEnabled(LensEntryPoint.NEW_TAB_PAGE);
         if (!mIsComposeplateEnabled) {
             mSearchBoxCoordinator.setVoiceSearchButtonVisibility(shouldShowVoiceSearchButton);
-            LensMetrics.recordShown(LensEntryPoint.NEW_TAB_PAGE, shouldShowLensButton);
             mSearchBoxCoordinator.setLensButtonVisibility(shouldShowLensButton);
             updatePreviousButtonVisibilityAndRecordMetrics(
                     shouldShowVoiceSearchButton,
@@ -920,19 +966,19 @@ public class NewTabPageLayout extends LinearLayout
             return;
         }
 
-        boolean shouldShowComposeplateButton = shouldShowVoiceSearchButton && shouldShowLensButton;
+        boolean shouldShowComposeplateButton =
+                mSearchProviderIsGoogle && shouldShowVoiceSearchButton && shouldShowLensButton;
         boolean isVoiceSearchButtonVisible =
                 !shouldShowComposeplateButton && shouldShowVoiceSearchButton;
         boolean isLensButtonVisible = !shouldShowComposeplateButton && shouldShowLensButton;
         mSearchBoxCoordinator.setVoiceSearchButtonVisibility(isVoiceSearchButtonVisible);
         mSearchBoxCoordinator.setLensButtonVisibility(isLensButtonVisible);
         mSearchBoxCoordinator.setComposeplateButtonVisibility(shouldShowComposeplateButton);
-        mComposeplateCoordinator.setVisibility(
-                shouldShowComposeplateButton, mManager.isCurrentPage());
+        if (mComposeplateCoordinator != null) {
+            mComposeplateCoordinator.setVisibility(
+                    shouldShowComposeplateButton, mManager.isCurrentPage());
+        }
 
-        // The lens button will be shown either in the fake search box or the composeplate view.
-        LensMetrics.recordShown(
-                LensEntryPoint.NEW_TAB_PAGE, isLensButtonVisible || shouldShowComposeplateButton);
         updatePreviousButtonVisibilityAndRecordMetrics(
                 isVoiceSearchButtonVisible, isLensButtonVisible, shouldShowComposeplateButton);
     }
@@ -950,14 +996,25 @@ public class NewTabPageLayout extends LinearLayout
             boolean isLensButtonVisible,
             boolean isComposeplateButtonVisible) {
         if (!mManager.isCurrentPage()
-                || (isVoiceSearchButtonVisible == mPreviousVoiceSearchButtonVisible
+                || (mSearchBoxCoordinator.getView().getVisibility() != View.VISIBLE)
+                || (mPreviousVoiceSearchButtonVisible != null
+                        && isVoiceSearchButtonVisible == mPreviousVoiceSearchButtonVisible
+                        && mPreviousLensButtonVisible != null
                         && isLensButtonVisible == mPreviousLensButtonVisible)) {
             return;
         }
 
+        if (mPreviousLensButtonVisible == null
+                || isLensButtonVisible != mPreviousLensButtonVisible) {
+            // The lens button will be shown either in the fake search box or the composeplate view.
+            LensMetrics.recordShown(
+                    LensEntryPoint.NEW_TAB_PAGE,
+                    isLensButtonVisible || isComposeplateButtonVisible);
+        }
+
         ComposeplateMetricsUtils.recordFakeSearchBoxImpression();
         if (isComposeplateButtonVisible) {
-            ComposeplateMetricsUtils.recordFakeSearchBoxComposeplateButtonClick();
+            ComposeplateMetricsUtils.recordFakeSearchBoxComposeplateButtonImpression();
         }
 
         mPreviousVoiceSearchButtonVisible = isVoiceSearchButtonVisible;

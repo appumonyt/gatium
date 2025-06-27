@@ -114,6 +114,7 @@ const char kEphemeralHomeModuleBackendKey[] = "ephemeral_home_module_backend";
 
 const char kIosDefaultBrowserPromoKey[] = "ios_default_browser_promo";
 const char kIosDefaultBrowserPromoUmaName[] = "IosDefaultBrowserPromo";
+const char kIosDefaultBrowserPromoShowLabel[] = "ShowIosDefaultBrowserPromo";
 
 // The key is used to decide whether the user would use FedCM.
 const char kFedCmUserKey[] = "fedcm_user";
@@ -163,6 +164,7 @@ const char kAdaptiveToolbarModelLabelVoice[] = "Voice";
 const char kAdaptiveToolbarModelLabelTranslate[] = "Translate";
 const char kAdaptiveToolbarModelLabelAddToBookmarks[] = "AddToBookmarks";
 const char kAdaptiveToolbarModelLabelReadAloud[] = "ReadAloud";
+const char kAdaptiveToolbarModelLabelOpenInBrowser[] = "OpenInBrowser";
 
 // Labels for contextual page actions model.
 const char kContextualPageActionModelLabelDiscounts[] = "discounts";

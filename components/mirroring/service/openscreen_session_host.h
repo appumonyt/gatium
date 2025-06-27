@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_MIRRORING_SERVICE_OPENSCREEN_SESSION_HOST_H_
 #define COMPONENTS_MIRRORING_SERVICE_OPENSCREEN_SESSION_HOST_H_
 
+#include <vector>
+
 #include "base/component_export.h"
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
@@ -150,7 +152,11 @@ class COMPONENT_EXPORT(MIRRORING_SERVICE) OpenscreenSessionHost final
   void OnAsyncInitialized(const SupportedProfiles& profiles);
 
   // Notify `observer_` that error occurred and close the session.
-  void ReportAndLogError(mojom::SessionError error, std::string_view message);
+  //
+  // NOTE: since this method is used with base::Callback, it takes ownership
+  // of the `message` to avoid lifetime issues, especially when posted to a task
+  // runner.
+  void ReportAndLogError(mojom::SessionError error, std::string message);
 
   // Stops the current streaming session. If not called from StopSession(), a
   // new streaming session will start later after exchanging OFFER/ANSWER

@@ -94,7 +94,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Printing.CUPS.AddressResolutionResult" enum="BooleanSuccess"
-    expires_after="2025-10-05">
+    expires_after="2025-12-07">
   <owner>bmgordon@chromium.org</owner>
   <owner>cros-printing-dev@chromium.org</owner>
   <summary>
@@ -383,7 +383,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Printing.CUPS.SavedPrintersCount" units="printers"
-    expires_after="2025-10-06">
+    expires_after="2025-12-07">
   <owner>gavinwill@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -402,7 +402,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Printing.CUPS.TotalNetworkPrintersCount2" units="printers"
-    expires_after="2025-10-05">
+    expires_after="2025-12-07">
   <owner>bmgordon@chromium.org</owner>
   <owner>project-bolton@google.com</owner>
   <summary>
@@ -417,25 +417,13 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Printing.CUPS.TotalNetworkPrintersCount2.SettingsOpened"
-    units="printers" expires_after="2025-10-05">
+    units="printers" expires_after="2025-12-07">
   <owner>bmgordon@chromium.org</owner>
   <owner>project-bolton@google.com</owner>
   <summary>
     The total number of detected network printers. Recorded when the user
     navigates to the OS Settings Printing page to set up printers. Only recorded
     on Chrome OS.
-  </summary>
-</histogram>
-
-<histogram name="Printing.CUPS.UnknownPpdColorModel" enum="Boolean"
-    expires_after="2025-07-27">
-  <owner>awscreen@chromium.org</owner>
-  <owner>thestig@chromium.org</owner>
-  <summary>
-    Records instances in which print preview encounters an unknown PPD color
-    model. Recorded after print settings are received from print preview. Note
-    that this this histogram expired on 2021-02-01 and was extended on
-    2021-03-30.
   </summary>
 </histogram>
 
@@ -474,19 +462,6 @@ chromium-metrics-reviews@google.com.
     setup is attempted from the print preview dialog. Only recorded on Chrome
     OS. Printer setup results go into either this histogram or the
     Printing.CUPS.PrinterSetupResult.PrintPreview histogram - not both.
-  </summary>
-</histogram>
-
-<histogram name="Printing.EnumeratePrinters.BasicInfo.Registry"
-    enum="BooleanSuccess" expires_after="2025-11-30">
-  <owner>awscreen@chromium.org</owner>
-  <owner>thestig@chromium.org</owner>
-  <summary>
-    When enumerating the list of printers on Windows, records an instance for
-    using the Windows registry to fill in extra printer details that are
-    unavailable from the fast Print Spooler API call. Each instance is
-    successful only if a registry entry for a printer is located that
-    corresponds with the printer returned by the Print Spooler API.
   </summary>
 </histogram>
 
@@ -570,7 +545,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="PrintPreview.FetchCapabilitiesTime2" units="ms"
-    expires_after="2025-10-12">
+    expires_after="2025-12-14">
   <owner>awscreen@chromium.org</owner>
   <owner>thestig@chromium.org</owner>
   <summary>
@@ -627,7 +602,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="PrintPreview.InitialDisplayTimeFirstPrint" units="ms"
-    expires_after="2025-10-12">
+    expires_after="2025-12-14">
   <owner>thestig@chromium.org</owner>
   <owner>awscreen@chromium.org</owner>
   <summary>

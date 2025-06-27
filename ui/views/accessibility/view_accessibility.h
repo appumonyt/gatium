@@ -513,6 +513,20 @@ class VIEWS_EXPORT ViewAccessibility : public WidgetObserver {
 
   virtual AtomicViewAXTreeManager* GetAtomicViewAXTreeManagerForTesting() const;
 
+  virtual Widget* GetWidget() const;
+
+  // Returns the ViewAccessibility object associated with the parent view (or
+  // virtual view). Returns nullptr if this is the root view or the parent is
+  // not set yet.
+  // TODO(crbug.com/40672441): Rename to GetParent once ViewsAX is completed and
+  // AXVirtualView no longer needs to extend AXPlatformNodeDelegate.
+  virtual ViewAccessibility* GetViewAccessibilityParent() const;
+
+  // Returns the ViewAccessibility object associated with the first ancestor
+  // view (or virtual view) that is not ignored. Returns nullptr if this is the
+  // root view or the parent is not set yet.
+  ViewAccessibility* GetUnignoredParent() const;
+
   //
   // Methods for managing virtual views.
   //
@@ -550,6 +564,14 @@ class VIEWS_EXPORT ViewAccessibility : public WidgetObserver {
   // present, or no virtual descendant has been marked as focused, returns the
   // native accessibility object associated with this view.
   gfx::NativeViewAccessible GetFocusedDescendant();
+
+  // Returns the ViewAccessibility children. Since virtual children have a
+  // higher priority than real children (views), this function returns them
+  // first if any. If there are no virtual children, it returns the
+  // ViewAccessibility objects associated with the children of the `view_`.
+  std::vector<raw_ptr<ViewAccessibility>> GetChildren() const;
+
+  virtual std::string GetDebugString() const;
 
   // If true, moves accessibility focus to an ancestor.
   void set_propagate_focus_to_ancestor(bool value) {

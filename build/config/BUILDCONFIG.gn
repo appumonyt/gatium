@@ -540,37 +540,45 @@ set_defaults("rust_proc_macro") {
 }
 
 DEFAULT_MODULE_DEPS = [
-  "//buildtools/third_party/libc++:_Builtin_float",
   "//buildtools/third_party/libc++:_Builtin_intrinsics",
-  "//buildtools/third_party/libc++:_Builtin_inttypes",
   "//buildtools/third_party/libc++:_Builtin_limits",
-  "//buildtools/third_party/libc++:_Builtin_stdalign",
   "//buildtools/third_party/libc++:_Builtin_stdarg",
-  "//buildtools/third_party/libc++:_Builtin_stdatomic",
   "//buildtools/third_party/libc++:_Builtin_stdbool",
-  "//buildtools/third_party/libc++:_Builtin_stddef",
   "//buildtools/third_party/libc++:_Builtin_stdint",
   "//buildtools/third_party/libc++:_Builtin_unwind",
   "//buildtools/third_party/libc++:std",
-  "//buildtools/third_party/libc++:std_config",
-  "//buildtools/third_party/libc++:std_core",
-  "//buildtools/third_party/libc++:std_ctype_h",
-  "//buildtools/third_party/libc++:std_errno_h",
-  "//buildtools/third_party/libc++:std_fenv_h",
-  "//buildtools/third_party/libc++:std_float_h",
-  "//buildtools/third_party/libc++:std_inttypes_h",
-  "//buildtools/third_party/libc++:std_math_h",
-  "//buildtools/third_party/libc++:std_private_mbstate_t",
   "//buildtools/third_party/libc++:std_stdatomic_h",
-  "//buildtools/third_party/libc++:std_stdbool_h",
-  "//buildtools/third_party/libc++:std_string_h",
-  "//buildtools/third_party/libc++:std_uchar_h",
-  "//buildtools/third_party/libc++:std_wctype_h",
-  "//buildtools/third_party/libc++:sysroot_bits",
-  "//buildtools/third_party/libc++:sysroot_features",
-  "//buildtools/third_party/libc++:sysroot_time",
-  "//buildtools/third_party/libc++:sysroot_types",
 ]
+
+if (is_linux || is_chromeos) {
+  SYSROOT_MODULEMAP = "//build/linux/amd64/module.modulemap"
+  DEFAULT_MODULE_DEPS += [
+    "//buildtools/third_party/libc++:sysroot_features",
+    "//buildtools/third_party/libc++:sysroot_types",
+  ]
+}
+
+if (is_mac) {
+  DEFAULT_MODULE_DEPS += [
+    "//buildtools/third_party/libc++:__wctype",
+    "//buildtools/third_party/libc++:_assert",
+    "//buildtools/third_party/libc++:_ctype",
+    "//buildtools/third_party/libc++:_errno",
+    "//buildtools/third_party/libc++:_inttypes",
+    "//buildtools/third_party/libc++:_limits",
+    "//buildtools/third_party/libc++:_locale",
+    "//buildtools/third_party/libc++:_setjmp",
+    "//buildtools/third_party/libc++:_stdio",
+    "//buildtools/third_party/libc++:_stdlib",
+    "//buildtools/third_party/libc++:_string",
+    "//buildtools/third_party/libc++:_sys_select",
+    "//buildtools/third_party/libc++:_time",
+    "//buildtools/third_party/libc++:_wchar",
+    "//buildtools/third_party/libc++:_wctype",
+    "//buildtools/third_party/libc++:ptrauth",
+    "//buildtools/third_party/libc++:sys_types",
+  ]
+}
 
 # A helper for forwarding testonly and visibility.
 # Forwarding "*" does not include variables from outer scopes (to avoid copying
@@ -612,11 +620,15 @@ foreach(_target_type,
         _use_libcxx_modules = invoker.use_libcxx_modules
       }
 
-      if (filter_include(configs,
-                         [
-                           "//build/config/compiler:exceptions",
-                           "//build/config/compiler:rtti",
-                         ]) != []) {
+      if (filter_include(
+              configs,
+              [
+                # TODO(https://github.com/llvm/llvm-project/pull/145654):
+                # Remove mac_no_default_new_delete_symbols after clang roll.
+                ":mac_no_default_new_delete_symbols",
+                "//build/config/compiler:exceptions",
+                "//build/config/compiler:rtti",
+              ]) != []) {
         # Exceptions and RTTI flags are incompatible with libc++ modules build.
         # So disable modules build for such targets.
         _use_libcxx_modules = false
@@ -728,11 +740,15 @@ foreach(_target_type,
         _use_libcxx_modules = invoker.use_libcxx_modules
       }
 
-      if (filter_include(configs,
-                         [
-                           "//build/config/compiler:exceptions",
-                           "//build/config/compiler:rtti",
-                         ]) != []) {
+      if (filter_include(
+              configs,
+              [
+                # TODO(https://github.com/llvm/llvm-project/pull/145654):
+                # Remove mac_no_default_new_delete_symbols after clang roll.
+                ":mac_no_default_new_delete_symbols",
+                "//build/config/compiler:exceptions",
+                "//build/config/compiler:rtti",
+              ]) != []) {
         # Exceptions and RTTI flags are incompatible with libc++ modules build.
         # So disable modules build for such targets.
         _use_libcxx_modules = false

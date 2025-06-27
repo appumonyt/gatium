@@ -5,10 +5,12 @@
 package org.chromium.chrome.browser.toolbar.extensions;
 
 import android.graphics.Bitmap;
+import android.view.KeyEvent;
 
 import androidx.annotation.VisibleForTesting;
 
 import org.jni_zero.CalledByNative;
+import org.jni_zero.JNINamespace;
 import org.jni_zero.JniType;
 import org.jni_zero.NativeMethods;
 
@@ -21,6 +23,7 @@ import org.chromium.extensions.ShowAction;
 
 /** A JNI bridge providing access to information of extension actions in the toolbar. */
 @NullMarked
+@JNINamespace("extensions")
 public class ExtensionActionsBridge {
     private long mNativeExtensionActionsBridge;
     private final ObserverList<Observer> mObservers = new ObserverList<>();
@@ -34,6 +37,21 @@ public class ExtensionActionsBridge {
     /** Returns an instance for the given profile. */
     public static ExtensionActionsBridge get(Profile profile) {
         return ExtensionActionsBridgeJni.get().get(profile);
+    }
+
+    /** Represents the result of handling a key event. */
+    public static class HandleKeyEventResult {
+        /** Whether the key event has been handled in C++. */
+        public final boolean handled;
+
+        /** The action to trigger, or empty if no action should be triggered. */
+        public final String actionId;
+
+        @CalledByNative("HandleKeyEventResult")
+        private HandleKeyEventResult(boolean handled, @JniType("std::string") String actionId) {
+            this.handled = handled;
+            this.actionId = actionId;
+        }
     }
 
     @CalledByNative
@@ -90,6 +108,21 @@ public class ExtensionActionsBridge {
     public @ShowAction int runAction(String actionId, WebContents webContents) {
         return ExtensionActionsBridgeJni.get()
                 .runAction(mNativeExtensionActionsBridge, actionId, webContents);
+    }
+
+    /**
+     * Returns whether the extensions are disabled on the profile for Desktop Android. This is
+     * temporary for until extensions are ready for dogfooding. TODO(crbug.com/422307625): Remove
+     * this check once extensions are ready for dogfooding.
+     */
+    public boolean extensionsEnabled() {
+        return ExtensionActionsBridgeJni.get().extensionsEnabled(mNativeExtensionActionsBridge);
+    }
+
+    /** Handles the key down event and returns the result. */
+    public HandleKeyEventResult handleKeyDownEvent(KeyEvent event) {
+        return ExtensionActionsBridgeJni.get()
+                .handleKeyDownEvent(mNativeExtensionActionsBridge, event);
     }
 
     @CalledByNative
@@ -190,9 +223,16 @@ public class ExtensionActionsBridge {
                 @JniType("std::string") String actionId,
                 int tabId);
 
+        @JniType("ExtensionAction::ShowAction")
         int runAction(
                 long nativeExtensionActionsBridge,
                 @JniType("std::string") String actionId,
-                WebContents webContents);
+                @JniType("content::WebContents*") WebContents webContents);
+
+        boolean extensionsEnabled(long nativeExtensionActionsBridge);
+
+        HandleKeyEventResult handleKeyDownEvent(
+                long nativeExtensionActionsBridge,
+                @JniType("ui::KeyEventAndroid") KeyEvent keyEvent);
     }
 }

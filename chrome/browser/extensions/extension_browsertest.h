@@ -29,6 +29,7 @@
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/features/feature_channel.h"
 
+class OwningTestTabModel;
 class Profile;
 
 namespace content {
@@ -213,9 +214,6 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
   // tab.
   content::WebContents* GetActiveWebContents() const;
 
-  // Returns incognito profile. Creates the profile if it doesn't exist.
-  Profile* GetOrCreateIncognitoProfile();
-
   // Pack the extension in `dir_path` into a crx file and return its path.
   // Return an empty FilePath if there were errors.
   base::FilePath PackExtension(
@@ -363,6 +361,24 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
 
   ExtensionService* extension_service();
 
+  // Creates a new secure test server that can be used in place of the default
+  // HTTP embedded_test_server defined in BrowserTestBase. The new test server
+  // can then be retrieved using the same embedded_test_server() method used
+  // to get the BrowserTestBase HTTP server.
+  void UseHttpsTestServer();
+
+  // This will return either the https test server or the
+  // default one specified in BrowserTestBase, depending on if an https test
+  // server was created by calling UseHttpsTestServer().
+  const net::EmbeddedTestServer* embedded_test_server() const {
+    return (https_test_server_) ? https_test_server_.get()
+                                : BrowserTestBase::embedded_test_server();
+  }
+  net::EmbeddedTestServer* embedded_test_server() {
+    return const_cast<net::EmbeddedTestServer*>(
+        const_cast<const ExtensionBrowserTest&>(*this).embedded_test_server());
+  }
+
   // Set to "chrome/test/data/extensions". Derived classes may override.
   base::FilePath test_data_dir_;
 
@@ -402,9 +418,9 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
 
   ExtensionId last_loaded_extension_id_;
 
-#if BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
-  class TestTabModel;
-  std::unique_ptr<TestTabModel> tab_model_;
+#if BUILDFLAG(IS_ANDROID)
+  // Tab model used for incognito tab support.
+  std::unique_ptr<OwningTestTabModel> incognito_tab_model_;
 #endif
 
   // Used for setting the default scoped current channel for extension browser
@@ -449,6 +465,10 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
 
   std::unique_ptr<ExtensionTestNotificationObserver>
       test_notification_observer_;
+
+  // Secure test server, isn't created by default. Needs to be created using
+  // UseHttpsTestServer() and then called with embedded_test_server().
+  std::unique_ptr<net::EmbeddedTestServer> https_test_server_;
 
   // Listens to extension loaded notifications.
   base::ScopedObservation<ExtensionRegistry, ExtensionRegistryObserver>

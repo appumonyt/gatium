@@ -51,9 +51,11 @@
 #include "chrome/browser/ui/ash/wallpaper/test_wallpaper_controller.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "chromeos/ash/components/demo_mode/utils/demo_session_utils.h"
 #include "components/account_id/account_id.h"
 #include "components/manta/manta_status.h"
 #include "components/manta/proto/manta.pb.h"
+#include "components/prefs/pref_service.h"
 #include "components/user_manager/scoped_user_manager.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_names.h"
@@ -151,6 +153,7 @@ void AddAndLoginUser(const AccountId& account_id, user_manager::UserType type) {
     case user_manager::UserType::kKioskChromeApp:
     case user_manager::UserType::kKioskWebApp:
     case user_manager::UserType::kKioskIWA:
+    case user_manager::UserType::kKioskArcvmApp:
       break;
   }
 
@@ -324,6 +327,7 @@ class PersonalizationAppSeaPenProviderImplTest : public testing::Test {
       case user_manager::UserType::kKioskChromeApp:
       case user_manager::UserType::kKioskWebApp:
       case user_manager::UserType::kKioskIWA:
+      case user_manager::UserType::kKioskArcvmApp:
         profile_ = profile_manager_.CreateTestingProfile(name);
         break;
     }
@@ -1024,9 +1028,9 @@ TEST_F(PersonalizationAppSeaPenProviderImplTest,
       static_cast<int>(ManagedSeaPenSettings::kAllowedWithoutLogging));
 
   // Force device into demo mode.
-  ASSERT_FALSE(::ash::DemoSession::IsDeviceInDemoMode());
+  ASSERT_FALSE(ash::demo_mode::IsDeviceInDemoMode());
   profile()->ScopedCrosSettingsTestHelper()->InstallAttributes()->SetDemoMode();
-  ASSERT_TRUE(::ash::DemoSession::IsDeviceInDemoMode());
+  ASSERT_TRUE(ash::demo_mode::IsDeviceInDemoMode());
 
   // Force demo mode session to start.
   ASSERT_FALSE(::ash::DemoSession::Get());

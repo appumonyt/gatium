@@ -40,8 +40,6 @@ namespace content {
 namespace mojom {
 class ChildProcess;
 }  // namespace mojom
-
-class BackgroundTracingActiveScenario;
 class TracingDelegate;
 
 class BackgroundTracingManagerImpl
@@ -99,7 +97,8 @@ class BackgroundTracingManagerImpl
 
   CONTENT_EXPORT static BackgroundTracingManagerImpl& GetInstance();
 
-  CONTENT_EXPORT BackgroundTracingManagerImpl();
+  explicit CONTENT_EXPORT BackgroundTracingManagerImpl(
+      TracingDelegate* delegate);
   ~BackgroundTracingManagerImpl() override;
 
   BackgroundTracingManagerImpl(const BackgroundTracingManagerImpl&) = delete;
@@ -161,8 +160,6 @@ class BackgroundTracingManagerImpl
   void GetTraceToUpload(base::OnceCallback<void(std::optional<std::string>,
                                                 std::optional<std::string>,
                                                 base::OnceClosure)>) override;
-  void SetSystemProfileRecorder(
-      base::RepeatingCallback<std::string()> recorder) override;
 
   CONTENT_EXPORT size_t GetScenarioSavedCount(const std::string& scenario_name);
   CONTENT_EXPORT void InitializeTraceReportDatabase(
@@ -202,7 +199,6 @@ class BackgroundTracingManagerImpl
                            const base::Token& uuid);
 
   // For tests
-  CONTENT_EXPORT BackgroundTracingActiveScenario* GetActiveScenarioForTesting();
   CONTENT_EXPORT void InvalidateTriggersCallbackForTesting();
   CONTENT_EXPORT bool IsTracingForTesting();
   CONTENT_EXPORT void AbortScenarioForTesting() override;
@@ -218,10 +214,6 @@ class BackgroundTracingManagerImpl
   void GenerateMetadataProto(
       perfetto::protos::pbzero::ChromeMetadataPacket* metadata,
       bool privacy_filtering_enabled);
-
-  // Returns the embedder's tracing delegate, or null if it does not provide
-  // one.
-  TracingDelegate* tracing_delegate() { return delegate_.get(); }
 
  private:
 #if BUILDFLAG(IS_ANDROID)
@@ -263,15 +255,16 @@ class BackgroundTracingManagerImpl
                     bool success);
   void CleanDatabase();
 
-  std::unique_ptr<TracingDelegate> delegate_;
+  raw_ptr<TracingDelegate> delegate_;
+  std::unique_ptr<tracing::BackgroundTracingStateManager> state_manager_;
   std::vector<std::unique_ptr<TracingScenario>> field_scenarios_;
   base::flat_map<std::string, std::unique_ptr<TracingScenario>>
       preset_scenarios_;
   std::vector<raw_ptr<TracingScenario>> enabled_scenarios_;
   raw_ptr<TracingScenario> active_scenario_{nullptr};
+  base::TimeTicks scenario_start_time_;
   std::vector<std::unique_ptr<BackgroundTracingRule>> trigger_rules_;
   ReceiveCallback receive_callback_;
-  base::RepeatingCallback<std::string()> system_profile_recorder_;
 
   std::map<std::string, base::ObserverList<BackgroundTracingRule>>
       named_trigger_observers_;

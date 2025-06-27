@@ -34,6 +34,8 @@ import org.chromium.url.GURL;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.ArrayList;
+import java.util.List;
 
 /** A {@link TabObserver} that also handles custom tabs specific logging and messaging. */
 public class CustomTabObserver extends EmptyTabObserver {
@@ -61,8 +63,11 @@ public class CustomTabObserver extends EmptyTabObserver {
     private long mFirstCommitRealtimeMillis;
     private long mFirstCommitUptimeMillis;
 
-    // The TWA startup timestamp
-    private final Long mTwaStartupUptimeMillis;
+    // Version of android-browser-helper, or zero if not reported
+    private int mBrowserHelperVersion;
+    // System.uptimeMillis() when the TWA wrapper activity has started, or zero if not reported
+    private long mTwaStartupUptimeMillis;
+    private final List<Runnable> mTwaStartupTimeAvailableCallbacks = new ArrayList<>();
 
     // Lets Long press on links select the link text instead of triggering context menu.
     private boolean mLongPressLinkSelectText;
@@ -103,11 +108,9 @@ public class CustomTabObserver extends EmptyTabObserver {
         }
     }
 
-    public CustomTabObserver(
-            boolean openedByChrome, SessionHolder<?> token, Long twaStartupUptimeMillis) {
+    public CustomTabObserver(boolean openedByChrome, SessionHolder<?> token) {
         mCustomTabsConnection = openedByChrome ? null : CustomTabsConnection.getInstance();
         mSession = token;
-        mTwaStartupUptimeMillis = twaStartupUptimeMillis;
         resetPageLoadTracking();
     }
 
@@ -268,16 +271,20 @@ public class CustomTabObserver extends EmptyTabObserver {
                     DateUtils.MINUTE_IN_MILLIS,
                     50);
         }
-        if (mTwaStartupUptimeMillis != null) {
-            // The TWA durations are always relative to the startup time passed in the Intent.
-            RecordHistogram.recordCustomTimesHistogram(
-                    "TrustedWebActivity.Startup.TimeToFirstCommitNavigation2"
-                            + (isTwaColdStart() ? ".Cold" : ".Warm"),
-                    mFirstCommitUptimeMillis - mTwaStartupUptimeMillis.longValue(),
-                    50,
-                    DateUtils.MINUTE_IN_MILLIS,
-                    50);
-        }
+        callOnTwaStartupTimeAvailable(
+                () -> {
+                    // The TWA durations are always relative to the startup time passed in the
+                    // Intent.
+                    RecordHistogram.recordCustomTimesHistogram(
+                            "TrustedWebActivity.Startup.TimeToFirstCommitNavigation2"
+                                    + (isTwaColdStart() ? ".Cold" : ".Warm"),
+                            mFirstCommitUptimeMillis - mTwaStartupUptimeMillis,
+                            50,
+                            DateUtils.MINUTE_IN_MILLIS,
+                            50);
+                    RecordHistogram.recordSparseHistogram(
+                            "CustomTabs.AndroidBrowserHelper.Version", mBrowserHelperVersion);
+                });
     }
 
     private void recordFirstContentfulPaint(long fcpUptimeMillis) {
@@ -297,8 +304,8 @@ public class CustomTabObserver extends EmptyTabObserver {
         // wrapper instead. If the wrapper started before the browser process,
         // treat it as a cold start, no matter whatever warm up or other
         // initialization that the wrapper could perform in between.
-        return mTwaStartupUptimeMillis != null
-                && mTwaStartupUptimeMillis.longValue() < Process.getStartUptimeMillis();
+        return mTwaStartupUptimeMillis != 0
+                && mTwaStartupUptimeMillis < Process.getStartUptimeMillis();
     }
 
     private void recordPaint(long paintUptimeMillis, String paintMetricName) {
@@ -334,16 +341,19 @@ public class CustomTabObserver extends EmptyTabObserver {
                     DateUtils.MINUTE_IN_MILLIS,
                     50);
         }
-        if (mTwaStartupUptimeMillis != null) {
-            // The TWA durations are always relative to the startup time passed in the Intent.
-            RecordHistogram.recordCustomTimesHistogram(
-                    "TrustedWebActivity.Startup.TimeToFirstCommitNavigation2"
-                            + (isTwaColdStart() ? ".Cold" : ".Warm"),
-                    mFirstCommitUptimeMillis - mTwaStartupUptimeMillis.longValue(),
-                    50,
-                    DateUtils.MINUTE_IN_MILLIS,
-                    50);
-        }
+        callOnTwaStartupTimeAvailable(
+                () -> {
+                    // The TWA durations are always relative to the startup time passed in the
+                    // Intent.
+                    RecordHistogram.recordCustomTimesHistogram(
+                            "TrustedWebActivity.Startup."
+                                    + paintMetricName
+                                    + (isTwaColdStart() ? ".Cold" : ".Warm"),
+                            mFirstCommitUptimeMillis - mTwaStartupUptimeMillis,
+                            50,
+                            DateUtils.MINUTE_IN_MILLIS,
+                            50);
+                });
     }
 
     @Override
@@ -372,5 +382,27 @@ public class CustomTabObserver extends EmptyTabObserver {
         String title = tab.getTitle();
         if (TextUtils.isEmpty(title)) return;
         mCustomTabsConnection.sendNavigationInfo(mSession, tab.getUrl().getSpec(), title, null);
+    }
+
+    private void callOnTwaStartupTimeAvailable(Runnable callback) {
+        if (mTwaStartupUptimeMillis != 0) {
+            callback.run();
+        } else {
+            mTwaStartupTimeAvailableCallbacks.add(callback);
+        }
+    }
+
+    public void setTwaStartupMetadata(int browserHelperVersion, long startupUptimeMillis) {
+        // Support for both were added in 2.6.1 (android-browser-helper version code 1), so we
+        // either get both or neither.
+        if (browserHelperVersion == 0 || startupUptimeMillis == 0) return;
+        assert mBrowserHelperVersion == 0;
+        mBrowserHelperVersion = browserHelperVersion;
+        assert mTwaStartupUptimeMillis == 0;
+        mTwaStartupUptimeMillis = startupUptimeMillis;
+        for (Runnable callback : mTwaStartupTimeAvailableCallbacks) {
+            callback.run();
+        }
+        mTwaStartupTimeAvailableCallbacks.clear();
     }
 }

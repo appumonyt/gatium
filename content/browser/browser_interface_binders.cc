@@ -367,7 +367,7 @@ void BindSharedWorkerConnector(
   SharedWorkerConnectorImpl::Create(host->GetGlobalId(), std::move(receiver));
 }
 
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_ANDROID) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_IOS_TVOS))
 void BindDateTimeChooserForFrame(
     RenderFrameHost* host,
     mojo::PendingReceiver<blink::mojom::DateTimeChooser> receiver) {
@@ -1087,7 +1087,7 @@ void PopulateFrameBinders(RenderFrameHostImpl* host, mojo::BinderMap* map) {
                             base::Unretained(host)));
   }
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_IOS_TVOS))
   map->Add<device::mojom::NFC>(base::BindRepeating(
       &RenderFrameHostImpl::BindNFCReceiver, base::Unretained(host)));
 #else
@@ -1097,7 +1097,8 @@ void PopulateFrameBinders(RenderFrameHostImpl* host, mojo::BinderMap* map) {
   map->Add<blink::mojom::InstalledAppProvider>(
       base::BindRepeating(&RenderFrameHostImpl::CreateInstalledAppProvider,
                           base::Unretained(host)));
-#endif  // BUILDFLAG(IS_ANDROID)
+#endif  // BUILDFLAG(IS_ANDROID) || (BUILDFLAG(IS_IOS) &&
+        // !BUILDFLAG(IS_IOS_TVOS))
 
   map->Add<blink::mojom::SerialService>(base::BindRepeating(
       &RenderFrameHostImpl::BindSerialService, base::Unretained(host)));
@@ -1147,8 +1148,9 @@ void PopulateFrameBinders(RenderFrameHostImpl* host, mojo::BinderMap* map) {
         [](RenderFrameHostImpl* host,
            mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
           GetContentClient()->browser()->BindTranslationManager(
-              host->GetBrowserContext(), &host->document_associated_data(),
-              host->GetLastCommittedOrigin(), std::move(receiver));
+              host->GetProcess(), host->GetBrowserContext(),
+              &host->document_associated_data(), host->GetLastCommittedOrigin(),
+              std::move(receiver));
         },
         base::Unretained(host)));
   }
@@ -1259,7 +1261,7 @@ void PopulateBinderMapWithContext(
   RegisterWebUIControllerInterfaceBinder<webxr::mojom::WebXrInternalsHandler,
                                          WebXrInternalsUI>(map);
 #endif
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_ANDROID) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_IOS_TVOS))
   map->Add<blink::mojom::DateTimeChooser>(
       base::BindRepeating(&BindDateTimeChooserForFrame));
 #endif
@@ -1449,8 +1451,9 @@ void PopulateDedicatedWorkerBinders(DedicatedWorkerHost* host,
     map->Add<blink::mojom::TranslationManager>(base::BindRepeating(
         [](DedicatedWorkerHost* host,
            mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
+          auto* process_host = host->GetProcessHost();
           GetContentClient()->browser()->BindTranslationManager(
-              host->GetProcessHost()->GetBrowserContext(), host,
+              process_host, process_host->GetBrowserContext(), host,
               host->GetStorageKey().origin(), std::move(receiver));
         },
         base::Unretained(host)));
@@ -1480,6 +1483,18 @@ void PopulateBinderMapWithContext(
       &RenderProcessHostImpl::CreatePermissionService, host));
   map->Add<blink::mojom::FileBackedBlobFactory>(BindWorkerReceiverForOrigin(
       &RenderProcessHostImpl::BindFileBackedBlobFactory, host));
+
+  if (base::FeatureList::IsEnabled(
+          blink::features::kServiceWorkerInDedicatedWorker) &&
+      base::FeatureList::IsEnabled(
+          blink::features::kServiceWorkerBackgroundSyncInDedicatedWorker)) {
+    map->Add<blink::mojom::OneShotBackgroundSyncService>(
+        BindWorkerReceiverForOrigin(
+            &RenderProcessHostImpl::CreateOneShotSyncService, host));
+    map->Add<blink::mojom::PeriodicBackgroundSyncService>(
+        BindWorkerReceiverForOrigin(
+            &RenderProcessHostImpl::CreatePeriodicSyncService, host));
+  }
 }
 
 void PopulateBinderMap(DedicatedWorkerHost* host, mojo::BinderMap* map) {
@@ -1559,8 +1574,9 @@ void PopulateSharedWorkerBinders(SharedWorkerHost* host, mojo::BinderMap* map) {
     map->Add<blink::mojom::TranslationManager>(base::BindRepeating(
         [](SharedWorkerHost* host,
            mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
+          auto* process_host = host->GetProcessHost();
           GetContentClient()->browser()->BindTranslationManager(
-              host->GetProcessHost()->GetBrowserContext(), host,
+              process_host, process_host->GetBrowserContext(), host,
               host->GetStorageKey().origin(), std::move(receiver));
         },
         base::Unretained(host)));
@@ -1737,7 +1753,7 @@ void PopulateServiceWorkerBinders(ServiceWorkerHost* host,
           if (auto* process_host = static_cast<RenderProcessHostImpl*>(
                   RenderProcessHost::FromID(host->worker_process_id()))) {
             GetContentClient()->browser()->BindTranslationManager(
-                process_host->GetBrowserContext(), host,
+                process_host, process_host->GetBrowserContext(), host,
                 host->GetBucketStorageKey().origin(), std::move(receiver));
           }
         },

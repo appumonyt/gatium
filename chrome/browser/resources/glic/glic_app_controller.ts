@@ -30,6 +30,11 @@ const kMaxWaitTimeMs = loadTimeData.getInteger('maxLoadingTimeMs');
 // the --enable-features=GlicDebugWebview command-line flag.
 const kEnableDebug = loadTimeData.getBoolean('enableDebug');
 
+// Whether additional web client unresponsiveness tracking metrics should be
+// recorded.
+const kEnableUnresponsiveMetrics =
+    loadTimeData.getBoolean('enableWebClientUnresponsiveMetrics');
+
 interface PageElementTypes {
   panelContainer: HTMLElement;
   loadingPanel: HTMLElement;
@@ -40,6 +45,7 @@ interface PageElementTypes {
   guestPanel: HTMLElement;
   webviewHeader: HTMLDivElement;
   webviewContainer: HTMLDivElement;
+  profilePickerButton: HTMLButtonElement;
   signInButton: HTMLButtonElement;
   unresponsiveOverlay: HTMLElement;
 }
@@ -125,6 +131,9 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
     } else {
       this.setState(WebUiState.kOffline);
     }
+    $.profilePickerButton.addEventListener('click', () => {
+      this.openProfilePicker();
+    });
     $.signInButton.addEventListener('click', () => {
       this.signIn();
     });
@@ -157,6 +166,10 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
   }
 
   trackUnresponsiveState(newState: WebClientUnresponsiveState): void {
+    if (!kEnableUnresponsiveMetrics) {
+      return;
+    }
+
     // Track and record unresponsive state duration.
     if (newState === WebClientUnresponsiveState.ENTERED_FROM_WEBVIEW_EVENT ||
         newState === WebClientUnresponsiveState.ENTERED_FROM_CUSTOM_HEARTBEAT) {
@@ -175,6 +188,7 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
         console.error('Unresponsive state exited without an entering timestamp');
       }
     }
+
     // Record unresponsive state detections and transitions.
     chrome.metricsPrivate.recordEnumerationValue(
         'Glic.Host.WebClientUnresponsiveState', newState,
@@ -340,6 +354,7 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
 
     const readyState = this.profileReadyState;
     switch (readyState) {
+      case ProfileReadyState.kIneligible:
       case ProfileReadyState.kUnknownError:
         this.setState(WebUiState.kUnavailable);
         return;
@@ -563,6 +578,10 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
     this.destroyWebview();
     // TODO: Allow the timeout on this load to be longer than the initial load.
     this.setState(WebUiState.kBeginLoad);
+  }
+
+  private openProfilePicker(): void {
+    this.browserProxy.handler.openProfilePickerAndClosePanel();
   }
 
   private signIn(): void {

@@ -221,7 +221,6 @@
 <translation id="181434555916624618">Засега резултатите с хора няма да се показват. Опитайте с друга подкана.</translation>
 <translation id="1815850098929213707">Избраният клавиш е <ph name="KEYS" />. Докоснете бутона, за да редактирате контролата</translation>
 <translation id="1818174214124933000">Когато изберете „Изпращане“, отзивите и съдържанието ви (показани по-долу) ще бъдат изпратени до Google, прегледани от хора и използвани за обучение или подобряване на продуктите и услугите ни в съответствие с <ph name="LINK_POLICY_BEGIN" />Декларацията за поверителност<ph name="LINK_POLICY_END" /> и <ph name="LINK_TERMS_OF_SERVICE_BEGIN" />Общите условия на Google<ph name="LINK_TERMS_OF_SERVICE_END" />.</translation>
-<translation id="1821075635029692203">Преподавателят ви е изпратил неподдържан ресурс. Уведомете го.</translation>
 <translation id="1823120442877418684">Обекти</translation>
 <translation id="1827738518074806965">Художествена галерия</translation>
 <translation id="183287940576828840">Обидно/опасно</translation>
@@ -758,6 +757,7 @@
 <translation id="430786093962686457">шифон</translation>
 <translation id="4310735698903592804">Скорошни тапети, базирани на AI на Google</translation>
 <translation id="4320904097188876154">неоноворозов</translation>
+<translation id="432961742358282111">Кликнете с десния бутон или натиснете и задръжте, за да получите определения, преводи или преобразувани мерни единици. Използвайте клавишите със стрелки за наляво и надясно, за да управлявате тази функция.</translation>
 <translation id="4333390807948134856">Клавишът <ph name="KEY_NAME" /> е натиснат</translation>
 <translation id="4334293042716981313">Можете също <ph name="BEGIN_LINK_FREEFORM_SUBPAGE" />да напишете своя собствена подкана<ph name="END_LINK_FREEFORM_SUBPAGE" /></translation>
 <translation id="4354430579665871434">клавиш</translation>
@@ -1437,7 +1437,6 @@
 <translation id="7302860742311162920">ICCID</translation>
 <translation id="7305884605064981971">EDGE</translation>
 <translation id="7308203371573257315">Попитайте експертите в Помощния форум за Chromebook</translation>
-<translation id="7309823890857024809">минималистичен натюрморт с няколко мака в стъклена ваза на черен фон</translation>
 <translation id="7311368985037279727">цвят на клавиатурата</translation>
 <translation id="7317831949569936035">Регистриране в учебно заведение</translation>
 <translation id="7319430975418800333">A3</translation>

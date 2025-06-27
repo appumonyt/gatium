@@ -667,7 +667,6 @@ std::optional<double> AddressFieldParserNG::FindScoreOfBestMatchingRule(
     case PRICE:
     case NUMERIC_QUANTITY:
     case SEARCH_TERM:
-    case IMPROVED_PREDICTION:
     case PASSPORT_NAME_TAG:
     case PASSPORT_NUMBER:
     case PASSPORT_ISSUING_COUNTRY:
@@ -689,6 +688,8 @@ std::optional<double> AddressFieldParserNG::FindScoreOfBestMatchingRule(
     case DRIVERS_LICENSE_EXPIRATION_DATE:
     case DRIVERS_LICENSE_ISSUE_DATE:
     case EMAIL_OR_LOYALTY_MEMBERSHIP_ID:
+    case ADDRESS_HOME_ZIP_PREFIX:
+    case ADDRESS_HOME_ZIP_SUFFIX:
     case MAX_VALID_FIELD_TYPE:
       return std::nullopt;
   }

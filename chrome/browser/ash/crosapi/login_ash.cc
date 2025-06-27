@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "base/notimplemented.h"
 #include "chrome/browser/ash/login/existing_user_controller.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process.h"
@@ -71,79 +72,6 @@ void LoginAsh::LaunchManagedGuestSession(
   }
   std::move(callback).Run(
       extensions::login_api_errors::kNoManagedGuestSessionAccounts);
-}
-
-void LoginAsh::ExitCurrentSession(
-    const std::optional<std::string>& data_for_next_login_attempt,
-    ExitCurrentSessionCallback callback) {
-  PrefService* local_state = g_browser_process->local_state();
-  DCHECK(local_state);
-
-  if (data_for_next_login_attempt) {
-    local_state->SetString(prefs::kLoginExtensionApiDataForNextLoginAttempt,
-                           *data_for_next_login_attempt);
-  } else {
-    local_state->ClearPref(prefs::kLoginExtensionApiDataForNextLoginAttempt);
-  }
-
-  chrome::AttemptUserExit();
-  std::move(callback).Run(std::nullopt);
-}
-
-void LoginAsh::FetchDataForNextLoginAttempt(
-    FetchDataForNextLoginAttemptCallback callback) {
-  PrefService* local_state = g_browser_process->local_state();
-  DCHECK(local_state);
-  std::string data_for_next_login_attempt =
-      local_state->GetString(prefs::kLoginExtensionApiDataForNextLoginAttempt);
-  local_state->ClearPref(prefs::kLoginExtensionApiDataForNextLoginAttempt);
-
-  std::move(callback).Run(data_for_next_login_attempt);
-}
-
-void LoginAsh::LockManagedGuestSession(
-    LockManagedGuestSessionCallback callback) {
-  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
-
-  std::optional<std::string> error =
-      LockSession(user_manager::UserType::kPublicAccount);
-  // Error is std::nullopt in case of no error.
-  std::move(callback).Run(error);
-}
-
-void LoginAsh::UnlockManagedGuestSession(const std::string& password,
-                                         OptionalErrorCallback callback) {
-  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
-
-  std::optional<std::string> error =
-      CanUnlockSession(user_manager::UserType::kPublicAccount);
-  if (error) {
-    std::move(callback).Run(error);
-    return;
-  }
-
-  UnlockSession(password, std::move(callback));
-}
-
-void LoginAsh::LockCurrentSession(LockCurrentSessionCallback callback) {
-  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
-
-  std::optional<std::string> error = LockSession();
-  // Error is std::nullopt in case of no error.
-  std::move(callback).Run(error);
-}
-
-void LoginAsh::UnlockCurrentSession(const std::string& password,
-                                    OptionalErrorCallback callback) {
-  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
-
-  std::optional<std::string> error = CanUnlockSession();
-  if (error) {
-    std::move(callback).Run(error);
-    return;
-  }
-
-  UnlockSession(password, std::move(callback));
 }
 
 void LoginAsh::LaunchSamlUserSession(const std::string& email,
@@ -222,17 +150,6 @@ void LoginAsh::EndSharedSession(EndSharedSessionCallback callback) {
   chromeos::SharedSessionHandler::Get()->EndSharedSession(
       base::BindOnce(&LoginAsh::OnOptionalErrorCallbackComplete,
                      weak_factory_.GetWeakPtr(), std::move(callback)));
-}
-
-void LoginAsh::SetDataForNextLoginAttempt(
-    const std::string& data_for_next_login_attempt,
-    SetDataForNextLoginAttemptCallback callback) {
-  PrefService* local_state = g_browser_process->local_state();
-  DCHECK(local_state);
-  local_state->SetString(prefs::kLoginExtensionApiDataForNextLoginAttempt,
-                         data_for_next_login_attempt);
-
-  std::move(callback).Run();
 }
 
 void LoginAsh::AddExternalLogoutRequestObserver(
@@ -328,61 +245,6 @@ std::optional<std::string> LoginAsh::CanLaunchSession() {
     return extensions::login_api_errors::kAnotherLoginAttemptInProgress;
 
   return std::nullopt;
-}
-
-std::optional<std::string> LoginAsh::LockSession(
-    std::optional<user_manager::UserType> user_type) {
-  const user_manager::UserManager* user_manager =
-      user_manager::UserManager::Get();
-  const user_manager::User* active_user = user_manager->GetActiveUser();
-  if (!active_user || !active_user->CanLock() ||
-      (user_type && active_user->GetType() != user_type)) {
-    return extensions::login_api_errors::kNoLockableSession;
-  }
-
-  if (session_manager::SessionManager::Get()->session_state() !=
-      session_manager::SessionState::ACTIVE) {
-    return extensions::login_api_errors::kSessionIsNotActive;
-  }
-
-  chromeos::LoginApiLockHandler::Get()->RequestLockScreen();
-  return std::nullopt;
-}
-
-std::optional<std::string> LoginAsh::CanUnlockSession(
-    std::optional<user_manager::UserType> user_type) {
-  const user_manager::UserManager* user_manager =
-      user_manager::UserManager::Get();
-  const user_manager::User* active_user = user_manager->GetActiveUser();
-  if (!active_user || !active_user->CanLock() ||
-      (user_type && active_user->GetType() != user_type)) {
-    return extensions::login_api_errors::kNoUnlockableSession;
-  }
-
-  if (session_manager::SessionManager::Get()->session_state() !=
-      session_manager::SessionState::LOCKED) {
-    return extensions::login_api_errors::kSessionIsNotLocked;
-  }
-
-  chromeos::LoginApiLockHandler* handler = chromeos::LoginApiLockHandler::Get();
-  if (handler->IsUnlockInProgress())
-    return extensions::login_api_errors::kAnotherUnlockAttemptInProgress;
-
-  return std::nullopt;
-}
-
-void LoginAsh::UnlockSession(const std::string& password,
-                             OptionalErrorCallback callback) {
-  const user_manager::UserManager* user_manager =
-      user_manager::UserManager::Get();
-  const user_manager::User* active_user = user_manager->GetActiveUser();
-  ash::UserContext context(active_user->GetType(), active_user->GetAccountId());
-  context.SetKey(ash::Key(password));
-
-  chromeos::LoginApiLockHandler* handler = chromeos::LoginApiLockHandler::Get();
-  handler->Authenticate(
-      context, base::BindOnce(&LoginAsh::OnScreenLockerAuthenticate,
-                              weak_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 }  // namespace crosapi

@@ -15,6 +15,7 @@
 #include "chrome/browser/autofill/ui/ui_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/global_features.h"
+#include "chrome/grit/browser_resources.h"
 #include "chrome/grit/theme_resources.h"
 #include "components/application_locale_storage/application_locale_storage.h"
 #include "components/autofill/content/browser/content_autofill_client.h"
@@ -22,6 +23,7 @@
 #include "components/autofill/core/browser/ui/addresses/autofill_address_util.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/sync/base/features.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -145,9 +147,9 @@ SaveAddressBubbleController::GetHeaderImages() const {
     }
   }
 
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   return HeaderImages{
-      .light = ui::ImageModel::FromResourceId(IDR_SAVE_ADDRESS),
-      .dark = ui::ImageModel::FromResourceId(IDR_SAVE_ADDRESS_DARK)};
+      .lottie = bundle.GetThemedLottieImageNamed(IDR_SAVE_ADDRESS_LOTTIE)};
 }
 
 std::u16string SaveAddressBubbleController::GetBodyText() const {
@@ -160,7 +162,11 @@ std::u16string SaveAddressBubbleController::GetBodyText() const {
         GetPrimaryAccountInfoFromBrowserContext(
             web_contents()->GetBrowserContext());
 
-    int string_id = pdm.address_data_manager().IsSyncFeatureEnabledForAutofill()
+    const bool is_syncing =
+        base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos)
+            ? pdm.address_data_manager().IsAutofillUserSelectableTypeEnabled()
+            : pdm.address_data_manager().IsSyncFeatureEnabledForAutofill();
+    int string_id = is_syncing
                         ? IDS_AUTOFILL_SYNCABLE_PROFILE_MIGRATION_PROMPT_NOTICE
                         : IDS_AUTOFILL_LOCAL_PROFILE_MIGRATION_PROMPT_NOTICE;
 

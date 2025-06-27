@@ -36,7 +36,7 @@
 #include "base/feature_list.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/web_sandbox_flags.h"
-#include "services/network/public/mojom/content_security_policy.mojom-blink-forward.h"
+#include "services/network/public/mojom/content_security_policy.mojom-blink.h"
 #include "services/network/public/mojom/integrity_algorithm.mojom-blink.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-blink.h"
 #include "third_party/blink/public/common/features.h"
@@ -179,6 +179,10 @@ bool HasScriptUnsafeHashes(
   return directive.source_list && directive.source_list->allow_unsafe_hashes;
 }
 
+const char kWarningMessageForSyntheticResponse[] =
+    " Since the synthetic response is enabled on this page, scripts are "
+    "blocked until the new Content Security Policy is added via the <meta> "
+    "tag.";
 }  // namespace
 
 // https://www.w3.org/TR/CSP3/#strip-url-for-use-in-reports
@@ -342,9 +346,13 @@ void ContentSecurityPolicy::ReportUseCounters(
       Count(WebFeature::kCSPWithStrictDynamic);
     }
 
+    // This use counter is for the 'unsafe-eval' keyword. We pass an empty array
+    // of hashes so this is logged if and only if 'unsafe-eval' is set,
+    // regardless of hashes.
     if (CSPDirectiveListAllowEval(*policy, this,
                                   ReportingDisposition::kSuppressReporting,
-                                  kWillNotThrowException, g_empty_string)) {
+                                  kWillNotThrowException, g_empty_string,
+                                  /*script_hash_values=*/{})) {
       Count(WebFeature::kCSPWithUnsafeEval);
     }
 
@@ -508,6 +516,9 @@ void ContentSecurityPolicy::ComputeInternalStateForParsedPolicy(
         for (const auto& hash_source : directive.value->hashes) {
           UsesHashAlgorithm(hash_source->algorithm);
         }
+        for (const auto& hash_source : directive.value->eval_hashes) {
+          UsesHashAlgorithm(hash_source->algorithm);
+        }
         break;
       // Images, fonts, etc. do not support integrity checks, so we can skip
       // them here.
@@ -536,6 +547,14 @@ void ContentSecurityPolicy::ComputeInternalStateForParsedPolicy(
 
       case CSPDirectiveName::Unknown:
         NOTREACHED();
+    }
+
+    // If `disallow_script_for_synthetic_response_` is true, that means the
+    // synthetic response is used, and the script policy is enforced. This
+    // enforcement is completed if the new policy is added via meta tag.
+    if (disallow_script_for_synthetic_response_ &&
+        csp.header->source == ContentSecurityPolicySource::kMeta) {
+      disallow_script_for_synthetic_response_ = false;
     }
   }
 }
@@ -571,6 +590,33 @@ bool ContentSecurityPolicy::AllowInline(
   const bool is_script = IsScriptInlineType(inline_type);
   if (!is_script && override_inline_style_allowed_) {
     return true;
+  }
+
+  // If `disallow_script_for_synthetic_response_` is true, it always returns
+  // false for scripts that are likely covered by `script-src`.
+  if (disallow_script_for_synthetic_response_) {
+    String message;
+    switch (inline_type) {
+      case ContentSecurityPolicy::InlineType::kNavigation:
+        message = "run the JavaScript URL.";
+        break;
+      case ContentSecurityPolicy::InlineType::kScriptSpeculationRules:
+        message = "apply inline speculation rules.";
+        break;
+      case ContentSecurityPolicy::InlineType::kScriptAttribute:
+        message = "execute inline event handler.";
+        break;
+      case ContentSecurityPolicy::InlineType::kScript:
+        message = "execute inline script.";
+        break;
+      default:
+        break;
+    }
+    if (!message.empty()) {
+      LogToConsole(StrCat(
+          {"Refused to ", message, kWarningMessageForSyntheticResponse}));
+      return false;
+    }
   }
 
   Vector<network::mojom::blink::CSPHashSourcePtr> csp_hash_values;
@@ -622,9 +668,12 @@ bool ContentSecurityPolicy::AllowEval(
     ContentSecurityPolicy::ExceptionStatus exception_status,
     const String& script_content) {
   bool is_allowed = true;
+  Vector<network::mojom::blink::CSPHashSourcePtr> csp_hash_values;
+  FillInCSPHashValues(script_content, hash_algorithms_used_, csp_hash_values);
   for (const auto& policy : policies_) {
     is_allowed &= CSPDirectiveListAllowEval(
-        *policy, this, reporting_disposition, exception_status, script_content);
+        *policy, this, reporting_disposition, exception_status, script_content,
+        csp_hash_values);
   }
   return is_allowed;
 }
@@ -873,6 +922,16 @@ bool ContentSecurityPolicy::AllowFromSource(
     area = SchemeRegistry::kPolicyAreaImage;
   else if (type == CSPDirectiveName::StyleSrcElem)
     area = SchemeRegistry::kPolicyAreaStyle;
+
+  if (disallow_script_for_synthetic_response_ &&
+      (type == CSPDirectiveName::ScriptSrcElem ||
+       type == CSPDirectiveName::WorkerSrc)) {
+    LogToConsole(
+
+        StrCat({"The script from ", url.GetString(), " was blocked.",
+                kWarningMessageForSyntheticResponse}));
+    return false;
+  }
 
   if (ShouldBypassContentSecurityPolicy(url, area)) {
     if (type != CSPDirectiveName::ScriptSrcElem)
@@ -1361,17 +1420,16 @@ void ContentSecurityPolicy::ReportMixedContent(const KURL& blocked_url,
 }
 
 void ContentSecurityPolicy::ReportReportOnlyInMeta(const String& header) {
-  LogToConsole(WTF::StrCat(
-      {"The report-only Content Security Policy '", header,
-       "' was delivered via a <meta> element, which is disallowed. The "
-       "policy has been ignored."}));
+  LogToConsole(StrCat({"The report-only Content Security Policy '", header,
+                       "' was delivered via a <meta> element, which is "
+                       "disallowed. The policy has been ignored."}));
 }
 
 void ContentSecurityPolicy::ReportMetaOutsideHead(const String& header) {
-  LogToConsole(WTF::StrCat(
-      {"The Content Security Policy '", header,
-       "' was delivered via a <meta> element outside the document's "
-       "<head>, which is disallowed. The policy has been ignored."}));
+  LogToConsole(
+      StrCat({"The Content Security Policy '", header,
+              "' was delivered via a <meta> element outside the document's "
+              "<head>, which is disallowed. The policy has been ignored."}));
 }
 
 void ContentSecurityPolicy::LogToConsole(const String& message,

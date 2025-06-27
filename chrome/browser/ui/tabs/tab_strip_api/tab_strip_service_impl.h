@@ -11,7 +11,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_api/adapters/browser_adapter.h"
 #include "chrome/browser/ui/tabs/tab_strip_api/adapters/tab_strip_model_adapter.h"
 #include "chrome/browser/ui/tabs/tab_strip_api/events/tab_strip_event_recorder.h"
-#include "chrome/browser/ui/tabs/tab_strip_api/tab_id.h"
+#include "chrome/browser/ui/tabs/tab_strip_api/node_id.h"
 #include "chrome/browser/ui/tabs/tab_strip_api/tab_strip_api.mojom.h"
 #include "chrome/browser/ui/tabs/tab_strip_api/tab_strip_service_register.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -42,16 +42,16 @@ class TabStripServiceImpl : public tabs_api::mojom::TabStripService,
 
   // tabs_api::mojom::TabStripService overrides
   void GetTabs(GetTabsCallback callback) override;
-  void GetTab(const tabs_api::TabId& id, GetTabCallback callback) override;
-  void CreateTabAt(tabs_api::mojom::PositionPtr pos,
+  void GetTab(const tabs_api::NodeId& id, GetTabCallback callback) override;
+  void CreateTabAt(const std::optional<tabs_api::Position>& pos,
                    const std::optional<GURL>& url,
                    CreateTabAtCallback callback) override;
-  void CloseTabs(const std::vector<tabs_api::TabId>& ids,
+  void CloseTabs(const std::vector<tabs_api::NodeId>& ids,
                  CloseTabsCallback callback) override;
-  void ActivateTab(const tabs_api::TabId& id,
+  void ActivateTab(const tabs_api::NodeId& id,
                    ActivateTabCallback callback) override;
-  void MoveTab(const tabs_api::TabId& id,
-               tabs_api::mojom::PositionPtr position,
+  void MoveTab(const tabs_api::NodeId& id,
+               const tabs_api::Position& position,
                MoveTabCallback callback) override;
 
  private:

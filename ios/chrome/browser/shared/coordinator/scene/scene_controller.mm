@@ -59,7 +59,6 @@
 #import "ios/chrome/browser/authentication/ui_bundled/account_menu/account_menu_constants.h"
 #import "ios/chrome/browser/authentication/ui_bundled/account_menu/account_menu_coordinator.h"
 #import "ios/chrome/browser/authentication/ui_bundled/account_menu/account_menu_coordinator_delegate.h"
-#import "ios/chrome/browser/authentication/ui_bundled/authentication_flow/authentication_flow.h"
 #import "ios/chrome/browser/authentication/ui_bundled/change_profile/change_profile_authentication_continuation.h"
 #import "ios/chrome/browser/authentication/ui_bundled/change_profile/change_profile_load_url.h"
 #import "ios/chrome/browser/authentication/ui_bundled/continuation.h"
@@ -127,7 +126,7 @@
 #import "ios/chrome/browser/promos_manager/ui_bundled/promos_manager_scene_agent.h"
 #import "ios/chrome/browser/promos_manager/ui_bundled/utils.h"
 #import "ios/chrome/browser/reading_list/model/reading_list_browser_agent.h"
-#import "ios/chrome/browser/safari_data_import/coordinator/safari_data_import_coordinator.h"
+#import "ios/chrome/browser/safari_data_import/coordinator/safari_data_import_main_coordinator.h"
 #import "ios/chrome/browser/scoped_ui_blocker/ui_bundled/scoped_ui_blocker.h"
 #import "ios/chrome/browser/screenshot/model/screenshot_delegate.h"
 #import "ios/chrome/browser/sessions/model/session_restoration_service.h"
@@ -205,6 +204,7 @@
 #import "ios/chrome/browser/window_activities/model/window_activity_helpers.h"
 #import "ios/chrome/browser/youtube_incognito/coordinator/youtube_incognito_coordinator.h"
 #import "ios/chrome/browser/youtube_incognito/coordinator/youtube_incognito_coordinator_delegate.h"
+#import "ios/chrome/common/app_group/app_group_constants.h"
 #import "ios/chrome/common/ui/reauthentication/reauthentication_module.h"
 #import "ios/chrome/grit/ios_strings.h"
 #import "ios/public/provider/chrome/browser/signin/choice_api.h"
@@ -258,6 +258,9 @@ const char kMultiWindowOpenInNewWindowHistogram[] =
 // Histogram key used to log the number of contexts to open that the app
 // received.
 const char kContextsToOpen[] = "IOS.NumberOfContextsToOpen";
+
+// The App Store page for Google Chrome.
+NSString* const kChromeAppStoreURL = @"https://apps.apple.com/app/id535886823";
 
 // Enum for IOS.NumberOfContextsToOpen histogram.
 // Keep in sync with "ContextsToOpen" in tools/metrics/histograms/enums.xml.
@@ -379,13 +382,12 @@ void OnListFamilyMembersResponse(
 }  // namespace
 
 @interface SceneController () <AccountMenuCoordinatorDelegate,
-                               AuthenticationFlowDelegate,
                                HistoryCoordinatorDelegate,
                                IncognitoInterstitialCoordinatorDelegate,
                                PasswordCheckupCoordinatorDelegate,
                                PolicyWatcherBrowserAgentObserving,
                                ProfileStateObserver,
-                               SafariDataImportCoordinatorDelegate,
+                               SafariDataImportMainCoordinatorDelegate,
                                SceneUIProvider,
                                SceneURLLoadingServiceDelegate,
                                SettingsNavigationControllerDelegate,
@@ -418,11 +420,9 @@ void OnListFamilyMembersResponse(
   std::unique_ptr<supervised_user::ListFamilyMembersFetcher>
       _familyMembersFetcher;
   AccountMenuCoordinator* _accountMenuCoordinator;
-  // The authentication flow, if one is currently running.
-  AuthenticationFlow* _authenticationFlow;
 
   // The coordinator that manages the workflow importing data from Safari.
-  SafariDataImportCoordinator* _safariImportCoordinator;
+  SafariDataImportMainCoordinator* _safariImportCoordinator;
 }
 
 // Navigation View controller for the settings.
@@ -875,7 +875,8 @@ void OnListFamilyMembersResponse(
   }
   self.sceneState.URLContextsToOpen = nil;
 
-  if (IsWidgetsForMultiprofileEnabled()) {
+  if (IsWidgetsForMultiprofileEnabled() ||
+      IsShareExtensionForMultiprofileEnabled()) {
     // Find the first context that requires an account change.
     WidgetContext* context = [self findContextRequiringAccountChange:contexts];
     if (context) {
@@ -930,13 +931,28 @@ void OnListFamilyMembersResponse(
   return accountChanges > 1 ? YES : NO;
 }
 
+- (BOOL)widgetURLEligibleForAccountChange:(NSURL*)URL {
+  return (IsWidgetsForMultiprofileEnabled() &&
+          [URL.scheme isEqualToString:@"chromewidgetkit"]);
+}
+
+- (BOOL)shareExtensionURLEligibleForAccountChange:(NSURL*)URL {
+  return IsShareExtensionForMultiprofileEnabled() &&
+         [URL.path
+             isEqualToString:
+                 [NSString
+                     stringWithFormat:
+                         @"/%s", app_group::kChromeAppGroupXCallbackCommand]];
+}
+
 - (WidgetContext*)findContextRequiringAccountChange:
     (NSSet<UIOpenURLContext*>*)URLContexts {
   NSString* gaiaInApp = nil;
 
   for (UIOpenURLContext* context : URLContexts) {
     // Check that this URL is coming from a widget.
-    if (![context.URL.scheme isEqualToString:@"chromewidgetkit"]) {
+    if (!([self widgetURLEligibleForAccountChange:context.URL] ||
+          [self shareExtensionURLEligibleForAccountChange:context.URL])) {
       continue;
     }
     std::string newGaia;
@@ -2370,8 +2386,8 @@ using UserFeedbackDataCallback =
     return;
   }
   CHECK(base::FeatureList::IsEnabled(kImportPasswordsFromSafari));
-  SafariDataImportCoordinator* safariDataImportCoordinator =
-      [[SafariDataImportCoordinator alloc]
+  SafariDataImportMainCoordinator* safariDataImportCoordinator =
+      [[SafariDataImportMainCoordinator alloc]
           initWithBaseViewController:self.activeViewController
                              browser:self.currentInterface.browser];
   safariDataImportCoordinator.delegate = self;
@@ -2381,6 +2397,13 @@ using UserFeedbackDataCallback =
                    [safariDataImportCoordinator start];
                  }];
   _safariImportCoordinator = safariDataImportCoordinator;
+}
+
+- (void)showAppStorePage {
+  [[UIApplication sharedApplication]
+                openURL:[NSURL URLWithString:kChromeAppStoreURL]
+                options:@{}
+      completionHandler:nil];
 }
 
 #pragma mark - SettingsCommands
@@ -4442,22 +4465,10 @@ using UserFeedbackDataCallback =
   [self stopAccountMenu];
 }
 
-#pragma mark - AuthenticationFlowDelegate
-
-- (void)authenticationFlowDidSignInInSameProfileWithResult:
-    (SigninCoordinatorResult)result {
-  _authenticationFlow = nil;
-}
-
-- (ChangeProfileContinuation)authenticationFlowWillChangeProfile {
-  _authenticationFlow = nil;
-  return DoNothingContinuation();
-}
-
 #pragma mark - SafariImportCoordinatorDelegate
 
 - (void)safariImportWorkflowDidEndForCoordinator:
-    (SafariDataImportCoordinator*)coordinator {
+    (SafariDataImportMainCoordinator*)coordinator {
   CHECK_EQ(coordinator, _safariImportCoordinator);
   [_safariImportCoordinator stop];
   _safariImportCoordinator = nil;

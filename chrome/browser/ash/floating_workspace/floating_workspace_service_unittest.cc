@@ -56,8 +56,10 @@
 #include "components/session_manager/core/session_manager.h"
 #include "components/sync/base/data_type.h"
 #include "components/sync/base/pref_names.h"
+#include "components/sync/base/user_selectable_type.h"
 #include "components/sync/service/sync_service.h"
 #include "components/sync/service/sync_service_utils.h"
+#include "components/sync/service/sync_user_settings.h"
 #include "components/sync/test/test_sync_service.h"
 #include "components/sync_device_info/device_info.h"
 #include "components/sync_device_info/fake_device_info_sync_service.h"
@@ -904,7 +906,7 @@ TEST_F(FloatingWorkspaceServiceV2Test, NoNetworkOnFloatingWorkspaceInit) {
   PopulateAppsCache();
   CleanUpTestNetworkDevices();
   CreateFloatingWorkspaceServiceForTesting(profile());
-  InitFloatingWorkspaceServiceAndStartSession();
+  auto* service = InitFloatingWorkspaceServiceAndStartSession();
   // We always show the default UI first and then show the network screen (if
   // still needed) after a short delay, to account for possible race condition
   // between initializing FloatingWorkspaceService and connecting to network
@@ -912,6 +914,12 @@ TEST_F(FloatingWorkspaceServiceV2Test, NoNetworkOnFloatingWorkspaceInit) {
   EXPECT_EQ(FloatingWorkspaceDialog::State::kDefault,
             FloatingWorkspaceDialog::IsShown());
   WaitForNetworkScreenToAppear();
+
+  // Checking that after any network update that doesn't make us online the
+  // flow doesn't start from the beginning, i.e. we stay on the network screen.
+  service->NetworkConnectionStateChanged(nullptr);
+  EXPECT_EQ(FloatingWorkspaceDialog::State::kNetwork,
+            FloatingWorkspaceDialog::IsShown());
 }
 
 TEST_F(FloatingWorkspaceServiceV2Test, NetworkConnectingShortlyAfterFwsInit) {
@@ -1504,6 +1512,77 @@ TEST_F(FloatingWorkspaceServiceV2Test,
       syncer::SyncService::DataTypeDownloadStatus::kUpToDate);
   test_sync_service()->FireStateChanged();
   EXPECT_FALSE(mock_desks_client()->restored_desk_template());
+}
+
+TEST_F(FloatingWorkspaceServiceV2Test, NoRestoreIfTabSyncIsDisabled) {
+  PopulateAppsCache();
+  const std::string template_name = "floating_workspace_template";
+  base::RunLoop loop;
+  fake_desk_sync_service()->GetDeskModel()->AddOrUpdateEntry(
+      MakeTestFloatingWorkspaceDeskTemplate(template_name, base::Time::Now()),
+      base::BindLambdaForTesting(
+          [&](desks_storage::DeskModel::AddOrUpdateEntryStatus status,
+              std::unique_ptr<ash::DeskTemplate> new_entry) {
+            EXPECT_EQ(desks_storage::DeskModel::AddOrUpdateEntryStatus::kOk,
+                      status);
+            loop.Quit();
+          }));
+  loop.Run();
+
+  // Disable tab sync before initializing FloatingWorkspaceService.
+  syncer::UserSelectableTypeSet types_to_enable =
+      test_sync_service()->GetUserSettings()->GetSelectedTypes();
+  ASSERT_TRUE(types_to_enable.Has(syncer::UserSelectableType::kTabs));
+  types_to_enable.Remove(syncer::UserSelectableType::kTabs);
+  test_sync_service()->GetUserSettings()->SetSelectedTypes(
+      /*sync_everything=*/false, types_to_enable);
+
+  CreateFloatingWorkspaceServiceForTesting(profile());
+  InitFloatingWorkspaceServiceAndStartSession();
+  test_sync_service()->SetDownloadStatusFor(
+      {syncer::DataType::WORKSPACE_DESK},
+      syncer::SyncService::DataTypeDownloadStatus::kUpToDate);
+  test_sync_service()->FireStateChanged();
+  // No restore is expected when tab sync is disabled.
+  EXPECT_FALSE(mock_desks_client()->restored_desk_template());
+}
+
+TEST_F(FloatingWorkspaceServiceV2Test, CaptureBasedOnTabSyncSetting) {
+  const std::string template_name = "floating_workspace_captured_template";
+  const base::Time creation_time = base::Time::Now();
+  auto* floating_workspace_service =
+      InitAndPrepareTemplateForCapture(template_name, creation_time);
+
+  // Disable tab sync.
+  syncer::UserSelectableTypeSet types_to_enable =
+      test_sync_service()->GetUserSettings()->GetSelectedTypes();
+  ASSERT_TRUE(types_to_enable.Has(syncer::UserSelectableType::kTabs));
+  types_to_enable.Remove(syncer::UserSelectableType::kTabs);
+  test_sync_service()->GetUserSettings()->SetSelectedTypes(
+      /*sync_everything=*/false, types_to_enable);
+  test_sync_service()->FireStateChanged();
+
+  // Wait until the time when the template capture should have been triggered,
+  // and check that it didn't happen.
+  task_environment().FastForwardBy(
+      ash::features::kFloatingWorkspaceV2PeriodicJobIntervalInSeconds.Get() +
+      base::Seconds(1));
+  user_activity_detector()->set_last_activity_time_for_test(
+      base::TimeTicks::Now());
+  EXPECT_FALSE(
+      floating_workspace_service->GetLatestFloatingWorkspaceTemplate());
+
+  // Typically we also trigger a capture on system tray bubble being show. Check
+  // that this code path also respects the tab sync setting.
+  ash::Shell::Get()->system_tray_notifier()->NotifySystemTrayBubbleShown();
+  EXPECT_FALSE(
+      floating_workspace_service->GetLatestFloatingWorkspaceTemplate());
+
+  // Enable tab sync and verify that we start capturing again.
+  test_sync_service()->GetUserSettings()->SetSelectedTypes(
+      /*sync_everything=*/false, {syncer::UserSelectableType::kTabs});
+  test_sync_service()->FireStateChanged();
+  EXPECT_TRUE(floating_workspace_service->GetLatestFloatingWorkspaceTemplate());
 }
 
 TEST_F(FloatingWorkspaceServiceV2Test, CanRecordTemplateNotFoundMetric) {

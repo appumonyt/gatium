@@ -104,23 +104,24 @@ OffscreenCanvas::~OffscreenCanvas() {
   external_memory_accounter_.Decrease(v8::Isolate::GetCurrent(), memory_usage_);
 }
 
-void OffscreenCanvas::Commit(scoped_refptr<CanvasResource>&& canvas_resource,
+bool OffscreenCanvas::Commit(scoped_refptr<CanvasResource>&& canvas_resource,
                              const SkIRect& damage_rect) {
   if (!HasPlaceholderCanvas() || !canvas_resource)
-    return;
+    return false;
   RecordCanvasSizeToUMA();
 
   current_frame_damage_rect_.join(damage_rect);
   GetOrCreateResourceDispatcher()->DispatchFrameSync(
       std::move(canvas_resource), current_frame_damage_rect_, IsOpaque());
   current_frame_damage_rect_ = SkIRect::MakeEmpty();
+  return true;
 }
 
 void OffscreenCanvas::Dispose() {
   // We need to drop frame dispatcher, to prevent mojo calls from completing.
   disposing_ = true;
   frame_dispatcher_ = nullptr;
-  DiscardResourceProvider();
+  DiscardResources();
 
   if (context_) {
     context_->DetachHost();
@@ -177,7 +178,7 @@ void OffscreenCanvas::SetSize(gfx::Size size) {
     return;
   }
 
-  CanvasResourceHost::SetSize(size);
+  CanvasRenderingContextHost::SetSize(size);
   UpdateMemoryUsage();
   current_frame_damage_rect_ = SkIRect::MakeWH(Size().width(), Size().height());
 
@@ -478,10 +479,6 @@ bool OffscreenCanvas::OriginClean() const {
   return origin_clean_ && !disable_reading_from_canvas_;
 }
 
-bool OffscreenCanvas::IsAccelerated() const {
-  return GetRasterMode() == RasterMode::kGPU;
-}
-
 bool OffscreenCanvas::EnableAccelerationForCanvas2D() {
   CHECK(IsRenderingContext2D());
 
@@ -492,7 +489,7 @@ bool OffscreenCanvas::EnableAccelerationForCanvas2D() {
   // Note that `OffscreenCanvas::IsAccelerated` above is not equivalent! This
   // returns false if the canvas resource provider doesn't exist yet, even if it
   // will be an accelerated canvas once it has been created.
-  CanvasResourceProvider* provider = GetOrCreateResourceProvider();
+  CanvasResourceProvider* provider = GetOrCreateResourceProviderForCanvas2D();
   if (!provider) {
     return false;
   }
@@ -533,13 +530,15 @@ CanvasResourceDispatcher* OffscreenCanvas::GetOrCreateResourceDispatcher() {
   return frame_dispatcher_.get();
 }
 
-CanvasResourceProvider* OffscreenCanvas::GetOrCreateResourceProvider() {
+CanvasResourceProvider*
+OffscreenCanvas::GetOrCreateResourceProviderForCanvas2D() {
+  CHECK(IsRenderingContext2D());
   if (!context_ ||
       (context_->isContextLost() && !context_->IsContextBeingRestored())) {
     return nullptr;
   }
 
-  if (CanvasResourceProvider* provider = ResourceProvider()) {
+  if (CanvasResourceProvider* provider = GetResourceProviderForCanvas2D()) {
     if (!provider->IsValid()) {
       // The canvas context is not lost but the provider is invalid. This
       // happens if the GPU process dies in the middle of a render task. The
@@ -565,21 +564,16 @@ CanvasResourceProvider* OffscreenCanvas::GetOrCreateResourceProvider() {
   gfx::Size surface_size(width(), height());
   const bool can_use_gpu =
       SharedGpuContext::IsGpuCompositingEnabled() &&
-      (IsWebGL() || IsWebGPU() || IsImageBitmapRenderingContext() ||
-       (IsRenderingContext2D() &&
-        RuntimeEnabledFeatures::Accelerated2dCanvasEnabled() &&
-        !(context_->CreationAttributes().will_read_frequently ==
-          CanvasContextCreationAttributesCore::WillReadFrequently::kTrue)));
+      RuntimeEnabledFeatures::Accelerated2dCanvasEnabled() &&
+      !(context_->CreationAttributes().will_read_frequently ==
+        CanvasContextCreationAttributesCore::WillReadFrequently::kTrue);
   const bool use_shared_image =
       can_use_gpu ||
       (HasPlaceholderCanvas() && SharedGpuContext::IsGpuCompositingEnabled());
   const bool use_scanout =
       use_shared_image && HasPlaceholderCanvas() &&
       SharedGpuContext::MaySupportImageChromium() &&
-      (IsWebGPU() ||
-       (IsWebGL() && RuntimeEnabledFeatures::WebGLImageChromiumEnabled()) ||
-       (IsRenderingContext2D() &&
-        RuntimeEnabledFeatures::Canvas2dImageChromiumEnabled()));
+      RuntimeEnabledFeatures::Canvas2dImageChromiumEnabled();
 
   gpu::SharedImageUsageSet shared_image_usage_flags =
       gpu::SHARED_IMAGE_USAGE_DISPLAY_READ;
@@ -620,19 +614,21 @@ CanvasResourceProvider* OffscreenCanvas::GetOrCreateResourceProvider() {
         CanvasResourceProvider::ShouldInitialize::kCallClear, this);
   }
 
-  ReplaceResourceProvider(std::move(provider));
+  SetResourceProviderForCanvas2D(std::move(provider));
 
-  if (ResourceProvider() && ResourceProvider()->IsValid()) {
+  if (GetResourceProviderForCanvas2D() &&
+      GetResourceProviderForCanvas2D()->IsValid()) {
     // todo(crbug/1064363)  Add a separate UMA for Offscreen Canvas usage and
     // understand if the if (ResourceProvider() &&
     // ResourceProvider()->IsValid()) is really needed.
-    base::UmaHistogramBoolean("Blink.Canvas.ResourceProviderIsAccelerated",
-                              ResourceProvider()->IsAccelerated());
+    base::UmaHistogramBoolean(
+        "Blink.Canvas.ResourceProviderIsAccelerated",
+        GetResourceProviderForCanvas2D()->IsAccelerated());
     base::UmaHistogramEnumeration("Blink.Canvas.ResourceProviderType",
-                                  ResourceProvider()->GetType());
+                                  GetResourceProviderForCanvas2D()->GetType());
     DidDraw();
   }
-  return ResourceProvider();
+  return GetResourceProviderForCanvas2D();
 }
 
 void OffscreenCanvas::DidDraw(const SkIRect& rect) {

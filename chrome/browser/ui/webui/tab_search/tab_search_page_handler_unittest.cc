@@ -27,7 +27,9 @@
 #include "chrome/browser/ui/tabs/alert/tab_alert.h"
 #include "chrome/browser/ui/tabs/organization/tab_declutter_controller.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
+#include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/tab_group_sync_service_initialized_observer.h"
+#include "chrome/browser/ui/tabs/split_tab_metrics.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
 #include "chrome/browser/ui/tabs/test_util.h"
@@ -205,6 +207,10 @@ class TabSearchPageHandlerTest : public BrowserWithTestWindowTest {
     handler_ = std::make_unique<TestTabSearchPageHandler>(
         page_.BindAndGetRemote(), web_ui(), webui_controller_.get());
     EXPECT_CALL(page_, HostWindowChanged()).Times(1);
+    feature_list_.InitWithFeatures(
+        {features::kTabstripDeclutter, features::kTabstripDedupe,
+         features::kSideBySide},
+        {});
 
     // Wait for the TabGroupSyncService to properly initialize before making any
     // changes to tab groups.
@@ -260,9 +266,9 @@ class TabSearchPageHandlerTest : public BrowserWithTestWindowTest {
 
   void WaitForTabGroupSyncServiceInitialized() {
     tab_groups::TabGroupSyncService* tab_group_service_1 =
-        tab_groups::TabGroupSyncServiceFactory::GetForProfile(profile1());
+        tab_groups::SavedTabGroupUtils::GetServiceForProfile(profile1());
     tab_groups::TabGroupSyncService* tab_group_service_2 =
-        tab_groups::TabGroupSyncServiceFactory::GetForProfile(profile2());
+        tab_groups::SavedTabGroupUtils::GetServiceForProfile(profile2());
     auto observer_1 =
         std::make_unique<tab_groups::TabGroupSyncServiceInitializedObserver>(
             tab_group_service_1);
@@ -305,6 +311,7 @@ class TabSearchPageHandlerTest : public BrowserWithTestWindowTest {
 
   std::unique_ptr<content::WebContents> web_contents_;
   content::TestWebUI web_ui_;
+  base::test::ScopedFeatureList feature_list_;
   raw_ptr<Profile, DanglingUntriaged> profile2_;
   std::unique_ptr<Browser> browser2_;
   std::unique_ptr<Browser> browser3_;
@@ -964,10 +971,8 @@ TEST_F(TabSearchPageHandlerTest,
 
 class TabSearchPageHandlerDeclutterTest : public TabSearchPageHandlerTest {
  public:
-  TabSearchPageHandlerDeclutterTest() {
-    feature_list_.InitWithFeatures(
-        {features::kTabstripDeclutter, features::kTabstripDedupe}, {});
-  }
+  TabSearchPageHandlerDeclutterTest() = default;
+  ~TabSearchPageHandlerDeclutterTest() override = default;
 
   void SetUp() override {
     TabSearchPageHandlerTest::SetUp();
@@ -1020,7 +1025,6 @@ class TabSearchPageHandlerDeclutterTest : public TabSearchPageHandlerTest {
   }
 
  private:
-  base::test::ScopedFeatureList feature_list_;
   std::unique_ptr<TestingProfile> testing_profile_;
   std::unique_ptr<TestTabStripModelDelegate> tab_strip_model_delegate_;
   std::unique_ptr<TabStripModel> tab_strip_model_;
@@ -1290,8 +1294,9 @@ TEST_F(TabSearchPageHandlerTest, ReplaceActiveSplitTab) {
   AddTab(browser(), GURL(kTabUrl2));
   AddTab(browser(), GURL(kTabUrl3));
   TabStripModel* tab_strip_model = browser()->tab_strip_model();
-  const split_tabs::SplitTabId split_id =
-      tab_strip_model->AddToNewSplit({1}, split_tabs::SplitTabVisualData());
+  const split_tabs::SplitTabId split_id = tab_strip_model->AddToNewSplit(
+      {1}, split_tabs::SplitTabVisualData(),
+      split_tabs::SplitTabCreatedSource::kToolbarButton);
 
   const split_tabs::SplitTabData* split_data =
       tab_strip_model->GetSplitData(split_id);

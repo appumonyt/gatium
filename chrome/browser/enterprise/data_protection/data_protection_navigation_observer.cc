@@ -13,6 +13,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/enterprise/connectors/connectors_service.h"
 #include "chrome/browser/enterprise/data_controls/chrome_rules_service.h"
+#include "chrome/browser/enterprise/data_protection/data_protection_features.h"
 #include "chrome/browser/interstitials/enterprise_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/chrome_enterprise_url_lookup_service_factory.h"
@@ -133,7 +134,6 @@ void OnRealTimeLookupComplete(
     bool is_cached,
     std::unique_ptr<safe_browsing::RTLookupResponse> rt_lookup_response) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
   if (!is_success) {
     rt_lookup_response.reset();
   }
@@ -208,7 +208,9 @@ DataProtectionNavigationObserver::CreateForNavigationIfNeeded(
     Profile* profile,
     content::NavigationHandle* navigation_handle,
     Callback callback) {
-  if (!navigation_handle->IsInPrimaryMainFrame()) {
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
+      (!base::FeatureList::IsEnabled(kEnableSinglePageAppDataProtection) &&
+       navigation_handle->IsSameDocument())) {
     return nullptr;
   }
 
@@ -312,6 +314,7 @@ DataProtectionNavigationObserver::DataProtectionNavigationObserver(
     DataProtectionNavigationDelegate* delegate,
     Callback callback)
     : content::WebContentsObserver(web_contents),
+      navigation_id_(navigation_handle.GetNavigationId()),
       lookup_service_(lookup_service),
       delegate_(delegate),
       pending_navigation_callback_(std::move(callback)) {
@@ -336,6 +339,8 @@ DataProtectionNavigationObserver::DataProtectionNavigationObserver(
              base::BindOnce(&DataProtectionNavigationObserver::OnLookupComplete,
                             weak_factory_.GetWeakPtr()),
              navigation_handle.GetWebContents());
+  } else {
+    is_verdict_received_ = true;
   }
 }
 
@@ -345,8 +350,16 @@ void DataProtectionNavigationObserver::OnLookupComplete(
     std::unique_ptr<safe_browsing::RTLookupResponse> rt_lookup_response) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(!is_from_cache_);
+  is_verdict_received_ = true;
+  if (is_navigation_finished_) {
+    OnDoLookupComplete(web_contents()->GetWeakPtr(),
+                       std::move(pending_navigation_callback_), identifier_,
+                       std::move(rt_lookup_response));
+  } else {
+    rt_lookup_response_ = std::move(rt_lookup_response);
+  }
 
-  rt_lookup_response_ = std::move(rt_lookup_response);
+  MaybeCleanup();
 }
 
 bool DataProtectionNavigationObserver::ShouldPerformRealTimeUrlCheck(
@@ -374,16 +387,19 @@ void DataProtectionNavigationObserver::DidRedirectNavigation(
   }
 }
 
-void DataProtectionNavigationObserver::Cleanup(int64_t navigation_id) {
-  DCHECK(delegate_);
-  delegate_->Cleanup(navigation_id);
+void DataProtectionNavigationObserver::MaybeCleanup() {
+  if (is_navigation_finished_ && is_verdict_received_) {
+    DCHECK(delegate_);
+    delegate_->Cleanup(navigation_id_);
+  }
 }
 
 void DataProtectionNavigationObserver::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
-  base::ScopedClosureRunner done(base::BindOnce(
-      &DataProtectionNavigationObserver::Cleanup, weak_factory_.GetWeakPtr(),
-      navigation_handle->GetNavigationId()));
+  is_navigation_finished_ = true;
+  base::ScopedClosureRunner done(
+      base::BindOnce(&DataProtectionNavigationObserver::MaybeCleanup,
+                     weak_factory_.GetWeakPtr()));
 
   // Only consider primary main frame commits, which will come eventually.
   // Even though some of these checks where already performed in
@@ -393,8 +409,8 @@ void DataProtectionNavigationObserver::DidFinishNavigation(
   // `pending_navigation_callback_` being null implies `DidFinishNavigation`
   // has already been called, so further lookups/metrics code need to run.
   if (!navigation_handle->IsInPrimaryMainFrame() ||
-      !navigation_handle->HasCommitted() ||
-      !pending_navigation_callback_) {
+      !navigation_handle->HasCommitted() || !pending_navigation_callback_ ||
+      !is_verdict_received_) {
     return;
   }
 

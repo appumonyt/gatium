@@ -24,6 +24,12 @@ BASE_FEATURE(kBluetoothWifiQSPodRefresh,
              "BluetoothWifiQSPodRefresh",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// System location provider will use caching to optimize GCP usage. This flag
+// will be enabled with Finch.
+BASE_FEATURE(kCachedLocationProvider,
+             "CachedLocationProvider",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Enables cloud game features.
 BASE_FEATURE(kCloudGamingDevice,
              "CloudGamingDevice",
@@ -236,6 +242,12 @@ BASE_FEATURE(kFeatureManagementRoundedWindows,
              "FeatureManagementRoundedWindows",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Enables the reworked implementation of usage indicators for the
+// `getAllScreensMedia` API.
+BASE_FEATURE(kMultiCaptureReworkedUsageIndicators,
+             "MultiCaptureReworkedUsageIndicators",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Enables the first wave of new features for the chrome.enterprise.platformKeys
 // API. That includes:
 //   - a new key type (RSA-OAEP) with a new allowed key usage (unwrapKey).
@@ -386,6 +398,11 @@ BASE_FEATURE(kNotebookLmAppShelfPinReset,
              "NotebookLmAppShelfPinReset",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Enables support for protocols handlers registered via web app manifest.
+BASE_FEATURE(kWebAppManifestProtocolHandlerSupport,
+             "WebAppManifestProtocolHandlerSupport",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 const char kRoundedWindowsRadius[] = "window_radius";
 
 bool IsApnPoliciesEnabled() {
@@ -398,6 +415,10 @@ bool IsBatteryBadgeIconEnabled() {
 
 bool IsBluetoothWifiQSPodRefreshEnabled() {
   return base::FeatureList::IsEnabled(kBluetoothWifiQSPodRefresh);
+}
+
+bool IsCachedLocationProviderEnabled() {
+  return base::FeatureList::IsEnabled(kCachedLocationProvider);
 }
 
 bool IsCloudGamingDeviceEnabled() {
@@ -594,6 +615,10 @@ int RoundedWindowsRadius() {
   return base::GetFieldTrialParamByFeatureAsInt(kRoundedWindows,
                                                 kRoundedWindowsRadius,
                                                 /*default_value=*/12);
+}
+
+bool IsWebAppManifestProtocolHandlerSupportEnabled() {
+  return base::FeatureList::IsEnabled(kWebAppManifestProtocolHandlerSupport);
 }
 
 }  // namespace chromeos::features

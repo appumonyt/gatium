@@ -6,12 +6,14 @@
 
 #include "base/files/file_util.h"
 #include "base/functional/callback_helpers.h"
+#include "base/json/values_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/to_string.h"
 #include "base/task/thread_pool.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/ui/webui/on_device_internals/on_device_internals_page.mojom.h"
+#include "components/optimization_guide/core/delivery/prediction_manager.h"
 #include "components/optimization_guide/core/model_execution/model_execution_features.h"
 #include "components/optimization_guide/core/model_execution/model_execution_manager.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
@@ -22,7 +24,6 @@
 #include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
-#include "components/optimization_guide/core/prediction_manager.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/service_process_host.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
@@ -30,6 +31,8 @@
 #include "services/on_device_model/ml/performance_class.h"
 #include "services/on_device_model/public/cpp/buildflags.h"
 #include "services/on_device_model/public/cpp/model_assets.h"
+#include "services/preferences/public/cpp/dictionary_value_update.h"
+#include "services/preferences/public/cpp/scoped_pref_update.h"
 
 #if BUILDFLAG(USE_CHROMEOS_MODEL_SERVICE)
 #include "chromeos/ash/components/mojo_service_manager/connection.h"
@@ -40,6 +43,8 @@ namespace on_device_internals {
 
 namespace {
 
+using optimization_guide::model_execution::prefs::localstate::
+    kLastUsageByFeature;
 using optimization_guide::model_execution::prefs::localstate::
     kOnDeviceModelCrashCount;
 
@@ -217,9 +222,11 @@ void PageHandler::OnModelAssetsLoaded(
   params->performance_hint = performance_hint;
   GetService().LoadModel(
       std::move(params), std::move(model),
-      base::BindOnce(&PageHandler::OnModelLoaded,
-                     weak_ptr_factory_.GetWeakPtr(), std::move(callback),
-                     std::move(weights)));
+      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+          base::BindOnce(&PageHandler::OnModelLoaded,
+                         weak_ptr_factory_.GetWeakPtr(), std::move(callback),
+                         std::move(weights)),
+          on_device_model::mojom::LoadModelResult::kFailedToLoadLibrary));
 }
 
 void PageHandler::OnModelLoaded(
@@ -258,6 +265,20 @@ void PageHandler::GetDevicePerformanceInfo(
           std::move(callback),
           on_device_model::mojom::DevicePerformanceInfo::New()));
 #endif
+}
+
+void PageHandler::GetDefaultModelPath(GetDefaultModelPathCallback callback) {
+  auto* component_manager =
+      optimization_guide_keyed_service_->GetComponentManager();
+  auto debug_state =
+      component_manager->GetDebugState(base::PassKey<PageHandler>());
+
+  if (!debug_state.state_) {
+    std::move(callback).Run(std::nullopt);
+    return;
+  }
+
+  std::move(callback).Run(debug_state.state_->GetInstallDirectory());
 }
 
 void PageHandler::OnLogMessageAdded(
@@ -333,6 +354,7 @@ void PageHandler::OnReceivedPerformanceInfoForPageData(
     }
     auto feature_adaptation_info = mojom::FeatureAdaptationInfo::New();
     feature_adaptation_info->feature_name = base::ToString(feature);
+    feature_adaptation_info->feature_key = static_cast<int32_t>(feature);
     feature_adaptation_info->is_recently_used =
         WasOnDeviceEligibleFeatureRecentlyUsed(feature, *local_state);
 
@@ -353,6 +375,21 @@ void PageHandler::GetPageData(PageHandler::GetPageDataCallback callback) {
   GetDevicePerformanceInfo(
       base::BindOnce(&PageHandler::OnReceivedPerformanceInfoForPageData,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+}
+
+void PageHandler::SetFeatureRecentlyUsedState(int feature_key,
+                                              bool is_recently_used) {
+  ::prefs::ScopedDictionaryPrefUpdate update(g_browser_process->local_state(),
+                                             kLastUsageByFeature);
+  std::string pref_key = base::NumberToString(
+      static_cast<uint64_t>(optimization_guide::ToModelExecutionFeatureProto(
+          static_cast<optimization_guide::ModelBasedCapabilityKey>(
+              feature_key))));
+  if (is_recently_used) {
+    update->Set(pref_key, base::TimeToValue(base::Time::Now()));
+  } else {
+    update->Remove(pref_key);
+  }
 }
 
 void PageHandler::DecodeBitmap(mojo_base::BigBuffer image_buffer,

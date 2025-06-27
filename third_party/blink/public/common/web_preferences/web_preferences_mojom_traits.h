@@ -356,11 +356,6 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.target_blank_implies_no_opener_enabled_will_be_removed;
   }
 
-  static bool allow_non_empty_navigator_plugins(
-      const blink::web_pref::WebPreferences& r) {
-    return r.allow_non_empty_navigator_plugins;
-  }
-
   static bool ignore_permission_for_device_changed_event(
       const blink::web_pref::WebPreferences& r) {
     return r.ignore_permission_for_device_changed_event;
@@ -820,6 +815,11 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
   static bool payment_request_enabled(
       const blink::web_pref::WebPreferences& r) {
     return r.payment_request_enabled;
+  }
+
+  static bool api_based_fingerprinting_interventions_enabled(
+      const blink::web_pref::WebPreferences& r) {
+    return r.api_based_fingerprinting_interventions_enabled;
   }
 
   static bool Read(blink::mojom::WebPreferencesDataView r,

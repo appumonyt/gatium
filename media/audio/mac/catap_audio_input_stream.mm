@@ -25,11 +25,11 @@
 #include "base/trace_event/trace_event.h"
 #include "media/audio/mac/audio_loopback_input_mac.h"
 #include "media/audio/mac/catap_api.h"
+#include "media/base/audio_sample_types.h"
 #include "media/base/audio_timestamp_helper.h"
 
 namespace media {
 namespace {
-
 const char kCatapAudioInputStreamUmaBaseName[] =
     "Media.Audio.Mac.CatapAudioInputStream";
 const char kHistogramPartsSeparator[] = ".";
@@ -43,6 +43,7 @@ const char kHistogramGetProcessAudioDeviceIdsSuffix[] =
     "GetProcessAudioDeviceIds";
 const char kHistogramSuccessSuffix[] = "Success";
 const char kHistogramFailureSuffix[] = "Failure";
+const char kHostTimeStatusName[] = "HostTimeStatus";
 
 // If this feature is enabled, the CoreAudio tap is probed after creation to
 // verify that we have the proper permissions. If this fails the creation is
@@ -51,11 +52,19 @@ BASE_FEATURE(kMacCatapProbeTapOnCreation,
              "MacCatapProbeTapOnCreation",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// If this feature is enabled, we will only capture the default output device.
-// If the feature is disabled, all system audio is captured regardless of which
-// output device the audio is played on.
-BASE_FEATURE(kMacCatapCaptureDefaultDevice,
-             "MacCatapCaptureDefaultDevice",
+// When `kMacCatapCaptureAllDevices` is disabled:
+//
+// CatapAudioInputStream captures audio from the default output device. However,
+// if the device ID is explicitly set to `kLoopbackAllDevicesId`, it will
+// capture all system audio regardless of the specific output device used for
+// playback.
+//
+// When `kMacCatapCaptureAllDevices` is enabled:
+//
+// CatapAudioInputStream captures all system audio, irrespective of the specific
+// output device it's played on or the device ID set.
+BASE_FEATURE(kMacCatapCaptureAllDevices,
+             "MacCatapCaptureAllDevices",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 API_AVAILABLE(macos(14.2))
@@ -151,6 +160,40 @@ void ReportGetProcessAudioDeviceIdsDuration(bool success,
       duration);
 }
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class HostTimeStatus {
+  kNoMissingHostTime = 0,
+  kSometimesMissingHostTimeNoRecover = 1,
+  kSometimesMissingHostTimeRecovered = 2,
+  kAlwaysMissingHostTime = 3,
+  kMaxValue = kAlwaysMissingHostTime
+};
+
+HostTimeStatus GetHostTimeStatus(int total_callbacks,
+                                 int callbacks_with_missing_host_time,
+                                 bool has_recovered) {
+  if (callbacks_with_missing_host_time == 0) {
+    return HostTimeStatus::kNoMissingHostTime;
+  }
+  if (callbacks_with_missing_host_time == total_callbacks) {
+    return HostTimeStatus::kAlwaysMissingHostTime;
+  }
+
+  return has_recovered ? HostTimeStatus::kSometimesMissingHostTimeRecovered
+                       : HostTimeStatus::kSometimesMissingHostTimeNoRecover;
+}
+
+void ReportHostTimeStatus(int total_callbacks,
+                          int callbacks_with_missing_host_time,
+                          bool has_recovered) {
+  base::UmaHistogramEnumeration(
+      base::JoinString({kCatapAudioInputStreamUmaBaseName, kHostTimeStatusName},
+                       kHistogramPartsSeparator),
+      GetHostTimeStatus(total_callbacks, callbacks_with_missing_host_time,
+                        has_recovered));
+}
+
 }  // namespace
 
 // 0.0 is used to indicate that this device doesn't support setting the volume.
@@ -178,6 +221,7 @@ CatapAudioInputStream::CatapAudioInputStream(
       default_output_device_id_(default_output_device_id) {
   CHECK(device_id_ == AudioDeviceDescription::kLoopbackInputDeviceId ||
         device_id == AudioDeviceDescription::kLoopbackWithMuteDeviceId ||
+        device_id == AudioDeviceDescription::kLoopbackWithMuteDeviceIdCast ||
         device_id == AudioDeviceDescription::kLoopbackWithoutChromeId ||
         device_id == AudioDeviceDescription::kLoopbackAllDevicesId);
   CHECK(!log_callback_.is_null());
@@ -199,7 +243,7 @@ AudioInputStream::OpenOutcome CatapAudioInputStream::Open() {
   if (is_device_open_) {
     ReportOpenStatus(OpenStatus::kErrorDeviceAlreadyOpen, timer.Elapsed());
     SendLogMessage("%s => Device is already open.", __func__);
-    return OpenOutcome::kFailed;
+    return OpenOutcome::kAlreadyOpen;
   }
 
   NSArray<NSNumber*>* process_audio_device_ids_to_exclude = @[];
@@ -218,25 +262,79 @@ AudioInputStream::OpenOutcome CatapAudioInputStream::Open() {
     }
   }
 
-  if (base::FeatureList::IsEnabled(kMacCatapCaptureDefaultDevice)) {
+  // The allocation and initialization of CATapDescription has been split into
+  // the steps a-f to enable debugging of a flaky test.
+
+  // a. Allocate the CATapDescription instance.
+  //    Store it in a temporary variable first to allow immediate validation.
+  CATapDescription* new_tap_description = [[CATapDescription alloc] init];
+
+  // b. Check if allocation was successful.
+  //    If alloc returns nil, it means memory allocation failed.
+  if (new_tap_description == nil) {
+    SendLogMessage("%s => Failed to allocate CATapDescription.", __func__);
+    return OpenOutcome::kFailed;
+  }
+
+  // c. Verify the actual runtime class of the allocated object.
+  //    This is the most critical check for an "unrecognized selector" when the
+  //    API is known to exist. It catches cases where 'alloc' might return an
+  //    object of an unexpected type due to subtle runtime issues.
+  if (![new_tap_description isKindOfClass:[CATapDescription class]]) {
+    SendLogMessage("%s => Allocated object is of unexpected class.", __func__);
+    return OpenOutcome::kFailed;
+  }
+
+  // d. Double-check if the allocated object responds to the specific
+  //    initializers. While logically redundant if step 3 passes and the OS
+  //    version is correct, this directly tests the "unrecognized selector"
+  //    condition.
+  if (![new_tap_description respondsToSelector:@selector
+                            (initStereoGlobalTapButExcludeProcesses:)]) {
+    SendLogMessage("%s => CATapDescription instance does not respond to "
+                   "initStereoGlobalTapButExcludeProcesses:.",
+                   __func__);
+    return OpenOutcome::kFailed;
+  }
+  if (![new_tap_description
+          respondsToSelector:@selector(initExcludingProcesses:
+                                                 andDeviceUID:withStream:)]) {
+    SendLogMessage("%s => CATapDescription instance does not respond to "
+                   "initExcludingProcesses:andDeviceUID:withStream:.",
+                   __func__);
+    return OpenOutcome::kFailed;
+  }
+
+  // e. Perform the actual initialization if all preceding checks pass.
+  if (device_id_ == AudioDeviceDescription::kLoopbackAllDevicesId ||
+      base::FeatureList::IsEnabled(kMacCatapCaptureAllDevices)) {
+    // Mix all processes to a stereo stream except the given processes.
+    tap_description_ =
+        [new_tap_description initStereoGlobalTapButExcludeProcesses:
+                                 process_audio_device_ids_to_exclude];
+  } else {
     // Mix all process audio streams destined for the selected device stream
     // except the given processes.
-    tap_description_ = [[CATapDescription alloc]
+    tap_description_ = [new_tap_description
         initExcludingProcesses:process_audio_device_ids_to_exclude
                   andDeviceUID:[NSString stringWithUTF8String:
                                              default_output_device_id_.c_str()]
                     withStream:0];
-  } else {
-    // Mix all processes to a stereo stream except the given processes.
-    tap_description_ =
-        [[CATapDescription alloc] initStereoGlobalTapButExcludeProcesses:
-                                      process_audio_device_ids_to_exclude];
+  }
+
+  // f. Check if the initialization itself succeeded.
+  //    An 'init' method can return nil if initialization fails internally for
+  //    some reason.
+  if (tap_description_ == nil) {
+    SendLogMessage("%s => CATapDescription initialization failed.", __func__);
+    return OpenOutcome::kFailed;
   }
 
   if (params_.channels() == 1) {
     [tap_description_ setMono:YES];
   }
-  if (device_id_ == AudioDeviceDescription::kLoopbackWithMuteDeviceId) {
+  if (device_id_ == AudioDeviceDescription::kLoopbackWithMuteDeviceId ||
+      device_id_ == AudioDeviceDescription::kLoopbackWithMuteDeviceIdCast) {
     // No audio is sent to the hardware (e.g, speakers) while the audio is
     // captured.
     [tap_description_ setMuteBehavior:CATapMuted];
@@ -247,7 +345,9 @@ AudioInputStream::OpenOutcome CatapAudioInputStream::Open() {
   // Initialization: Step 1.
   OSStatus status =
       catap_api_->AudioHardwareCreateProcessTap(tap_description_, &tap_);
-  if (status != noErr) {
+  if (status != noErr || tap_ == kAudioObjectUnknown) {
+    // `kAudioObjectUnknown` is returned if the specified output device doesn't
+    // exist.
     ReportOpenStatus(OpenStatus::kErrorCreatingProcessTap, timer.Elapsed());
     SendLogMessage("%s => Error creating process tap.", __func__);
     return OpenOutcome::kFailed;
@@ -319,7 +419,7 @@ AudioInputStream::OpenOutcome CatapAudioInputStream::Open() {
     ReportOpenStatus(OpenStatus::kErrorMissingAudioTapPermission,
                      timer.Elapsed());
     SendLogMessage("%s => Error when probing audio tap permissions.", __func__);
-    return OpenOutcome::kFailed;
+    return OpenOutcome::kFailedSystemPermissions;
   }
 
   is_device_open_ = true;
@@ -368,6 +468,9 @@ void CatapAudioInputStream::Stop() {
     ReportStopStatus(false, timer.Elapsed());
     SendLogMessage("%s => Error stopping the device.", __func__);
   }
+
+  ReportHostTimeStatus(total_callbacks_, callbacks_with_missing_host_time_,
+                       recovered_from_missing_host_time_);
 
   sink_ = nullptr;
   ReportStopStatus(true, timer.Elapsed());
@@ -450,14 +553,18 @@ void CatapAudioInputStream::SetOutputDeviceForAec(
 void CatapAudioInputStream::OnCatapSample(
     const base::span<const AudioBuffer> input_buffers,
     const AudioTimeStamp* input_time) {
+  base::TimeTicks capture_time;
   if (!(input_time->mFlags & kAudioTimeStampHostTimeValid)) {
-    // TODO(crbug.com/417910390): Add workaround and log this event to see if it
-    // happens.
-    return;
+    // Fallback if there's no host time stamp. There's no evidence that this
+    // ever happens, so this is just in case.
+    capture_time = next_expected_capture_time_ ? *next_expected_capture_time_
+                                               : base::TimeTicks::Now();
+    ++callbacks_with_missing_host_time_;
+  } else {
+    capture_time = base::TimeTicks::FromMachAbsoluteTime(input_time->mHostTime);
+    recovered_from_missing_host_time_ = callbacks_with_missing_host_time_ > 0;
   }
-
-  base::TimeTicks capture_time =
-      base::TimeTicks::FromMachAbsoluteTime(input_time->mHostTime);
+  ++total_callbacks_;
   TRACE_EVENT1("audio", "CatapAudioInputStream::OnCatapSample", "capture_time",
                capture_time);
 
@@ -474,6 +581,10 @@ void CatapAudioInputStream::OnCatapSample(
 
     capture_time += buffer_frames_duration_;
   }
+
+  // Store the current capture time and use as a fallback in case there's no
+  // host time provided with the next callback.
+  next_expected_capture_time_ = capture_time;
 }
 
 NSArray<NSNumber*>* CatapAudioInputStream::GetProcessAudioDeviceIds(

@@ -10,7 +10,7 @@
 #include <memory>
 #include <vector>
 
-#include "gpu/gpu_export.h"
+#include "gpu/ipc/common/gpu_ipc_common_export.h"
 #include "gpu/ipc/common/gpu_memory_buffer_impl.h"
 
 namespace gfx {
@@ -18,10 +18,18 @@ class ClientNativePixmap;
 class ClientNativePixmapFactory;
 }  // namespace gfx
 
+namespace media {
+class V4L2JpegEncodeAccelerator;
+class VaapiJpegEncodeAccelerator;
+}  // namespace media
+
 namespace gpu {
 
+class GpuMemoryBufferSupport;
+
 // Implementation of GPU memory buffer based on Ozone native pixmap.
-class GPU_EXPORT GpuMemoryBufferImplNativePixmap : public GpuMemoryBufferImpl {
+class GPU_IPC_COMMON_EXPORT GpuMemoryBufferImplNativePixmap
+    : public GpuMemoryBufferImpl {
  public:
   GpuMemoryBufferImplNativePixmap(const GpuMemoryBufferImplNativePixmap&) =
       delete;
@@ -31,14 +39,6 @@ class GPU_EXPORT GpuMemoryBufferImplNativePixmap : public GpuMemoryBufferImpl {
   ~GpuMemoryBufferImplNativePixmap() override;
 
   static constexpr gfx::GpuMemoryBufferType kBufferType = gfx::NATIVE_PIXMAP;
-
-  static std::unique_ptr<GpuMemoryBufferImplNativePixmap> CreateFromHandle(
-      gfx::ClientNativePixmapFactory* client_native_pixmap_factory,
-      gfx::GpuMemoryBufferHandle handle,
-      const gfx::Size& size,
-      gfx::BufferFormat format,
-      gfx::BufferUsage usage,
-      DestructionCallback callback);
 
   static base::OnceClosure AllocateForTesting(
       const gfx::Size& size,
@@ -55,6 +55,20 @@ class GPU_EXPORT GpuMemoryBufferImplNativePixmap : public GpuMemoryBufferImpl {
   gfx::GpuMemoryBufferHandle CloneHandle() const override;
 
  private:
+  // TODO(crbug.com/404905709): Eliminate these class' creation of GMBs and
+  // remove this friending.
+  friend class media::V4L2JpegEncodeAccelerator;
+  friend class media::VaapiJpegEncodeAccelerator;
+  friend class GpuMemoryBufferSupport;
+
+  static std::unique_ptr<GpuMemoryBufferImplNativePixmap> CreateFromHandle(
+      gfx::ClientNativePixmapFactory* client_native_pixmap_factory,
+      gfx::GpuMemoryBufferHandle handle,
+      const gfx::Size& size,
+      gfx::BufferFormat format,
+      gfx::BufferUsage usage,
+      DestructionCallback callback);
+
   GpuMemoryBufferImplNativePixmap(
       gfx::GpuMemoryBufferId id,
       const gfx::Size& size,

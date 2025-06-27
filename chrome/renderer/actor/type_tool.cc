@@ -50,6 +50,12 @@ using ::blink::WebString;
 
 namespace {
 
+// Typing into input fields often causes custom made dropdowns to appear and
+// update content. These are often updated via async tasks that try to detect
+// when a user has finished typing. Delay observation to try to ensure the page
+// stability monitor kicks in only after these tasks have invoked.
+constexpr base::TimeDelta kObservationDelay = base::Seconds(1);
+
 // Structure to hold the mapping
 struct KeyInfo {
   char16_t key_code;
@@ -322,11 +328,13 @@ std::string TypeTool::DebugString() const {
                          action_->follow_by_enter);
 }
 
+base::TimeDelta TypeTool::ExecutionObservationDelay() const {
+  return kObservationDelay;
+}
+
 TypeTool::ValidatedResult TypeTool::Validate() const {
-  if (!frame_->GetWebFrame() || !frame_->GetWebFrame()->FrameWidget()) {
-    return base::unexpected(
-        MakeResult(mojom::ActionResultCode::kFrameWentAway));
-  }
+  CHECK(frame_->GetWebFrame());
+  CHECK(frame_->GetWebFrame()->FrameWidget());
 
   mojom::ToolTargetPtr& target = action_->target;
   CHECK(target);

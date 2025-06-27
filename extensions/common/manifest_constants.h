@@ -109,9 +109,6 @@ inline constexpr char kMatches[] = "matches";
 inline constexpr char kMIMETypes[] = "mime_types";
 inline constexpr char kMimeTypesHandler[] = "mime_types_handler";
 inline constexpr char kMinimumChromeVersion[] = "minimum_chrome_version";
-inline constexpr char kNaClModules[] = "nacl_modules";
-inline constexpr char kNaClModulesMIMEType[] = "mime_type";
-inline constexpr char kNaClModulesPath[] = "path";
 inline constexpr char kName[] = "name";
 inline constexpr char kNativelyConnectable[] = "natively_connectable";
 inline constexpr char kOfflineEnabled[] = "offline_enabled";
@@ -288,6 +285,9 @@ inline constexpr char kInvalidActionDefaultIconMimeType[] =
     "Invalid mime type for 'default_icon'.";
 inline constexpr char16_t kInvalidActionDefaultPopup[] =
     u"Invalid type for 'default_popup'.";
+inline constexpr char kActionDefaultPopupInvalidCompatValue[] =
+    "Invalid value for 'default_popup'. The value is treated as having no "
+    "popup for compatibility, but it will be rejected in the future.";
 inline constexpr char16_t kInvalidActionDefaultState[] =
     u"Invalid value for 'default_state'.";
 inline constexpr char16_t kInvalidActionDefaultTitle[] =
@@ -513,12 +513,6 @@ inline constexpr char16_t kInvalidMimeTypesHandler[] =
     u"Invalid value for 'mime_types'.";
 inline constexpr char16_t kInvalidMinimumChromeVersion[] =
     u"Invalid value for 'minimum_chrome_version'.";
-inline constexpr char16_t kInvalidNaClModules[] =
-    u"Invalid value for 'nacl_modules'.";
-inline constexpr char kInvalidNaClModulesMIMEType[] =
-    "Invalid value for 'nacl_modules[*].mime_type'.";
-inline constexpr char kInvalidNaClModulesPath[] =
-    "Invalid value for 'nacl_modules[*].path'.";
 inline constexpr char kInvalidName[] =
     "Required value 'name' is missing or invalid.";
 inline constexpr char16_t kInvalidName16[] =

@@ -29,13 +29,14 @@ import type {SkColor} from 'chrome://resources/mojo/skia/public/mojom/skcolor.mo
 import {getCss} from './app.css.js';
 import {getHtml} from './app.html.js';
 import {BackgroundManager} from './background_manager.js';
+import {ComposeboxProxyImpl} from './composebox/composebox_proxy.js';
 import type {CustomizeButtonsDocumentCallbackRouter, CustomizeButtonsHandlerRemote} from './customize_buttons.mojom-webui.js';
 import {CustomizeChromeSection, SidePanelOpenTrigger} from './customize_buttons.mojom-webui.js';
 import {CustomizeButtonsProxy} from './customize_buttons_proxy.js';
 import {CustomizeDialogPage} from './customize_dialog_types.js';
 import type {IframeElement} from './iframe.js';
 import type {LogoElement} from './logo.js';
-import {recordDuration, recordLoadDuration} from './metrics_utils.js';
+import {recordBoolean, recordDuration, recordEnumeration, recordLoadDuration, recordSparseValueWithPersistentHash, recordValue} from './metrics_utils.js';
 import {ParentTrustedDocumentProxy} from './modules/microsoft_auth_frame_connector.js';
 import type {PageCallbackRouter, PageHandlerRemote, Theme} from './new_tab_page.mojom-webui.js';
 import {IphFeature, NtpBackgroundImageSource} from './new_tab_page.mojom-webui.js';
@@ -113,12 +114,11 @@ const realboxCanShowSecondarySideMediaQueryList =
     window.matchMedia('(min-width: 900px)');
 
 function recordClick(element: NtpElement) {
-  chrome.metricsPrivate.recordEnumerationValue(
-      'NewTabPage.Click', element, NtpElement.MAX_VALUE + 1);
+  recordEnumeration('NewTabPage.Click', element, NtpElement.MAX_VALUE + 1);
 }
 
 function recordCustomizeChromeOpen(element: NtpCustomizeChromeEntryPoint) {
-  chrome.metricsPrivate.recordEnumerationValue(
+  recordEnumeration(
       'NewTabPage.CustomizeChromeOpened', element,
       NtpCustomizeChromeEntryPoint.MAX_VALUE + 1);
 }
@@ -165,6 +165,8 @@ export class AppElement extends AppElementBase {
 
       showWallpaperSearch_: {type: Boolean},
 
+      isFooterVisible_: {type: Boolean},
+
       selectedCustomizeDialogPage_: {type: String},
       showVoiceSearchOverlay_: {type: Boolean},
 
@@ -201,6 +203,9 @@ export class AppElement extends AppElementBase {
         notify: true,
       },
 
+      composeboxEnabled: {type: Boolean},
+      composeButtonEnabled: {type: Boolean},
+
       realboxShown_: {type: Boolean},
       logoEnabled_: {type: Boolean},
       oneGoogleBarEnabled_: {type: Boolean},
@@ -225,7 +230,10 @@ export class AppElement extends AppElementBase {
        */
       promoAndModulesLoaded_: {type: Boolean},
 
-      showComposeBox_: {type: Boolean},
+      showComposebox_: {
+        type: Boolean,
+        reflect: true,
+      },
 
       showLensUploadDialog_: {type: Boolean},
 
@@ -265,7 +273,7 @@ export class AppElement extends AppElementBase {
   accessor realboxHadSecondarySide: boolean = false;
   protected accessor realboxShown_: boolean = false;
   protected accessor showLensUploadDialog_: boolean = false;
-  protected accessor showComposeBox_: boolean = false;
+  protected accessor showComposebox_: boolean = false;
   protected accessor logoEnabled_: boolean =
       loadTimeData.getBoolean('logoEnabled');
   protected accessor oneGoogleBarEnabled_: boolean =
@@ -291,6 +299,11 @@ export class AppElement extends AppElementBase {
   protected accessor wallpaperSearchButtonEnabled_: boolean =
       loadTimeData.getBoolean('wallpaperSearchButtonEnabled');
   protected accessor showWallpaperSearchButton_: boolean = false;
+  accessor composeButtonEnabled: boolean =
+      loadTimeData.getBoolean('searchboxShowComposeEntrypoint');
+  accessor composeboxEnabled: boolean =
+      loadTimeData.getBoolean('searchboxShowComposebox');
+  protected accessor isFooterVisible_: boolean = false;
 
   private callbackRouter_: PageCallbackRouter;
   private pageHandler_: PageHandlerRemote;
@@ -302,6 +315,7 @@ export class AppElement extends AppElementBase {
   private setThemeListenerId_: number|null = null;
   private setCustomizeChromeSidePanelVisibilityListener_: number|null = null;
   private setWallpaperSearchButtonVisibilityListener_: number|null = null;
+  private footerVisibilityUpdatedListener_: number|null = null;
   private eventTracker_: EventTracker = new EventTracker();
   private shouldPrintPerformance_: boolean = false;
   private backgroundImageLoadStartEpoch_: number = 0;
@@ -342,7 +356,7 @@ export class AppElement extends AppElementBase {
      */
     this.backgroundImageLoadStartEpoch_ = performance.timeOrigin;
 
-    chrome.metricsPrivate.recordValue(
+    recordValue(
         {
           metricName: 'NewTabPage.Height',
           type: chrome.metricsPrivate.MetricTypeType.HISTOGRAM_LINEAR,
@@ -351,7 +365,7 @@ export class AppElement extends AppElementBase {
           buckets: 200,
         },
         Math.floor(window.innerHeight));
-    chrome.metricsPrivate.recordValue(
+    recordValue(
         {
           metricName: 'NewTabPage.Width',
           type: chrome.metricsPrivate.MetricTypeType.HISTOGRAM_LINEAR,
@@ -417,6 +431,13 @@ export class AppElement extends AppElementBase {
               }
             });
 
+    this.footerVisibilityUpdatedListener_ =
+        this.callbackRouter_.footerVisibilityUpdated.addListener(
+            (visible: boolean) => {
+              this.isFooterVisible_ = visible;
+            });
+    this.pageHandler_.updateFooterVisibility();
+
     // Open Customize Chrome if there are Customize Chrome URL params.
     if (this.showCustomize_) {
       this.setCustomizeChromeSidePanelVisible_(this.showCustomize_);
@@ -459,6 +480,10 @@ export class AppElement extends AppElementBase {
           });
     }
     FocusOutlineManager.forDocument(document);
+    if (this.composeButtonEnabled) {
+      recordBoolean('NewTabPage.ComposeEntrypoint.Shown', true);
+      this.pageHandler_.incrementComposeButtonShownCount();
+    }
   }
 
   override disconnectedCallback() {
@@ -473,6 +498,7 @@ export class AppElement extends AppElementBase {
         this.setWallpaperSearchButtonVisibilityListener_!);
     this.customizeButtonsCallbackRouter_.removeListener(
         this.setCustomizeChromeSidePanelVisibilityListener_!);
+    this.callbackRouter_.removeListener(this.footerVisibilityUpdatedListener_!);
     this.eventTracker_.removeAll();
   }
 
@@ -588,7 +614,8 @@ export class AppElement extends AppElementBase {
 
   private computeRealboxShown_(): boolean {
     // Do not show the realbox if the upload dialog is showing.
-    return !!this.theme_ && !this.showLensUploadDialog_;
+    return !!this.theme_ && !this.showLensUploadDialog_ &&
+        !this.showComposebox_;
   }
 
   private computePromoAndModulesLoaded_(): boolean {
@@ -612,6 +639,16 @@ export class AppElement extends AppElementBase {
     if (this.showWallpaperSearchButton_) {
       this.customizeButtonsHandler_.incrementWallpaperSearchButtonShownCount();
     }
+  }
+
+  protected toggleComposebox_() {
+    this.showComposebox_ = !this.showComposebox_;
+  }
+
+  protected closeComposebox_() {
+    const composeboxHandler = ComposeboxProxyImpl.getInstance().handler;
+    composeboxHandler.notifySessionAbandoned();
+    this.toggleComposebox_();
   }
 
   protected onOpenVoiceSearch_() {
@@ -718,16 +755,16 @@ export class AppElement extends AppElementBase {
   }
 
   private onThemeLoaded_(theme: Theme) {
-    chrome.metricsPrivate.recordSparseValueWithPersistentHash(
+    recordSparseValueWithPersistentHash(
         'NewTabPage.Collections.IdOnLoad',
         theme.backgroundImageCollectionId ?? '');
 
     if (!theme.backgroundImage) {
-      chrome.metricsPrivate.recordEnumerationValue(
+      recordEnumeration(
           'NewTabPage.BackgroundImageSource', NtpBackgroundImageSource.kNoImage,
           NtpBackgroundImageSource.MAX_VALUE + 1);
     } else {
-      chrome.metricsPrivate.recordEnumerationValue(
+      recordEnumeration(
           'NewTabPage.BackgroundImageSource', theme.backgroundImage.imageSource,
           NtpBackgroundImageSource.MAX_VALUE + 1);
     }

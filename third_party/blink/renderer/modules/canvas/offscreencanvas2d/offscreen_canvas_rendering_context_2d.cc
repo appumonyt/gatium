@@ -105,15 +105,6 @@ OffscreenCanvasRenderingContext2D::OffscreenCanvasRenderingContext2D(
       canvas->GetTopExecutionContext());
   is_valid_size_ = Host()->IsValidImageSize();
 
-  // Clear the background transparent or opaque.
-
-  // NOTE: At this point the canvas has no context installed yet and hence it is
-  // not possible to go through GetResourceProviderForCanvas2D() on it, which
-  // asserts that the context is present and is Canvas2D.
-  if (canvas->ResourceProvider() && canvas->ResourceProvider()->IsValid()) {
-    DidDraw(CanvasPerformanceMonitor::DrawType::kOther);
-  }
-
   ExecutionContext* execution_context = canvas->GetTopExecutionContext();
   if (auto* window = DynamicTo<LocalDOMWindow>(execution_context)) {
     if (window->GetFrame() && window->GetFrame()->GetSettings() &&
@@ -140,7 +131,7 @@ void OffscreenCanvasRenderingContext2D::FinalizeFrame(FlushReason reason) {
   // because it will be too late during the paint invalidation phase.
   if (!GetOrCreateCanvasResourceProvider())
     return;
-  Host()->FlushRecording(reason);
+  Host()->FlushRecordingForCanvas2D(reason);
 }
 
 // BaseRenderingContext2D implementation
@@ -176,7 +167,7 @@ OffscreenCanvasRenderingContext2D::GetOrCreateCanvasResourceProvider() const {
   if (host == nullptr) [[unlikely]] {
     return nullptr;
   }
-  return host->GetOrCreateResourceProvider();
+  return host->GetOrCreateResourceProviderForCanvas2D();
 }
 
 CanvasResourceProvider*
@@ -185,7 +176,7 @@ OffscreenCanvasRenderingContext2D::GetCanvasResourceProvider() const {
 }
 
 void OffscreenCanvasRenderingContext2D::Reset() {
-  Host()->DiscardResourceProvider();
+  Host()->DiscardResources();
   BaseRenderingContext2D::ResetInternal();
   // Because the host may have changed to a zero size
   is_valid_size_ = Host()->IsValidImageSize();
@@ -254,7 +245,7 @@ ImageBitmap* OffscreenCanvasRenderingContext2D::TransferToImageBitmap(
   // to fully resolve the snapshot.
   image->PaintImageForCurrentFrame().FlushPendingSkiaOps();
 
-  Host()->DiscardResourceProvider();
+  Host()->DiscardResources();
 
   return MakeGarbageCollected<ImageBitmap>(std::move(image));
 }
@@ -341,7 +332,7 @@ void OffscreenCanvasRenderingContext2D::LoseContext(LostContextMode lost_mode) {
   context_lost_mode_ = lost_mode;
   ResetInternal();
   if (CanvasRenderingContextHost* host = Host()) [[likely]] {
-    host->DiscardResourceProvider();
+    host->DiscardResources();
     host->DiscardResourceDispatcher();
   }
   uint32_t delay = base::RandInt(1, kMaxIframeContextLoseDelay);
@@ -361,7 +352,7 @@ bool OffscreenCanvasRenderingContext2D::WritePixels(
     int y) {
   DCHECK(IsCanvas2DBufferValid());
 
-  Host()->FlushRecording(FlushReason::kWritePixels);
+  Host()->FlushRecordingForCanvas2D(FlushReason::kWritePixels);
 
   // Short-circuit out if an error occurred while flushing the recording.
   if (!Host()->GetResourceProviderForCanvas2D()->IsValid()) {

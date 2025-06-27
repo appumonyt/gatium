@@ -129,7 +129,7 @@ NSString* const kStartResyncSpotlightIndex = @"StartResyncSpotlightIndex";
 NSString* const kStartupCleanupFavicons = @"StartupCleanupFavicons";
 #endif
 
-#if !TARGET_IPHONE_SIMULATOR
+#if !TARGET_OS_SIMULATOR
 // Name of the block logging the storage metrics.
 NSString* const kStartupLogStorageMetrics = @"StartupLogStorageMetrics";
 
@@ -244,6 +244,9 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
 
   // Keep the loaded profile alive.
   ScopedProfileKeepAliveIOS _scopedProfileKeepAlive;
+
+  // Used to control whether the animations should be cancelled.
+  base::OneShotTimer _cancelAnimationTimer;
 }
 
 - (instancetype)initWithAppState:(AppState*)appState
@@ -331,11 +334,19 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
 
     case ProfileInitStage::kFirstRun:
     case ProfileInitStage::kChoiceScreen:
+      // Nothing to do.
+      break;
+
     case ProfileInitStage::kNormalUI:
+      [self restartAnimations];
+      break;
+
     case ProfileInitStage::kFinal:
       // Nothing to do.
       break;
   }
+
+  _cancelAnimationTimer.Stop();
 }
 
 - (void)profileState:(ProfileState*)profileState
@@ -375,7 +386,7 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
 
     case ProfileInitStage::kFirstRun:
     case ProfileInitStage::kChoiceScreen:
-      // Nothing to do.
+      [self handleBlockingInInitStage:nextInitStage];
       break;
 
     case ProfileInitStage::kNormalUI:
@@ -383,7 +394,6 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
       break;
 
     case ProfileInitStage::kFinal:
-      // Nothing to do.
       break;
   }
 }
@@ -702,6 +712,42 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
 #endif
 }
 
+// Schedule a task to execute in one run loop that will cancel all in-progress
+// animation on all connected scenes if the init stage has not progressed. It
+// is part of the contract of those stages that the transition must either be
+// instantaneous or require user interaction (and thus the animations have to
+// be cancelled).
+- (void)handleBlockingInInitStage:(ProfileInitStage)initStage {
+  CHECK_GT(initStage, ProfileInitStage::kUIReady);
+  CHECK_LT(initStage, ProfileInitStage::kNormalUI);
+
+  __weak ProfileController* weakSelf = self;
+  _cancelAnimationTimer.Start(FROM_HERE, base::Seconds(0), base::BindOnce(^{
+                                [weakSelf cancelAnimationsIfInStage:initStage];
+                              }));
+}
+
+// Cancel animations on all connected scenes if the current init state is
+// equal to `initStage`. Scheduled by -handleBlockingInInitStage: to execute
+// after a delay of one run loop.
+- (void)cancelAnimationsIfInStage:(ProfileInitStage)initStage {
+  CHECK_GT(initStage, ProfileInitStage::kUIReady);
+  CHECK_LT(initStage, ProfileInitStage::kNormalUI);
+
+  if (_state.initStage == initStage) {
+    for (SceneState* sceneState in _state.connectedScenes) {
+      [sceneState.animator cancelAnimation];
+    }
+  }
+}
+
+// Restart animations for all connected scenes (if necessary).
+- (void)restartAnimations {
+  for (SceneState* sceneState in _state.connectedScenes) {
+    [sceneState.animator restartAnimation];
+  }
+}
+
 - (void)startUpAfterFirstWindowCreated {
   [self scheduleRemoveExternalFiles];
   [self scheduleCreateSearchEngineDataUpdater];
@@ -826,7 +872,7 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
 
 // Schedules logging the storage metrics.
 - (void)scheduleLogStorageMetrics {
-#if !TARGET_IPHONE_SIMULATOR
+#if !TARGET_OS_SIMULATOR
   if (!base::FeatureList::IsEnabled(kLogApplicationStorageSizeMetrics)) {
     return;
   }
@@ -896,7 +942,7 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
 }
 #endif  // BUILDFLAG(IOS_CREDENTIAL_PROVIDER_ENABLED)
 
-#if !TARGET_IPHONE_SIMULATOR
+#if !TARGET_OS_SIMULATOR
 // Logs storage metrics.
 - (void)logStorageMetrics {
   DCHECK(_state.profile);
@@ -911,6 +957,6 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
   LogApplicationStorageMetrics(profile->GetStatePath(),
                                profile->GetOffTheRecordStatePath());
 }
-#endif  // !TARGET_IPHONE_SIMULATOR
+#endif  // !TARGET_OS_SIMULATOR
 
 @end

@@ -10,7 +10,6 @@ import("//components/compose/features.gni")
 import("//components/enterprise/buildflags/buildflags.gni")
 import("//components/guest_contents/common/buildflags.gni")
 import("//components/guest_view/buildflags/buildflags.gni")
-import("//components/nacl/features.gni")
 import("//components/optimization_guide/features.gni")
 import("//components/safe_browsing/buildflags.gni")
 import("//components/services/on_device_translation/buildflags/features.gni")
@@ -65,6 +64,8 @@ if (is_ios) {
         "dom_distiller/core/javascript/dom_distiller_viewer.js",
         "dom_distiller/core/javascript/domdistiller.js",
         "dom_distiller/core/javascript/extract_features.js",
+        "dom_distiller/core/javascript/readability_distiller.js",
+        "dom_distiller/core/javascript/readability_triggering.js",
       ]
       outputs = [ "{{bundle_resources_dir}}/" +
                   "{{source_root_relative_dir}}/{{source_file_part}}" ]
@@ -262,6 +263,7 @@ test("components_unittests") {
     "//components/ntp_tiles:unit_tests",
     "//components/offline_items_collection/core:unit_tests",
     "//components/omnibox/browser:unit_tests",
+    "//components/omnibox/composebox:unit_tests",
     "//components/open_from_clipboard:unit_tests",
     "//components/openscreen_platform:unittests",
     "//components/optimization_guide/core:unit_tests",
@@ -421,10 +423,6 @@ test("components_unittests") {
     deps += [ "//components/ui_devtools/views:unit_tests" ]
   }
 
-  if (enable_nacl) {
-    deps += [ "//components/nacl/browser:unit_tests" ]
-  }
-
   if (is_fuchsia) {
     deps += [
       "//components/fuchsia_component_support:unit_tests",
@@ -570,6 +568,7 @@ test("components_unittests") {
       "//components/commerce/ios/browser:unit_tests",
       "//components/crash/core/app:unit_tests",
       "//components/feed/core/v2/public/ios:feed_ios_unit_tests",
+      "//components/fingerprinting_protection_filter/ios:unit_tests",
       "//components/image_fetcher/ios:unit_tests",
       "//components/language/ios/browser:unit_tests",
       "//components/password_manager/core/common:unit_tests",
@@ -738,10 +737,6 @@ test("components_unittests") {
 
   if (enable_guest_view) {
     deps += [ "//components/guest_view/browser:unit_tests" ]
-  }
-
-  if (!is_android && !is_ios && !is_fuchsia) {
-    deps += [ "//components/autofill_ai/core/browser:unit_tests" ]
   }
 
   if (!is_android) {
@@ -1054,6 +1049,7 @@ if (use_blink) {
       "dom_distiller/content/browser/test/dom_distiller_js_browsertest.cc",
       "dom_distiller/content/browser/test/test_util.cc",
       "dom_distiller/content/browser/test/test_util.h",
+      "optimization_guide/content/browser/frame_metadata_observer_browsertest.cc",
       "optimization_guide/content/browser/page_content_proto_provider_browsertest.cc",
       "optimization_guide/content/renderer/page_text_agent_browsertest.cc",
       "paint_preview/renderer/paint_preview_recorder_browsertest.cc",
@@ -1116,6 +1112,7 @@ if (use_blink) {
       "//content/public/browser",
       "//content/shell:content_shell_lib",
       "//content/test:browsertest_support",
+      "//content/test:content_test_entry",
       "//content/test:default_content_test_launcher",
       "//content/test:test_support",
       "//device/bluetooth",
@@ -1151,15 +1148,19 @@ if (use_blink) {
 
     if (is_ios) {
       entitlements_path = "//content/app/ios/appex/app.entitlements"
+      deps += [
+        "//components/test:optimization_guide_test_bundle_data",
+        "//content/test/ios/appex:test_content_process_bundle",
+        "//content/test/ios/appex:test_gpu_process_bundle",
+        "//content/test/ios/appex:test_network_process_bundle",
+      ]
       bundle_deps = [
         ":components_tests_distiller_bundle_data",
         ":components_tests_pak_bundle_data",
         "test:dom_distiller_test_bundle_data",
         "test:url_rewrite_test_bundle_data",
-        "//content/test:content_process_bundle",
         "//content/test:content_test_bundle_data",
-        "//content/test:gpu_process_bundle",
-        "//content/test:network_process_bundle",
+        "//testing/buildbot/filters:components_browsertests_use_blink_filters_bundle_data",
       ]
     }
 

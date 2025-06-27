@@ -11,11 +11,14 @@
 #include "base/functional/callback_forward.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/test_future.h"
 #include "build/build_config.h"
 #include "chrome/browser/actor/actor_keyed_service.h"
+#include "chrome/browser/actor/actor_test_util.h"
 #include "chrome/browser/ai/ai_data_keyed_service_factory.h"
 #include "chrome/browser/history_embeddings/history_embeddings_service_factory.h"
+#include "chrome/browser/optimization_guide/browser_test_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -528,8 +531,22 @@ class AiDataKeyedServiceActorBrowserTest
     scoped_feature_list_.InitWithFeatures({features::kGlicActor}, {});
   }
 
+  void SetUpOnMainThread() override {
+    AiDataKeyedServiceBrowserTest::SetUpOnMainThread();
+    // Optimization guide uses this histogram to signal initialization in tests.
+    optimization_guide::RetryForHistogramUntilCountReached(
+        &histogram_tester_for_init_,
+        "OptimizationGuide.HintsManager.HintCacheInitialized", 1);
+  }
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    AiDataKeyedServiceBrowserTest::SetUpCommandLine(command_line);
+    actor::SetUpBlocklist(command_line, "blocked.example.com");
+  }
+
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
+  base::HistogramTester histogram_tester_for_init_;
 };
 
 IN_PROC_BROWSER_TEST_F(AiDataKeyedServiceActorBrowserTest, StartStopTask) {
@@ -595,7 +612,7 @@ IN_PROC_BROWSER_TEST_F(AiDataKeyedServiceActorBrowserTest,
   optimization_guide::proto::BrowserAction action_request;
   action_request.set_task_id(id);
   action_request.set_tab_id(tab_id);
-  action_request.add_action_information()->mutable_navigate()->set_url(
+  action_request.add_actions()->mutable_navigate()->set_url(
       "https://www.google.com");
   actor_service().ExecuteAction(
       std::move(action_request),
@@ -620,7 +637,7 @@ IN_PROC_BROWSER_TEST_F(AiDataKeyedServiceActorBrowserTest,
   run_loop->Run();
 }
 
-// See ActorCoordinatorBrowserTest.ForceSameTabNavigation
+// See ExecutionEngineBrowserTest.ForceSameTabNavigation
 IN_PROC_BROWSER_TEST_F(AiDataKeyedServiceActorBrowserTest,
                        ForceSameTabNavigation) {
   TestFuture<optimization_guide::proto::BrowserStartTaskResult>
@@ -640,8 +657,7 @@ IN_PROC_BROWSER_TEST_F(AiDataKeyedServiceActorBrowserTest,
   optimization_guide::proto::BrowserAction action_request;
   action_request.set_task_id(id);
   action_request.set_tab_id(tab_id);
-  action_request.add_action_information()->mutable_navigate()->set_url(
-      url.spec());
+  action_request.add_actions()->mutable_navigate()->set_url(url.spec());
   actor_service().ExecuteAction(std::move(action_request),
                                 navigate_result.GetCallback());
   auto& navigate_response = navigate_result.Get();
@@ -656,7 +672,7 @@ IN_PROC_BROWSER_TEST_F(AiDataKeyedServiceActorBrowserTest,
   optimization_guide::proto::BrowserAction click_request;
   click_request.set_task_id(id);
   click_request.set_tab_id(id);
-  ClickAction* click = click_request.add_action_information()->mutable_click();
+  ClickAction* click = click_request.add_actions()->mutable_click();
   click->mutable_target()->set_content_node_id(anchor_dom_node_id.value());
   click->mutable_target()->mutable_document_identifier()->set_serialized_token(
       *DocumentIdentifierUserData::GetDocumentIdentifier(

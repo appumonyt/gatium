@@ -731,6 +731,7 @@ component("platform") {
     "fonts/plain_text_node.h",
     "fonts/plain_text_painter.cc",
     "fonts/plain_text_painter.h",
+    "fonts/resolved_font_features.cc",
     "fonts/resolved_font_features.h",
     "fonts/script_run_iterator.cc",
     "fonts/script_run_iterator.h",
@@ -890,7 +891,6 @@ component("platform") {
     "graphics/canvas_resource.h",
     "graphics/canvas_resource_dispatcher.cc",
     "graphics/canvas_resource_dispatcher.h",
-    "graphics/canvas_resource_host.cc",
     "graphics/canvas_resource_host.h",
     "graphics/canvas_resource_provider.cc",
     "graphics/canvas_resource_provider.h",
@@ -1797,7 +1797,6 @@ component("platform") {
     "//crypto",
     "//device/vr/public/mojom:vr_service_blink",
     "//gin",
-    "//gpu:gpu",
     "//gpu/command_buffer/client:webgpu_interface",
     "//gpu/webgpu:common",
     "//media",
@@ -1812,8 +1811,6 @@ component("platform") {
     "//services/viz/public/cpp/gpu",
     "//skia",
     "//skia:skcms",
-    "//third_party:freetype_buildflags",
-    "//third_party:freetype_harfbuzz",
     "//third_party/abseil-cpp:absl",
     "//third_party/blink/public:image_resources",
     "//third_party/blink/public/common",
@@ -1821,6 +1818,7 @@ component("platform") {
     "//third_party/blink/renderer/platform/wtf",
     "//third_party/ced",
     "//third_party/emoji-segmenter",
+    "//third_party/harfbuzz-ng",
     "//third_party/highway:libhwy",
     "//third_party/icu",
     "//third_party/libgav1:libgav1_parser",
@@ -1977,7 +1975,6 @@ static_library("test_support") {
     "graphics/gpu/drawing_buffer_test_helpers.cc",
     "graphics/gpu/drawing_buffer_test_helpers.h",
     "graphics/paint/paint_controller_test.h",
-    "graphics/test/fake_canvas_resource_host.h",
     "graphics/test/fake_gles2_interface.h",
     "graphics/test/fake_web_graphics_context_3d_provider.h",
     "graphics/test/gpu_memory_buffer_test_platform.h",
@@ -2458,7 +2455,6 @@ source_set("blink_platform_unittests_sources") {
     "//skia:test_fonts",
     "//testing/gmock",
     "//testing/gtest",
-    "//third_party:freetype_harfbuzz",
     "//third_party/blink/public:test_headers",
     "//third_party/blink/public/strings:strings",
     "//third_party/blink/renderer/platform/blob:unit_tests",
@@ -2471,6 +2467,7 @@ source_set("blink_platform_unittests_sources") {
     "//third_party/blink/renderer/platform/wtf",
     "//third_party/dawn/src/dawn/native",
     "//third_party/dawn/src/dawn/wire",
+    "//third_party/harfbuzz-ng",
     "//third_party/libyuv",
     "//third_party/webrtc/api/task_queue:task_queue_test",
     "//third_party/webrtc_overrides:metronome_like_task_queue_test",
@@ -2592,7 +2589,7 @@ test("blink_platform_perftests") {
     "//services/network/public/cpp:cpp",
     "//testing/gtest",
     "//testing/perf",
-    "//third_party:freetype_harfbuzz",
+    "//third_party/harfbuzz-ng",
   ]
 }
 
@@ -2961,7 +2958,7 @@ fuzzer_test("blink_storage_key_fuzzer") {
   additional_configs = [ "//third_party/blink/renderer:inside_blink" ]
 }
 
-# Fuzzer template for WTF::TextCodec.
+# Fuzzer template for blink::TextCodec.
 template("blink_text_codec_fuzzer") {
   forward_variables_from(invoker, "*")
   config(target_name + "_config") {

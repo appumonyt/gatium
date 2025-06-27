@@ -51,6 +51,7 @@ import org.chromium.chrome.browser.toolbar.ControlContainer;
 import org.chromium.chrome.browser.toolbar.R;
 import org.chromium.chrome.browser.toolbar.ToolbarCaptureType;
 import org.chromium.chrome.browser.toolbar.ToolbarFeatures;
+import org.chromium.chrome.browser.toolbar.ToolbarHairlineView;
 import org.chromium.chrome.browser.toolbar.ToolbarProgressBar;
 import org.chromium.chrome.browser.toolbar.top.CaptureReadinessResult.TopToolbarBlockCaptureReason;
 import org.chromium.components.browser_ui.desktop_windowing.AppHeaderState;
@@ -66,7 +67,6 @@ import org.chromium.ui.base.ViewUtils;
 import org.chromium.ui.resources.dynamics.ViewResourceAdapter;
 import org.chromium.ui.util.TokenHolder;
 import org.chromium.ui.widget.OptimizedFrameLayout;
-import org.chromium.ui.xr.scenecore.XrSceneCoreUtils;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -110,12 +110,6 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
         super(context, attrs);
         mToolbarLayoutHeight =
                 getResources().getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
-
-        var xrManager = XrSceneCoreUtils.getXrSceneCoreSessionManagerFromContext(context);
-        if (xrManager != null) {
-            mXrSpaceModeObservableSupplier = xrManager.getXrSpaceModeObservableSupplier();
-            mXrSpaceModeObservableSupplier.addSyncObserver(mOnXrSpaceModeChanged);
-        }
     }
 
     @Override
@@ -518,7 +512,7 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
         private final Rect mLocationBarRect = new Rect();
         private final Rect mToolbarRect = new Rect();
         private final View mToolbarContainer;
-        private final View mToolbarHairline;
+        private final ToolbarHairlineView mToolbarHairline;
         private final Callback<Boolean> mOnCompositorInMotionChange =
                 this::onCompositorInMotionChange;
 
@@ -749,7 +743,7 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
                         ToolbarInMotionStage.NUM_ENTRIES);
             }
 
-            if (!Boolean.TRUE.equals(compositorInMotion)) {
+            if (Boolean.FALSE.equals(compositorInMotion)) {
                 if (mControlsToken == TokenHolder.INVALID_TOKEN) {
                     // Only needed when the ConstraintsChecker doesn't drive the capture.
                     // TODO(crbug.com/40244055): Make this post a task similar to
@@ -760,10 +754,11 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
                             mControlsToken);
                     mControlsToken = TokenHolder.INVALID_TOKEN;
                 }
-            } else if (super.isDirty() && mControlContainerIsVisibleSupplier.getAsBoolean()) {
+            } else if (Boolean.TRUE.equals(compositorInMotion)
+                    && super.isDirty()
+                    && mControlContainerIsVisibleSupplier.getAsBoolean()) {
                 CaptureReadinessResult captureReadinessResult = mToolbar.isReadyForTextureCapture();
-                if (ToolbarFeatures.shouldRecordSuppressionMetrics()
-                        && compositorInMotion != null) {
+                if (ToolbarFeatures.shouldRecordSuppressionMetrics()) {
                     RecordHistogram.recordEnumeratedHistogram(
                             "Android.TopToolbar.InMotionStage",
                             ToolbarInMotionStage.READINESS_CHECKED,
@@ -772,10 +767,10 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
                 if (captureReadinessResult.blockReason
                         == TopToolbarBlockCaptureReason.SNAPSHOT_SAME) {
                     setDirtyRectEmpty();
-                } else if (captureReadinessResult.isReady) {
+                } else {
                     // Motion is starting, and we don't have a good capture. Lock the controls so
-                    // that a new capture doesn't happen and the old capture is not shown. This can
-                    // be fixed once the motion is over.
+                    // that we keep using the Java view. After the touch event is over we'll unlock
+                    // and try to capture.
                     mControlsToken =
                             mBrowserStateBrowserControlsVisibilityDelegate
                                     .showControlsPersistentAndClearOldToken(mControlsToken);
@@ -865,6 +860,14 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
 
     ToolbarViewResourceFrameLayout getToolbarContainerForTesting() {
         return mToolbarContainer;
+    }
+
+    public void setXrSpaceModeObservableSupplierMaybe(
+            @Nullable ObservableSupplier<Boolean> xrSpaceModeObservableSupplier) {
+        if (mXrSpaceModeObservableSupplier == null && xrSpaceModeObservableSupplier != null) {
+            mXrSpaceModeObservableSupplier = xrSpaceModeObservableSupplier;
+            mXrSpaceModeObservableSupplier.addSyncObserver(mOnXrSpaceModeChanged);
+        }
     }
 
     public void onXrSpaceModeChanged(Boolean fullSpaceMode) {

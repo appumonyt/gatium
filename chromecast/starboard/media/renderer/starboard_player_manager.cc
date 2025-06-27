@@ -9,7 +9,6 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "chromecast/starboard/media/cdm/starboard_drm_wrapper.h"
 #include "chromecast/starboard/media/media/drm_util.h"
 #include "chromecast/starboard/media/renderer/chromium_starboard_conversions.h"
 
@@ -38,9 +37,11 @@ std::unique_ptr<StarboardPlayerManager> StarboardPlayerManager::Create(
   std::optional<StarboardVideoSampleInfo> video_sample_info;
 
   chromecast::media::StarboardPlayerCreationParam creation_param = {};
-  creation_param.drm_system = StarboardDrmWrapper::GetInstance().GetDrmSystem();
   creation_param.output_mode =
       StarboardPlayerOutputMode::kStarboardPlayerOutputModePunchOut;
+
+  // This will be set below if audio or video is encrypted.
+  creation_param.drm_system = nullptr;
 
   if (audio_stream) {
     audio_stream->EnableBitstreamConverter();
@@ -55,6 +56,11 @@ std::unique_ptr<StarboardPlayerManager> StarboardPlayerManager::Create(
     LOG(INFO) << "Initial audio config: "
               << audio_config.AsHumanReadableString();
     creation_param.audio_sample_info = *audio_sample_info;
+
+    if (audio_config.is_encrypted()) {
+      creation_param.drm_system =
+          StarboardDrmWrapper::GetInstance().GetDrmSystem();
+    }
   }
 
   if (video_stream) {
@@ -79,12 +85,23 @@ std::unique_ptr<StarboardPlayerManager> StarboardPlayerManager::Create(
       // prioritize minimizing latency (render the frames as soon as possible).
       creation_param.video_sample_info.max_video_capabilities = "streaming=1";
     }
+
+    if (video_config.is_encrypted()) {
+      creation_param.drm_system =
+          StarboardDrmWrapper::GetInstance().GetDrmSystem();
+    }
+  }
+
+  std::optional<StarboardDrmWrapper::DrmSystemResource> drm_resource;
+  if (creation_param.drm_system != nullptr) {
+    drm_resource.emplace();
   }
 
   // base::WrapUnique is necessary because we're calling a private ctor.
   auto starboard_player_manager = base::WrapUnique(new StarboardPlayerManager(
-      starboard, audio_stream, video_stream, std::move(audio_sample_info),
-      std::move(video_sample_info), client, std::move(media_task_runner)));
+      std::move(drm_resource), starboard, audio_stream, video_stream,
+      std::move(audio_sample_info), std::move(video_sample_info), client,
+      std::move(media_task_runner)));
 
   starboard->EnsureInitialized();
   void* sb_player = starboard->CreatePlayer(
@@ -99,6 +116,7 @@ std::unique_ptr<StarboardPlayerManager> StarboardPlayerManager::Create(
 }
 
 StarboardPlayerManager::StarboardPlayerManager(
+    std::optional<StarboardDrmWrapper::DrmSystemResource> drm_resource,
     StarboardApiWrapper* starboard,
     ::media::DemuxerStream* audio_stream,
     ::media::DemuxerStream* video_stream,
@@ -108,6 +126,7 @@ StarboardPlayerManager::StarboardPlayerManager(
     scoped_refptr<base::SequencedTaskRunner> media_task_runner)
     :  // base::Unretained(this) is safe here because demuxer_stream_reader_
        // will be destroyed before `this`.
+      drm_resource_(std::move(drm_resource)),
       starboard_(starboard),
       client_(client),
       stats_tracker_(client),

@@ -981,7 +981,7 @@ Node* AXObject::GetParentNodeForComputeParent(AXObjectCacheImpl& cache,
     return nullptr;
   }
 
-  // Descendants of pseudo elements must only be created by walking the tree via
+  // Descendants of pseudo-elements must only be created by walking the tree via
   // AXNodeObject::AddChildren(), which already knows the parent. Therefore, the
   // parent must not be computed. This helps avoid situations with certain
   // elements where there is asymmetry between what considers this a child vs
@@ -2043,7 +2043,7 @@ String AXObject::KeyboardShortcut() const {
     modifier_string = modifier_string_builder.ToString();
   }
 
-  return WTF::StrCat({modifier_string, access_key});
+  return StrCat({modifier_string, access_key});
 }
 
 void AXObject::SerializeOtherScreenReaderAttributes(
@@ -2674,15 +2674,15 @@ void AXObject::SerializeComputedDetailsRelation(
     return;
   }
 
-  // Add aria-details for a interest target.
-  if (AXObject* interest_popover = GetInterestTargetForInvoker()) {
+  // Add aria-details for a interest for.
+  if (AXObject* interest_popover = GetInterestForTargetPopover()) {
     // Add state even if the target is hidden.
-    node_data->AddState(ax::mojom::blink::State::kHasInterestTarget);
+    node_data->AddState(ax::mojom::blink::State::kHasInterestFor);
     if (interest_popover->IsVisible()) {
       node_data->AddIntListAttribute(
           ax::mojom::blink::IntListAttribute::kDetailsIds,
           {static_cast<int32_t>(interest_popover->AXObjectID())});
-      node_data->SetDetailsFrom(ax::mojom::blink::DetailsFrom::kInterestTarget);
+      node_data->SetDetailsFrom(ax::mojom::blink::DetailsFrom::kInterestFor);
       return;
     }
   }
@@ -2837,20 +2837,21 @@ AXObject* AXObject::GetCommandForElement() const {
   return nullptr;
 }
 
-// Interest target invoking elements should have details relationships with
-// their interest target, when that interest target is a) visible, b) is rich,
-// and c) not the next element in the DOM (depth first search order).
-AXObject* AXObject::GetInterestTargetForInvoker() const {
+// Interest for invoking elements (with the `interestfor` attribute) should
+// have details relationships with their target, when that interest for is
+// a) visible, b) is rich, and c) not the next element in the DOM (depth first
+// search order).
+AXObject* AXObject::GetInterestForTargetPopover() const {
   if (!GetElement()) {
     return nullptr;
   }
 
-  if (!RuntimeEnabledFeatures::HTMLInterestTargetAttributeEnabled(
+  if (!RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled(
           GetElement()->GetDocument().GetExecutionContext())) {
     return nullptr;
   }
 
-  Element* popover = GetElement()->InterestTargetElement();
+  Element* popover = GetElement()->InterestForElement();
   if (ElementTraversal::NextSkippingChildren(*GetElement()) == popover) {
     // The next element is already the popover.
     return nullptr;
@@ -4484,16 +4485,16 @@ bool AXObject::ComputeIsIgnoredButIncludedInTree() {
 
   Element* element = GetElement();
 
-  // Include all pseudo element content. Any anonymous subtree is included
+  // Include all pseudo-element content. Any anonymous subtree is included
   // from above, in the condition where there is no node.
   if (element && element->IsPseudoElement()) {
     return true;
   }
 
   // Include all parents of ::before/::after/::marker/::scroll-marker-group
-  // pseudo elements to help ClearChildren() find all children, and assist
+  // pseudo-elements to help ClearChildren() find all children, and assist
   // naming computation. It is unnecessary to include a rule for other types of
-  // pseudo elements: Specifically, ::first-letter/::backdrop are not visited by
+  // pseudo-elements: Specifically, ::first-letter/::backdrop are not visited by
   // LayoutTreeBuilderTraversal, and cannot be in the tree, therefore do not add
   // a special rule to include their parents.
   if (element && (element->GetPseudoElement(kPseudoIdBefore) ||
@@ -6648,7 +6649,7 @@ Element* AXObject::GetClosestElement() const {
     for (AXObject* parent = ParentObject(); parent;
          parent = parent->ParentObject()) {
       // It's possible to have a parent without a node here if the parent is a
-      // pseudo element descendant. Since we're looking for the nearest element,
+      // pseudo-element descendant. Since we're looking for the nearest element,
       // keep going up the ancestor chain until we find a parent that has one.
       element = parent->GetElement();
       if (element) {
@@ -6688,18 +6689,18 @@ AXObject* AXObject::ContainerListMarkerIncludingIgnored() const {
 bool AXObject::ShouldUseLayoutObjectTraversalForChildren() const {
   // There are two types of traversal used to find AXObjects:
   // 1. LayoutTreeBuilderTraversal, which takes FlatTreeTraversal and adds
-  // pseudo elements on top of that. This is the usual case. However, while this
-  // can add pseudo elements it cannot add important content descendants such as
+  // pseudo-elements on top of that. This is the usual case. However, while this
+  // can add pseudo-elements it cannot add important content descendants such as
   // text and images. For this, LayoutObject traversal (#2) is required.
   // 2. LayoutObject traversal, which just uses the children of a LayoutObject.
 
-  // Therefore, if the object is a pseudo element or pseudo element descendant,
+  // Therefore, if the object is a pseudo-element or pseudo-element descendant,
   // use LayoutObject traversal (#2) to find the children.
   if (GetNode() && GetNode()->IsPseudoElement())
     return true;
 
   // If no node, this is an anonymous layout object. The only way this can be
-  // reached is inside a pseudo element subtree.
+  // reached is inside a pseudo-element subtree.
   if (!GetNode() && GetLayoutObject()) {
     DCHECK(GetLayoutObject()->IsAnonymous());
     DCHECK(AXObjectCacheImpl::IsRelevantPseudoElementDescendant(
@@ -6834,7 +6835,7 @@ void AXObject::DetachFromParent() {
     if (GetNode()) {
       AXObjectCache().RemoveSubtree(GetNode());
     } else {
-      // This is rare, but technically a pseudo element descendant can have a
+      // This is rare, but technically a pseudo-element descendant can have a
       // subtree, and they do not have nodes.
       AXObjectCache().RemoveIncludedSubtree(this, /* remove_root */ true);
     }
@@ -8504,7 +8505,7 @@ void AXObject::PreSerializationConsistencyCheck() const{
 // static
 String AXObject::GetNodeString(Node* node) {
   if (node->IsTextNode()) {
-    return WTF::StrCat({"\"", node->nodeValue(), "\""});
+    return StrCat({"\"", node->nodeValue(), "\""});
   }
 
   Element* element = DynamicTo<Element>(node);
@@ -8541,21 +8542,20 @@ String AXObject::ToString(bool verbose) const {
 
 #if !defined(NDEBUG)
   if (IsDetached() && verbose) {
-    return WTF::StrCat({"(detached) ", detached_object_debug_info_});
+    return StrCat({"(detached) ", detached_object_debug_info_});
   }
 #endif
 
   String role = InternalRoleName(RoleValue()).EncodeForDebugging();
 
   if (IsDetached()) {
-    return WTF::StrCat({role, " (detached)"});
+    return StrCat({role, " (detached)"});
   }
 
   bool cached_values_only = !AXObjectCache().IsFrozen();
 
   if (AXObjectCache().HasBeenDisposed() || AXObjectCache().IsDisposing()) {
-    return WTF::StrCat(
-        {role, " (doc shutdown) #", String::Number(AXObjectID())});
+    return StrCat({role, " (doc shutdown) #", String::Number(AXObjectID())});
   }
 
   StringBuilder string_builder;

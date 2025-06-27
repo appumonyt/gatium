@@ -12,9 +12,11 @@
 #include <optional>
 #include <utility>
 
+#include "base/notimplemented.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/tabs/split_tab_metrics.h"
 #include "chrome/common/webui_url_constants.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/tabs/public/split_tab_visual_data.h"
@@ -234,14 +236,23 @@ void RecordNavigationScheme(const GURL& url,
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
+bool ShouldOpenInTab(const Extension* extension) {
+// We always open the options page in new tab on android. Embedding the page on
+// chrome://extensions is done with guest_view, but it's not enabled on android.
+#if BUILDFLAG(IS_ANDROID)
+  return true;
+#else
+  return OptionsPageInfo::ShouldOpenInTab(extension);
+#endif
+}
+
 // Returns the URL to the extension's options page, if any.
-const std::optional<GURL> GetOptionsPageUrlToNavigate(
-    const Extension* extension) {
+std::optional<GURL> GetOptionsPageUrlToNavigate(const Extension* extension) {
   if (!OptionsPageInfo::HasOptionsPage(extension)) {
     return std::nullopt;
   }
-  const bool open_in_tab = OptionsPageInfo::ShouldOpenInTab(extension);
-  if (open_in_tab) {
+
+  if (ShouldOpenInTab(extension)) {
     // Options page tab is simply e.g. chrome-extension://.../options.html.
     return OptionsPageInfo::GetOptionsPage(extension);
   } else {
@@ -314,11 +325,11 @@ base::expected<base::Value::Dict, std::string> ExtensionTabUtil::OpenTab(
   // -title
   // -favIconUrl
 
+  auto* const extension = function->extension();
   GURL url(chrome::kChromeUINewTabURL);
   if (params.url) {
-    ASSIGN_OR_RETURN(url,
-                     PrepareURLForNavigation(*params.url, function->extension(),
-                                             function->browser_context()));
+    ASSIGN_OR_RETURN(url, PrepareURLForNavigation(*params.url, extension,
+                                                  function->browser_context()));
   }
 
   // Default to foreground for the new tab. The presence of 'active' property
@@ -336,8 +347,7 @@ base::expected<base::Value::Dict, std::string> ExtensionTabUtil::OpenTab(
   // We can't load extension URLs into incognito windows unless the extension
   // uses split mode. Special case to fall back to a tabbed window.
   if (url.SchemeIs(kExtensionScheme) &&
-      (!function->extension() ||
-       !IncognitoInfo::IsSplitMode(function->extension())) &&
+      (!extension || !IncognitoInfo::IsSplitMode(extension)) &&
       browser->profile()->IsOffTheRecord()) {
     Profile* original_profile = browser->profile()->GetOriginalProfile();
 
@@ -380,6 +390,17 @@ base::expected<base::Value::Dict, std::string> ExtensionTabUtil::OpenTab(
   // likely a re-write of how this navigation is called to be compatible with
   // the navigation capturing behavior.
   navigate_params.pwa_navigation_capturing_force_off = true;
+
+  // Treat PDF open-in-new-window navigations consistently with other PDF
+  // navigations, as done in TabsUpdateFunction::UpdateURL().
+  if (extension && extension->id() == extension_misc::kPdfExtensionId) {
+    navigate_params.is_renderer_initiated = true;
+    navigate_params.initiator_origin = extension->origin();
+    navigate_params.source_site_instance = content::SiteInstance::CreateForURL(
+        function->browser_context(),
+        navigate_params.initiator_origin->GetURL());
+  }
+
   base::WeakPtr<content::NavigationHandle> handle = Navigate(&navigate_params);
   if (handle && params.bookmark_id) {
     ChromeNavigationUIData* ui_data =
@@ -408,7 +429,8 @@ base::expected<base::Value::Dict, std::string> ExtensionTabUtil::OpenTab(
     navigate_params.navigated_or_inserted_contents->SetInitialFocus();
 
   if (split) {
-    tab_strip->AddToNewSplit({new_index}, split_tabs::SplitTabVisualData());
+    tab_strip->AddToNewSplit({new_index}, split_tabs::SplitTabVisualData(),
+                             split_tabs::SplitTabCreatedSource::kExtensionsApi);
   }
 
   ExtensionTabUtil::ScrubTabBehavior scrub_tab_behavior =
@@ -1132,8 +1154,9 @@ bool ExtensionTabUtil::IsWebContentsInContext(
 GURL ExtensionTabUtil::ResolvePossiblyRelativeURL(const std::string& url_string,
                                                   const Extension* extension) {
   GURL url = GURL(url_string);
-  if (!url.is_valid() && extension)
+  if (!url.is_valid() && extension) {
     url = extension->ResolveExtensionURL(url_string);
+  }
 
   return url;
 }
@@ -1312,7 +1335,7 @@ bool ExtensionTabUtil::OpenOptionsPageFromWebContents(
   if (!url) {
     return false;
   }
-  const bool open_in_tab = OptionsPageInfo::ShouldOpenInTab(extension);
+  const bool open_in_tab = ShouldOpenInTab(extension);
 // Opens the url as instructed by `open_in_tab`. On android we take a different
 // path because the `Browser` object is not available.
 // TODO(crbug.com/392777363): Unify the path on android after browser
@@ -1325,7 +1348,7 @@ bool ExtensionTabUtil::OpenOptionsPageFromWebContents(
       *url, content::Referrer(),
       open_in_tab ? WindowOpenDisposition::NEW_FOREGROUND_TAB
                   : WindowOpenDisposition::CURRENT_TAB,
-      ui::PAGE_TRANSITION_LINK, /* is_renderer_initiated */ false);
+      ui::PAGE_TRANSITION_LINK, /*is_renderer_initiated=*/false);
   web_contents->OpenURL(params, {});
   return true;
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
@@ -1369,7 +1392,7 @@ bool ExtensionTabUtil::OpenOptionsPage(const Extension* extension,
   if (!url) {
     return false;
   }
-  const bool open_in_tab = OptionsPageInfo::ShouldOpenInTab(extension);
+  const bool open_in_tab = ShouldOpenInTab(extension);
   return WindowControllerFromBrowser(browser)->OpenOptionsPage(extension, *url,
                                                                open_in_tab);
 }

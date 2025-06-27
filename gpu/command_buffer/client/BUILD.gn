@@ -2,10 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//components/nacl/toolchain.gni")
 import("//ui/gl/features.gni")
 
-if (!is_nacl && !is_minimal_toolchain) {
+if (!is_nacl) {
   import("//skia/features.gni")
 }
 
@@ -23,10 +22,6 @@ group("client") {
   } else {
     public_deps = [ ":client_sources" ]
   }
-}
-
-group("client_gmb_manager") {
-  public_deps = [ ":client_gmb_manager_sources" ]
 }
 
 group("gles2_cmd_helper") {
@@ -51,6 +46,10 @@ group("webgpu") {
   } else {
     public_deps = [ ":webgpu_sources" ]
   }
+}
+
+source_set("export") {
+  sources = [ "gpu_command_buffer_client_export.h" ]
 }
 
 source_set("client_sources") {
@@ -86,7 +85,7 @@ source_set("client_sources") {
   all_dependent_configs = [ "//third_party/khronos:khronos_headers" ]
 
   public_deps = [
-    ":client_gmb_manager",
+    ":export",
     "//base",
   ]
   deps = [
@@ -101,7 +100,7 @@ source_set("client_sources") {
   }
 
   # These files now rely on Skia which isn't allowed as a dependency in nacl builds.
-  if (!is_nacl && !is_minimal_toolchain) {
+  if (!is_nacl) {
     sources += [
       "client_shared_image.cc",
       "client_shared_image.h",
@@ -120,26 +119,6 @@ source_set("client_sources") {
       "//gpu/ipc/common:ipc_common_sources",
       "//skia:buildflags",
     ]
-  }
-}
-
-source_set("client_gmb_manager_sources") {
-  # External code should depend on this via //gpu/client_gmb_manager above
-  # rather than depending on this directly or the component build will break.
-  visibility = [ "//gpu/*" ]
-  sources = [
-    "gpu_memory_buffer_manager.cc",
-    "gpu_memory_buffer_manager.h",
-  ]
-  configs += [ "//gpu:gpu_implementation" ]
-  all_dependent_configs = [ "//third_party/khronos:khronos_headers" ]
-  deps = [
-    "//base",
-    "//ui/gfx:memory_buffer",
-    "//ui/gfx/geometry",
-  ]
-  if (!is_nacl) {
-    deps += [ "//gpu/ipc/common:surface_handle_type" ]
   }
 }
 
@@ -283,7 +262,7 @@ component("gles2_implementation") {
     "//ui/gfx/geometry",
   ]
 
-  if (!is_nacl && !is_minimal_toolchain) {
+  if (!is_nacl) {
     deps += [
       "//components/viz/common:shared_image_format",
       "//ui/gfx:color_space",

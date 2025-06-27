@@ -46,6 +46,8 @@ constexpr char kHatsSurveyTriggerAutofillAddressUserPerception[] =
     "autofill-address-users-perception";
 constexpr char kHatsSurveyTriggerAutofillAddressUserDeclinedSuggestion[] =
     "autofill-address-users-perception";
+constexpr char kHatsSurveyTriggerAutofillAddressUserDeclinedSave[] =
+    "autofill-address-user-declined-save";
 constexpr char kHatsSurveyTriggerAutofillCreditCardUserPerception[] =
     "autofill-credit-card-users-perception";
 constexpr char kHatsSurveyTriggerAutofillPasswordUserPerception[] =
@@ -426,6 +428,10 @@ std::vector<hats::SurveyConfig> GetAllSurveyConfigs() {
       kHatsSurveyTriggerAutofillAddressUserDeclinedSuggestion, std::nullopt);
 
   survey_configs.emplace_back(
+      &::autofill::features::kAutofillAddressUserDeclinedSaveSurvey,
+      kHatsSurveyTriggerAutofillAddressUserDeclinedSave);
+
+  survey_configs.emplace_back(
       &::autofill::features::kAutofillCreditCardUserPerceptionSurvey,
       kHatsSurveyTriggerAutofillCreditCardUserPerception, std::nullopt,
       std::vector<std::string>{},
@@ -639,36 +645,6 @@ std::vector<hats::SurveyConfig> GetAllSurveyConfigs() {
                               features::kSafetyHubAndroidOrganicTriggerId.Get(),
                               product_specific_bits_data_fields,
                               product_specific_string_data);
-
-  survey_configs.emplace_back(
-      &privacy_sandbox::kPrivacySandboxCctAdsNoticeSurvey,
-      "privacy-sandbox-cct-ads-notice-eea-control",
-      privacy_sandbox::kPrivacySandboxCctAdsNoticeSurveyControlEeaTriggerId
-          .Get());
-
-  survey_configs.emplace_back(
-      &privacy_sandbox::kPrivacySandboxCctAdsNoticeSurvey,
-      "privacy-sandbox-cct-ads-notice-eea-accepted",
-      privacy_sandbox::kPrivacySandboxCctAdsNoticeSurveyAcceptedEeaTriggerId
-          .Get());
-
-  survey_configs.emplace_back(
-      &privacy_sandbox::kPrivacySandboxCctAdsNoticeSurvey,
-      "privacy-sandbox-cct-ads-notice-eea-declined",
-      privacy_sandbox::kPrivacySandboxCctAdsNoticeSurveyDeclinedEeaTriggerId
-          .Get());
-
-  survey_configs.emplace_back(
-      &privacy_sandbox::kPrivacySandboxCctAdsNoticeSurvey,
-      "privacy-sandbox-cct-ads-notice-row-control",
-      privacy_sandbox::kPrivacySandboxCctAdsNoticeSurveyControlRowTriggerId
-          .Get());
-
-  survey_configs.emplace_back(
-      &privacy_sandbox::kPrivacySandboxCctAdsNoticeSurvey,
-      "privacy-sandbox-cct-ads-notice-row-acknowledged",
-      privacy_sandbox::kPrivacySandboxCctAdsNoticeSurveyAcknowledgedRowTriggerId
-          .Get());
 
 #endif  // #if !BUILDFLAG(IS_ANDROID)
 

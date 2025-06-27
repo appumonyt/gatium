@@ -39,6 +39,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap_source.h"
@@ -57,13 +58,16 @@
 
 #define CanvasDefaultInterpolationQuality kInterpolationLow
 
+namespace cc {
+class TextureLayer;
+}
+
 namespace blink {
 
 class CanvasHibernationHandler;
 class CanvasContextCreationAttributesCore;
 class CanvasDrawListener;
 class CanvasHighDynamicRangeOptions;
-class CanvasRenderingContext;
 class CanvasRenderingContextFactory;
 class CanvasResourceProvider;
 class Element;
@@ -95,20 +99,7 @@ class CORE_EXPORT HTMLCanvasElement final
   USING_PRE_FINALIZER(HTMLCanvasElement, Dispose);
 
  public:
-  class CORE_EXPORT ElementHitTestRegion
-      : public GarbageCollected<ElementHitTestRegion> {
-   public:
-    ElementHitTestRegion(Element* element, const gfx::RectF& rect);
-
-    void Trace(Visitor*) const;
-
-    Element* element() const { return element_.Get(); }
-    gfx::RectF rect() const { return rect_; }
-
-   private:
-    WeakMember<Element> element_;
-    gfx::RectF rect_;
-  };
+  using ElementHitTestRegion = CanvasRenderingContext::ElementHitTestRegion;
 
   using Node::GetExecutionContext;
 
@@ -164,6 +155,8 @@ class CORE_EXPORT HTMLCanvasElement final
       const AtomicString&,
       HeapVector<CSSPropertyValue, 8>&) final;
 
+  bool IsCompositedForCanvas2D() const;
+
   // Used for canvas capture.
   void AddListener(CanvasDrawListener*);
   void RemoveListener(CanvasDrawListener*);
@@ -203,7 +196,7 @@ class CORE_EXPORT HTMLCanvasElement final
 
   void SetNeedsPushProperties();
 
-  void DiscardResourceProvider() override;
+  void DiscardResources() override;
 
   TextDirection GetTextDirection(const ComputedStyle*) override;
   const LayoutLocale* GetLocale() const override;
@@ -245,7 +238,6 @@ class CORE_EXPORT HTMLCanvasElement final
                          const RespectImageOrientationEnum) const override;
   bool IsCanvasElement() const override { return true; }
   bool IsOpaque() const override;
-  bool IsAccelerated() const override;
 
   // SurfaceLayerBridgeObserver implementation
   void OnWebLayerUpdated() override;
@@ -260,8 +252,7 @@ class CORE_EXPORT HTMLCanvasElement final
   size_t GetMemoryUsage() const override;
   bool ShouldAccelerate2dContext() const override;
   bool LowLatencyEnabled() const override;
-  CanvasResourceProvider* GetOrCreateCanvasResourceProviderForCanvas2D()
-      override;
+  CanvasResourceProvider* GetOrCreateCanvasResourceProviderForCanvas2D();
   bool IsPrinting() const override;
   bool IsHibernating() const override;
   void SetTransferToGPUTextureWasInvoked() override;
@@ -285,7 +276,7 @@ class CORE_EXPORT HTMLCanvasElement final
                                   viz::ResourceId resource_id) override;
   void Trace(Visitor*) const override;
 
-  void SetResourceProviderForTesting(
+  void SetCanvas2DResourceProviderForTesting(
       std::unique_ptr<CanvasResourceProvider> provider,
       const gfx::Size& size);
 
@@ -309,7 +300,8 @@ class CORE_EXPORT HTMLCanvasElement final
 
   void DetachContext() override { context_ = nullptr; }
 
-  void WillDrawImageInCanvas2D(CanvasImageSource*);
+  void WillDrawImageInCanvas2D(CanvasImageSource*,
+                               bool image_is_texture_backed);
 
   ExecutionContext* GetTopExecutionContext() const override {
     return GetDocument().GetExecutionContext();
@@ -386,6 +378,7 @@ class CORE_EXPORT HTMLCanvasElement final
   // an instance variable of this class.
   CanvasResourceProvider* RecreateCanvasResourceProviderForCanvas2D(
       CanvasHibernationHandler& hibernation_handler);
+  void CreateCanvasResourceProviderForCanvas2D();
 
   void ColorSchemeMayHaveChanged();
 
@@ -473,7 +466,7 @@ class CORE_EXPORT HTMLCanvasElement final
 
   // If the ResourceProvider currently exists, replaces it with a
   // CanvasResourceProvider that was newly created for usage with a 2D context.
-  void ReplaceExistingResourceProviderForCanvas2D();
+  void DropAndRecreateExistingCanvas2DResourceProvider();
 
   // Used for OffscreenCanvas that controls this HTML canvas element
   // and for low latency mode.

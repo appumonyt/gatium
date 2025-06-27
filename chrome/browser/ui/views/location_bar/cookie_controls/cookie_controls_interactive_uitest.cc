@@ -42,6 +42,7 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "ui/base/interaction/interaction_sequence.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/views/controls/button/md_text_button_with_spinner.h"
 #include "ui/views/controls/button/toggle_button.h"
 #include "ui/views/vector_icons.h"
 
@@ -59,6 +60,8 @@ const char kUMABubbleSendFeedback[] = "CookieControls.Bubble.SendFeedback";
 const char kUMABubbleReloadingShown[] = "CookieControls.Bubble.ReloadingShown";
 const char kUMABubbleReloadingTimeout[] =
     "CookieControls.Bubble.ReloadingTimeout";
+const char kUMATrackingProtectionsBubbleReloadingTimeout[] =
+    "TrackingProtections.Bubble.ReloadingTimeout";
 }  // namespace
 
 class CookieControlsInteractiveTestBase : public InteractiveFeaturePromoTest {
@@ -562,6 +565,9 @@ IN_PROC_BROWSER_TEST_P(CookieControlsUiTest, ReloadViewTimeout) {
   EXPECT_EQ(user_actions_.GetActionCount(kUMABubbleAllowThirdPartyCookies), 1);
   EXPECT_EQ(user_actions_.GetActionCount(kUMABubbleBlockThirdPartyCookies), 0);
   EXPECT_EQ(user_actions_.GetActionCount(kUMABubbleReloadingTimeout), 1);
+  EXPECT_EQ(user_actions_.GetActionCount(
+                kUMATrackingProtectionsBubbleReloadingTimeout),
+            0);
   EXPECT_EQ(user_actions_.GetActionCount(kUMABubbleReloadingShown), 1);
 }
 
@@ -817,6 +823,28 @@ class CookieControlsInteractiveUiTrackingProtectionTest
                 IDS_TRACKING_PROTECTIONS_BUBBLE_ACTIVE_PROTECTIONS_DESCRIPTION)));
   }
 
+  auto CheckTrackingProtectionsActiveStateReloading() {
+    return Steps(
+        CheckViewProperty(
+            CookieControlsContentView::kTrackingProtectionsButton,
+            &views::LabelButton::GetText,
+            l10n_util::GetStringUTF16(
+                IDS_TRACKING_PROTECTIONS_BUBBLE_RELOADING_SITE_LABEL)),
+        CheckViewProperty(CookieControlsContentView::kTrackingProtectionsButton,
+                          &views::View::GetEnabled, false),
+        CheckViewProperty(CookieControlsContentView::kTrackingProtectionsButton,
+                          &views::MdTextButtonWithSpinner::GetSpinnerVisible,
+                          true),
+        CheckViewProperty(
+            CookieControlsContentView::kTitle, &views::Label::GetText,
+            l10n_util::GetStringUTF16(
+                IDS_COOKIE_CONTROLS_BUBBLE_SITE_NOT_WORKING_TITLE)),
+        CheckViewProperty(
+            CookieControlsContentView::kDescription, &views::Label::GetText,
+            l10n_util::GetStringUTF16(
+                IDS_TRACKING_PROTECTIONS_BUBBLE_ACTIVE_PROTECTIONS_DESCRIPTION)));
+  }
+
   auto CheckTrackingProtectionsPausedState() {
     return Steps(
         CheckViewProperty(
@@ -824,6 +852,28 @@ class CookieControlsInteractiveUiTrackingProtectionTest
             &views::LabelButton::GetText,
             l10n_util::GetStringUTF16(
                 IDS_TRACKING_PROTECTIONS_BUBBLE_RESUME_PROTECTIONS_LABEL)),
+        CheckViewProperty(
+            CookieControlsContentView::kTitle, &views::Label::GetText,
+            l10n_util::GetStringUTF16(
+                IDS_TRACKING_PROTECTIONS_BUBBLE_PAUSED_PROTECTIONS_TITLE)),
+        CheckViewProperty(
+            CookieControlsContentView::kDescription, &views::Label::GetText,
+            l10n_util::GetStringUTF16(
+                IDS_TRACKING_PROTECTIONS_BUBBLE_PAUSED_PROTECTIONS_DESCRIPTION)));
+  }
+
+  auto CheckTrackingProtectionsPausedReloadingState() {
+    return Steps(
+        CheckViewProperty(
+            CookieControlsContentView::kTrackingProtectionsButton,
+            &views::LabelButton::GetText,
+            l10n_util::GetStringUTF16(
+                IDS_TRACKING_PROTECTIONS_BUBBLE_RELOADING_SITE_LABEL)),
+        CheckViewProperty(CookieControlsContentView::kTrackingProtectionsButton,
+                          &views::View::GetEnabled, false),
+        CheckViewProperty(CookieControlsContentView::kTrackingProtectionsButton,
+                          &views::MdTextButtonWithSpinner::GetSpinnerVisible,
+                          true),
         CheckViewProperty(
             CookieControlsContentView::kTitle, &views::Label::GetText,
             l10n_util::GetStringUTF16(
@@ -850,11 +900,13 @@ IN_PROC_BROWSER_TEST_F(CookieControlsInteractiveUiTrackingProtectionTest,
             CheckTrackingProtectionsActiveState(),
             PressButton(CookieControlsContentView::kTrackingProtectionsButton),
             EnsureNotPresent(CookieControlsBubbleView::kReloadingView),
-            // TODO(crbug.com/388294499): Add testing for reloading state UI.
-            CheckTrackingProtectionsActiveState(),
+            CheckTrackingProtectionsActiveStateReloading(),
             WaitForHide(CookieControlsBubbleView::kCookieControlsBubble))));
   // Ensure that the reloading timeout doesn't execute when page reloads faster
   // than the timeout window.
+  EXPECT_EQ(user_actions_.GetActionCount(
+                kUMATrackingProtectionsBubbleReloadingTimeout),
+            0);
   EXPECT_EQ(user_actions_.GetActionCount(kUMABubbleReloadingTimeout), 0);
 }
 
@@ -877,39 +929,12 @@ IN_PROC_BROWSER_TEST_F(CookieControlsInteractiveUiTrackingProtectionTest,
             CheckTrackingProtectionsPausedState(),
             PressButton(CookieControlsContentView::kTrackingProtectionsButton),
             EnsureNotPresent(CookieControlsBubbleView::kReloadingView),
-            // TODO(crbug.com/388294499): Add testing for reloading state UI.
-            CheckTrackingProtectionsPausedState(),
+            CheckTrackingProtectionsPausedReloadingState(),
             WaitForHide(CookieControlsBubbleView::kCookieControlsBubble))));
   // Ensure that the reloading timeout doesn't execute when page reloads faster
   // than the timeout window.
+  EXPECT_EQ(user_actions_.GetActionCount(
+                kUMATrackingProtectionsBubbleReloadingTimeout),
+            0);
   EXPECT_EQ(user_actions_.GetActionCount(kUMABubbleReloadingTimeout), 0);
-}
-
-IN_PROC_BROWSER_TEST_F(
-    CookieControlsInteractiveUiTrackingProtectionTest,
-    BubbleViewTimesOutWithoutShowingReloadingViewWhenStatusChanged) {
-  // Test that opening the bubble and making a change results in the
-  // reloading view not showing and the bubble closing after timing out.
-  //
-  // The page loaded in this test will never finish loading, so the timeout
-  // must be configured shorter than the test timeout.
-  BlockThirdPartyCookies();
-  EnableFpProtection();
-  auto* const incognito_browser = CreateIncognitoBrowser(browser()->profile());
-  RunTestSequence(InContext(
-      incognito_browser->window()->GetElementContext(),
-      Steps(InstrumentTab(kWebContentsElementId),
-            EnterText(
-                kOmniboxElementId,
-                base::UTF8ToUTF16(
-                    "https://" +
-                    third_party_cookie_page_url(/*slow=*/true).GetContent())),
-            Confirm(kOmniboxElementId),
-            InAnyContext(WaitForShow(kCookieControlsIconElementId)),
-            PressButton(kCookieControlsIconElementId),
-            InAnyContext(WaitForShow(CookieControlsBubbleView::kContentView)),
-            PressButton(CookieControlsContentView::kTrackingProtectionsButton),
-            EnsureNotPresent(CookieControlsBubbleView::kReloadingView),
-            WaitForHide(CookieControlsBubbleView::kCookieControlsBubble))));
-  EXPECT_EQ(user_actions_.GetActionCount(kUMABubbleReloadingTimeout), 1);
 }

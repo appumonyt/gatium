@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.touch_to_fill.payments;
 
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ButtonProperties.ON_CLICK_ACTION;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ButtonProperties.TEXT_ID;
+import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.CURRENT_SCREEN;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.CreditCardSuggestionProperties.APPLY_DEACTIVATED_STYLE;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.CreditCardSuggestionProperties.CARD_IMAGE;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.CreditCardSuggestionProperties.FIRST_LINE_LABEL;
@@ -27,6 +28,7 @@ import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaym
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.IbanProperties.IBAN_VALUE;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.IbanProperties.NON_TRANSFORMING_IBAN_KEYS;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.IbanProperties.ON_IBAN_CLICK_ACTION;
+import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ItemType.ALL_LOYALTY_CARDS;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ItemType.CREDIT_CARD;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ItemType.FILL_BUTTON;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ItemType.FOOTER;
@@ -41,6 +43,8 @@ import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaym
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.LoyaltyCardProperties.NON_TRANSFORMING_LOYALTY_CARD_KEYS;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.LoyaltyCardProperties.ON_LOYALTY_CARD_CLICK_ACTION;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.SHEET_ITEMS;
+import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ScreenId.ALL_LOYALTY_CARDS_SCREEN;
+import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ScreenId.HOME_SCREEN;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.TermsLabelProperties.CARD_BENEFITS_TERMS_AVAILABLE;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.VISIBLE;
 
@@ -60,6 +64,7 @@ import org.chromium.chrome.browser.touch_to_fill.common.BottomSheetFocusHelper;
 import org.chromium.chrome.browser.touch_to_fill.common.FillableItemCollectionInfo;
 import org.chromium.chrome.browser.touch_to_fill.common.TouchToFillResourceProvider;
 import org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodComponent.Delegate;
+import org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.AllLoyaltyCardsItemProperties;
 import org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ButtonProperties;
 import org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.FooterProperties;
 import org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.HeaderProperties;
@@ -67,6 +72,7 @@ import org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMeth
 import org.chromium.components.autofill.AutofillSuggestion;
 import org.chromium.components.autofill.IbanRecordType;
 import org.chromium.components.autofill.LoyaltyCard;
+import org.chromium.components.autofill.PaymentsPayload;
 import org.chromium.components.autofill.SuggestionType;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController.StateChangeReason;
@@ -136,14 +142,16 @@ class TouchToFillPaymentMethodMediator {
      */
     @IntDef({
         TouchToFillLoyaltyCardOutcome.LOYALTY_CARD,
-        TouchToFillLoyaltyCardOutcome.MANAGE_PASSES,
+        TouchToFillLoyaltyCardOutcome.WALLET_SETTINGS,
+        TouchToFillLoyaltyCardOutcome.MANAGE_LOYALTY_CARDS,
         TouchToFillLoyaltyCardOutcome.DISMISS
     })
     @Retention(RetentionPolicy.SOURCE)
     @interface TouchToFillLoyaltyCardOutcome {
         int LOYALTY_CARD = 0;
-        int MANAGE_PASSES = 1;
-        int DISMISS = 2;
+        int WALLET_SETTINGS = 1;
+        int MANAGE_LOYALTY_CARDS = 2;
+        int DISMISS = 3;
         int MAX_VALUE = DISMISS;
     }
 
@@ -186,7 +194,9 @@ class TouchToFillPaymentMethodMediator {
     private PropertyModel mModel;
     private List<AutofillSuggestion> mSuggestions;
     private List<Iban> mIbans;
-    private List<LoyaltyCard> mLoyaltyCards;
+    private List<LoyaltyCard> mAffiliatedLoyaltyCards;
+    private List<LoyaltyCard> mAllLoyaltyCards;
+    private Function<LoyaltyCard, Drawable> mValuableImageFunction;
     private BottomSheetFocusHelper mBottomSheetFocusHelper;
 
     private InputProtector mInputProtector = new InputProtector();
@@ -209,7 +219,9 @@ class TouchToFillPaymentMethodMediator {
         assert suggestions != null;
         mSuggestions = suggestions;
         mIbans = null;
-        mLoyaltyCards = null;
+        mAffiliatedLoyaltyCards = null;
+        mAllLoyaltyCards = null;
+        mValuableImageFunction = null;
 
         ModelList sheetItems = mModel.get(SHEET_ITEMS);
         sheetItems.clear();
@@ -223,7 +235,9 @@ class TouchToFillPaymentMethodMediator {
                             new FillableItemCollectionInfo(i + 1, mSuggestions.size()),
                             cardImageFunction);
             sheetItems.add(new ListItem(CREDIT_CARD, model));
-            cardBenefitsTermsAvailable |= suggestion.shouldDisplayTermsAvailable();
+            // TODO(crbug.com/423849651): Add null checks.
+            PaymentsPayload paymentsPayload = (PaymentsPayload) suggestion.getPayload();
+            cardBenefitsTermsAvailable |= paymentsPayload.shouldDisplayTermsAvailable();
         }
 
         if (cardBenefitsTermsAvailable) {
@@ -257,7 +271,9 @@ class TouchToFillPaymentMethodMediator {
         assert ibans != null;
         mIbans = ibans;
         mSuggestions = null;
-        mLoyaltyCards = null;
+        mAffiliatedLoyaltyCards = null;
+        mAllLoyaltyCards = null;
+        mValuableImageFunction = null;
 
         ModelList sheetItems = mModel.get(SHEET_ITEMS);
         sheetItems.clear();
@@ -296,20 +312,40 @@ class TouchToFillPaymentMethodMediator {
         mInputProtector.markShowTime();
 
         assert allLoyaltyCards != null && affiliatedLoyaltyCards != null;
-        mLoyaltyCards = allLoyaltyCards;
+        mAffiliatedLoyaltyCards = affiliatedLoyaltyCards;
+        mAllLoyaltyCards = allLoyaltyCards;
+        mValuableImageFunction = valuableImageFunction;
         mSuggestions = null;
         mIbans = null;
-        // TODO: crbug.com/420957826 - Display affiliated loyalty cards.
 
-        ModelList sheetItems = mModel.get(SHEET_ITEMS);
-        sheetItems.clear();
+        mModel.set(
+                SHEET_ITEMS,
+                getLoyaltyCardHomeScreenItems(
+                        affiliatedLoyaltyCards, valuableImageFunction, firstTimeUsage));
 
-        for (LoyaltyCard loyaltyCard : mLoyaltyCards) {
+        mBottomSheetFocusHelper.registerForOneTimeUse();
+        mModel.set(VISIBLE, true);
+
+        RecordHistogram.recordCount100Histogram(
+                TOUCH_TO_FILL_NUMBER_OF_LOYALTY_CARDS_SHOWN, mAffiliatedLoyaltyCards.size());
+    }
+
+    private ModelList getLoyaltyCardHomeScreenItems(
+            List<LoyaltyCard> affiliatedLoyaltyCards,
+            Function<LoyaltyCard, Drawable> valuableImageFunction,
+            boolean firstTimeUsage) {
+        ModelList sheetItems = new ModelList();
+
+        for (LoyaltyCard loyaltyCard : affiliatedLoyaltyCards) {
             final PropertyModel model = createLoyaltyCardModel(loyaltyCard, valuableImageFunction);
             sheetItems.add(new ListItem(LOYALTY_CARD, model));
         }
 
-        if (mLoyaltyCards.size() == 1) {
+        if (!firstTimeUsage) {
+            sheetItems.add(new ListItem(ALL_LOYALTY_CARDS, createAllLoyaltyCardsItemModel()));
+        }
+
+        if (mAffiliatedLoyaltyCards.size() == 1) {
             // Use the LOYALTY_CARD model as the property model for the fill button too.
             assert sheetItems.get(0).type == LOYALTY_CARD;
             sheetItems.add(
@@ -317,7 +353,9 @@ class TouchToFillPaymentMethodMediator {
                             FILL_BUTTON,
                             createFillButtonModel(
                                     R.string.autofill_loyalty_card_autofill_button,
-                                    () -> this.onSelectedLoyaltyCard(mLoyaltyCards.get(0)))));
+                                    () ->
+                                            this.onSelectedLoyaltyCard(
+                                                    mAffiliatedLoyaltyCards.get(0)))));
         }
 
         if (firstTimeUsage) {
@@ -327,11 +365,7 @@ class TouchToFillPaymentMethodMediator {
         sheetItems.add(0, buildHeaderForLoyaltyCards(firstTimeUsage));
         sheetItems.add(buildFooterForLoyaltyCards());
 
-        mBottomSheetFocusHelper.registerForOneTimeUse();
-        mModel.set(VISIBLE, true);
-
-        RecordHistogram.recordCount100Histogram(
-                TOUCH_TO_FILL_NUMBER_OF_LOYALTY_CARDS_SHOWN, mLoyaltyCards.size());
+        return sheetItems;
     }
 
     void hideSheet() {
@@ -359,10 +393,20 @@ class TouchToFillPaymentMethodMediator {
                         TouchToFillIbanOutcome.DISMISS,
                         TouchToFillIbanOutcome.MAX_VALUE);
             } else {
-                assert mLoyaltyCards != null;
+                assert mAffiliatedLoyaltyCards != null && mAllLoyaltyCards != null;
                 recordTouchToFillLoyaltyCardOutcomeHistogram(TouchToFillLoyaltyCardOutcome.DISMISS);
             }
         }
+    }
+
+    void showHomeScreen() {
+        mModel.set(CURRENT_SCREEN, HOME_SCREEN);
+        mModel.set(
+                SHEET_ITEMS,
+                getLoyaltyCardHomeScreenItems(
+                        mAffiliatedLoyaltyCards,
+                        mValuableImageFunction,
+                        /* firstTimeUsage= */ false));
     }
 
     public void scanCreditCard() {
@@ -381,17 +425,26 @@ class TouchToFillPaymentMethodMediator {
         }
     }
 
+    public void showGoogleWalletSettings() {
+        assert mAffiliatedLoyaltyCards != null && mAllLoyaltyCards != null;
+        recordTouchToFillLoyaltyCardOutcomeHistogram(TouchToFillLoyaltyCardOutcome.WALLET_SETTINGS);
+        mDelegate.showGoogleWalletSettings();
+    }
+
     public void showManageLoyaltyCards() {
-        assert mLoyaltyCards != null;
+        assert mAffiliatedLoyaltyCards != null && mAllLoyaltyCards != null;
         mDelegate.openPassesManagementUi();
-        recordTouchToFillLoyaltyCardOutcomeHistogram(TouchToFillLoyaltyCardOutcome.MANAGE_PASSES);
+        recordTouchToFillLoyaltyCardOutcomeHistogram(
+                TouchToFillLoyaltyCardOutcome.MANAGE_LOYALTY_CARDS);
     }
 
     private void onSelectedCreditCard(AutofillSuggestion suggestion) {
         if (!mInputProtector.shouldInputBeProcessed()) return;
         boolean is_virtual_card =
                 suggestion.getSuggestionType() == SuggestionType.VIRTUAL_CREDIT_CARD_ENTRY;
-        mDelegate.creditCardSuggestionSelected(suggestion.getGuid(), is_virtual_card);
+        // TODO(crbug.com/423849651): Add null checks.
+        PaymentsPayload payload = (PaymentsPayload) suggestion.getPayload();
+        mDelegate.creditCardSuggestionSelected(payload.getGuid(), is_virtual_card);
         recordTouchToFillCreditCardOutcomeHistogram(
                 is_virtual_card
                         ? TouchToFillCreditCardOutcome.VIRTUAL_CARD
@@ -400,7 +453,7 @@ class TouchToFillPaymentMethodMediator {
                 TOUCH_TO_FILL_CREDIT_CARD_INDEX_SELECTED, mSuggestions.indexOf(suggestion));
     }
 
-    public void onSelectedIban(Iban iban) {
+    private void onSelectedIban(Iban iban) {
         if (!mInputProtector.shouldInputBeProcessed()) return;
         if (iban.getRecordType() == IbanRecordType.LOCAL_IBAN) {
             mDelegate.localIbanSuggestionSelected(iban.getGuid());
@@ -412,12 +465,24 @@ class TouchToFillPaymentMethodMediator {
                 TOUCH_TO_FILL_IBAN_INDEX_SELECTED, mIbans.indexOf(iban));
     }
 
-    public void onSelectedLoyaltyCard(LoyaltyCard loyaltyCard) {
+    private void onSelectedLoyaltyCard(LoyaltyCard loyaltyCard) {
         if (!mInputProtector.shouldInputBeProcessed()) return;
         mDelegate.loyaltyCardSuggestionSelected(loyaltyCard.getLoyaltyCardNumber());
         recordTouchToFillLoyaltyCardOutcomeHistogram(TouchToFillLoyaltyCardOutcome.LOYALTY_CARD);
         RecordHistogram.recordCount100Histogram(
-                TOUCH_TO_FILL_LOYALTY_CARD_INDEX_SELECTED, mLoyaltyCards.indexOf(loyaltyCard));
+                TOUCH_TO_FILL_LOYALTY_CARD_INDEX_SELECTED,
+                mAffiliatedLoyaltyCards.indexOf(loyaltyCard));
+    }
+
+    private void showAllLoyaltyCards() {
+        mModel.set(CURRENT_SCREEN, ALL_LOYALTY_CARDS_SCREEN);
+        ModelList allLoyaltyCardsModel = new ModelList();
+        for (LoyaltyCard loyaltyCard : mAllLoyaltyCards) {
+            final PropertyModel loyaltyCardModel =
+                    createLoyaltyCardModel(loyaltyCard, mValuableImageFunction);
+            allLoyaltyCardsModel.add(new ListItem(LOYALTY_CARD, loyaltyCardModel));
+        }
+        mModel.set(SHEET_ITEMS, allLoyaltyCardsModel);
     }
 
     private PropertyModel createCardSuggestionModel(
@@ -433,15 +498,15 @@ class TouchToFillPaymentMethodMediator {
                                         == SuggestionType.VIRTUAL_CREDIT_CARD_ENTRY)
                         ? suggestion.getCustomIconUrl()
                         : new GURL("");
+        // TODO(crbug.com/423849651): Add null checks.
+        PaymentsPayload payload = (PaymentsPayload) suggestion.getPayload();
         TouchToFillPaymentMethodProperties.CardImageMetaData cardImageMetaData =
                 new TouchToFillPaymentMethodProperties.CardImageMetaData(drawableId, artUrl);
         PropertyModel.Builder creditCardSuggestionModelBuilder =
                 new PropertyModel.Builder(NON_TRANSFORMING_CREDIT_CARD_SUGGESTION_KEYS)
                         .withTransformingKey(CARD_IMAGE, cardImageFunction, cardImageMetaData)
                         .with(MAIN_TEXT, suggestion.getLabel())
-                        .with(
-                                MAIN_TEXT_CONTENT_DESCRIPTION,
-                                suggestion.getLabelContentDescription())
+                        .with(MAIN_TEXT_CONTENT_DESCRIPTION, payload.getLabelContentDescription())
                         .with(MINOR_TEXT, suggestion.getSecondaryLabel())
                         // For virtual cards, show the "Virtual card" label on the second
                         // line, and for non-virtual cards, show the expiration date.
@@ -482,6 +547,12 @@ class TouchToFillPaymentMethodMediator {
         return loyaltyCardModelBuilder.build();
     }
 
+    private PropertyModel createAllLoyaltyCardsItemModel() {
+        return new PropertyModel.Builder(AllLoyaltyCardsItemProperties.ALL_KEYS)
+                .with(AllLoyaltyCardsItemProperties.ON_CLICK_ACTION, this::showAllLoyaltyCards)
+                .build();
+    }
+
     private PropertyModel createFillButtonModel(@StringRes int titleId, Runnable onClickAction) {
         return new PropertyModel.Builder(ButtonProperties.ALL_KEYS)
                 .with(TEXT_ID, titleId)
@@ -492,7 +563,7 @@ class TouchToFillPaymentMethodMediator {
     private PropertyModel createWalletSettingsButtonModel() {
         return new PropertyModel.Builder(ButtonProperties.ALL_KEYS)
                 .with(TEXT_ID, R.string.autofill_loyalty_card_wallet_settings_button)
-                .with(ON_CLICK_ACTION, mDelegate::showGoogleWalletSettings)
+                .with(ON_CLICK_ACTION, this::showGoogleWalletSettings)
                 .build();
     }
 
@@ -580,7 +651,9 @@ class TouchToFillPaymentMethodMediator {
 
     private static boolean hasOnlyLocalCards(List<AutofillSuggestion> suggestions) {
         for (AutofillSuggestion suggestion : suggestions) {
-            if (!suggestion.isLocalPaymentsMethod()) return false;
+            // TODO(crbug.com/423849651): Add null checks.
+            PaymentsPayload payload = (PaymentsPayload) suggestion.getPayload();
+            if (!payload.isLocalPaymentsMethod()) return false;
         }
         return true;
     }

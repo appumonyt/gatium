@@ -32,6 +32,8 @@ namespace android_webview {
 
 namespace {
 
+int g_instance_count = 0;
+
 // Set once during process-wide initialization.
 AwDrawFnFunctionTable* g_draw_fn_function_table = nullptr;
 
@@ -211,6 +213,8 @@ AwDrawFnImpl::AwDrawFnImpl()
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(g_draw_fn_function_table);
 
+  ++g_instance_count;
+
   static AwDrawFnFunctorCallbacks g_functor_callbacks{
       &OnSyncWrapper,      &OnContextDestroyedWrapper,
       &OnDestroyedWrapper, &DrawGLWrapper,
@@ -226,11 +230,13 @@ AwDrawFnImpl::AwDrawFnImpl()
   }
 }
 
-AwDrawFnImpl::~AwDrawFnImpl() {}
+AwDrawFnImpl::~AwDrawFnImpl() = default;
 
 void AwDrawFnImpl::ReleaseHandle(
     JNIEnv* env,
     const base::android::JavaParamRef<jobject>& obj) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  --g_instance_count;
   render_thread_manager_.RemoveFromCompositorFrameProducerOnUI();
   g_draw_fn_function_table->release_functor(functor_handle_);
 }
@@ -265,7 +271,7 @@ void AwDrawFnImpl::OnContextDestroyed() {
     RenderThreadManager::InsideHardwareReleaseReset release_reset(
         &render_thread_manager_);
     render_thread_manager_.DestroyHardwareRendererOnRT(
-        false /* save_restore */, false /* abandon_context */);
+        false /* abandon_context */);
   }
 
   vulkan_context_provider_.reset();
@@ -277,7 +283,7 @@ void AwDrawFnImpl::DrawGL(AwDrawFn_DrawGLParams* params) {
       CreateHRDrawParams(params, color_space.get());
   OverlaysParams overlays_params = CreateOverlaysParams(params);
   render_thread_manager_.DrawOnRT(
-      /*save_restore=*/false, hr_params, overlays_params,
+      hr_params, overlays_params,
       base::BindOnce(&AwDrawFnImpl::ReportRenderingThreads, functor_handle_));
 }
 
@@ -326,7 +332,7 @@ void AwDrawFnImpl::DrawVk(AwDrawFn_DrawVkParams* params) {
   scoped_secondary_cb_draw_.emplace(vulkan_context_provider_.get(),
                                     std::move(draw_context));
   render_thread_manager_.DrawOnRT(
-      false /* save_restore */, hr_params, overlays_params,
+      hr_params, overlays_params,
       base::BindOnce(&AwDrawFnImpl::ReportRenderingThreads, functor_handle_));
 }
 
@@ -346,6 +352,11 @@ void AwDrawFnImpl::PostDrawVk(AwDrawFn_PostDrawVkParams* params) {
 void AwDrawFnImpl::RemoveOverlays(AwDrawFn_RemoveOverlaysParams* params) {
   DCHECK(params->merge_transaction);
   render_thread_manager_.RemoveOverlaysOnRT(params->merge_transaction);
+}
+
+static jint JNI_AwDrawFnImpl_GetReferenceInstanceCount(JNIEnv* env) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  return g_instance_count;
 }
 
 }  // namespace android_webview

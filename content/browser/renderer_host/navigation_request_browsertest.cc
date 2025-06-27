@@ -20,6 +20,7 @@
 #include "content/browser/process_lock.h"
 #include "content/browser/renderer_host/debug_urls.h"
 #include "content/browser/renderer_host/navigation_controller_impl.h"
+#include "content/browser/renderer_host/navigation_throttle_runner.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -1961,7 +1962,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
   // Simulate this by creating a new RPH for site_instance_a directly. Note that
   // the actual process may not get created (only if the spare process is in
   // use), so wait for RPH destruction rather than process exit.
-  RenderProcessHost* rph_2 = site_instance_a->GetOrCreateProcess();
+  RenderProcessHost* rph_2 = site_instance_a->GetOrCreateProcessForTesting();
   RenderProcessHostWatcher process_exit_observer_2(
       rph_2, RenderProcessHostWatcher::WATCH_FOR_HOST_DESTRUCTION);
   ASSERT_TRUE(navigation_b.WaitForNavigationFinished());
@@ -2700,21 +2701,22 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
   TestNavigationManager manager(shell()->web_contents(), simple_url);
   shell()->LoadURL(simple_url);
   auto* handle = manager.GetNavigationHandle();
-  auto* runner =
-      NavigationRequest::From(handle)->GetNavigationThrottleRunnerForTesting();
+  auto& runner = NavigationRequest::From(handle)
+                     ->GetNavigationThrottleRegistryForTesting()
+                     ->GetNavigationThrottleRunnerForTesting();
 
   // The navigation should have been deferred by one of our throttles. Ensure
   // it's the client throttle since we explicitly want test throttles to
   // execute after all others.
   ASSERT_TRUE(handle->IsDeferredForTesting());
   ASSERT_NE(client_throttle, nullptr);
-  EXPECT_EQ(runner->GetDeferringThrottle(), client_throttle);
+  EXPECT_EQ(runner.GetDeferringThrottle(), client_throttle);
 
   // Now when we resume we should get deferred by the other throttle. This
   // should be the throttle installed via RegisterThrottleForTesting.
   client_throttle->ResumeNavigation();
   ASSERT_TRUE(handle->IsDeferredForTesting());
-  EXPECT_EQ(runner->GetDeferringThrottle(),
+  EXPECT_EQ(runner.GetDeferringThrottle(),
             test_throttle_installer.navigation_throttle());
 
   // Finish the navigation.
@@ -5180,7 +5182,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
                 ~network::mojom::WebSandboxFlags::kAutomaticFeatures);
   EXPECT_EQ(
       manager.GetNavigationHandle()->SandboxFlagsInherited(),
-      //`allow-scripts allow-popups`:
+      // `allow-scripts allow-popups`:
       network::mojom::WebSandboxFlags::kAll &
           ~network::mojom::WebSandboxFlags::kScripts &
           ~network::mojom::WebSandboxFlags::kPopups &

@@ -92,12 +92,12 @@ UChar32 String::CharacterStartingAt(unsigned i) const {
   return impl_->CharacterStartingAt(i);
 }
 
-CodePointIterator String::begin() const {
-  return CodePointIterator(*this);
+blink::CodePointIterator String::begin() const {
+  return blink::CodePointIterator(*this);
 }
 
-CodePointIterator String::end() const {
-  return CodePointIterator::End(*this);
+blink::CodePointIterator String::end() const {
+  return blink::CodePointIterator::End(*this);
 }
 
 void String::Ensure16Bit() {
@@ -131,7 +131,7 @@ String String::Substring(unsigned pos, unsigned len) const {
 String String::DeprecatedLower() const {
   if (!impl_)
     return String();
-  return CaseMap::FastToLowerInvariant(impl_.get());
+  return blink::CaseMap::FastToLowerInvariant(impl_.get());
 }
 
 String String::LowerASCII() const {
@@ -468,15 +468,15 @@ String String::FromUTF8(base::span<const uint8_t> bytes) {
   if (!length)
     return g_empty_string;
 
-  ASCIIStringAttributes attributes = CharacterAttributes(bytes);
+  blink::AsciiStringAttributes attributes = blink::CharacterAttributes(bytes);
   if (attributes.contains_only_ascii)
     return StringImpl::Create(bytes, attributes);
 
   Vector<UChar, 1024> buffer(length);
 
-  unicode::ConversionResult result =
-      unicode::ConvertUTF8ToUTF16(bytes, base::span(buffer));
-  if (result.status != unicode::kConversionOK) {
+  blink::unicode::ConversionResult result =
+      blink::unicode::ConvertUtf8ToUtf16(bytes, base::span(buffer));
+  if (result.status != blink::unicode::kConversionOK) {
     return String();
   }
 

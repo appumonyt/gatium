@@ -108,19 +108,6 @@ void UpdatePriority(MainThreadTaskQueue* task_queue) {
   task_queue->SetQueuePriority(frame_scheduler->ComputePriority(task_queue));
 }
 
-TaskPriority GetLowPriorityAsyncScriptTaskPriority() {
-  switch (
-      features::kLowPriorityAsyncScriptExecutionLowerTaskPriorityParam.Get()) {
-    case features::AsyncScriptPrioritisationType::kHigh:
-      return TaskPriority::kHighPriority;
-    case features::AsyncScriptPrioritisationType::kLow:
-      return TaskPriority::kLowPriority;
-    case features::AsyncScriptPrioritisationType::kBestEffort:
-      return TaskPriority::kBestEffortPriority;
-  }
-  NOTREACHED();
-}
-
 }  // namespace
 
 FrameSchedulerImpl::PauseSubresourceLoadingHandleImpl::
@@ -208,8 +195,6 @@ FrameSchedulerImpl::FrameSchedulerImpl(
       subresource_loading_pause_count_(0u),
       back_forward_cache_disabling_feature_tracker_(&tracing_controller_,
                                                     main_thread_scheduler_),
-      low_priority_async_script_task_priority_(
-          GetLowPriorityAsyncScriptTaskPriority()),
       page_frozen_for_tracing_(
           parent_page_scheduler_ ? parent_page_scheduler_->IsFrozen() : true,
           MakeNamedTrack("FrameScheduler.PageFrozen", this),
@@ -478,30 +463,19 @@ QueueTraits FrameSchedulerImpl::CreateQueueTraitsForTaskType(TaskType type) {
       return ThrottleableTaskQueueTraits().SetPrioritisationType(
           QueueTraits::PrioritisationType::kBestEffort);
     case TaskType::kJavascriptTimerDelayedLowNesting:
-      return ThrottleableTaskQueueTraits().SetPrioritisationType(
-          QueueTraits::PrioritisationType::kJavaScriptTimer);
+      return ThrottleableTaskQueueTraits();
     case TaskType::kJavascriptTimerDelayedHighNesting:
-      return ThrottleableTaskQueueTraits()
-          .SetPrioritisationType(
-              QueueTraits::PrioritisationType::kJavaScriptTimer)
-          .SetCanBeIntensivelyThrottled(IsIntensiveWakeUpThrottlingEnabled());
-    case TaskType::kJavascriptTimerImmediate: {
-      // Immediate timers are not throttled.
-      return DeferrableTaskQueueTraits().SetPrioritisationType(
-          QueueTraits::PrioritisationType::kJavaScriptTimer);
-    }
+    // This type is used for timed-out idle tasks, which essentially become
+    // timers in the background after we stop running idle tasks or if the
+    // timeout is less than the idle period duration. These tasks should be
+    // throttled similar to other timers to prevent creating non-throttleable
+    // timers.
     case TaskType::kIdleTask:
-      // This type is used for timed-out idle tasks, which essentially become
-      // timers in the background after we stop running idle tasks or if the
-      // timeout is less than the idle period duration. These tasks should be
-      // throttled similar to other timers to prevent creating non-throttleable
-      // timers.
-      return DeferrableTaskQueueTraits()
-          .SetCanBeThrottled(
-              base::FeatureList::IsEnabled(kThrottleTimedOutIdleTasks))
-          .SetCanBeIntensivelyThrottled(
-              base::FeatureList::IsEnabled(kThrottleTimedOutIdleTasks) &&
-              IsIntensiveWakeUpThrottlingEnabled());
+      return ThrottleableTaskQueueTraits()
+          .SetCanBeIntensivelyThrottled(IsIntensiveWakeUpThrottlingEnabled());
+    case TaskType::kJavascriptTimerImmediate:
+      // Immediate timers are not throttled.
+      return DeferrableTaskQueueTraits();
     case TaskType::kInternalLoading:
     case TaskType::kNetworking:
       return LoadingTaskQueueTraits();
@@ -522,7 +496,7 @@ QueueTraits FrameSchedulerImpl::CreateQueueTraitsForTaskType(TaskType type) {
       return LoadingControlTaskQueueTraits();
     case TaskType::kLowPriorityScriptExecution:
       return LoadingTaskQueueTraits().SetPrioritisationType(
-          QueueTraits::PrioritisationType::kAsyncScript);
+          QueueTraits::PrioritisationType::kLow);
     // Throttling following tasks may break existing web pages, so tentatively
     // these are unthrottled.
     // TODO(nhiroki): Throttle them again after we're convinced that it's safe
@@ -576,6 +550,8 @@ QueueTraits FrameSchedulerImpl::CreateQueueTraitsForTaskType(TaskType type) {
     case TaskType::kInternalIntersectionObserver:
     case TaskType::kInternalAutofill:
       return PausableTaskQueueTraits();
+    case TaskType::kBackForwardCachePostedMessage:
+      return PausableTaskQueueTraits().SetCanRunInBFCache(true);
     case TaskType::kInternalFindInPage:
       return FindInPageTaskQueueTraits();
     case TaskType::kInternalHighPriorityLocalFrame:
@@ -779,8 +755,10 @@ void FrameSchedulerImpl::OnStartedUsingNonStickyFeature(
   if (feature == SchedulingPolicy::Feature::kWebRTC) {
     if (base::FeatureList::IsEnabled(
             kRendererMainIsDefaultThreadTypeForWebRTC) &&
-        base::PlatformThread::GetCurrentThreadType() ==
-            base::ThreadType::kDisplayCritical) {
+        (base::PlatformThread::GetCurrentThreadType() ==
+             base::ThreadType::kDisplayCritical ||
+         base::PlatformThread::GetCurrentThreadType() ==
+             base::ThreadType::kInteractive)) {
       base::PlatformThread::SetCurrentThreadType(base::ThreadType::kDefault);
     }
 
@@ -977,6 +955,13 @@ void FrameSchedulerImpl::UpdateQueuePolicy(
   // will be resumed when the page is visible.
   bool queue_frozen =
       parent_page_scheduler_->IsFrozen() && queue->CanBeFrozen();
+  // Override the frozen state for queues that should run while in BFCache. This
+  // allows tasks like eviction-triggering messages to be processed, while still
+  // freezing the queue for other reasons (e.g., to save resources).
+  if (queue_frozen && queue->CanRunInBFCache() &&
+      parent_page_scheduler_->IsInBackForwardCache()) {
+    queue_frozen = false;
+  }
   queue_disabled |= queue_frozen;
   // Per-frame freezable queues of tasks which are specified as getting frozen
   // immediately when their frame becomes invisible get frozen. They will be
@@ -1208,8 +1193,8 @@ TaskPriority FrameSchedulerImpl::ComputePriority(
   }
 
   if (task_queue->GetPrioritisationType() ==
-      MainThreadTaskQueue::QueueTraits::PrioritisationType::kAsyncScript) {
-    return low_priority_async_script_task_priority_;
+      MainThreadTaskQueue::QueueTraits::PrioritisationType::kLow) {
+    return TaskPriority::kLowPriority;
   }
 
   return TaskPriority::kNormalPriority;

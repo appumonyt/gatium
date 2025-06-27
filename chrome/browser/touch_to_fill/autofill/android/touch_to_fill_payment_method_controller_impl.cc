@@ -49,8 +49,7 @@ TouchToFillPaymentMethodControllerImpl::TouchToFillPaymentMethodControllerImpl(
                                  FieldGlobalId field,
                                  const FormData& form_data) {
             return GetDelegate(manager) &&
-                   GetDelegate(manager)->IntendsToShowTouchToFill(form, field,
-                                                                  form_data);
+                   GetDelegate(manager)->IntendsToShowTouchToFill(form, field);
           }),
           base::Seconds(1)) {
   driver_factory_observation_.Observe(
@@ -113,7 +112,8 @@ bool TouchToFillPaymentMethodControllerImpl::ShowLoyaltyCards(
     std::unique_ptr<TouchToFillPaymentMethodView> view,
     base::WeakPtr<TouchToFillDelegate> delegate,
     base::span<const LoyaltyCard> affiliated_loyalty_cards,
-    base::span<const LoyaltyCard> all_loyalty_cards) {
+    base::span<const LoyaltyCard> all_loyalty_cards,
+    bool first_time_usage) {
   // TODO(crbug.com/404437211): Unify `ShowX()` methods to avoid code
   // duplication.
   if (!keyboard_suppressor_.is_suppressing()) {
@@ -125,8 +125,8 @@ bool TouchToFillPaymentMethodControllerImpl::ShowLoyaltyCards(
     return false;
   }
 
-  if (!view->ShowLoyaltyCards(this, affiliated_loyalty_cards,
-                              all_loyalty_cards)) {
+  if (!view->ShowLoyaltyCards(this, affiliated_loyalty_cards, all_loyalty_cards,
+                              first_time_usage)) {
     ResetJavaObject();
     return false;
   }
@@ -199,7 +199,7 @@ void TouchToFillPaymentMethodControllerImpl::ShowPaymentMethodSettings(
 
 void TouchToFillPaymentMethodControllerImpl::CreditCardSuggestionSelected(
     JNIEnv* env,
-    base::android::JavaParamRef<jstring> unique_id,
+    const base::android::JavaParamRef<jstring>& unique_id,
     bool is_virtual) {
   if (delegate_) {
     delegate_->CreditCardSuggestionSelected(
@@ -209,7 +209,7 @@ void TouchToFillPaymentMethodControllerImpl::CreditCardSuggestionSelected(
 
 void TouchToFillPaymentMethodControllerImpl::LocalIbanSuggestionSelected(
     JNIEnv* env,
-    base::android::JavaParamRef<jstring> guid) {
+    const base::android::JavaParamRef<jstring>& guid) {
   if (delegate_) {
     delegate_->IbanSuggestionSelected(
         Iban::Guid((*env).GetStringUTFChars(guid, nullptr)));

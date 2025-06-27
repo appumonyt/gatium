@@ -9,54 +9,23 @@
 
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
-#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/enterprise/connectors/analysis/content_analysis_delegate.h"
 #include "chrome/browser/enterprise/connectors/analysis/content_analysis_features.h"
 #include "chrome/browser/enterprise/connectors/analysis/content_analysis_views.h"
 #include "chrome/browser/safe_browsing/cloud_content_scanning/deep_scanning_utils.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/constrained_window/constrained_window_views.h"
-#include "components/strings/grit/components_strings.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
-#include "third_party/skia/include/core/SkColor.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/metadata/metadata_header_macros.h"
-#include "ui/base/metadata/metadata_impl_macros.h"
-#include "ui/base/mojom/dialog_button.mojom.h"
-#include "ui/base/mojom/ui_base_types.mojom-shared.h"
-#include "ui/base/resource/resource_bundle.h"
-#include "ui/base/ui_base_types.h"
-#include "ui/color/color_provider.h"
-#include "ui/gfx/color_palette.h"
-#include "ui/gfx/color_utils.h"
-#include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/text_constants.h"
-#include "ui/views/accessibility/view_accessibility.h"
-#include "ui/views/bubble/bubble_frame_view.h"
-#include "ui/views/controls/link.h"
 #include "ui/views/controls/textarea/textarea.h"
-#include "ui/views/layout/fill_layout.h"
-#include "ui/views/layout/layout_provider.h"
-#include "ui/views/layout/table_layout_view.h"
 
 #include "base/win/windows_h_disallowed.h"
 
 namespace enterprise_connectors {
 
 namespace {
-
-constexpr base::TimeDelta kResizeAnimationDuration = base::Milliseconds(100);
-
-constexpr int kSideImageSize = 24;
-constexpr int kLineHeight = 20;
-
-constexpr gfx::Insets kSideImageInsets(8);
-constexpr int kMessageAndIconRowLeadingPadding = 32;
-constexpr int kMessageAndIconRowTrailingPadding = 48;
-constexpr int kSideIconBetweenChildSpacing = 16;
 
 // These time values are non-const in order to be overridden in test so they
 // complete faster.
@@ -221,73 +190,6 @@ void ContentAnalysisDialogController::SuccessCallback() {
 #endif
 }
 
-views::View* ContentAnalysisDialogController::GetContentsView() {
-  if (!contents_view_) {
-    DVLOG(1) << __func__ << ": first time";
-    contents_view_ = new views::BoxLayoutView();  // Owned by caller.
-    contents_view_->SetOrientation(views::BoxLayout::Orientation::kVertical);
-    // Padding to distance the top image from the icon and message.
-    contents_view_->SetBetweenChildSpacing(16);
-
-    // padding to distance the message from the button(s).  When doing a cloud
-    // based analysis, a top image is added to the view and the top padding
-    // looks fine.  When not doing a cloud-based analysis set the top padding
-    // to make things look nice.
-    contents_view_->SetInsideBorderInsets(
-        gfx::Insets::TLBR(is_cloud_ ? 0 : 24, 0, 10, 0));
-
-    // Add the top image for cloud-based analysis.
-    if (is_cloud_) {
-      image_ = contents_view_->AddChildView(
-          std::make_unique<ContentAnalysisTopImageView>(this));
-    }
-
-    // Create message area layout.
-    contents_layout_ = contents_view_->AddChildView(
-        std::make_unique<views::TableLayoutView>());
-    contents_layout_
-        ->AddPaddingColumn(views::TableLayout::kFixedSize,
-                           kMessageAndIconRowLeadingPadding)
-        .AddColumn(views::LayoutAlignment::kStart,
-                   views::LayoutAlignment::kStart,
-                   views::TableLayout::kFixedSize,
-                   views::TableLayout::ColumnSize::kUsePreferred, 0, 0)
-        .AddPaddingColumn(views::TableLayout::kFixedSize,
-                          kSideIconBetweenChildSpacing)
-        .AddColumn(views::LayoutAlignment::kStretch,
-                   views::LayoutAlignment::kStretch, 1.0f,
-                   views::TableLayout::ColumnSize::kUsePreferred, 0, 0)
-        .AddPaddingColumn(views::TableLayout::kFixedSize,
-                          kMessageAndIconRowTrailingPadding)
-        // There is initially only 1 row in the table for the side icon and
-        // message. Rows are added later when other elements are needed.
-        .AddRows(1, views::TableLayout::kFixedSize);
-
-    // Add the side icon.
-    contents_layout_->AddChildView(CreateSideIcon());
-
-    // Add the message.
-    message_ =
-        contents_layout_->AddChildView(std::make_unique<views::StyledLabel>());
-    message_->SetText(GetDialogMessage());
-    message_->SetLineHeight(kLineHeight);
-
-    // Calculate the width of the side icon column with insets and padding.
-    int side_icon_column_width = kMessageAndIconRowLeadingPadding +
-                                 kSideImageInsets.width() + kSideImageSize +
-                                 kSideIconBetweenChildSpacing;
-    message_->SizeToFit(fixed_width() - side_icon_column_width -
-                        kMessageAndIconRowTrailingPadding);
-    message_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-
-    if (!is_pending()) {
-      UpdateDialog();
-    }
-  }
-
-  return contents_view_;
-}
-
 void ContentAnalysisDialogController::WebContentsDestroyed() {
   // If WebContents are destroyed, then the scan results don't matter so the
   // delegate can be destroyed as well.
@@ -365,24 +267,7 @@ void ContentAnalysisDialogController::UpdateDialog() {
     return;
   }
 
-  DCHECK(is_result());
-
-  int height_before = contents_view_->GetPreferredSize().height();
-
-  UpdateViews();
-
-  // Resize the dialog's height. This is needed since the text might take more
-  // lines after changing.
-  int height_after = contents_view_->GetHeightForWidth(contents_view_->width());
-
-  int height_to_add = std::max(height_after - height_before, 0);
-  if (height_to_add > 0 && GetWidget()) {
-    Resize(height_to_add);
-  }
-
-  // Update the dialog.
-  DialogDelegate::DialogModelChanged();
-  contents_view_->InvalidateLayout();
+  UpdateDialogAppearance();
 
   // Schedule the dialog to close itself in the success case.
   if (is_success()) {
@@ -402,69 +287,6 @@ void ContentAnalysisDialogController::UpdateDialog() {
   if (observer_for_testing && is_failure()) {
     CancelDialog();
   }
-}
-
-void ContentAnalysisDialogController::Resize(int height_to_add) {
-  // Only resize if the dialog is updated to show a result.
-  DCHECK(is_result());
-  views::Widget* widget = GetWidget();
-  DCHECK(widget);
-
-  gfx::Rect dialog_rect = widget->GetContentsView()->GetContentsBounds();
-  int new_height = dialog_rect.height();
-
-  // Remove the button row's height if it's removed in the success case.
-  if (is_success()) {
-    DCHECK(contents_view_->parent());
-    DCHECK_EQ(contents_view_->parent()->children().size(), 2ul);
-    DCHECK_EQ(contents_view_->parent()->children()[0], contents_view_);
-
-    views::View* button_row_view = contents_view_->parent()->children()[1];
-    new_height -= button_row_view->GetContentsBounds().height();
-  }
-
-  // Apply the message lines delta.
-  new_height += height_to_add;
-  dialog_rect.set_height(new_height);
-
-  // Setup the animation.
-  bounds_animator_ =
-      std::make_unique<views::BoundsAnimator>(widget->GetRootView());
-  bounds_animator_->SetAnimationDuration(kResizeAnimationDuration);
-
-  DCHECK(widget->GetRootView());
-  views::View* view_to_resize = widget->GetRootView()->children()[0];
-
-  // Start the animation.
-  bounds_animator_->AnimateViewTo(view_to_resize, dialog_rect);
-
-  // Change the widget's size.
-  gfx::Size new_size = view_to_resize->size();
-  new_size.set_height(new_height);
-  widget->SetSize(new_size);
-}
-
-std::unique_ptr<views::View> ContentAnalysisDialogController::CreateSideIcon() {
-  // The icon left of the text has the appearance of a blue "Enterprise" logo
-  // with a spinner when the scan is pending.
-  auto icon = std::make_unique<views::View>();
-  icon->SetLayoutManager(std::make_unique<views::FillLayout>());
-  side_icon_image_ = icon->AddChildView(
-      std::make_unique<ContentAnalysisSideIconImageView>(this));
-
-  // Add a spinner if the scan result is pending.
-  if (is_pending()) {
-    auto spinner = std::make_unique<ContentAnalysisSideIconSpinnerView>(this);
-    spinner->Start();
-    side_icon_spinner_ = icon->AddChildView(std::move(spinner));
-  }
-
-  return icon;
-}
-
-bool ContentAnalysisDialogController::ShouldUseDarkTopImage() const {
-  return color_utils::IsDark(
-      contents_view_->GetColorProvider()->GetColor(ui::kColorDialogBackground));
 }
 
 void ContentAnalysisDialogController::CancelDialogAndDelete() {

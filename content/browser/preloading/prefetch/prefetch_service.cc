@@ -40,10 +40,11 @@
 #include "content/browser/preloading/prefetch/proxy_lookup_client_impl.h"
 #include "content/browser/preloading/preloading_attempt_impl.h"
 #include "content/browser/preloading/prerender/prerender_features.h"
-#include "content/browser/renderer_host/frame_tree_node.h"
+#include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/frame_accept_header.h"
+#include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/browser/prefetch_service_delegate.h"
 #include "content/public/browser/preloading.h"
 #include "content/public/browser/render_frame_host.h"
@@ -2103,17 +2104,20 @@ void PrefetchService::RecordExistingPrefetchWithMatchingURL(
 void PrefetchService::EvictPrefetchesForBrowsingDataRemoval(
     const StoragePartition::StorageKeyMatcherFunction& storage_key_filter,
     PrefetchStatus status) {
-  // TODO(crbug.com/40262310): Handle for prefetches from non-SpeculationRules
   std::vector<base::WeakPtr<PrefetchContainer>> prefetches_to_reset;
   for (const auto& prefetch_iter : owned_prefetches_) {
     base::WeakPtr<PrefetchContainer> prefetch_container =
         prefetch_iter.second->GetWeakPtr();
     CHECK(prefetch_container);
-    std::optional<url::Origin> referring_origin =
-        prefetch_container->GetReferringOrigin();
-    if (referring_origin.has_value() &&
-        storage_key_filter.Run(
-            blink::StorageKey::CreateFirstParty(referring_origin.value()))) {
+
+    // If `referring_origin` is std::nullopt (e.g some browser-initiated
+    // prefetch), use the origin of the prefetch URL itself, since we generally
+    // handle no referring origin prefetches as a same-origin prefetch fashion.
+    const url::Origin target_origin =
+        prefetch_container->GetReferringOrigin().value_or(
+            url::Origin::Create(prefetch_container->GetURL()));
+    if (storage_key_filter.Run(
+            blink::StorageKey::CreateFirstParty(target_origin))) {
       prefetch_container->SetPrefetchStatus(status);
       prefetches_to_reset.push_back(prefetch_container);
     }

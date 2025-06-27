@@ -64,6 +64,10 @@
 namespace base {
 class SingleThreadTaskRunner;
 class TaskRunner;
+namespace trace_event {
+struct MemoryDumpArgs;
+class ProcessMemoryDump;
+}  // namespace trace_event
 }  // namespace base
 
 namespace cc {
@@ -443,7 +447,6 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   bool CouldPlayIfEnoughData() override;
   void StopForDemuxerReset() override;
   void RestartForHls() override;
-  bool IsSecurityOriginCryptographic() const override;
   void UpdateLoadedUrl(const GURL& url) override;
   void DemuxerRequestsSeek(base::TimeDelta seek_time) override;
 

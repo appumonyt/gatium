@@ -4,12 +4,15 @@
 
 package org.chromium.chrome.browser.bookmarks;
 
+import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
 
 import static org.chromium.base.ThreadUtils.runOnUiThreadBlocking;
 
+import android.app.Activity;
 import android.view.View;
 
+import androidx.test.espresso.contrib.RecyclerViewActions;
 import androidx.test.filters.LargeTest;
 
 import org.junit.Before;
@@ -27,6 +30,8 @@ import org.chromium.chrome.browser.profiles.ProfileManager;
 import org.chromium.chrome.browser.sync.SyncTestRule;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.R;
+import org.chromium.chrome.test.transit.AutoResetCtaTransitTestRule;
+import org.chromium.chrome.test.transit.ChromeTransitTestRules;
 import org.chromium.chrome.test.util.BookmarkTestRule;
 import org.chromium.chrome.test.util.BookmarkTestUtil;
 import org.chromium.chrome.test.util.ChromeRenderTestRule;
@@ -39,10 +44,14 @@ import org.chromium.url.GURL;
 @DoNotBatch(reason = "SyncTestRule doesn't support batching.")
 @EnableFeatures({ChromeFeatureList.UNO_PHASE_2_FOLLOW_UP})
 public class BookmarkBatchUploadCardRenderTest {
-    private static final int RENDER_TEST_REVISION = 1;
+    private static final int RENDER_TEST_REVISION = 2;
 
     @Rule public final SyncTestRule mSyncTestRule = new SyncTestRule();
     @Rule public final BookmarkTestRule mBookmarkTestRule = new BookmarkTestRule();
+
+    @Rule
+    public final AutoResetCtaTransitTestRule mActivityTestRule =
+            ChromeTransitTestRules.fastAutoResetCtaActivityRule();
 
     @Rule
     public final ChromeRenderTestRule mRenderTestRule =
@@ -81,12 +90,13 @@ public class BookmarkBatchUploadCardRenderTest {
         SyncTestUtil.waitForSyncTransportActive();
 
         mBookmarkTestRule.showBookmarkManager(mSyncTestRule.getActivity());
+        onView(withId(R.id.selectable_list_recycler_view))
+                .perform(RecyclerViewActions.scrollToLastPosition());
         ViewUtils.waitForVisibleView(withId(R.id.signin_settings_card));
         View view =
                 runOnUiThreadBlocking(
                         () -> {
-                            return mBookmarkTestRule
-                                    .getBookmarkActivity()
+                            return getBookmarkHostActivity()
                                     .findViewById(R.id.signin_settings_card);
                         });
         mRenderTestRule.render(view, "batch_upload_entry_description_bookmark");
@@ -96,7 +106,6 @@ public class BookmarkBatchUploadCardRenderTest {
     @LargeTest
     @Feature({"Sync", "RenderTest"})
     public void testBookmarkBatchUploadEntryDescriptionOther() throws Exception {
-        // Add a local bookmark.
         runOnUiThreadBlocking(
                 () -> // Add local reading list entry.
                 mBookmarkModel.addToDefaultReadingList(
@@ -106,12 +115,13 @@ public class BookmarkBatchUploadCardRenderTest {
         SyncTestUtil.waitForSyncTransportActive();
 
         mBookmarkTestRule.showBookmarkManager(mSyncTestRule.getActivity());
+        onView(withId(R.id.selectable_list_recycler_view))
+                .perform(RecyclerViewActions.scrollToLastPosition());
         ViewUtils.waitForVisibleView(withId(R.id.signin_settings_card));
         View view =
                 runOnUiThreadBlocking(
                         () -> {
-                            return mBookmarkTestRule
-                                    .getBookmarkActivity()
+                            return getBookmarkHostActivity()
                                     .findViewById(R.id.signin_settings_card);
                         });
         mRenderTestRule.render(view, "batch_upload_entry_description_other");
@@ -121,7 +131,6 @@ public class BookmarkBatchUploadCardRenderTest {
     @LargeTest
     @Feature({"Sync", "RenderTest"})
     public void testBookmarkBatchUploadEntryDescriptionBookmarkAndOther() throws Exception {
-        // Add a local bookmark.
         runOnUiThreadBlocking(
                 () -> {
                     // Add local bookmark.
@@ -139,14 +148,25 @@ public class BookmarkBatchUploadCardRenderTest {
         SyncTestUtil.waitForSyncTransportActive();
 
         mBookmarkTestRule.showBookmarkManager(mSyncTestRule.getActivity());
+        onView(withId(R.id.selectable_list_recycler_view))
+                .perform(RecyclerViewActions.scrollToLastPosition());
         ViewUtils.waitForVisibleView(withId(R.id.signin_settings_card));
         View view =
                 runOnUiThreadBlocking(
                         () -> {
-                            return mBookmarkTestRule
-                                    .getBookmarkActivity()
+                            return getBookmarkHostActivity()
                                     .findViewById(R.id.signin_settings_card);
                         });
         mRenderTestRule.render(view, "batch_upload_entry_description_bookmark_and_other");
+    }
+
+    // Get the activity that hosts the bookmark UI - on phones, this is a BookmarkActivity, on
+    // tablets this is a native page.
+    private Activity getBookmarkHostActivity() {
+        if (mActivityTestRule.getActivity().isTablet()) {
+            return mActivityTestRule.getActivity();
+        } else {
+            return mBookmarkTestRule.getBookmarkActivity();
+        }
     }
 }

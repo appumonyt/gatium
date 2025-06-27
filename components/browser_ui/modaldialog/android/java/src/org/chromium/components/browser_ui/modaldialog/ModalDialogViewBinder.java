@@ -36,6 +36,8 @@ public class ModalDialogViewBinder
             view.setMessageParagraph1(model.get(ModalDialogProperties.MESSAGE_PARAGRAPH_1));
         } else if (ModalDialogProperties.MESSAGE_PARAGRAPH_2 == propertyKey) {
             view.setMessageParagraph2(model.get(ModalDialogProperties.MESSAGE_PARAGRAPH_2));
+        } else if (ModalDialogProperties.MESSAGE_PARAGRAPHS == propertyKey) {
+            view.setMessageParagraphs(model.get(ModalDialogProperties.MESSAGE_PARAGRAPHS));
         } else if (ModalDialogProperties.BUTTON_GROUP_BUTTON_SPEC_LIST == propertyKey) {
             assert checkFilterTouchConsistency(model);
             assert checkDefaultButtonsNotCombinedWithButtonGroup(model);
@@ -237,7 +239,6 @@ public class ModalDialogViewBinder
      * and default buttons are present, and we should tolerate some above assertions.
      */
     private static boolean canChangeCustomViewOrButtons(PropertyModel model) {
-        return model.containsKey(ModalDialogProperties.CHANGE_CUSTOM_VIEW_OR_BUTTONS)
-                && model.get(ModalDialogProperties.CHANGE_CUSTOM_VIEW_OR_BUTTONS);
+        return model.containsKeyEqualTo(ModalDialogProperties.CHANGE_CUSTOM_VIEW_OR_BUTTONS, true);
     }
 }

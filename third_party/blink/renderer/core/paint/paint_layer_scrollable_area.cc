@@ -50,6 +50,7 @@
 #include "base/numerics/checked_math.h"
 #include "base/task/single_thread_task_runner.h"
 #include "cc/animation/animation_timeline.h"
+#include "cc/base/features.h"
 #include "cc/input/main_thread_scrolling_reason.h"
 #include "cc/input/scroll_snap_data.h"
 #include "cc/input/scroll_utils.h"
@@ -91,6 +92,7 @@
 #include "third_party/blink/renderer/core/layout/custom_scrollbar.h"
 #include "third_party/blink/renderer/core/layout/layout_custom_scrollbar_part.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/legacy_layout_tree_walking.h"
@@ -1371,6 +1373,24 @@ bool PaintLayerScrollableArea::HasVerticalOverflow() const {
   return ScrollHeight().Round() > client_height.Round();
 }
 
+bool PaintLayerScrollableArea::CanPropagateScroll() const {
+  if (!base::FeatureList::IsEnabled(
+          ::features::kOverscrollBehaviorRespectedOnAllScrollContainers)) {
+    return true;
+  }
+  auto* box = GetLayoutBox();
+  // TODO(crbug.com/425353152): Remove the visibility check.
+  if (!box || !box->IsScrollContainer() ||
+      box->StyleRef().Visibility() != EVisibility::kVisible) {
+    return true;
+  }
+  if (box->StyleRef().OverscrollBehaviorX() != EOverscrollBehavior::kAuto ||
+      box->StyleRef().OverscrollBehaviorY() != EOverscrollBehavior::kAuto) {
+    return false;
+  }
+  return true;
+}
+
 // This function returns true if the given box requires overflow scrollbars (as
 // opposed to the viewport scrollbars managed by VisualViewport).
 static bool CanHaveOverflowScrollbars(const LayoutBox& box) {
@@ -2334,27 +2354,8 @@ void PaintLayerScrollableArea::InvalidatePaintForStickyDescendants() {
   }
 }
 
-gfx::Vector2d PaintLayerScrollableArea::OffsetFromResizeCorner(
-    const gfx::Point& absolute_point) const {
-  // TODO(dbaron): Remove this function when the TextareaStableResizing
-  // feature flag is removed (enabled permanently).
-
-  // Currently the resize corner is either the bottom right corner or the bottom
-  // left corner.
-  // FIXME: This assumes the location is 0, 0. Is this guaranteed to always be
-  // the case?
-  gfx::Size element_size = PixelSnappedBorderBoxSize();
-  if (GetLayoutBox()->ShouldPlaceBlockDirectionScrollbarOnLogicalLeft())
-    element_size.set_width(0);
-  gfx::Point local_point = ToRoundedPoint(
-      GetLayoutBox()->AbsoluteToLocalPoint(PhysicalOffset(absolute_point)));
-  return gfx::Vector2d(local_point.x() - element_size.width(),
-                       local_point.y() - element_size.height());
-}
-
 void PaintLayerScrollableArea::Resize(
     const gfx::Point& pos,
-    const gfx::Vector2d& old_offset,
     const gfx::Transform& position_to_size_transform) {
   // FIXME: This should be possible on generated content but is not right now.
   if (!InResizeMode() || !GetLayoutBox()->CanResize() ||
@@ -2371,39 +2372,17 @@ void PaintLayerScrollableArea::Resize(
   PhysicalSize current_size = GetLayoutBox()->Size();
   current_size.Scale(1 / zoom_factor);
 
-  PhysicalSize new_size;
+  // TODO(dbaron): We should probably be caching the offset to the
+  // root frame as part of the transform, rather than repositioning
+  // relative to later adjustments to it.
+  gfx::Point frame_point = document.View()->ConvertFromRootFrame(pos);
 
-  // TODO(dbaron): When removing the TextareaStableResizing feature
-  // flag, also remove the old_offset parameter and the code that caches
-  // it in our callers.
-  if (RuntimeEnabledFeatures::TextareaStableResizingEnabled()) {
-    // TODO(dbaron): We should probably be caching the offset to the
-    // root frame as part of the transform, rather than repositioning
-    // relative to later adjustments to it.
-    gfx::Point frame_point = document.View()->ConvertFromRootFrame(pos);
+  gfx::Point local_point = ToRoundedPoint(
+      position_to_size_transform.ProjectPoint(gfx::PointF(frame_point)));
 
-    gfx::Point local_point = ToRoundedPoint(
-        position_to_size_transform.ProjectPoint(gfx::PointF(frame_point)));
-
-    new_size = PhysicalSize(LayoutUnit(int(local_point.x() / zoom_factor)),
-                            LayoutUnit(int(local_point.y() / zoom_factor)));
-  } else {
-    gfx::Vector2d new_offset =
-        OffsetFromResizeCorner(document.View()->ConvertFromRootFrame(pos));
-    new_offset.set_x(new_offset.x() / zoom_factor);
-    new_offset.set_y(new_offset.y() / zoom_factor);
-
-    PhysicalOffset adjusted_old_offset(old_offset);
-    adjusted_old_offset.Scale(1.f / zoom_factor);
-    if (GetLayoutBox()->ShouldPlaceBlockDirectionScrollbarOnLogicalLeft()) {
-      new_offset.set_x(-new_offset.x());
-      adjusted_old_offset.left = -adjusted_old_offset.left;
-    }
-
-    PhysicalOffset offset = PhysicalOffset(new_offset) - adjusted_old_offset;
-    new_size = PhysicalSize(current_size.width + offset.left,
-                            current_size.height + offset.top);
-  }
+  PhysicalSize new_size(
+      LayoutUnit(static_cast<int>(local_point.x() / zoom_factor)),
+      LayoutUnit(static_cast<int>(local_point.y() / zoom_factor)));
 
   // Ensure the new size is at least as large as the resize corner.
   //
@@ -2554,6 +2533,8 @@ void PaintLayerScrollableArea::UpdateScrollableAreaSet() {
     frame_view->RemoveScrollAnchoringScrollableArea(this);
   }
 
+  // TODO(crbug.com/425353152): Should be able to scroll invisible scroll
+  // containers.
   bool is_visible =
       GetLayoutBox()->StyleRef().Visibility() == EVisibility::kVisible;
   bool did_scroll_overflow = scrolls_overflow_;
@@ -2567,6 +2548,17 @@ void PaintLayerScrollableArea::UpdateScrollableAreaSet() {
   }
 
   scrolls_overflow_ = has_overflow && is_visible;
+
+  if (GetLayoutBox()->IsScrollContainer() && !scrolls_overflow_ &&
+      (GetLayoutBox()->StyleRef().OverscrollBehaviorX() !=
+           EOverscrollBehavior::kAuto ||
+       GetLayoutBox()->StyleRef().OverscrollBehaviorY() !=
+           EOverscrollBehavior::kAuto)) {
+    UseCounter::Count(
+        GetLayoutBox()->GetDocument(),
+        WebFeature::kOverscrollBehaviorOnNonScrollableScrollContainer);
+  }
+
   if (did_scroll_overflow == ScrollsOverflow())
     return;
 

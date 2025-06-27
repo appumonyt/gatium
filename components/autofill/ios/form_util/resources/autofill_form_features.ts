@@ -24,14 +24,6 @@ let autofillAcrossIframes: boolean = false;
 let autofillAcrossIframesThrottling: boolean = false;
 // LINT.ThenChange(//components/autofill/core/common/autofill_features.cc:autofill_across_iframes_ios)
 
-// LINT.IfChange(autofill_disallow_slash_dot_labels)
-/**
- * True labels must not exclusively contain slashes and dots and other special
- * characters.
- */
-let autofillDisallowSlashDotLabels: boolean = true;
-// LINT.ThenChange(//components/autofill/core/common/autofill_features.cc:autofill_disallow_slash_dot_labels)
-
 // LINT.IfChange(autofill_isolated_content_world)
 /**
  Enables the logic necessary for Autofill to work from an isolated content world
@@ -63,6 +55,21 @@ Dedupes form submission by only allowing one submission per form.
 let autofillDedupeFormSubmission: boolean = false;
 // LINT.ThenChange(//components/autofill/ios/common/features.mm:autofill_dedupe_form_submission)
 
+// LINT.IfChange(autofill_report_form_submission_errors)
+/**
+ * Reports JS errors that occur upon handling form submission in the renderer.
+ */
+let autofillReportFormSubmissionErrors: boolean = false;
+// LINT.ThenChange(//components/autofill/ios/common/features.mm:autofill_report_form_submission_errors)
+
+// LINT.IfChange(autofill_count_form_submission_in_renderer)
+/**
+ * Record form submissions events that are detected in the renderer before they
+ * are processed.
+ */
+let autofillCountFormSubmissionInRenderer: boolean = true;
+// LINT.ThenChange(//components/autofill/ios/common/features.mm:autofill_count_form_submission_in_renderer)
+
 /**
  * @see autofillAcrossIframes
  */
@@ -89,20 +96,6 @@ function setAutofillAcrossIframesThrottling(enabled: boolean): void {
  */
 function isAutofillAcrossIframesThrottlingEnabled(): boolean {
   return autofillAcrossIframesThrottling;
-}
-
-/**
- * @see autofillDisallowSlashDotLabels
- */
-function setAutofillDisallowSlashDotLabels(enabled: boolean): void {
-  autofillDisallowSlashDotLabels = enabled;
-}
-
-/**
- * @see setAutofillDisallowSlashDotLabels
- */
-function isAutofillDisallowSlashDotLabelsEnabled(): boolean {
-  return autofillDisallowSlashDotLabels;
 }
 
 /**
@@ -162,6 +155,35 @@ function isAutofillDedupeFormSubmissionEnabled(): boolean {
   return autofillDedupeFormSubmission;
 }
 
+/**
+ * @see autofillReportFormSubmissionErrors
+ */
+function setAutofillReportFormSubmissionErrors(enabled: boolean): void {
+  autofillReportFormSubmissionErrors = enabled;
+}
+
+/**
+ * @see autofillReportFormSubmissionErrors
+ */
+function isAutofillReportFormSubmissionErrorsEnabled(): boolean {
+  return autofillReportFormSubmissionErrors;
+}
+
+/**
+ * @see autofillCountFormSubmissionInRenderer
+ */
+function setAutofillCountFormSubmissionInRenderer(enabled: boolean): void {
+  autofillCountFormSubmissionInRenderer = enabled;
+}
+
+/**
+ * @see autofillCountFormSubmissionInRenderer
+ */
+function isAutofillCountFormSubmissionInRendererEnabled(): boolean {
+  return autofillCountFormSubmissionInRenderer;
+}
+
+
 // Expose globally via `gCrWeb` instead of `export` to ensure state (feature
 // on/off) is maintained across imports.
 gCrWebLegacy.autofill_form_features = {
@@ -169,8 +191,6 @@ gCrWebLegacy.autofill_form_features = {
   isAutofillAcrossIframesEnabled,
   setAutofillAcrossIframesThrottling,
   isAutofillAcrossIframesThrottlingEnabled,
-  setAutofillDisallowSlashDotLabels,
-  isAutofillDisallowSlashDotLabelsEnabled,
   setAutofillIsolatedContentWorld,
   isAutofillIsolatedContentWorldEnabled,
   setAutofillCorrectUserEditedBitInParsedField,
@@ -179,4 +199,8 @@ gCrWebLegacy.autofill_form_features = {
   isAutofillAllowDefaultPreventedSubmission,
   setAutofillDedupeFormSubmission,
   isAutofillDedupeFormSubmissionEnabled,
+  setAutofillReportFormSubmissionErrors,
+  isAutofillReportFormSubmissionErrorsEnabled,
+  setAutofillCountFormSubmissionInRenderer,
+  isAutofillCountFormSubmissionInRendererEnabled,
 };

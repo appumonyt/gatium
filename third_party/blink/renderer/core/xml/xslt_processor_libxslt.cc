@@ -193,10 +193,10 @@ static int WriteToStringBuilder(void* context, const char* buffer, int len) {
       UNSAFE_BUFFERS(base::span(buffer, base::checked_cast<size_t>(len)));
 
   StringBuffer<UChar> string_buffer(len);
-  WTF::unicode::ConversionResult result = WTF::unicode::ConvertUTF8ToUTF16(
+  unicode::ConversionResult result = unicode::ConvertUtf8ToUtf16(
       base::as_bytes(source_buffer), string_buffer.Span());
-  CHECK(result.status == WTF::unicode::kConversionOK ||
-        result.status == WTF::unicode::kSourceExhausted);
+  CHECK(result.status == unicode::kConversionOK ||
+        result.status == unicode::kSourceExhausted);
 
   StringBuilder& result_output = *static_cast<StringBuilder*>(context);
   result_output.Append(result.converted);
@@ -231,7 +231,7 @@ static bool SaveResultToString(xmlDocPtr result_doc,
 }
 
 static char* AllocateParameterValue(const String& value) {
-  StringUTF8Adaptor utf8(value);
+  StringUtf8Adaptor utf8(value);
   auto parameter_value = base::HeapArray<char>::Uninit(
       base::CheckAdd(utf8.size(), 1u).ValueOrDie());
   parameter_value.copy_prefix_from(base::span(utf8));

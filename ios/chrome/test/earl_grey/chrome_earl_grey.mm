@@ -1335,6 +1335,13 @@ id<GREYAction> grey_longPressWithDuration(base::TimeDelta duration) {
       result.success, @"An error was produced during the script's execution");
 }
 
+- (void)evaluateJavaScriptInIsolatedWorldForSideEffect:(NSString*)javaScript {
+  JavaScriptExecutionResult* result =
+      [ChromeEarlGreyAppInterface executeJavaScriptInIsolatedWorld:javaScript];
+  EG_TEST_HELPER_ASSERT_TRUE(
+      result.success, @"An error was produced during the script's execution");
+}
+
 - (NSString*)mobileUserAgentString {
   return [ChromeEarlGreyAppInterface mobileUserAgentString];
 }
@@ -1740,7 +1747,7 @@ id<GREYAction> grey_longPressWithDuration(base::TimeDelta duration) {
                @"Either hostString %d or pageTitle %d was not present",
                hostStringPresent, pageTitlePresent);
   } else {
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_SIMULATOR
     // The activity view share sheet blocks EarlGrey's synchronization on
     // the simulators. Ref:
     // github.com/google/EarlGrey/blob/master/docs/features.md#visibility-checks

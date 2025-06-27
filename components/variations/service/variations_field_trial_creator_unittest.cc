@@ -59,8 +59,6 @@
 #include "components/variations/service/variations_field_trial_creator_base.h"
 #include "components/variations/service/variations_service.h"
 #include "components/variations/service/variations_service_client.h"
-#include "components/variations/synthetic_trial_registry.h"
-#include "components/variations/synthetic_trials.h"
 #include "components/variations/variations_safe_seed_store_local_state.h"
 #include "components/variations/variations_seed_store.h"
 #include "components/variations/variations_switches.h"
@@ -414,14 +412,13 @@ class TestVariationsFieldTrialCreator : public VariationsFieldTrialCreator {
   // for uninteresting params.
   bool SetUpFieldTrials() {
     PlatformFieldTrials platform_field_trials;
-    SyntheticTrialRegistry synthetic_trial_registry;
     return VariationsFieldTrialCreator::SetUpFieldTrials(
         /*variation_ids=*/std::vector<std::string>(),
         base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kForceVariationIds),
         std::vector<base::FeatureList::FeatureOverrideInfo>(),
         std::make_unique<base::FeatureList>(), metrics_state_manager_.get(),
-        &synthetic_trial_registry, &platform_field_trials, safe_seed_manager_,
+        &platform_field_trials, safe_seed_manager_,
         /*add_entropy_source_to_variations_ids=*/true,
         *metrics_state_manager_->CreateEntropyProviders(
             /*enable_limited_entropy_mode=*/false));
@@ -547,7 +544,9 @@ TEST_P(FieldTrialCreatorFetchAndLaunchTimeTest,
       local_state(), &variations_service_client, &safe_seed_manager);
 
   // Simulate the seed being stored.
-  local_state()->SetTime(prefs::kVariationsLastFetchTime, seed_fetch_time);
+  field_trial_creator.seed_store()
+      ->GetSeedReaderWriterForTesting()
+      ->SetFetchTime(seed_fetch_time);
 
   // Simulate a seed from an earlier (i.e. valid) milestone.
   local_state()->SetInteger(prefs::kVariationsSeedMilestone,
@@ -590,8 +589,8 @@ TEST_F(FieldTrialCreatorTest, SetUpFieldTrials_ValidSeed_NoLastFetchTime) {
   TestVariationsFieldTrialCreator field_trial_creator(
       local_state(), &variations_service_client, &safe_seed_manager);
 
-  // Simulate a first run by leaving |prefs::kVariationsLastFetchTime| empty.
-  EXPECT_EQ(0, local_state()->GetInt64(prefs::kVariationsLastFetchTime));
+  // Simulate a first run by leaving fetch time empty.
+  EXPECT_EQ(base::Time(), field_trial_creator.GetLatestSeedFetchTime());
 
   // Check that field trials are created from the seed. Since the test study has
   // only one experiment with 100% probability weight, we must be part of it.
@@ -629,7 +628,9 @@ TEST_F(FieldTrialCreatorTest, SetUpFieldTrials_ValidSeed_NoMilestone) {
       local_state(), &variations_service_client, &safe_seed_manager);
 
   // Simulate the seed being stored.
-  local_state()->SetTime(prefs::kVariationsLastFetchTime, seed_fetch_time);
+  field_trial_creator.seed_store()
+      ->GetSeedReaderWriterForTesting()
+      ->SetFetchTime(seed_fetch_time);
 
   // Simulate the absence of a milestone by leaving
   // |prefs::kVariationsSeedMilestone| empty.
@@ -662,7 +663,9 @@ TEST_F(FieldTrialCreatorTest, SetUpFieldTrials_ExpiredSeed) {
       local_state(), &variations_service_client, &safe_seed_manager);
   // Simulate a seed that is fetched a long time ago and should definitely
   // have expired.
-  local_state()->SetTime(prefs::kVariationsLastFetchTime, DistantPast());
+  field_trial_creator.seed_store()
+      ->GetSeedReaderWriterForTesting()
+      ->SetFetchTime(DistantPast());
 
   // Check that field trials are not created from the expired seed.
   base::HistogramTester histogram_tester;
@@ -929,7 +932,6 @@ TEST_F(FieldTrialCreatorTest, LoadSeedFromTestSeedJsonPath) {
 
   PlatformFieldTrials platform_field_trials;
   NiceMock<MockSafeSeedManager> safe_seed_manager(local_state());
-  SyntheticTrialRegistry synthetic_trial_registry;
 
   ASSERT_FALSE(base::FieldTrialList::TrialExists(kTestSeedData.study_names[0]));
 
@@ -938,7 +940,7 @@ TEST_F(FieldTrialCreatorTest, LoadSeedFromTestSeedJsonPath) {
       /*command_line_variation_ids=*/std::string(),
       std::vector<base::FeatureList::FeatureOverrideInfo>(),
       std::make_unique<base::FeatureList>(), metrics_state_manager.get(),
-      &synthetic_trial_registry, &platform_field_trials, &safe_seed_manager,
+      &platform_field_trials, &safe_seed_manager,
       /*add_entropy_source_to_variations_ids=*/true,
       *metrics_state_manager->CreateEntropyProviders(
           /*enable_limited_entropy_mode=*/false)));
@@ -1009,7 +1011,6 @@ TEST_F(FieldTrialCreatorTest, LoadPermanentConsistencyCountry) {
        LOAD_COUNTRY_INVALID_PREF_NO_SEED},
   };
 
-  SyntheticTrialRegistry synthetic_trial_registry;
   metrics::TestEnabledStateProvider enabled_state_provider(
       /*consent=*/true,
       /*enabled=*/true);
@@ -1107,7 +1108,6 @@ TEST_F(FieldTrialCreatorTest, SetUpFieldTrials_LoadsCountryOnFirstRun) {
   auto metrics_state_manager = metrics::MetricsStateManager::Create(
       local_state(), &enabled_state_provider, std::wstring(), base::FilePath());
   metrics_state_manager->InstantiateFieldTrialList();
-  SyntheticTrialRegistry synthetic_trial_registry;
 
   // Check that field trials are created from the seed. The test seed contains a
   // single study with an experiment targeting 100% of users in India. Since
@@ -1119,7 +1119,7 @@ TEST_F(FieldTrialCreatorTest, SetUpFieldTrials_LoadsCountryOnFirstRun) {
           switches::kForceVariationIds),
       std::vector<base::FeatureList::FeatureOverrideInfo>(),
       std::make_unique<base::FeatureList>(), metrics_state_manager.get(),
-      &synthetic_trial_registry, &platform_field_trials, &safe_seed_manager,
+      &platform_field_trials, &safe_seed_manager,
       /*add_entropy_source_to_variations_ids=*/true,
       *metrics_state_manager->CreateEntropyProviders(
           /*enable_limited_entropy_mode=*/false)));
@@ -1159,7 +1159,7 @@ SetUpFieldTrialCreatorWithValidSeed(
       std::make_unique<TestVariationsFieldTrialCreator>(
           local_state, variations_service_client, safe_seed_manager);
   // Simulate the seed being stored.
-  local_state->SetTime(prefs::kVariationsLastFetchTime, seed_fetch_time);
+  field_trial_creator->seed_store()->RecordLastFetchTime(seed_fetch_time);
   // Simulate a seed from an earlier (i.e. valid) milestone.
   local_state->SetInteger(prefs::kVariationsSeedMilestone, kTestSeedMilestone);
   return field_trial_creator;
@@ -1689,7 +1689,6 @@ TEST_P(LimitedEntropyProcessingTest,
   metrics_state_manager->InstantiateFieldTrialList();
   PlatformFieldTrials platform_field_trials;
   NiceMock<MockSafeSeedManager> safe_seed_manager(local_state());
-  SyntheticTrialRegistry synthetic_trial_registry;
 
   EXPECT_NE(
       test_case.is_seed_rejection_expected,
@@ -1698,7 +1697,7 @@ TEST_P(LimitedEntropyProcessingTest,
           /*command_line_variation_ids=*/std::string(),
           std::vector<base::FeatureList::FeatureOverrideInfo>(),
           std::make_unique<base::FeatureList>(), metrics_state_manager.get(),
-          &synthetic_trial_registry, &platform_field_trials, &safe_seed_manager,
+          &platform_field_trials, &safe_seed_manager,
           /*add_entropy_source_to_variations_ids=*/true,
           *metrics_state_manager->CreateEntropyProviders(
               /*enable_limited_entropy_mode=*/true)));
@@ -1775,7 +1774,6 @@ TEST_P(FieldTrialCreatorFormFactorTest, FilterByFormFactor) {
 
   PlatformFieldTrials platform_field_trials;
   NiceMock<MockSafeSeedManager> safe_seed_manager(local_state());
-  SyntheticTrialRegistry synthetic_trial_registry;
 
   // Set up the field trials.
   VariationsFieldTrialCreator field_trial_creator{
@@ -1786,7 +1784,7 @@ TEST_P(FieldTrialCreatorFormFactorTest, FilterByFormFactor) {
       /*command_line_variation_ids=*/std::string(),
       std::vector<base::FeatureList::FeatureOverrideInfo>(),
       std::make_unique<base::FeatureList>(), metrics_state_manager.get(),
-      &synthetic_trial_registry, &platform_field_trials, &safe_seed_manager,
+      &platform_field_trials, &safe_seed_manager,
       /*add_entropy_source_to_variations_ids=*/true,
       *metrics_state_manager->CreateEntropyProviders(
           /*enable_limited_entropy_mode=*/false)));

@@ -10,6 +10,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/content_extraction/ai_page_content.mojom.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
+#include "ui/gfx/geometry/point.h"
 
 namespace optimization_guide {
 namespace {
@@ -311,6 +312,50 @@ TEST(PageContentProtoUtilTest, AttributeTypeDoesNotMatchData_Image) {
   image_node->content_attributes->text_info =
       blink::mojom::AIPageContentTextInfo::New();
   root_content->root_node->children_nodes.emplace_back(std::move(image_node));
+
+  AIPageContentResult page_content;
+  EXPECT_FALSE(ConvertAIPageContentToProto(root_content, page_content));
+}
+
+TEST(PageContentProtoUtilTest, ConvertVideoData) {
+  auto root_content = CreatePageContent();
+  auto video_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kVideo);
+  video_node->content_attributes->video_data =
+      blink::mojom::AIPageContentVideoData::New();
+  const auto expected_origin = url::Origin::Create(GURL("https://example.com"));
+  const auto expected_url = GURL("https://example.com/video.mp4");
+  video_node->content_attributes->video_data->source_origin = expected_origin;
+  video_node->content_attributes->video_data->url = expected_url;
+  root_content->root_node->children_nodes.emplace_back(std::move(video_node));
+
+  AIPageContentResult page_content;
+  EXPECT_TRUE(ConvertAIPageContentToProto(root_content, page_content));
+
+  EXPECT_EQ(page_content.proto.version(),
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
+  ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 1);
+
+  EXPECT_EQ(page_content.proto.root_node()
+                .children_nodes(0)
+                .content_attributes()
+                .attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_VIDEO);
+  const auto& video_data = page_content.proto.root_node()
+                               .children_nodes(0)
+                               .content_attributes()
+                               .video_data();
+  EXPECT_EQ(video_data.url(), expected_url.spec());
+  AssertValidOrigin(video_data.security_origin(), expected_origin);
+}
+
+TEST(PageContentProtoUtilTest, AttributeTypeDoesNotMatchData_Video) {
+  auto root_content = CreatePageContent();
+  auto video_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kVideo);
+  video_node->content_attributes->text_info =
+      blink::mojom::AIPageContentTextInfo::New();
+  root_content->root_node->children_nodes.emplace_back(std::move(video_node));
 
   AIPageContentResult page_content;
   EXPECT_FALSE(ConvertAIPageContentToProto(root_content, page_content));
@@ -888,6 +933,11 @@ void SetIframeData(ContentNode* node, const DocumentIdentifier& iframe_doc_id) {
       iframe_doc_id;
 }
 
+// Test helper to set the node ID of a ContentNode.
+void SetNodeID(ContentNode* node, int node_id) {
+  node->mutable_content_attributes()->set_common_ancestor_dom_node_id(node_id);
+}
+
 TEST(FindNodeAtPointTest, NoTargetFound) {
   AnnotatedPageContent page_content;
   page_content.mutable_main_frame_data()
@@ -902,12 +952,8 @@ TEST(FindNodeAtPointTest, NoTargetFound) {
   SetGeometry(child1, gfx::Rect(10, 10, 20, 20));
   SetZOrder(child1, 1);
 
-  Coordinate coord;
-  // Coordinate outside any node
-  coord.set_x(500);
-  coord.set_y(500);
-
-  std::optional<TargetNodeInfo> result = FindNodeAtPoint(page_content, coord);
+  std::optional<TargetNodeInfo> result =
+      FindNodeAtPoint(page_content, gfx::Point(500, 500));
   EXPECT_EQ(result, std::nullopt);
 }
 
@@ -926,11 +972,8 @@ TEST(FindNodeAtPointTest, TargetInMainDocumentBasic) {
   SetGeometry(target_child, gfx::Rect(50, 50, 100, 100));
   SetZOrder(target_child, 1);
 
-  Coordinate coord;
-  coord.set_x(75);
-  coord.set_y(75);
-
-  std::optional<TargetNodeInfo> result = FindNodeAtPoint(page_content, coord);
+  std::optional<TargetNodeInfo> result =
+      FindNodeAtPoint(page_content, gfx::Point(75, 75));
   EXPECT_TRUE(result.has_value());
   EXPECT_EQ(result->document_identifier.serialized_token(), main_doc_token);
   EXPECT_EQ(result->node, target_child);
@@ -956,12 +999,9 @@ TEST(FindNodeAtPointTest, TargetInMainDocumentZOrder) {
   // Higher Z-order
   SetZOrder(child_high_z, 2);
 
-  Coordinate coord;
   // Hits both child_low_z and child_high_z
-  coord.set_x(70);
-  coord.set_y(70);
-
-  std::optional<TargetNodeInfo> result = FindNodeAtPoint(page_content, coord);
+  std::optional<TargetNodeInfo> result =
+      FindNodeAtPoint(page_content, gfx::Point(70, 70));
   EXPECT_TRUE(result.has_value());
   EXPECT_EQ(result->document_identifier.serialized_token(), main_doc_token);
   EXPECT_EQ(result->node, child_high_z);
@@ -999,11 +1039,8 @@ TEST(FindNodeAtPointTest, TargetInsideIframe) {
   SetGeometry(target_node_in_iframe, gfx::Rect(100, 100, 50, 50));
   SetZOrder(target_node_in_iframe, 1);
 
-  Coordinate coord;
-  coord.set_x(120);
-  coord.set_y(120);
-
-  std::optional<TargetNodeInfo> result = FindNodeAtPoint(page_content, coord);
+  std::optional<TargetNodeInfo> result =
+      FindNodeAtPoint(page_content, gfx::Point(120, 120));
   EXPECT_TRUE(result.has_value());
   EXPECT_EQ(result->document_identifier.serialized_token(),
             iframe_internal_token);
@@ -1048,11 +1085,8 @@ TEST(FindNodeAtPointTest, TargetInsideIframeLowerZthanParentOverlap) {
   SetGeometry(target_node_in_iframe, gfx::Rect(50, 50, 500, 500));
   SetZOrder(target_node_in_iframe, 1);
 
-  Coordinate coord;
-  coord.set_x(120);
-  coord.set_y(120);
-
-  std::optional<TargetNodeInfo> result = FindNodeAtPoint(page_content, coord);
+  std::optional<TargetNodeInfo> result =
+      FindNodeAtPoint(page_content, gfx::Point(120, 120));
   EXPECT_TRUE(result.has_value());
   EXPECT_EQ(result->document_identifier.serialized_token(),
             iframe_internal_token);
@@ -1095,11 +1129,8 @@ TEST(FindNodeAtPointTest, IframeHigherZThanOtherNode) {
   SetGeometry(target_node_in_iframe, gfx::Rect(150, 150, 50, 50));
   SetZOrder(target_node_in_iframe, 1);
 
-  Coordinate coord;
-  coord.set_x(160);
-  coord.set_y(160);
-
-  std::optional<TargetNodeInfo> result = FindNodeAtPoint(page_content, coord);
+  std::optional<TargetNodeInfo> result =
+      FindNodeAtPoint(page_content, gfx::Point(160, 160));
   EXPECT_TRUE(result.has_value());
   EXPECT_EQ(result->document_identifier.serialized_token(),
             iframe_internal_token);
@@ -1141,14 +1172,185 @@ TEST(FindNodeAtPointTest, TargetMatchesIframeNodeButNotIframeContents) {
   SetGeometry(child_node_in_iframe, gfx::Rect(100, 100, 400, 400));
   SetZOrder(child_node_in_iframe, 1);
 
-  Coordinate coord;
-  coord.set_x(60);
-  coord.set_y(60);
-
-  std::optional<TargetNodeInfo> result = FindNodeAtPoint(page_content, coord);
+  std::optional<TargetNodeInfo> result =
+      FindNodeAtPoint(page_content, gfx::Point(60, 60));
   EXPECT_TRUE(result.has_value());
   EXPECT_EQ(result->document_identifier.serialized_token(), "main_doc");
   EXPECT_EQ(result->node, iframe_node_in_main_doc);
+}
+
+TEST(FindNodeWithIDTest, NodeNotFound) {
+  AnnotatedPageContent page_content;
+  std::string main_doc_token = "main_doc";
+  page_content.mutable_main_frame_data()
+      ->mutable_document_identifier()
+      ->set_serialized_token(main_doc_token);
+
+  ContentNode* root_node = page_content.mutable_root_node();
+  SetNodeID(root_node, 1);
+
+  ContentNode* child1 = root_node->add_children_nodes();
+  SetNodeID(child1, 2);
+
+  // Node ID that doesn't exist.
+  const int target_node_id = 999;
+
+  std::optional<TargetNodeInfo> result =
+      FindNodeWithID(page_content, main_doc_token, target_node_id);
+  EXPECT_EQ(result, std::nullopt);
+}
+
+TEST(FindNodeWithIDTest, TargetInMainDocument) {
+  AnnotatedPageContent page_content;
+  const std::string main_doc_token = "main_doc";
+  page_content.mutable_main_frame_data()
+      ->mutable_document_identifier()
+      ->set_serialized_token(main_doc_token);
+
+  ContentNode* root = page_content.mutable_root_node();
+  SetNodeID(root, 1);
+
+  ContentNode* child1 = root->add_children_nodes();
+  SetNodeID(child1, 2);
+
+  ContentNode* target_child = root->add_children_nodes();
+  const int target_node_id = 3;
+  SetNodeID(target_child, target_node_id);
+
+  std::optional<TargetNodeInfo> result =
+      FindNodeWithID(page_content, main_doc_token, target_node_id);
+  EXPECT_TRUE(result.has_value());
+  EXPECT_EQ(result->document_identifier.serialized_token(), main_doc_token);
+  EXPECT_EQ(result->node, target_child);
+}
+
+TEST(FindNodeWithIDTest, TargetInsideIframe) {
+  AnnotatedPageContent page_content;
+  page_content.mutable_main_frame_data()
+      ->mutable_document_identifier()
+      ->set_serialized_token("main_doc");
+
+  ContentNode* root = page_content.mutable_root_node();
+  SetNodeID(root, 1);
+
+  // Setup the iframe node in the main document.
+  ContentNode* iframe_node_in_main_doc = root->add_children_nodes();
+  SetNodeID(iframe_node_in_main_doc, 2);
+
+  DocumentIdentifier iframe_internal_doc_id;
+  const std::string iframe_internal_token = "iframe_doc";
+  iframe_internal_doc_id.set_serialized_token(iframe_internal_token);
+  SetIframeData(iframe_node_in_main_doc, iframe_internal_doc_id);
+
+  // Setup the content *inside* the iframe.
+  ContentNode* iframe_internal_root =
+      iframe_node_in_main_doc->add_children_nodes();
+  SetNodeID(iframe_internal_root, 3);
+
+  ContentNode* target_node_in_iframe =
+      iframe_internal_root->add_children_nodes();
+  const int target_node_id = 4;
+  SetNodeID(target_node_in_iframe, target_node_id);
+
+  std::optional<TargetNodeInfo> result =
+      FindNodeWithID(page_content, iframe_internal_token, target_node_id);
+  EXPECT_TRUE(result.has_value());
+  EXPECT_EQ(result->document_identifier.serialized_token(),
+            iframe_internal_token);
+  EXPECT_EQ(result->node, target_node_in_iframe);
+}
+
+TEST(FindNodeWithIDTest, TargetInsideNestedIframe) {
+  AnnotatedPageContent page_content;
+  page_content.mutable_main_frame_data()
+      ->mutable_document_identifier()
+      ->set_serialized_token("main_doc");
+
+  ContentNode* root = page_content.mutable_root_node();
+  SetNodeID(root, 1);
+
+  // Outer iframe
+  ContentNode* outer_iframe_node = root->add_children_nodes();
+  SetNodeID(outer_iframe_node, 2);
+  DocumentIdentifier outer_iframe_doc_id;
+  const std::string outer_iframe_token = "outer_iframe_doc";
+  outer_iframe_doc_id.set_serialized_token(outer_iframe_token);
+  SetIframeData(outer_iframe_node, outer_iframe_doc_id);
+
+  ContentNode* outer_iframe_root = outer_iframe_node->add_children_nodes();
+  SetNodeID(outer_iframe_root, 3);
+
+  // Inner iframe
+  ContentNode* inner_iframe_node = outer_iframe_root->add_children_nodes();
+  SetNodeID(inner_iframe_node, 4);
+  DocumentIdentifier inner_iframe_doc_id;
+  const std::string inner_iframe_token = "inner_iframe_doc";
+  inner_iframe_doc_id.set_serialized_token(inner_iframe_token);
+  SetIframeData(inner_iframe_node, inner_iframe_doc_id);
+
+  ContentNode* inner_iframe_root = inner_iframe_node->add_children_nodes();
+  SetNodeID(inner_iframe_root, 5);
+
+  // Target node
+  ContentNode* target_node = inner_iframe_root->add_children_nodes();
+  const int target_node_id = 6;
+  SetNodeID(target_node, target_node_id);
+
+  std::optional<TargetNodeInfo> result =
+      FindNodeWithID(page_content, inner_iframe_token, target_node_id);
+  EXPECT_TRUE(result.has_value());
+  EXPECT_EQ(result->document_identifier.serialized_token(), inner_iframe_token);
+  EXPECT_EQ(result->node, target_node);
+}
+
+TEST(FindNodeWithIDTest, SameNodeIDInDifferentDocuments) {
+  AnnotatedPageContent page_content;
+  page_content.mutable_main_frame_data()
+      ->mutable_document_identifier()
+      ->set_serialized_token("main_doc");
+
+  ContentNode* root = page_content.mutable_root_node();
+  SetNodeID(root, 1);
+
+  // Node in the main document with the target ID.
+  ContentNode* main_doc_node = root->add_children_nodes();
+  const int target_node_id = 123;
+  SetNodeID(main_doc_node, target_node_id);
+
+  // Iframe setup
+  ContentNode* iframe_node_in_main_doc = root->add_children_nodes();
+  SetNodeID(iframe_node_in_main_doc, 2);
+  DocumentIdentifier iframe_doc_id;
+  const std::string iframe_token = "iframe_doc";
+  iframe_doc_id.set_serialized_token(iframe_token);
+  SetIframeData(iframe_node_in_main_doc, iframe_doc_id);
+
+  ContentNode* iframe_root = iframe_node_in_main_doc->add_children_nodes();
+  SetNodeID(iframe_root, 3);
+
+  // Node in the iframe with the same target ID.
+  ContentNode* iframe_node = iframe_root->add_children_nodes();
+  SetNodeID(iframe_node, target_node_id);
+
+  // Search in main document.
+  std::optional<TargetNodeInfo> result_main =
+      FindNodeWithID(page_content, "main_doc", target_node_id);
+  EXPECT_TRUE(result_main.has_value());
+  EXPECT_EQ(result_main->document_identifier.serialized_token(), "main_doc");
+  EXPECT_EQ(result_main->node, main_doc_node);
+
+  // Search in iframe document.
+  std::optional<TargetNodeInfo> result_iframe =
+      FindNodeWithID(page_content, iframe_token, target_node_id);
+  EXPECT_TRUE(result_iframe.has_value());
+  EXPECT_EQ(result_iframe->document_identifier.serialized_token(),
+            iframe_token);
+  EXPECT_EQ(result_iframe->node, iframe_node);
+
+  // Search with a non-existent document identifier.
+  std::optional<TargetNodeInfo> result_wrong_doc =
+      FindNodeWithID(page_content, "wrong_doc", target_node_id);
+  EXPECT_EQ(result_wrong_doc, std::nullopt);
 }
 
 }  // namespace

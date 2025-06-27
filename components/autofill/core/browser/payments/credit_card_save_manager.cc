@@ -598,9 +598,11 @@ void CreditCardSaveManager::InitVirtualCardEnroll(
 
   if (auto* virtual_card_enrollment_manager =
       client_->GetPaymentsAutofillClient()->GetVirtualCardEnrollmentManager()) {
-    virtual_card_enrollment_manager
-      ->InitVirtualCardEnroll(
+    virtual_card_enrollment_manager->InitVirtualCardEnroll(
         credit_card, VirtualCardEnrollmentSource::kUpstream,
+        base::BindOnce(
+            &VirtualCardEnrollmentManager::ShowVirtualCardEnrollBubble,
+            base::Unretained(virtual_card_enrollment_manager)),
         std::move(get_details_for_enrollment_response_details));
   }
 }
@@ -760,7 +762,7 @@ void CreditCardSaveManager::OfferCardLocalSave() {
             // TODO(crbug.com/40280819): Refactor SaveCreditCardOptions.
             .with_show_prompt(show_save_prompt_.value_or(true))
             .with_num_strikes(GetCreditCardSaveStrikeDatabase()->GetStrikes(
-                base::UTF16ToUTF8(upload_request_.card.LastFourDigits())))
+                base::UTF16ToUTF8(card_save_candidate_.LastFourDigits())))
             .with_card_save_type(card_save_type),
         base::BindOnce(&CreditCardSaveManager::OnUserDidDecideOnLocalSave,
                        weak_ptr_factory_.GetWeakPtr()));

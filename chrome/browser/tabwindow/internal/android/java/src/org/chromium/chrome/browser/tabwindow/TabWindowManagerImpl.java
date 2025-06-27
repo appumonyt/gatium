@@ -10,8 +10,6 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.ActivityManager.AppTask;
 import android.content.Context;
-import android.os.Build.VERSION;
-import android.os.Build.VERSION_CODES;
 import android.util.Pair;
 import android.util.SparseArray;
 
@@ -266,9 +264,7 @@ public class TabWindowManagerImpl implements TabWindowManager {
             Activity newActivity,
             MismatchedIndicesHandler mismatchedIndicesHandler) {
         @WindowId int assignedWindowId = originallyAssignedWindowId;
-        if (requestedWindowId == originallyAssignedWindowId
-                // Needed for ActivityManager.RecentTaskInfo.taskId
-                || VERSION.SDK_INT < VERSION_CODES.Q) {
+        if (requestedWindowId == originallyAssignedWindowId) {
             return assignedWindowId;
         }
 
@@ -543,7 +539,7 @@ public class TabWindowManagerImpl implements TabWindowManager {
     }
 
     @Override
-    public void setArchivedTabModelSelector(TabModelSelector archivedTabModelSelector) {
+    public void setArchivedTabModelSelector(@Nullable TabModelSelector archivedTabModelSelector) {
         mArchivedTabModelSelector = archivedTabModelSelector;
     }
 

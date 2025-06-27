@@ -13,6 +13,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/time/default_clock.h"
 #include "chromeos/ash/components/cryptohome/auth_factor.h"
@@ -662,6 +663,13 @@ void AuthSessionAuthenticator::LoginAsIwaKioskAccount(
     bool ephemeral) {
   LoginAsKioskImpl(app_account_id, user_manager::UserType::kKioskIWA,
                    /*force_dircrypto=*/false, /*ephemeral=*/ephemeral);
+}
+
+void AuthSessionAuthenticator::LoginAsArcvmKioskAccount(
+    const AccountId& app_account_id,
+    bool ephemeral) {
+  LoginAsKioskImpl(app_account_id, user_manager::UserType::kKioskArcvmApp,
+                   /*force_dircrypto=*/true, ephemeral);
 }
 
 void AuthSessionAuthenticator::LoginAsKioskImpl(

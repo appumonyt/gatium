@@ -194,6 +194,8 @@ source_set("web_applications") {
     "jobs/install_from_info_job.h",
     "jobs/install_placeholder_job.cc",
     "jobs/install_placeholder_job.h",
+    "jobs/manifest_to_web_app_install_info_job.cc",
+    "jobs/manifest_to_web_app_install_info_job.h",
     "jobs/uninstall/remove_install_source_job.cc",
     "jobs/uninstall/remove_install_source_job.h",
     "jobs/uninstall/remove_install_url_job.cc",
@@ -398,6 +400,8 @@ source_set("web_applications") {
       "isolated_web_apps/commands/copy_bundle_to_cache_command.h",
       "isolated_web_apps/commands/get_bundle_cache_path_command.cc",
       "isolated_web_apps/commands/get_bundle_cache_path_command.h",
+      "isolated_web_apps/commands/remove_obsolete_bundle_versions_cache_command.cc",
+      "isolated_web_apps/commands/remove_obsolete_bundle_versions_cache_command.h",
       "isolated_web_apps/policy/isolated_web_app_cache_client.cc",
       "isolated_web_apps/policy/isolated_web_app_cache_client.h",
       "isolated_web_apps/policy/isolated_web_app_cache_manager.cc",
@@ -711,8 +715,8 @@ source_set("web_applications_test_support") {
     "isolated_web_apps/test/iwa_test_server_configurator.h",
     "isolated_web_apps/test/key_distribution/test_utils.cc",
     "isolated_web_apps/test/key_distribution/test_utils.h",
-    "isolated_web_apps/test/mock_isolated_web_app_install_command_wrapper.cc",
-    "isolated_web_apps/test/mock_isolated_web_app_install_command_wrapper.h",
+    "isolated_web_apps/test/mock_iwa_install_command_wrapper.cc",
+    "isolated_web_apps/test/mock_iwa_install_command_wrapper.h",
     "isolated_web_apps/test/policy_generator.cc",
     "isolated_web_apps/test/policy_generator.h",
     "isolated_web_apps/test/policy_test_utils.cc",
@@ -995,6 +999,7 @@ source_set("web_applications_unit_tests") {
       "isolated_web_apps/commands/cleanup_bundle_cache_command_unittest.cc",
       "isolated_web_apps/commands/copy_bundle_to_cache_command_unittest.cc",
       "isolated_web_apps/commands/get_bundle_cache_path_command_unittest.cc",
+      "isolated_web_apps/commands/remove_obsolete_bundle_versions_cache_command_unittest.cc",
       "isolated_web_apps/policy/isolated_web_app_cache_client_unittest.cc",
       "os_integration/web_app_run_on_os_login_chromeos_unittest.cc",
       "web_app_run_on_os_login_manager_unittest.cc",
@@ -1080,10 +1085,6 @@ source_set("web_applications_unit_tests") {
 
   if (is_win || is_mac || is_linux) {
     deps += [ "//components/services/app_service" ]
-  }
-
-  if (enable_nacl) {
-    deps += [ "//components/nacl/browser" ]
   }
 }
 
@@ -1231,8 +1232,10 @@ source_set("web_applications_browser_tests") {
       "//chrome/browser/ash/policy/test_support",
       "//chrome/browser/ash/system_web_apps/test_support",
       "//chrome/browser/ash/system_web_apps/test_support:test_support_ui",
+      "//chrome/browser/ash/test:test_support",
       "//chrome/browser/ui/ash/login",
       "//chrome/browser/web_applications/ash/migrations:browser_tests",
+      "//chromeos/ash/components/policy/device_policy:test_support",
       "//chromeos/ash/components/system:system",
     ]
   } else {

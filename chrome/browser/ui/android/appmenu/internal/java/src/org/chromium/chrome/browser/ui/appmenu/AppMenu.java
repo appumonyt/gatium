@@ -16,8 +16,6 @@ import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
-import android.text.TextUtils;
-import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -29,17 +27,14 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.ViewStub;
 import android.view.WindowManager;
-import android.widget.AdapterView;
-import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ImageButton;
+import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.PopupWindow;
 
-import androidx.annotation.ColorInt;
 import androidx.annotation.IdRes;
 import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.content.res.AppCompatResources;
-import androidx.core.content.ContextCompat;
 
 import org.chromium.base.Callback;
 import org.chromium.base.SysUtils;
@@ -55,19 +50,10 @@ import org.chromium.build.annotations.RequiresNonNull;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider.ControlsPosition;
 import org.chromium.chrome.browser.ui.appmenu.internal.R;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
-import org.chromium.components.browser_ui.util.motion.MotionEventInfo;
 import org.chromium.components.browser_ui.widget.chips.ChipView;
 import org.chromium.components.browser_ui.widget.highlight.ViewHighlighter;
 import org.chromium.components.browser_ui.widget.highlight.ViewHighlighter.HighlightParams;
 import org.chromium.components.browser_ui.widget.highlight.ViewHighlighter.HighlightShape;
-import org.chromium.ui.modelutil.MVCListAdapter.ModelList;
-import org.chromium.ui.modelutil.ModelListAdapter;
-import org.chromium.ui.modelutil.PropertyModel;
-import org.chromium.ui.widget.Toast;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Function;
 
 /**
  * Shows a popup of menu items anchored to a host view.
@@ -81,41 +67,79 @@ import java.util.function.Function;
  * </ul>
  */
 @NullMarked
-class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler {
+class AppMenu implements OnKeyListener {
+
+    /** Delegate to be notified of various visibility events from the app menu. */
+    interface AppMenuVisibilityDelegate {
+        /** Called when the AppMenu is dismissed. */
+        void appMenuDismissed();
+
+        /**
+         * Called by AppMenu to report that the App Menu visibility has changed.
+         *
+         * @param isVisible Whether the App Menu is showing.
+         */
+        void onMenuVisibilityChanged(boolean isVisible);
+
+        /**
+         * A notification that the header view has been inflated.
+         *
+         * @param view The inflated view.
+         */
+        void onHeaderViewInflated(View view);
+
+        /**
+         * A notification that the footer view has been inflated.
+         *
+         * @param view The inflated view.
+         */
+        void onFooterViewInflated(View view);
+    }
+
+    /** Provides initial sizing information for the app menu. */
+    interface InitialSizingHelper {
+        /**
+         * Get the preferred initial height for a given view.
+         *
+         * @param index The index of the view in the Adapter.
+         * @return The recommended initial height for the view at a given index (in pixels).
+         */
+        int getInitialHeightForView(int index);
+
+        /** Return whether the view at the given index can be the last initial view displayed. */
+        boolean canBeLastVisibleInitialView(int index);
+    }
+
     private static final float LAST_ITEM_SHOW_FRACTION = 0.5f;
 
     /** A means of reporting an exception/stack without crashing. */
     private static @MonotonicNonNull Callback<Throwable> sExceptionReporter;
 
-    private final int mItemRowHeight;
     private final int mVerticalFadeDistance;
     private final int mNegativeSoftwareVerticalOffset;
     private final int mChipHighlightExtension;
     private final int[] mTempLocation;
+    private final AppMenuVisibilityDelegate mVisibilityDelegate;
 
     private @Nullable PopupWindow mPopup;
     private @Nullable ListView mListView;
-    private @Nullable ModelListAdapter mAdapter;
-    private final AppMenuHandlerImpl mHandler;
+    private @Nullable ListAdapter mAdapter;
     private @Nullable View mFooterView;
     private int mCurrentScreenRotation = -1;
     private boolean mIsByPermanentButton;
     private @Nullable AnimatorSet mMenuItemEnterAnimator;
     private long mMenuShownTimeMs;
     private boolean mSelectedItemBeforeDismiss;
-    private ModelList mModelList;
+    private InitialSizingHelper mInitialSizingHelper;
 
     /**
      * Creates and sets up the App Menu.
-     * @param itemRowHeight Desired height for each app menu row.
-     * @param handler AppMenuHandlerImpl receives callbacks from AppMenu.
+     *
+     * @param visibilityDelegate The visibility delegate for the Menu.
      * @param res Resources object used to get dimensions and style attributes.
      */
-    AppMenu(int itemRowHeight, AppMenuHandlerImpl handler, Resources res) {
-        mItemRowHeight = itemRowHeight;
-        assert mItemRowHeight > 0;
-
-        mHandler = handler;
+    AppMenu(AppMenuVisibilityDelegate visibilityDelegate, Resources res) {
+        mVisibilityDelegate = visibilityDelegate;
 
         mNegativeSoftwareVerticalOffset =
                 res.getDimensionPixelSize(R.dimen.menu_negative_software_vertical_offset);
@@ -124,43 +148,6 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
                 res.getDimensionPixelOffset(R.dimen.menu_chip_highlight_extension);
 
         mTempLocation = new int[2];
-    }
-
-    /**
-     * Notifies the menu that the contents of the menu item specified by {@code menuRowId} have
-     * changed. This should be called if icons, titles, etc. are changing for a particular menu item
-     * while the menu is open.
-     *
-     * @param menuRowId The id of the menu item to change. This must be a row id and not a child id.
-     */
-    public void menuItemContentChanged(int menuRowId) {
-        // Make sure we have all the valid state objects we need.
-        if (mAdapter == null || mPopup == null || mListView == null) {
-            return;
-        }
-
-        // Calculate the item index.
-        int index = -1;
-        int menuSize = mModelList.size();
-        for (int i = 0; i < menuSize; i++) {
-            if (mModelList.get(i).model.get(AppMenuItemProperties.MENU_ITEM_ID) == menuRowId) {
-                index = i;
-                break;
-            }
-        }
-        if (index == -1) return;
-
-        // Check if the item is visible.
-        int startIndex = mListView.getFirstVisiblePosition();
-        int endIndex = mListView.getLastVisiblePosition();
-        if (index < startIndex || index > endIndex) return;
-
-        // Grab the correct View.
-        View view = mListView.getChildAt(index - startIndex);
-        if (view == null) return;
-
-        // Cause the Adapter to re-populate the View.
-        mAdapter.getView(index, view, mListView);
     }
 
     /**
@@ -177,14 +164,9 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
      *     other app menu items if necessary.
      * @param headerResourceId The resource id for a view to add as the first item in menu list. Can
      *     be null if no such view is required. See {@link ListView#addHeaderView(View)}.
-     * @param groupDividerResourceId The resource id of divider menu items. This will be used to
-     *     determine the number of dividers that appear in the menu.
      * @param highlightedItemId The resource id of the menu item that should be highlighted. Can be
      *     {@code null} if no item should be highlighted. Note that {@code 0} is dedicated to custom
      *     menu items and can be declared by external apps.
-     * @param customSizingProviders Provides sizing/height for item types that do not use the
-     *     default item height. If a item's type does not have an entry in this object, then it
-     *     should use the default sizing value.
      * @param isMenuIconAtStart Whether the menu is being shown from a menu icon positioned at the
      *     start.
      * @param addTopPaddingBeforeFirstRow Whether top padding is needed above the first row.
@@ -197,9 +179,7 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
             Rect visibleDisplayFrame,
             @IdRes int footerResourceId,
             @IdRes int headerResourceId,
-            @IdRes int groupDividerResourceId,
             @Nullable Integer highlightedItemId,
-            SparseArray<Function<Context, Integer>> customSizingProviders,
             boolean isMenuIconAtStart,
             @ControlsPosition int controlsPosition,
             boolean addTopPaddingBeforeFirstRow) {
@@ -219,8 +199,8 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
 
                     if (mMenuItemEnterAnimator != null) mMenuItemEnterAnimator.cancel();
 
-                    mHandler.appMenuDismissed();
-                    mHandler.onMenuVisibilityChanged(false);
+                    mVisibilityDelegate.appMenuDismissed();
+                    mVisibilityDelegate.onMenuVisibilityChanged(false);
 
                     mPopup = null;
                     mAdapter = null;
@@ -255,16 +235,6 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
 
         mCurrentScreenRotation = screenRotation;
         mIsByPermanentButton = isByPermanentButton;
-
-        // Find the height for each menu item.
-        List<Integer> menuItemIds = new ArrayList<>();
-        List<Integer> heightList = new ArrayList<>();
-        for (int i = 0; i < mModelList.size(); i++) {
-            int itemId = mModelList.get(i).model.get(AppMenuItemProperties.MENU_ITEM_ID);
-            menuItemIds.add(itemId);
-            heightList.add(
-                    getMenuItemHeight(mModelList.get(i).type, context, customSizingProviders));
-        }
 
         View contentView = createAppMenuContentView(context, addTopPaddingBeforeFirstRow);
 
@@ -334,14 +304,12 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
                         Math.abs(mTempLocation[1] - visibleDisplayFrame.top),
                         Math.abs(mTempLocation[1] - visibleDisplayFrame.bottom));
         setMenuHeight(
-                menuItemIds,
-                heightList,
+                mInitialSizingHelper,
                 visibleDisplayFrame,
                 sizingPadding,
                 footerHeight,
                 headerHeight,
                 anchorView,
-                groupDividerResourceId,
                 anchorViewOffset);
         int[] popupPosition =
                 getPopupPosition(
@@ -372,11 +340,10 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
         mSelectedItemBeforeDismiss = false;
         mMenuShownTimeMs = SystemClock.elapsedRealtime();
 
-        mListView.setOnItemClickListener(this);
         mListView.setItemsCanFocus(true);
         mListView.setOnKeyListener(this);
 
-        mHandler.onMenuVisibilityChanged(true);
+        mVisibilityDelegate.onMenuVisibilityChanged(true);
 
         if (mVerticalFadeDistance > 0) {
             mListView.setVerticalFadingEdgeEnabled(true);
@@ -457,44 +424,9 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
         return position;
     }
 
-    @Override
-    public void onItemClick(PropertyModel model, @Nullable MotionEventInfo triggeringMotion) {
-        if (!model.get(AppMenuItemProperties.ENABLED)) return;
-
-        int id = model.get(AppMenuItemProperties.MENU_ITEM_ID);
-        mSelectedItemBeforeDismiss = true;
-        dismiss();
-        mHandler.onOptionsItemSelected(id, triggeringMotion);
-    }
-
-    @Override
-    public boolean onItemLongClick(PropertyModel model, View view) {
-        if (!model.get(AppMenuItemProperties.ENABLED)) return false;
-
-        mSelectedItemBeforeDismiss = true;
-        CharSequence titleCondensed = model.get(AppMenuItemProperties.TITLE_CONDENSED);
-        CharSequence message =
-                TextUtils.isEmpty(titleCondensed)
-                        ? model.get(AppMenuItemProperties.TITLE)
-                        : titleCondensed;
-        return showToastForItem(message, view);
-    }
-
-    @VisibleForTesting
-    boolean showToastForItem(CharSequence message, View view) {
-        Context context = view.getContext();
-        final @ColorInt int backgroundColor = ContextCompat.getColor(context, R.color.toast_color);
-        return new Toast.Builder(context)
-                .withText(message)
-                .withAnchoredView(view)
-                .withBackgroundColor(backgroundColor)
-                .withTextAppearance(R.style.TextAppearance_TextSmall_Primary)
-                .buildAndShow();
-    }
-
-    @Override
-    public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-        onItemClick(mModelList.get(position).model);
+    /** Marks whether an item was selected prior to dismissal. */
+    public void setSelectedItemBeforeDismiss(boolean selected) {
+        mSelectedItemBeforeDismiss = selected;
     }
 
     @Override
@@ -518,12 +450,13 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
 
     /**
      * Update the menu items.
-     * @param newModelList The new menu item list will be displayed.
+     *
+     * @param sizingHelper The initial sizing helper for the menu.
      * @param adapter The adapter for visible items in the Menu.
      */
     @Initializer
-    void updateMenu(ModelList newModelList, ModelListAdapter adapter) {
-        mModelList = newModelList;
+    void updateMenu(InitialSizingHelper sizingHelper, ListAdapter adapter) {
+        mInitialSizingHelper = sizingHelper;
         mAdapter = adapter;
     }
 
@@ -559,53 +492,16 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
         return mListView;
     }
 
-    /**
-     * @return The menu instance inside of this class.
-     */
-    ModelList getMenuModelList() {
-        return mModelList;
-    }
-
-    /**
-     * Find the {@link PropertyModel} associated with the given id. If the menu item is not found,
-     * return null.
-     * @param itemId The id of the menu item to find.
-     * @return The {@link PropertyModel} has the given id. null if not found.
-     */
-    @Nullable PropertyModel getMenuItemPropertyModel(int itemId) {
-        for (int i = 0; i < mModelList.size(); i++) {
-            PropertyModel model = mModelList.get(i).model;
-            if (model.get(AppMenuItemProperties.MENU_ITEM_ID) == itemId) {
-                return model;
-            } else if (model.get(AppMenuItemProperties.ADDITIONAL_ICONS) != null) {
-                ModelList subList = model.get(AppMenuItemProperties.ADDITIONAL_ICONS);
-                for (int j = 0; j < subList.size(); j++) {
-                    PropertyModel subModel = subList.get(j).model;
-                    if (subModel.get(AppMenuItemProperties.MENU_ITEM_ID) == itemId) {
-                        return subModel;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /** Invalidate the app menu data. See {@link AppMenuAdapter#notifyDataSetChanged}. */
-    void invalidate() {
-        if (mAdapter != null) mAdapter.notifyDataSetChanged();
-    }
-
     @RequiresNonNull("mPopup")
     private void setMenuHeight(
-            List<Integer> menuItemIds,
-            List<Integer> heightList,
+            InitialSizingHelper sizingHelper,
             Rect appDimensions,
             Rect padding,
             int footerHeight,
             int headerHeight,
             View anchorView,
-            @IdRes int groupDividerResourceId,
             int anchorViewOffset) {
+        assert mAdapter != null;
         int anchorViewImpactHeight = mIsByPermanentButton ? anchorView.getHeight() : 0;
 
         int availableScreenSpace =
@@ -619,7 +515,7 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
         if (mIsByPermanentButton) availableScreenSpace -= padding.top;
         if (availableScreenSpace <= 0 && sExceptionReporter != null) {
             String logMessage =
-                    "there is no screen space for app menn, mIsByPermanentButton = "
+                    "there is no screen space for app menu, mIsByPermanentButton = "
                             + mIsByPermanentButton
                             + ", anchorViewOffset = "
                             + anchorViewOffset
@@ -640,24 +536,28 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
                     () -> sExceptionReporter.onResult(new Throwable(logMessage)));
         }
 
-        int menuHeight =
-                calculateHeightForItems(
-                        menuItemIds, heightList, groupDividerResourceId, availableScreenSpace);
+        // Find the height for each menu item.
+        int[] heightList = new int[mAdapter.getCount()];
+        boolean[] canBeLastList = new boolean[mAdapter.getCount()];
+        for (int i = 0; i < mAdapter.getCount(); i++) {
+            heightList[i] = sizingHelper.getInitialHeightForView(i);
+            canBeLastList[i] = sizingHelper.canBeLastVisibleInitialView(i);
+        }
+
+        int menuHeight = calculateHeightForItems(heightList, canBeLastList, availableScreenSpace);
         menuHeight += footerHeight + headerHeight + padding.top + padding.bottom;
         mPopup.setHeight(menuHeight);
     }
 
     @VisibleForTesting
-    int calculateHeightForItems(
-            List<Integer> menuItemIds,
-            List<Integer> heightList,
-            @IdRes int groupDividerResourceId,
-            int screenSpaceForItems) {
+    static int calculateHeightForItems(
+            int[] heightList, boolean[] canBeLastVisibleList, int screenSpaceForItems) {
         int availableScreenSpace = screenSpaceForItems > 0 ? screenSpaceForItems : 0;
         int spaceForFullItems = 0;
 
-        for (int i = 0; i < heightList.size(); i++) {
-            spaceForFullItems += heightList.get(i);
+        assert heightList.length == canBeLastVisibleList.length;
+        for (int height : heightList) {
+            spaceForFullItems += height;
         }
 
         int menuHeight;
@@ -667,28 +567,26 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
             int lastItem = 0;
             // App menu should show 1 full item at least.
             do {
-                spaceForItems += heightList.get(lastItem++);
-                if (spaceForItems + heightList.get(lastItem) > availableScreenSpace) {
+                spaceForItems += heightList[lastItem++];
+                if (spaceForItems + heightList[lastItem] > availableScreenSpace) {
                     break;
                 }
-            } while (lastItem < heightList.size() - 1);
+            } while (lastItem < heightList.length - 1);
 
-            int spaceForPartialItem = (int) (LAST_ITEM_SHOW_FRACTION * heightList.get(lastItem));
+            int spaceForPartialItem = (int) (LAST_ITEM_SHOW_FRACTION * heightList[lastItem]);
             // Determine which item needs hiding. We only show Partial of the last item, if there is
             // not enough screen space to partially show the last identified item, then partially
             // show the second to last item instead. We also do not show the partial divider line.
-            assert menuItemIds.size() == heightList.size();
             while (lastItem > 1
                     && (spaceForItems + spaceForPartialItem > availableScreenSpace
-                            || menuItemIds.get(lastItem) == groupDividerResourceId)) {
+                            || !canBeLastVisibleList[lastItem])) {
                 // If we have space for < 2.5 items, size menu to available screen space.
                 if (spaceForItems <= availableScreenSpace && lastItem < 3) {
                     spaceForPartialItem = availableScreenSpace - spaceForItems;
                     break;
                 }
-                spaceForItems -= heightList.get(lastItem - 1);
-                spaceForPartialItem =
-                        (int) (LAST_ITEM_SHOW_FRACTION * heightList.get(lastItem - 1));
+                spaceForItems -= heightList[lastItem - 1];
+                spaceForPartialItem = (int) (LAST_ITEM_SHOW_FRACTION * heightList[lastItem - 1]);
                 lastItem--;
             }
 
@@ -745,7 +643,7 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
         int heightMeasureSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
         mFooterView.measure(widthMeasureSpec, heightMeasureSpec);
 
-        if (mHandler != null) mHandler.onFooterViewInflated(mFooterView);
+        if (mVisibilityDelegate != null) mVisibilityDelegate.onFooterViewInflated(mFooterView);
 
         return mFooterView.getMeasuredHeight();
     }
@@ -763,7 +661,7 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
         int heightMeasureSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
         headerView.measure(widthMeasureSpec, heightMeasureSpec);
 
-        if (mHandler != null) mHandler.onHeaderViewInflated(headerView);
+        if (mVisibilityDelegate != null) mVisibilityDelegate.onHeaderViewInflated(headerView);
 
         return headerView.getMeasuredHeight();
     }
@@ -778,16 +676,6 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
                         + (mSelectedItemBeforeDismiss ? "SelectedItem" : "Abandoned");
         final long timeToTakeActionMs = SystemClock.elapsedRealtime() - mMenuShownTimeMs;
         RecordHistogram.deprecatedRecordMediumTimesHistogram(histogramName, timeToTakeActionMs);
-    }
-
-    private int getMenuItemHeight(
-            int itemType,
-            Context context,
-            SparseArray<Function<Context, Integer>> customSizingProviders) {
-        if (customSizingProviders.get(itemType) != null) {
-            return assumeNonNull(customSizingProviders.get(itemType)).apply(context);
-        }
-        return mItemRowHeight;
     }
 
     /**

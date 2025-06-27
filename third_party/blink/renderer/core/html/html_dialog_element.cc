@@ -353,7 +353,7 @@ bool HTMLDialogElement::HandleCommandInternal(HTMLElement& invoker,
 
   // Dialog actions conflict with popovers. We should avoid trying do anything
   // with a dialog that is an open popover.
-  if (HasPopoverAttribute() && popoverOpen()) {
+  if (IsPopover() && popoverOpen()) {
     AddConsoleMessage(mojom::blink::ConsoleMessageSource::kOther,
                       mojom::blink::ConsoleMessageLevel::kError,
                       "Dialog commands are ignored on open popovers.");
@@ -460,7 +460,7 @@ bool HTMLDialogElement::IsKeyboardFocusableSlow(
   }
   // Interest invoker targets with partial interest aren't keyboard focusable.
   if (IsInPartialInterestPopover()) {
-    CHECK(RuntimeEnabledFeatures::HTMLInterestTargetAttributeEnabled(
+    CHECK(RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled(
         GetDocument().GetExecutionContext()));
     return false;
   }
@@ -536,14 +536,13 @@ void HTMLDialogElement::showModal(ExceptionState& exception_state,
         DOMExceptionCode::kInvalidStateError,
         "The element is not in a Document.");
   }
-  if (HasPopoverAttribute() && popoverOpen()) {
+  if (IsPopover() && popoverOpen()) {
     return exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidStateError,
         "The dialog is already open as a Popover, and therefore cannot be "
         "opened as a modal dialog.");
   }
-  if (!GetDocument().IsActive() &&
-      RuntimeEnabledFeatures::TopLayerInactiveDocumentExceptionsEnabled()) {
+  if (!GetDocument().IsActive()) {
     return exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidStateError,
         "Invalid for dialogs within documents that are not fully active.");
@@ -682,10 +681,6 @@ void HTMLDialogElement::SetFocusForDialog() {
 bool HTMLDialogElement::DispatchToggleEvents(bool opening,
                                              Element* source,
                                              bool asModal) {
-  if (!RuntimeEnabledFeatures::DialogElementToggleEventsEnabled()) {
-    return true;
-  }
-
   String old_state = opening ? "closed" : "open";
   String new_state = opening ? "open" : "closed";
 
@@ -699,8 +694,7 @@ bool HTMLDialogElement::DispatchToggleEvents(bool opening,
     if (IsOpen()) {
       return false;
     }
-    if (asModal &&
-        (!isConnected() || (HasPopoverAttribute() && popoverOpen()))) {
+    if (asModal && (!isConnected() || (IsPopover() && popoverOpen()))) {
       return false;
     }
   }

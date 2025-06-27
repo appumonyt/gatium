@@ -98,7 +98,7 @@ bool ElementHasCarouselPseudoElement(const Element& element) {
 }
 
 // As per https://drafts.csswg.org/css-overflow-5/#focus-order,
-// focus order for carousel scroller and pseudo elements is different
+// focus order for carousel scroller and pseudo-elements is different
 // from usual DOM order, these functions here help to achieve the specced
 // order.
 Element* GetSelectedScrollMarkerFromScrollMarkerGroup(const Element& current) {
@@ -109,7 +109,7 @@ Element* GetSelectedScrollMarkerFromScrollMarkerGroup(const Element& current) {
   return nullptr;
 }
 
-// Carousel pseudo elements order.
+// Carousel pseudo-elements order.
 static constexpr std::array<PseudoId, 6> carousel_focus_order = {
     kPseudoIdScrollMarkerGroupBefore, kPseudoIdScrollMarkerGroupAfter,
     kPseudoIdScrollButtonBlockStart,  kPseudoIdScrollButtonInlineStart,
@@ -118,7 +118,7 @@ static constexpr std::array<PseudoId, 6> carousel_focus_order = {
 
 // Overwrites the DOM source order if it is currently inside a carousel or might
 // move into the carousel element. If not, it will call NextIncludingPseudo.
-// Carousel here means scroller with some special pseudo elements and the focus
+// Carousel here means scroller with some special pseudo-elements and the focus
 // order changes as described below.
 // DOM order for carousel is:
 // scroller, ::scroll-marker-group(before), ::scroll-button(),
@@ -360,7 +360,7 @@ class FocusNavigation final {
     reading_flow_previous_elements_.ReserveCapacityForSize(children.size());
     Element* prev_element = nullptr;
     for (Element* child : children) {
-      // Pseudo elements in reading-flow are not focusable and should not be
+      // Pseudo-elements in reading-flow are not focusable and should not be
       // included in the elements to traverse.
       if (child->IsPseudoElement()) {
         continue;
@@ -1325,17 +1325,8 @@ FocusController::FocusController(Page* page)
 
 void FocusController::SetFocusedFrame(Frame* frame, bool notify_embedder) {
   DCHECK(!frame || frame->GetPage() == page_);
-  if (focused_frame_ == frame || (is_changing_focused_frame_ && frame)) {
+  if (focused_frame_ == frame || (is_changing_focused_frame_ && frame))
     return;
-  }
-
-  // DevTools starts emulating focus early in the lifecycle.
-  // blink calls SetFocusedFrame(nullptr) after DevTools has already
-  // set a focused frame. Returning early to not discard previously
-  // set emulation state.
-  if (is_emulating_focus_ && !frame) {
-    return;
-  }
 
   is_changing_focused_frame_ = true;
 
@@ -1460,12 +1451,6 @@ bool FocusController::IsDocumentFocused(const Document& document) const {
 
   if (!focused_frame_) {
     return false;
-  }
-
-  // If DevTools is emulating focus, any document
-  // is focused irrespective of the tree.
-  if (is_emulating_focus_) {
-    return true;
   }
 
   if (IsA<HTMLFrameOwnerElement>(focused_frame_->Owner())) {

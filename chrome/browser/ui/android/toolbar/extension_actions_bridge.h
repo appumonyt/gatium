@@ -6,16 +6,19 @@
 #define CHROME_BROWSER_UI_ANDROID_TOOLBAR_EXTENSION_ACTIONS_BRIDGE_H_
 
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "base/android/jni_android.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/raw_ptr.h"
 #include "base/scoped_observation.h"
+#include "chrome/browser/ui/android/extensions/extension_keybinding_registry_android.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "extensions/browser/extension_action_icon_factory.h"
+#include "third_party/jni_zero/jni_zero.h"
+
+namespace extensions {
 
 class ExtensionActionsBridge : public ToolbarActionsModel::Observer,
                                public KeyedService {
@@ -31,15 +34,24 @@ class ExtensionActionsBridge : public ToolbarActionsModel::Observer,
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
 
   // JNI implementations.
-  jboolean AreActionsInitialized(JNIEnv* env);
-  std::vector<std::string> GetActionIds(JNIEnv* env);
-  base::android::ScopedJavaLocalRef<jobject>
-  GetAction(JNIEnv* env, const std::string& action_id, jint tab_id);
-  base::android::ScopedJavaLocalRef<jobject>
-  GetActionIcon(JNIEnv* env, const std::string& action_id, jint tab_id);
-  jint RunAction(JNIEnv* env,
-                 const std::string& action_id,
-                 const base::android::JavaParamRef<jobject>& web_contents_java);
+  bool AreActionsInitialized(JNIEnv* env);
+  std::vector<ToolbarActionsModel::ActionId> GetActionIds(JNIEnv* env);
+  base::android::ScopedJavaLocalRef<jobject> GetAction(
+      JNIEnv* env,
+      const ToolbarActionsModel::ActionId& action_id,
+      int tab_id);
+  base::android::ScopedJavaLocalRef<jobject> GetActionIcon(
+      JNIEnv* env,
+      const ToolbarActionsModel::ActionId& action_id,
+      int tab_id);
+  ExtensionAction::ShowAction RunAction(
+      JNIEnv* env,
+      const ToolbarActionsModel::ActionId& action_id,
+      content::WebContents* web_contents);
+  bool ExtensionsEnabled(JNIEnv* env);
+  jni_zero::ScopedJavaLocalRef<jobject> HandleKeyDownEvent(
+      JNIEnv* env,
+      const ui::KeyEventAndroid& key_event);
 
   // ToolbarActionsModel::Observer:
   void OnToolbarActionAdded(const ToolbarActionsModel::ActionId& id) override;
@@ -86,11 +98,14 @@ class ExtensionActionsBridge : public ToolbarActionsModel::Observer,
 
   raw_ptr<Profile> profile_;
   raw_ptr<ToolbarActionsModel> model_;
+  std::unique_ptr<ExtensionKeybindingRegistryAndroid> keybinding_registry_;
   std::map<ToolbarActionsModel::ActionId, std::unique_ptr<IconObserver>>
       icon_observers_;
   base::android::ScopedJavaGlobalRef<jobject> java_object_;
   base::ScopedObservation<ToolbarActionsModel, ToolbarActionsModel::Observer>
       model_observation_{this};
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_UI_ANDROID_TOOLBAR_EXTENSION_ACTIONS_BRIDGE_H_

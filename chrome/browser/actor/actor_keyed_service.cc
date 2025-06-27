@@ -7,9 +7,10 @@
 #include <utility>
 
 #include "base/task/single_thread_task_runner.h"
-#include "chrome/browser/actor/actor_coordinator.h"
+#include "base/types/pass_key.h"
 #include "chrome/browser/actor/actor_keyed_service_factory.h"
 #include "chrome/browser/actor/actor_task.h"
+#include "chrome/browser/actor/execution_engine.h"
 #include "chrome/browser/actor/task_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -49,7 +50,10 @@ void RunLater(base::OnceClosure task) {
 
 namespace actor {
 
-ActorKeyedService::ActorKeyedService(Profile* profile) : profile_(profile) {}
+ActorKeyedService::ActorKeyedService(
+    Profile* profile,
+    std::unique_ptr<ActorUiStateManagerInterface> ui_state_manager)
+    : actor_ui_state_manager_(std::move(ui_state_manager)), profile_(profile) {}
 
 ActorKeyedService::~ActorKeyedService() = default;
 
@@ -60,6 +64,7 @@ ActorKeyedService* ActorKeyedService::Get(content::BrowserContext* context) {
 
 TaskId ActorKeyedService::AddTask(std::unique_ptr<ActorTask> task) {
   TaskId task_id = next_task_id_.GenerateNextId();
+  task->SetId(base::PassKey<ActorKeyedService>(), task_id);
   tasks_[task_id] = std::move(task);
   return task_id;
 }
@@ -87,11 +92,18 @@ void ActorKeyedService::ExecuteAction(
     return;
   }
 #if BUILDFLAG(ENABLE_GLIC)
-  task->GetActorCoordinator()->Act(
+  task->GetExecutionEngine()->Act(
       std::move(action), base::BindOnce(&ActorKeyedService::OnActionFinished,
                                         weak_ptr_factory_.GetWeakPtr(),
                                         std::move(callback), action.task_id()));
 #endif
+}
+
+TaskId ActorKeyedService::CreateTask() {
+  auto execution_engine = std::make_unique<ExecutionEngine>(profile_.get());
+  auto actor_task = std::make_unique<ActorTask>(std::move(execution_engine));
+  TaskId task_id = AddTask(std::move(actor_task));
+  return task_id;
 }
 
 void ActorKeyedService::StartTask(
@@ -103,11 +115,12 @@ void ActorKeyedService::StartTask(
   tabs::TabHandle handle(task.tab_id());
   if (!task.tab_id()) {
     // Get the most recently active browser for this profile.
-    Browser* browser = chrome::FindBrowserWithProfile(profile_.get());
+    Browser* browser =
+        chrome::FindTabbedBrowser(profile_, /*match_original_profiles=*/false);
     // If no browser exists create one.
     if (!browser) {
       browser = Browser::Create(
-          Browser::CreateParams(profile_.get(), /*user_gesture=*/false));
+          Browser::CreateParams(profile_, /*user_gesture=*/false));
     }
     // Create a new tab.
     browser->OpenGURL(GURL(url::kAboutBlankURL),
@@ -116,32 +129,33 @@ void ActorKeyedService::StartTask(
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&ActorKeyedService::FinishStartTask,
-                       weak_ptr_factory_.GetWeakPtr(), handle, std::move(task),
+                       weak_ptr_factory_.GetWeakPtr(), handle,
                        std::move(callback)),
         kDelayForNewTab);
     return;
   }
 
-  FinishStartTask(handle, std::move(task), std::move(callback));
+  FinishStartTask(handle, std::move(callback));
 }
 
 void ActorKeyedService::FinishStartTask(
     tabs::TabHandle handle,
-    optimization_guide::proto::BrowserStartTask task,
     base::OnceCallback<void(optimization_guide::proto::BrowserStartTaskResult)>
         callback) {
   tabs::TabInterface* tab = handle.Get();
-  std::unique_ptr<actor::ActorCoordinator> actor_coordinator;
+  std::unique_ptr<actor::ExecutionEngine> execution_engine;
   if (tab) {
-    actor_coordinator =
-        std::make_unique<actor::ActorCoordinator>(profile_.get(), tab);
+    execution_engine =
+        std::make_unique<actor::ExecutionEngine>(profile_.get(), tab);
   } else {
-    actor_coordinator =
-        std::make_unique<actor::ActorCoordinator>(profile_.get());
+    execution_engine = std::make_unique<actor::ExecutionEngine>(profile_.get());
   }
 
   auto actor_task =
-      std::make_unique<actor::ActorTask>(std::move(actor_coordinator));
+      std::make_unique<actor::ActorTask>(std::move(execution_engine));
+  actor_task_subscriptions_.push_back(actor_task->RegisterTaskStateChange(
+      base::BindRepeating(&ActorKeyedService::OnActorTaskStateChanged,
+                          weak_ptr_factory_.GetWeakPtr())));
   actor::TaskId task_id = AddTask(std::move(actor_task));
 
   optimization_guide::proto::BrowserStartTaskResult result;
@@ -202,7 +216,7 @@ void ActorKeyedService::OnActionFinished(
     actor::mojom::ActionResultPtr action_result) {
   auto* task = GetTask(actor::TaskId(task_id));
   CHECK(task);
-  tabs::TabInterface* tab = task->GetActorCoordinator()->GetTabOfCurrentTask();
+  tabs::TabInterface* tab = task->GetExecutionEngine()->GetTabOfCurrentTask();
   if (!tab) {
     VLOG(1) << "Execute Action failed: Tab not found.";
     optimization_guide::proto::BrowserActionResult result;
@@ -221,6 +235,31 @@ void ActorKeyedService::OnActionFinished(
 }
 #endif
 
+void ActorKeyedService::PerformActions(
+    optimization_guide::proto::Actions actions,
+    base::OnceCallback<void(optimization_guide::proto::ActionsResult)>
+        callback) {
+  auto* task = GetTask(actor::TaskId(actions.task_id()));
+  if (!task) {
+    VLOG(1) << "PerformActions failed: Task not found.";
+    optimization_guide::proto::ActionsResult result;
+    result.set_action_result(
+        static_cast<int32_t>(mojom::ActionResultCode::kTaskWentAway));
+    RunLater(base::BindOnce(std::move(callback), std::move(result)));
+    return;
+  }
+  task->GetExecutionEngine()->Act(
+      std::move(actions),
+      base::BindOnce(&ActorKeyedService::OnActionsFinished,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+}
+
+void ActorKeyedService::OnActionsFinished(
+    base::OnceCallback<void(optimization_guide::proto::ActionsResult)> callback,
+    optimization_guide::proto::ActionsResult result) {
+  RunLater(base::BindOnce(std::move(callback), std::move(result)));
+}
+
 void ActorKeyedService::StopTask(TaskId task_id) {
   auto task = tasks_.find(task_id);
   if (task != tasks_.end()) {
@@ -234,6 +273,15 @@ ActorTask* ActorKeyedService::GetTask(TaskId task_id) {
     return task->second.get();
   }
   return nullptr;
+}
+
+ActorUiStateManagerInterface* ActorKeyedService::GetActorUiStateManager() {
+  return actor_ui_state_manager_.get();
+}
+
+void ActorKeyedService::OnActorTaskStateChanged(TaskId task_id,
+                                                ActorTask::State task_state) {
+  GetActorUiStateManager()->OnActorTaskStateChange(task_id, task_state);
 }
 
 }  // namespace actor

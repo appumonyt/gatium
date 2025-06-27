@@ -7,10 +7,26 @@
 
 #import <string>
 
+#import "base/memory/raw_ptr.h"
 #import "base/time/time.h"
 #import "components/omnibox/browser/autocomplete_input.h"
 #import "components/omnibox/browser/autocomplete_match.h"
+#import "components/omnibox/browser/omnibox_client.h"
 #import "components/omnibox/common/omnibox_focus_state.h"
+
+// Represents the changes between two OmniboxTextState objects. This is used by
+// the controller to determine how its internal state should be updated after
+// the view state changes.
+struct OmniboxStateChanges {
+  // `old_text` and `new_text` are not owned.
+  raw_ptr<const std::u16string> old_text;
+  raw_ptr<const std::u16string> new_text;
+  size_t new_sel_start;
+  size_t new_sel_end;
+  bool selection_differs;
+  bool text_differs;
+  bool just_deleted_text;
+};
 
 enum class OmniboxPasteState {
   kNone,     // Most recent edit was not a paste.
@@ -27,7 +43,7 @@ struct OmniboxTextState {
 // Manages the Omnibox text state.
 struct OmniboxTextModel {
  public:
-  OmniboxTextModel();
+  OmniboxTextModel(OmniboxClient* client);
   ~OmniboxTextModel();
 
   // Sets the state of user_input_in_progress_. Returns whether said state
@@ -39,6 +55,28 @@ struct OmniboxTextModel {
 
   /// Discards the focus state to None.
   void KillFocus();
+
+  // If focus_state_ does not match `state`, we update it and notify the
+  // InstantController about the change (passing along the `reason` for the
+  // change).
+  void SetFocusState(OmniboxFocusState state, OmniboxFocusChangeReason reason);
+
+  // Called when the view is gaining focus.
+  void OnSetFocus();
+
+  // Updates the user text state.
+  void UpdateUserText(const std::u16string& text);
+
+  // Updates the model state and returns true if possible state changes occur,
+  // returns false otherwise.
+  bool UpdateStateAfterPossibleChange(const OmniboxStateChanges& state_changes);
+
+  // Computes the State changes between two OmniboxTextState objects.
+  OmniboxStateChanges GetStateChanges(const OmniboxTextState& before,
+                                      const OmniboxTextState& after) const;
+
+  // The Omnibox client.
+  raw_ptr<OmniboxClient> omnibox_client;
 
   // The Omnibox focus state.
   OmniboxFocusState focus_state;
@@ -80,6 +118,12 @@ struct OmniboxTextModel {
   // This is needed to properly update the SearchModel state when the user
   // presses escape.
   bool in_revert;
+  // Used to know what should be displayed. Updated when e.g. the popup
+  // selection changes, the results change, on navigation, on tab switch etc; it
+  // should always be up-to-date.
+  AutocompleteMatch current_match;
+  // The initial text representing the current URL suitable for editing.
+  std::u16string url_for_editing;
 };
 
 #endif  // IOS_CHROME_BROWSER_OMNIBOX_MODEL_OMNIBOX_TEXT_MODEL_H_

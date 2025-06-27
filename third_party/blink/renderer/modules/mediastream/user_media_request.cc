@@ -503,6 +503,31 @@ UserMediaRequest* UserMediaRequest::Create(
       options->hasSystemAudio() &&
       options->systemAudio().AsEnum() ==
           V8DisplayMediaIncludeOrExclude::Enum::kExclude);
+
+  if (RuntimeEnabledFeatures::GetDisplayMediaWindowAudioCaptureEnabled()) {
+    // Default is kSystem
+    mojom::blink::WindowAudioPreference value =
+        mojom::blink::WindowAudioPreference::kSystem;
+    if (options->hasWindowAudio()) {
+      switch (options->windowAudio().AsEnum()) {
+        case V8DisplayMediaSystemWindowOrExclude::Enum::kExclude:
+          value = mojom::blink::WindowAudioPreference::kExclude;
+          break;
+        case V8DisplayMediaSystemWindowOrExclude::Enum::kWindow:
+          value = mojom::blink::WindowAudioPreference::kWindow;
+          break;
+        case V8DisplayMediaSystemWindowOrExclude::Enum::kSystem:
+          value = mojom::blink::WindowAudioPreference::kSystem;
+          break;
+      }
+    }
+    result->set_window_audio_preference(value);
+  } else {
+    // if the feature is not enabled, we'll set kExclude to never share audio
+    // when sharing windows.
+    result->set_window_audio_preference(
+        mojom::blink::WindowAudioPreference::kExclude);
+  }
   if (media_type == UserMediaRequestType::kDisplayMedia) {
     std::optional<V8DisplayMediaIncludeOrExclude::Enum> include_or_exclude;
     if (options->hasSystemAudio()) {
@@ -598,9 +623,13 @@ UserMediaRequest* UserMediaRequest::Create(
 
 UserMediaRequest* UserMediaRequest::CreateForTesting(
     const MediaConstraints& audio,
-    const MediaConstraints& video) {
+    const MediaConstraints& video,
+    bool is_user_media) {
   return MakeGarbageCollected<UserMediaRequest>(
-      nullptr, nullptr, UserMediaRequestType::kUserMedia, audio, video,
+      nullptr, nullptr,
+      is_user_media ? UserMediaRequestType::kUserMedia
+                    : UserMediaRequestType::kDisplayMedia,
+      audio, video,
       /*should_prefer_current_tab=*/false,
       /*capture_controller=*/nullptr, /*callbacks=*/nullptr,
       IdentifiableSurface());

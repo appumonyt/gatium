@@ -49,6 +49,7 @@ import org.chromium.chrome.browser.layouts.LayoutType;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.theme.SurfaceColorUpdateUtils;
 import org.chromium.chrome.browser.toolbar.ToolbarFeatures;
+import org.chromium.chrome.browser.toolbar.ToolbarHairlineView;
 import org.chromium.chrome.browser.toolbar.ToolbarProgressBar;
 import org.chromium.chrome.browser.toolbar.top.CaptureReadinessResult.TopToolbarAllowCaptureReason;
 import org.chromium.chrome.browser.toolbar.top.CaptureReadinessResult.TopToolbarBlockCaptureReason;
@@ -76,7 +77,7 @@ public class ToolbarControlContainerTest {
     @Mock private View mToolbarContainer;
     @Mock private ViewGroup mToolbarView;
     @Mock private View mLocationBarView;
-    @Mock private View mToolbarHairline;
+    @Mock private ToolbarHairlineView mToolbarHairline;
     @Mock private Toolbar mToolbar;
     @Mock private ToolbarProgressBar mProgressBar;
     @Mock private Tab mTab;
@@ -141,7 +142,7 @@ public class ToolbarControlContainerTest {
     }
 
     private void verifyRequestsOnInMotionChange(boolean inMotion, boolean expectResourceRequested) {
-        assertNotEquals(inMotion, mCompositorInMotionSupplier.get().booleanValue());
+        assertNotEquals(inMotion, mCompositorInMotionSupplier.get());
         int requestCount = mOnResourceRequestedCount.get();
         mCompositorInMotionSupplier.set(inMotion);
         ShadowLooper.idleMainLooper();
@@ -353,6 +354,24 @@ public class ToolbarControlContainerTest {
         verifyRequestsOnInMotionChange(/* inMotion= */ false, /* expectResourceRequested= */ true);
         assertFalse(didAdapterLockControls());
         histogramWatcher.assertExpected();
+    }
+
+    @Test
+    public void testIsDirty_InMotion3() {
+        makeAndInitAdapter();
+        when(mToolbar.isReadyForTextureCapture())
+                .thenReturn(
+                        CaptureReadinessResult.notReady(
+                                TopToolbarBlockCaptureReason
+                                        .OPTIONAL_BUTTON_ANIMATION_IN_PROGRESS));
+        when(mTab.isNativePage()).thenReturn(false);
+        mIsVisible = true;
+
+        verifyRequestsOnInMotionChange(/* inMotion= */ true, /* expectResourceRequested= */ false);
+        assertTrue(didAdapterLockControls());
+
+        verifyRequestsOnInMotionChange(/* inMotion= */ false, /* expectResourceRequested= */ true);
+        assertFalse(didAdapterLockControls());
     }
 
     @Test

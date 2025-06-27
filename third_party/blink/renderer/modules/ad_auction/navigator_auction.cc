@@ -1225,8 +1225,8 @@ bool CopyAdditionalBidKeyFromIdlToMojo(
     return true;
   }
   WTF::Vector<uint8_t> decoded_key;
-  if (!WTF::Base64Decode(input.additionalBidKey(), decoded_key,
-                         WTF::Base64DecodePolicy::kForgiving)) {
+  if (!Base64Decode(input.additionalBidKey(), decoded_key,
+                    Base64DecodePolicy::kForgiving)) {
     exception_state.ThrowTypeError(ErrorInvalidInterestGroup(
         input, "additionalBidKey", input.additionalBidKey(),
         "cannot be base64 decoded."));
@@ -1819,7 +1819,7 @@ ConvertDirectFromSellerSignalsFromV8ToMojo(
       // Replace "/" with "%2F" to match the behavior of
       // base::EscapeQueryParamValue(). Also, the subresource won't be found if
       // the URL doesn't match.
-      const KURL subresource_url(WTF::StrCat(
+      const KURL subresource_url(StrCat(
           {direct_from_seller_signals_prefix.GetString(), "?perBuyerSignals=",
            EncodeWithURLEscapeSequences(buyer->ToString())
                .Replace("/", "%2F")}));
@@ -1835,7 +1835,7 @@ ConvertDirectFromSellerSignalsFromV8ToMojo(
   }
 
   {
-    const KURL subresource_url(WTF::StrCat(
+    const KURL subresource_url(StrCat(
         {direct_from_seller_signals_prefix.GetString(), "?sellerSignals"}));
     mojom::blink::DirectFromSellerSignalsSubresourcePtr maybe_mojo_bundle =
         TryToBuildDirectFromSellerSignalsSubresource(
@@ -1846,7 +1846,7 @@ ConvertDirectFromSellerSignalsFromV8ToMojo(
   }
 
   {
-    const KURL subresource_url(WTF::StrCat(
+    const KURL subresource_url(StrCat(
         {direct_from_seller_signals_prefix.GetString(), "?auctionSignals"}));
     mojom::blink::DirectFromSellerSignalsSubresourcePtr maybe_mojo_bundle =
         TryToBuildDirectFromSellerSignalsSubresource(

@@ -4,6 +4,9 @@
 
 #include "chrome/browser/ui/android/toolbar/extension_actions_bridge.h"
 
+#include <memory>
+#include <variant>
+
 #include "base/android/jni_string.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "chrome/browser/profiles/profile.h"
@@ -12,6 +15,9 @@
 #include "extensions/browser/extension_action.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/extension_registry.h"
+#include "ui/events/android/key_event_android.h"
+#include "ui/events/event.h"
+#include "ui/events/platform_event.h"
 #include "ui/gfx/android/java_bitmap.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
@@ -22,16 +28,13 @@ using base::android::AttachCurrentThread;
 using base::android::JavaParamRef;
 using base::android::ScopedJavaLocalRef;
 using content::WebContents;
-using extensions::Extension;
-using extensions::ExtensionAction;
-using extensions::ExtensionActionManager;
-using extensions::ExtensionActionRunner;
-using extensions::ExtensionRegistry;
+
+namespace extensions {
 
 ExtensionActionsBridge::IconObserver::IconObserver(
     ExtensionActionsBridge* bridge,
-    const extensions::Extension& extension,
-    extensions::ExtensionAction& action)
+    const Extension& extension,
+    ExtensionAction& action)
     : bridge_(bridge),
       action_id_(extension.id()),
       icon_factory_(&extension, &action, this) {}
@@ -47,7 +50,10 @@ void ExtensionActionsBridge::IconObserver::OnIconUpdated() {
 }
 
 ExtensionActionsBridge::ExtensionActionsBridge(Profile* profile)
-    : profile_(profile), model_(ToolbarActionsModel::Get(profile)) {
+    : profile_(profile),
+      model_(ToolbarActionsModel::Get(profile)),
+      keybinding_registry_(
+          std::make_unique<ExtensionKeybindingRegistryAndroid>(profile)) {
   java_object_ = Java_ExtensionActionsBridge_Constructor(
       AttachCurrentThread(), reinterpret_cast<jlong>(this));
   model_observation_.Observe(model_);
@@ -66,19 +72,20 @@ ScopedJavaLocalRef<jobject> ExtensionActionsBridge::GetJavaObject() {
   return java_object_.AsLocalRef(AttachCurrentThread());
 }
 
-jboolean ExtensionActionsBridge::AreActionsInitialized(JNIEnv* env) {
-  return static_cast<jboolean>(model_->actions_initialized());
+bool ExtensionActionsBridge::AreActionsInitialized(JNIEnv* env) {
+  return model_->actions_initialized();
 }
 
-std::vector<std::string> ExtensionActionsBridge::GetActionIds(JNIEnv* env) {
+std::vector<ToolbarActionsModel::ActionId> ExtensionActionsBridge::GetActionIds(
+    JNIEnv* env) {
   const auto& ids = model_->action_ids();
   return std::vector(ids.begin(), ids.end());
 }
 
 ScopedJavaLocalRef<jobject> ExtensionActionsBridge::GetAction(
     JNIEnv* env,
-    const std::string& action_id,
-    jint tab_id) {
+    const ToolbarActionsModel::ActionId& action_id,
+    int tab_id) {
   ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
   DCHECK(registry);
   ExtensionActionManager* manager = ExtensionActionManager::Get(profile_);
@@ -95,27 +102,27 @@ ScopedJavaLocalRef<jobject> ExtensionActionsBridge::GetAction(
     return nullptr;
   }
 
-  return Java_ExtensionAction_Constructor(
-      env, action_id, action->GetTitle(static_cast<int>(tab_id)));
+  return Java_ExtensionAction_Constructor(env, action_id,
+                                          action->GetTitle(tab_id));
 }
 
 ScopedJavaLocalRef<jobject> ExtensionActionsBridge::GetActionIcon(
     JNIEnv* env,
-    const std::string& action_id,
-    jint tab_id) {
+    const ToolbarActionsModel::ActionId& action_id,
+    int tab_id) {
   IconObserver* icon_observer = EnsureIconObserver(action_id);
   if (!icon_observer) {
     return nullptr;
   }
 
-  gfx::Image image = icon_observer->GetIcon(static_cast<int>(tab_id));
+  gfx::Image image = icon_observer->GetIcon(tab_id);
   return gfx::ConvertToJavaBitmap(*image.ToSkBitmap());
 }
 
-jint ExtensionActionsBridge::RunAction(
+ExtensionAction::ShowAction ExtensionActionsBridge::RunAction(
     JNIEnv* env,
-    const std::string& action_id,
-    const JavaParamRef<jobject>& web_contents_java) {
+    const ToolbarActionsModel::ActionId& action_id,
+    content::WebContents* web_contents) {
   ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
   DCHECK(registry);
   ExtensionActionManager* manager = ExtensionActionManager::Get(profile_);
@@ -124,23 +131,36 @@ jint ExtensionActionsBridge::RunAction(
   const Extension* extension =
       registry->enabled_extensions().GetByID(action_id);
   if (extension == nullptr) {
-    return static_cast<jint>(ExtensionAction::ShowAction::kNone);
-  }
-
-  WebContents* web_contents =
-      WebContents::FromJavaWebContents(web_contents_java);
-  if (extension == nullptr) {
-    return static_cast<jint>(ExtensionAction::ShowAction::kNone);
+    return ExtensionAction::ShowAction::kNone;
   }
 
   ExtensionActionRunner* runner =
       ExtensionActionRunner::GetForWebContents(web_contents);
   if (runner == nullptr) {
-    return static_cast<jint>(ExtensionAction::ShowAction::kNone);
+    return ExtensionAction::ShowAction::kNone;
   }
 
-  return static_cast<jint>(
-      runner->RunAction(extension, /*grant_tab_permissions=*/true));
+  return runner->RunAction(extension, /*grant_tab_permissions=*/true);
+}
+
+bool ExtensionActionsBridge::ExtensionsEnabled(JNIEnv* env) {
+  ExtensionManagement* extension_management =
+      ExtensionManagementFactory::GetForBrowserContext(profile_);
+  return extension_management->ExtensionsEnabledForDesktopAndroid();
+}
+
+jni_zero::ScopedJavaLocalRef<jobject>
+ExtensionActionsBridge::HandleKeyDownEvent(
+    JNIEnv* env,
+    const ui::KeyEventAndroid& key_event) {
+  std::variant<bool, ToolbarActionsModel::ActionId> result =
+      keybinding_registry_->HandleKeyDownEvent(key_event);
+  if (result.index() == 0) {
+    return Java_HandleKeyEventResult_Constructor(env, std::get<bool>(result),
+                                                 "");
+  }
+  return Java_HandleKeyEventResult_Constructor(
+      env, false, std::get<ToolbarActionsModel::ActionId>(result));
 }
 
 void ExtensionActionsBridge::OnToolbarActionAdded(
@@ -221,3 +241,5 @@ static ScopedJavaLocalRef<jobject> JNI_ExtensionActionsBridge_Get(
   DCHECK(bridge);
   return bridge->GetJavaObject();
 }
+
+}  // namespace extensions

@@ -59,12 +59,12 @@
 namespace blink {
 
 class AnimationTimeline;
+class AnimationTrigger;
 class Element;
 class PaintArtifactCompositor;
 class StyleChangeReasonForTracing;
 class TreeScope;
 class TimelineRange;
-class AnimationTrigger;
 
 class CORE_EXPORT Animation : public EventTarget,
                               public ActiveScriptWrappable<Animation>,
@@ -108,10 +108,7 @@ class CORE_EXPORT Animation : public EventTarget,
                            AnimationTimeline*,
                            ExceptionState&);
 
-  Animation(ExecutionContext*,
-            AnimationTimeline*,
-            AnimationEffect*,
-            AnimationTrigger*);
+  Animation(ExecutionContext*, AnimationTimeline*, AnimationEffect*);
   ~Animation() override;
   void Dispose();
 
@@ -436,8 +433,10 @@ class CORE_EXPORT Animation : public EventTarget,
   using NativePaintWorkletReasons = uint32_t;
   NativePaintWorkletReasons GetNativePaintWorkletReasons() const;
 
-  static RangeBoundary* ToRangeBoundary(std::optional<TimelineOffset> offset);
-  static RangeBoundary* ToRangeBoundary(TimelineOffsetOrAuto offset_or_auto);
+  static RangeBoundary* ToRangeBoundary(std::optional<TimelineOffset> offset,
+                                        float zoom);
+  static RangeBoundary* ToRangeBoundary(TimelineOffsetOrAuto offset_or_auto,
+                                        float zoom);
 
   struct AnimationTriggerData {
     // The most recent `animation-play-state` value for |animation_|. This will
@@ -467,6 +466,9 @@ class CORE_EXPORT Animation : public EventTarget,
   void PlayInternal(AutoRewind auto_rewind, ExceptionState& exception_state);
   void PauseInternal(ExceptionState& exception_state);
   void ReverseInternal(ExceptionState& exception_state);
+
+  void AddTrigger(AnimationTrigger* trigger);
+  void RemoveTrigger(AnimationTrigger* trigger);
 
  protected:
   DispatchEventResult DispatchEventInternal(Event&) override;
@@ -573,6 +575,12 @@ class CORE_EXPORT Animation : public EventTarget,
       const RangeBoundary* boundary,
       double default_percent,
       ExceptionState& exception_state);
+
+  void DisassociateTriggers();
+
+  // Returns the effective zoom for the keyframe effect's target, or 1.f if
+  // there is no keyframe effect or no target with computed style.
+  float GetKeyframeEffectTargetZoom() const;
 
   String id_;
 
@@ -744,7 +752,8 @@ class CORE_EXPORT Animation : public EventTarget,
   // event.
   bool paused_for_trigger_ = false;
 
-  Member<AnimationTrigger> trigger_;
+  HeapHashSet<WeakMember<AnimationTrigger>> triggers_;
+
   AnimationTriggerData trigger_data_;
 
   FRIEND_TEST_ALL_PREFIXES(AnimationAnimationTestCompositing,

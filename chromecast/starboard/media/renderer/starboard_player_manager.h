@@ -6,12 +6,15 @@
 #define CHROMECAST_STARBOARD_MEDIA_RENDERER_STARBOARD_PLAYER_MANAGER_H_
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chromecast/starboard/media/cdm/starboard_drm_wrapper.h"
 #include "chromecast/starboard/media/media/starboard_api_wrapper.h"
 #include "chromecast/starboard/media/renderer/client_stats_tracker.h"
 #include "chromecast/starboard/media/renderer/demuxer_stream_reader.h"
@@ -84,6 +87,7 @@ class StarboardPlayerManager {
 
  private:
   explicit StarboardPlayerManager(
+      std::optional<StarboardDrmWrapper::DrmSystemResource> drm_resource,
       StarboardApiWrapper* starboard,
       ::media::DemuxerStream* audio_stream,
       ::media::DemuxerStream* video_stream,
@@ -147,10 +151,14 @@ class StarboardPlayerManager {
       &StarboardPlayerManager::CallOnPlayerStatus,
       &StarboardPlayerManager::CallOnPlayerError,
   };
-  StarboardApiWrapper* starboard_ = nullptr;
+  // Ensure that the underlying SbDrmSystem is not destructed until after this
+  // class's destructor runs (so we can destroy SbPlayer first). This is
+  // optional because it is only needed for DRM playback.
+  std::optional<StarboardDrmWrapper::DrmSystemResource> drm_resource_;
+  raw_ptr<StarboardApiWrapper> starboard_ = nullptr;
   // This class owns the SbPlayer.
-  void* player_ = nullptr;
-  ::media::RendererClient* client_ = nullptr;
+  raw_ptr<void> player_ = nullptr;
+  raw_ptr<::media::RendererClient> client_ = nullptr;
   ClientStatsTracker stats_tracker_;
   bool flushing_ = false;
   double playback_rate_ = 0.0;
@@ -160,7 +168,7 @@ class StarboardPlayerManager {
   DemuxerStreamReader demuxer_stream_reader_;
   // Maps from a buffer address to the scoped_refptr managing the buffer's
   // lifetime.
-  base::flat_map<const void*, scoped_refptr<::media::DecoderBuffer>>
+  base::flat_map<raw_ptr<const void>, scoped_refptr<::media::DecoderBuffer>>
       addr_to_buffer_;
 
   // This should be destructed first, to invalidate any weak ptrs.

@@ -44,14 +44,13 @@ namespace blink {
 TextDecoder* TextDecoder::Create(const String& label,
                                  const TextDecoderOptions* options,
                                  ExceptionState& exception_state) {
-  WTF::TextEncoding encoding(
-      label.StripWhiteSpace(&encoding::IsASCIIWhiteSpace));
+  TextEncoding encoding(label.StripWhiteSpace(&encoding::IsASCIIWhiteSpace));
   // The replacement encoding is not valid, but the Encoding API also
   // rejects aliases of the replacement encoding.
   if (!encoding.IsValid() ||
       WTF::EqualIgnoringASCIICase(encoding.GetName(), "replacement")) {
-    exception_state.ThrowRangeError(WTF::StrCat(
-        {"The encoding label provided ('", label, "') is invalid."}));
+    exception_state.ThrowRangeError(
+        StrCat({"The encoding label provided ('", label, "') is invalid."}));
     return nullptr;
   }
 
@@ -59,7 +58,7 @@ TextDecoder* TextDecoder::Create(const String& label,
                                            options->ignoreBOM());
 }
 
-TextDecoder::TextDecoder(const WTF::TextEncoding& encoding,
+TextDecoder::TextDecoder(const TextEncoding& encoding,
                          bool fatal,
                          bool ignore_bom)
     : encoding_(encoding),
@@ -113,8 +112,8 @@ String TextDecoder::Decode(base::span<const uint8_t> input,
 
   DCHECK(codec_);
   do_not_flush_ = options->stream();
-  WTF::FlushBehavior flush = do_not_flush_ ? WTF::FlushBehavior::kDoNotFlush
-                                           : WTF::FlushBehavior::kDataEOF;
+  FlushBehavior flush =
+      do_not_flush_ ? FlushBehavior::kDoNotFlush : FlushBehavior::kDataEOF;
 
   bool saw_error = false;
   String s = codec_->Decode(input, flush, fatal_, saw_error);

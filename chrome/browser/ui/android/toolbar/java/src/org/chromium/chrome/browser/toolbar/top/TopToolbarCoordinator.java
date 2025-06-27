@@ -151,7 +151,7 @@ public class TopToolbarCoordinator implements Toolbar {
      *     TabStripTransitionDelegate}.
      * @param onLongClickListener OnLongClickListener for the toolbar.
      * @param homeButtonDisplay The {@link HomeButtonDisplay} to manage the display and behavior of
-     *     home button(s).
+     *     home button(s). Should be null on custom tabs.
      */
     public TopToolbarCoordinator(
             ToolbarControlContainer controlContainer,
@@ -184,7 +184,7 @@ public class TopToolbarCoordinator implements Toolbar {
             ObservableSupplier<@Nullable Tab> tabSupplier,
             ObservableSupplier<Boolean> toolbarNavControlsEnabledSupplier,
             @Nullable BackButtonCoordinator backButtonCoordinator,
-            HomeButtonDisplay homeButtonDisplay) {
+            @Nullable HomeButtonDisplay homeButtonDisplay) {
         mToolbarLayout = toolbarLayout;
         mMenuButtonCoordinator = browsingModeMenuButtonCoordinator;
         mControlContainer = controlContainer;
@@ -271,8 +271,6 @@ public class TopToolbarCoordinator implements Toolbar {
      *
      * <p>Calling this must occur after the native library have completely loaded.
      *
-     * @param tabSwitcherClickHandler The click handler for the tab switcher button.
-     * @param appMenuDelegate Allows interacting with the app menu.
      * @param profile The primary Profile associated with this Toolbar.
      * @param layoutUpdater A {@link Runnable} used to request layout update upon scene change.
      * @param bookmarkClickHandler The click handler for the bookmarks button.
@@ -287,6 +285,8 @@ public class TopToolbarCoordinator implements Toolbar {
      * @param suppressToolbarSceneLayerSupplier Supplier for whether suppress the update to the
      *     toolbar scene layer.
      * @param progressInfoCallback Callback when progress bar DrawingInfo has an update.
+     * @param captureResourceIdSupplier Provides an id for the captured resource shown by the
+     *     compositor.
      */
     public void initializeWithNative(
             Profile profile,
@@ -299,7 +299,8 @@ public class TopToolbarCoordinator implements Toolbar {
             TopUiThemeColorProvider topUiThemeColorProvider,
             ObservableSupplier<Integer> bottomToolbarControlsOffsetSupplier,
             ObservableSupplier<Boolean> suppressToolbarSceneLayerSupplier,
-            Callback<DrawingInfo> progressInfoCallback) {
+            Callback<DrawingInfo> progressInfoCallback,
+            ObservableSupplier<Long> captureResourceIdSupplier) {
         mTrackerSupplier.set(TrackerFactory.getTrackerForProfile(profile));
         mToolbarLayout.setTabCountSupplier(mTabCountSupplier);
         getLocationBar().updateVisualsForState();
@@ -326,7 +327,8 @@ public class TopToolbarCoordinator implements Toolbar {
                             LayoutType.BROWSING
                                     | LayoutType.SIMPLE_ANIMATION
                                     | LayoutType.TAB_SWITCHER,
-                            false);
+                            /* isVisibilityManuallyControlled= */ false,
+                            captureResourceIdSupplier);
             layoutManager.addSceneOverlay(mOverlayCoordinator);
             mToolbarLayout.setOverlayCoordinator(mOverlayCoordinator);
         }
@@ -499,6 +501,15 @@ public class TopToolbarCoordinator implements Toolbar {
      */
     public @AdaptiveToolbarButtonVariant int getCurrentOptionalButtonVariant() {
         return mOptionalButtonController.getCurrentButtonVariant();
+    }
+
+    /**
+     * Sets the delegate for the optional button.
+     *
+     * @param delegate The {@link OptionalBrowsingModeButtonController.Delegate}.
+     */
+    public void setOptionalButtonDelegate(OptionalBrowsingModeButtonController.Delegate delegate) {
+        mOptionalButtonController.setDelegate(delegate);
     }
 
     /**

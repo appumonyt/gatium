@@ -80,6 +80,8 @@ class CORE_EXPORT InlineLayoutAlgorithm final
     return line_clamp_ellipsis_;
   }
 
+  static LineClampEllipsis ShapeLineClampEllipsis(const InlineNode&);
+
  private:
   friend class LineWidthsTest;
 
@@ -149,6 +151,9 @@ class CORE_EXPORT InlineLayoutAlgorithm final
   // True if in quirks or limited-quirks mode, which require line-height quirks.
   // https://quirks.spec.whatwg.org/#the-line-height-calculation-quirk
   unsigned quirks_mode_ : 1;
+
+  // Is text-grow or text-shrink workable?
+  bool apply_fit_text_ = false;
 
 #if EXPENSIVE_DCHECKS_ARE_ON()
   // True if |box_states_| is taken from |context_|, to check the |box_states_|

@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
-import("//components/nacl/features.gni")
 import("//components/services/on_device_translation/buildflags/features.gni")
 import("//components/signin/features.gni")
 import("//extensions/buildflags/buildflags.gni")
@@ -249,6 +248,7 @@ source_set("policy_specific_browser_tests") {
   deps = [
     ":test_support",
     "//base",
+    "//build:android_buildflags",
     "//chrome/app:command_ids",
     "//chrome/browser",
     "//chrome/browser/media/webrtc",
@@ -317,7 +317,7 @@ source_set("policy_specific_browser_tests") {
       "//chrome/browser/profiles:profile",
       "//chrome/browser/task_manager",
       "//components/autofill/content/browser:test_support",
-      "//components/autofill_ai/core/browser",
+      "//components/autofill/core/browser",
       "//components/bookmarks/common",
       "//components/enterprise",
       "//components/enterprise:test_support",
@@ -522,6 +522,7 @@ source_set("browser_tests") {
 
       # Chrome OS does not support this policy.
       "test/native_messaging_policy_browsertest.cc",
+      "test/swiftshader_enabled_browsertest.cc",
     ]
   }
 

@@ -54,7 +54,6 @@
 #include "components/variations/service/safe_seed_manager.h"
 #include "components/variations/service/variations_service_client.h"
 #include "components/variations/service/variations_service_utils.h"
-#include "components/variations/synthetic_trial_registry.h"
 #include "components/variations/variations_ids_provider.h"
 #include "components/variations/variations_layers.h"
 #include "components/variations/variations_seed_processor.h"
@@ -228,7 +227,6 @@ bool VariationsFieldTrialCreatorBase::SetUpFieldTrials(
     const std::vector<base::FeatureList::FeatureOverrideInfo>& extra_overrides,
     std::unique_ptr<base::FeatureList> feature_list,
     metrics::MetricsStateManager* metrics_state_manager,
-    SyntheticTrialRegistry* synthetic_trial_registry,
     PlatformFieldTrials* platform_field_trials,
     SafeSeedManagerBase* safe_seed_manager,
     bool add_entropy_source_to_variations_ids,
@@ -317,15 +315,15 @@ bool VariationsFieldTrialCreatorBase::SetUpFieldTrials(
         GetClientFilterableStateForVersion(current_version);
   }
 
-  bool used_seed = false;
+  CreateTrialsResult create_trials_result = {.applied_seed = false};
   if (!used_testing_config && client_filterable_state) {
-    used_seed = CreateTrialsFromSeed(
+    create_trials_result = CreateTrialsFromSeed(
         entropy_providers, feature_list.get(), safe_seed_manager,
-        synthetic_trial_registry, std::move(client_filterable_state));
+        std::move(client_filterable_state));
   }
 
   platform_field_trials->SetUpClientSideFieldTrials(
-      used_seed, entropy_providers, feature_list.get());
+      create_trials_result.applied_seed, entropy_providers, feature_list.get());
 
   platform_field_trials->RegisterFeatureOverrides(feature_list.get());
 
@@ -343,7 +341,7 @@ bool VariationsFieldTrialCreatorBase::SetUpFieldTrials(
 
   VLOG(1) << "VariationsSetupComplete";
 
-  return used_seed;
+  return create_trials_result.applied_seed;
 }
 
 std::unique_ptr<ClientFilterableState>
@@ -532,16 +530,16 @@ void VariationsFieldTrialCreatorBase::ApplyFieldTrialTestingConfig(
 }
 #endif  // BUILDFLAG(FIELDTRIAL_TESTING_ENABLED)
 
-base::Time VariationsFieldTrialCreatorBase::CalculateSeedFreshness() {
+base::Time VariationsFieldTrialCreatorBase::GetSeedFetchTime() {
   // TODO(crbug.com/40274989): Consider comparing the server-provided fetch time
   // with the network time.
   return seed_type_ == SeedType::kSafeSeed
              ? GetSeedStore()->GetSafeSeedFetchTime()
-             : GetSeedStore()->GetLastFetchTime();
+             : GetSeedStore()->GetLatestSeedFetchTime();
 }
 
 bool VariationsFieldTrialCreatorBase::HasSeedExpired() {
-  const base::Time fetch_time = CalculateSeedFreshness();
+  const base::Time fetch_time = GetSeedFetchTime();
   // If the fetch time is null, skip the expiry check. If the seed is a regular
   // seed (i.e. not a safe seed) and the fetch time is missing, then this must
   // be the first run of Chrome. If the seed is a safe seed, the fetch time may
@@ -615,11 +613,10 @@ VariationsFieldTrialCreatorBase::GetGoogleGroupsFromPrefs() {
   return groups;
 }
 
-bool VariationsFieldTrialCreatorBase::CreateTrialsFromSeed(
+CreateTrialsResult VariationsFieldTrialCreatorBase::CreateTrialsFromSeed(
     const EntropyProviders& entropy_providers,
     base::FeatureList* feature_list,
     SafeSeedManagerBase* safe_seed_manager,
-    SyntheticTrialRegistry* synthetic_trial_registry,
     std::unique_ptr<ClientFilterableState> client_state) {
   // This histogram name uses "VariationsFieldTrialCreator" rather than
   // "VariationsFieldTrialCreatorBase" for consistency with historical data
@@ -639,7 +636,7 @@ bool VariationsFieldTrialCreatorBase::CreateTrialsFromSeed(
   // If we have tried safe seed and we still get crashes, try null seed.
   if (seed_type_ == SeedType::kNullSeed) {
     RecordVariationsSeedUsage(SeedUsage::kNullSeedUsed);
-    return false;
+    return CreateTrialsResult{.applied_seed = false};
   }
 
   VariationsSeed seed;
@@ -657,19 +654,19 @@ bool VariationsFieldTrialCreatorBase::CreateTrialsFromSeed(
     RecordVariationsSeedUsage(run_in_safe_mode
                                   ? SeedUsage::kUnloadableSafeSeedNotUsed
                                   : SeedUsage::kUnloadableRegularSeedNotUsed);
-    return false;
+    return CreateTrialsResult{.applied_seed = false};
   }
   if (HasSeedExpired()) {
     RecordVariationsSeedUsage(run_in_safe_mode
                                   ? SeedUsage::kExpiredSafeSeedNotUsed
                                   : SeedUsage::kExpiredRegularSeedNotUsed);
-    return false;
+    return CreateTrialsResult{.applied_seed = false};
   }
   if (IsSeedForFutureMilestone(/*is_safe_seed=*/run_in_safe_mode)) {
     RecordVariationsSeedUsage(
         run_in_safe_mode ? SeedUsage::kSafeSeedForFutureMilestoneNotUsed
                          : SeedUsage::kRegularSeedForFutureMilestoneNotUsed);
-    return false;
+    return CreateTrialsResult{.applied_seed = false};
   }
   RecordVariationsSeedUsage(run_in_safe_mode ? SeedUsage::kSafeSeedUsed
                                              : SeedUsage::kRegularSeedUsed);
@@ -690,7 +687,9 @@ bool VariationsFieldTrialCreatorBase::CreateTrialsFromSeed(
   // `SeedHasMisconfiguredEntropy()`is always false.
   if (SeedHasMisconfiguredEntropy(layers, seed)) {
     base::debug::DumpWithoutCrashing();
-    return false;
+    return CreateTrialsResult{
+        .applied_seed = false,
+        .seed_has_limited_layer = layers.seed_has_limited_layer()};
   }
 
   // Note that passing base::Unretained(this) below is safe because the callback
@@ -715,7 +714,7 @@ bool VariationsFieldTrialCreatorBase::CreateTrialsFromSeed(
     safe_seed_manager->SetActiveSeedState(
         seed_data, base64_seed_signature,
         local_state()->GetInteger(prefs::kVariationsSeedMilestone),
-        std::move(client_state), seed_store_->GetLastFetchTime());
+        std::move(client_state), seed_store_->GetLatestSeedFetchTime());
   }
 
   base::UmaHistogramCounts1M("Variations.AppliedSeed.Size", seed_data.size());
@@ -725,7 +724,9 @@ bool VariationsFieldTrialCreatorBase::CreateTrialsFromSeed(
 #endif  // BUILDFLAG(IS_WIN)
   base::UmaHistogramTimes("Variations.SeedProcessingTime",
                           base::TimeTicks::Now() - start_time);
-  return true;
+  return CreateTrialsResult{
+      .applied_seed = true,
+      .seed_has_limited_layer = layers.seed_has_limited_layer()};
 }
 
 void VariationsFieldTrialCreatorBase::LoadSeedFromJsonFile(
@@ -783,6 +784,10 @@ void VariationsFieldTrialCreatorBase::LoadSeedFromJsonFile(
 
 VariationsSeedStore* VariationsFieldTrialCreatorBase::GetSeedStore() {
   return seed_store_.get();
+}
+
+base::Time VariationsFieldTrialCreatorBase::GetLatestSeedFetchTime() {
+  return GetSeedStore()->GetLatestSeedFetchTime();
 }
 
 }  // namespace variations

@@ -29,6 +29,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.Px;
 import androidx.appcompat.content.res.AppCompatResources;
 
@@ -444,7 +445,7 @@ class TouchToFillMediator {
             List<Credential> credentials) {
         // TODO(http://crbug.com/1504098) : Add render test for a bottom sheet with shared passwords
         // after the UI is complete.
-        List<Credential> sharedCredentials = new ArrayList<Credential>();
+        List<Credential> sharedCredentials = new ArrayList<>();
         for (Credential credential : credentials) {
             if (credential.isShared() && !credential.isSharingNotificationDisplayed()) {
                 sharedCredentials.add(credential);
@@ -478,7 +479,7 @@ class TouchToFillMediator {
             }
         }
 
-        private void onImageFetched(Bitmap image) {
+        private void onImageFetched(@Nullable Bitmap image) {
             if (image != null) {
                 mAvatarImages.add(image);
             }

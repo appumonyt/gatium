@@ -11,10 +11,14 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "components/viz/test/test_context_provider.h"
+#include "gpu/command_buffer/common/shared_image_usage.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_resource_host.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
+#include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
+#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
-#include "third_party/blink/renderer/platform/graphics/test/fake_canvas_resource_host.h"
 #include "third_party/blink/renderer/platform/graphics/test/gpu_memory_buffer_test_platform.h"
 #include "third_party/blink/renderer/platform/graphics/test/gpu_test_utils.h"
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread_scheduler.h"
@@ -24,6 +28,61 @@
 namespace blink {
 
 using testing::Test;
+
+namespace {
+
+class FakeCanvasResourceHost : public CanvasResourceHost {
+ public:
+  explicit FakeCanvasResourceHost(gfx::Size size) : size_(size) {}
+  ~FakeCanvasResourceHost() override = default;
+  void NotifyGpuContextLost() override {}
+  bool IsContextLost() const override { return false; }
+  void SetNeedsCompositingUpdate() override {}
+  void InitializeForRecording(cc::PaintCanvas*) const override {}
+  bool IsPageVisible() const override { return page_visible_; }
+  bool IsHibernating() const override { return is_hibernating_; }
+  void SetIsHibernating(bool is_hibernating) {
+    is_hibernating_ = is_hibernating;
+  }
+
+  CanvasResourceProvider* GetResourceProviderForCanvas2D() const override {
+    return resource_provider_.get();
+  }
+  void ResetResourceProviderForCanvas2D() override {
+    resource_provider_.reset();
+  }
+
+  CanvasResourceProvider* GetOrCreateCanvasResourceProviderForCanvas2D() {
+    if (GetResourceProviderForCanvas2D()) {
+      return GetResourceProviderForCanvas2D();
+    }
+    constexpr auto kShouldInitialize =
+        CanvasResourceProvider::ShouldInitialize::kCallClear;
+    constexpr gpu::SharedImageUsageSet kSharedImageUsageFlags =
+        gpu::SHARED_IMAGE_USAGE_DISPLAY_READ | gpu::SHARED_IMAGE_USAGE_SCANOUT;
+    resource_provider_ = CanvasResourceProvider::CreateSharedImageProvider(
+        size_, GetN32FormatForCanvas(), kPremul_SkAlphaType,
+        gfx::ColorSpace::CreateSRGB(), kShouldInitialize,
+        SharedGpuContext::ContextProviderWrapper(), RasterMode::kGPU,
+        kSharedImageUsageFlags, this);
+
+    return resource_provider_.get();
+  }
+
+  void SetPageVisible(bool visible) {
+    if (page_visible_ != visible) {
+      page_visible_ = visible;
+    }
+  }
+
+ private:
+  std::unique_ptr<CanvasResourceProvider> resource_provider_;
+  bool page_visible_ = true;
+  bool is_hibernating_ = false;
+  gfx::Size size_;
+};
+
+}  // namespace
 
 class CanvasHibernationHandlerTest
     : public testing::TestWithParam<
@@ -87,10 +146,11 @@ void SetPageVisible(
   if (!page_visible) {
     // Trigger hibernation.
     scoped_refptr<StaticBitmapImage> snapshot =
-        host->ResourceProvider()->Snapshot(FlushReason::kHibernating);
+        host->GetResourceProviderForCanvas2D()->Snapshot(
+            FlushReason::kHibernating);
     hibernation_handler->SaveForHibernation(
         snapshot->PaintImageForCurrentFrame().GetSwSkImage(),
-        host->ResourceProvider()->ReleaseRecorder());
+        host->GetResourceProviderForCanvas2D()->ReleaseRecorder());
     EXPECT_TRUE(hibernation_handler->IsHibernating());
   } else {
     // End hibernation.
@@ -109,7 +169,7 @@ std::map<std::string, uint64_t> GetEntries(
   return result;
 }
 
-void Draw(CanvasResourceHost& host) {
+void Draw(FakeCanvasResourceHost& host) {
   CanvasResourceProvider* provider =
       host.GetOrCreateCanvasResourceProviderForCanvas2D();
   provider->Canvas().drawLine(0, 0, 2, 2, cc::PaintFlags());
@@ -182,7 +242,6 @@ TEST_P(CanvasHibernationHandlerTest, SimpleTest) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   CanvasHibernationHandler handler(host);
 
   Draw(host);
@@ -229,9 +288,8 @@ TEST_P(CanvasHibernationHandlerTest, SimpleTest) {
   SetPageVisible(&host, &handler, platform, true);
   EXPECT_FALSE(handler.is_encoded());
 
-  EXPECT_TRUE(host.GetRasterMode() == RasterMode::kGPU);
   EXPECT_FALSE(handler.IsHibernating());
-  EXPECT_TRUE(host.ResourceProvider()->IsValid());
+  EXPECT_TRUE(host.GetResourceProviderForCanvas2D()->IsValid());
 }
 
 TEST_P(CanvasHibernationHandlerTest, ForegroundTooEarly) {
@@ -241,7 +299,6 @@ TEST_P(CanvasHibernationHandlerTest, ForegroundTooEarly) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   CanvasHibernationHandler handler(host);
 
   Draw(host);
@@ -268,7 +325,6 @@ TEST_P(CanvasHibernationHandlerTest, BackgroundForeground) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   CanvasHibernationHandler handler(host);
 
   Draw(host);
@@ -294,7 +350,6 @@ TEST_P(CanvasHibernationHandlerTest, ForegroundAfterEncoding) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   CanvasHibernationHandler handler(host);
 
   Draw(host);
@@ -323,7 +378,6 @@ TEST_P(CanvasHibernationHandlerTest, ForegroundFlipForAfterEncoding) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   CanvasHibernationHandler handler(host);
 
   Draw(host);
@@ -361,7 +415,6 @@ TEST_P(CanvasHibernationHandlerTest, ForegroundFlipForBeforeEncoding) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   CanvasHibernationHandler handler(host);
 
   Draw(host);
@@ -393,7 +446,6 @@ TEST_P(CanvasHibernationHandlerTest, ClearEndsHibernation) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   CanvasHibernationHandler handler(host);
 
   Draw(host);
@@ -420,7 +472,6 @@ TEST_P(CanvasHibernationHandlerTest, ClearWhileCompressingEndsHibernation) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   CanvasHibernationHandler handler(host);
 
   Draw(host);
@@ -458,7 +509,6 @@ TEST_P(CanvasHibernationHandlerTest, HibernationMemoryMetrics) {
   auto task_runner = base::MakeRefCounted<TestSingleThreadTaskRunner>();
   ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform;
   FakeCanvasResourceHost host(gfx::Size(300, 200));
-  host.SetPreferred2DRasterMode(RasterModeHint::kPreferGPU);
   auto handler = std::make_unique<CanvasHibernationHandler>(host);
 
   Draw(host);

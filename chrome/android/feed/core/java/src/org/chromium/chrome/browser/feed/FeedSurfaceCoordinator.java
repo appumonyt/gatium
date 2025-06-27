@@ -11,7 +11,6 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -963,9 +962,7 @@ public class FeedSurfaceCoordinator
 
             // Work around https://crbug.com/943873 where default focus highlight shows up after
             // toggling dark mode.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                view.setDefaultFocusHighlightEnabled(false);
-            }
+            view.setDefaultFocusHighlightEnabled(false);
             if (mOverScrollDisabled) {
                 view.setOverScrollMode(View.OVER_SCROLL_NEVER);
             }
@@ -1156,12 +1153,15 @@ public class FeedSurfaceCoordinator
             headers.add(mNtpHeader);
         }
 
-        headers.add(mHeaderView);
+        if (mMediator.isFeedEnabled()) {
+            headers.add(mHeaderView);
 
-        if (signinPromoView != null) {
-            mSigninPromoView = signinPromoView;
-            headers.add(signinPromoView);
+            if (signinPromoView != null) {
+                mSigninPromoView = signinPromoView;
+                headers.add(signinPromoView);
+            }
         }
+
         setHeaders(headers);
     }
 

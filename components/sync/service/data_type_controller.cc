@@ -8,8 +8,10 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
+#include "base/strings/strcat.h"
 #include "components/sync/base/data_type.h"
 #include "components/sync/engine/data_type_activation_response.h"
 #include "components/sync/model/data_type_activation_request.h"
@@ -331,6 +333,7 @@ DataTypeControllerDelegate* DataTypeController::GetDelegateForTesting(
 
 void DataTypeController::ReportModelError(const ModelError& error) {
   DCHECK(CalledOnValidThread());
+  LogModelErrorToHistogram(error);
 
   switch (state_) {
     case MODEL_LOADED:
@@ -383,6 +386,18 @@ void DataTypeController::RecordRunFailure() const {
   DCHECK(CalledOnValidThread());
   UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeRunFailures2",
                             DataTypeHistogramValue(type()));
+}
+
+void DataTypeController::LogModelErrorToHistogram(
+    const ModelError& model_error) const {
+  DCHECK(CalledOnValidThread());
+  // Log specific error type for all sync data types.
+  base::UmaHistogramSparse("Sync.ModelError",
+                           static_cast<int>(model_error.type()));
+  // Log specific error type for the current sync data type.
+  base::UmaHistogramSparse(
+      base::StrCat({"Sync.ModelError.", DataTypeToHistogramSuffix(type())}),
+      static_cast<int>(model_error.type()));
 }
 
 void DataTypeController::OnDelegateStarted(

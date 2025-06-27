@@ -48,6 +48,7 @@ import org.chromium.chrome.browser.tab.Tab.LoadUrlResult;
 import org.chromium.chrome.browser.tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tab.TabUtils;
+import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarButtonVariant;
 import org.chromium.components.dom_distiller.core.DomDistillerFeatures;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtils;
 import org.chromium.components.messages.DismissReason;
@@ -405,7 +406,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
     }
 
     /** A notification that the prompt was dismissed without being used. */
-    public void onClosed() {
+    private void onClosed() {
         mIsDismissed = true;
     }
 
@@ -576,7 +577,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
                                 resources.getString(R.string.reader_mode_message_title))
                         .with(
                                 MessageBannerProperties.ICON_RESOURCE_ID,
-                                R.drawable.ic_mobile_friendly)
+                                R.drawable.ic_mobile_friendly_24dp)
                         .with(
                                 MessageBannerProperties.PRIMARY_BUTTON_TEXT,
                                 resources.getString(R.string.reader_mode_message_button))
@@ -624,11 +625,22 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
         // button for this site on other tabs.
         removeUrlFromMutedSites(mDistillerUrl);
 
-        if (!SysUtils.isLowEndDevice()) {
+        if (!SysUtils.isLowEndDevice() && !shouldUseRegularTabsForDistillation()) {
             distillInCustomTab();
         } else {
             navigateToReaderMode();
         }
+        RecordUserAction.record("MobileReaderModeActivated");
+        if (mHasBeenNotifiedOfCpa && !mIsReaderModeButtonShowingOnToolbar) {
+            RecordHistogram.recordEnumeratedHistogram(
+                    "CustomTab.AdaptiveToolbarButton.FallbackUi",
+                    AdaptiveToolbarButtonVariant.READER_MODE,
+                    AdaptiveToolbarButtonVariant.MAX_VALUE);
+        }
+    }
+
+    private boolean shouldUseRegularTabsForDistillation() {
+        return DomDistillerFeatures.sReaderModeDistillInApp.isEnabled();
     }
 
     /** Navigate the current tab to a Reader Mode URL. */
@@ -743,9 +755,14 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
         TabDistillabilityProvider.get(tabToObserve).addObserver(mDistillabilityObserver);
     }
 
-    // Returns whether reader mode should trigger through messages. This happens for CCTs and
-    // incognito tabs.
-    private boolean shouldUseReaderModeMessages(Tab tab) {
+    /**
+     * Returns whether reader mode should trigger through messages. This happens for CCTs and
+     * incognito tabs.
+     *
+     * @param tab The tab where Reader Mode is active.
+     * @return Whether reader mode should trigger through messages.
+     */
+    public static boolean shouldUseReaderModeMessages(Tab tab) {
         return tab != null && (tab.isCustomTab() || tab.isIncognito());
     }
 

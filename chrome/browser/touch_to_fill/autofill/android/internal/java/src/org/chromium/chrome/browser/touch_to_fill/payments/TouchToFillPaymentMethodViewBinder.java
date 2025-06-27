@@ -4,8 +4,10 @@
 
 package org.chromium.chrome.browser.touch_to_fill.payments;
 
+import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.BACK_PRESS_HANDLER;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ButtonProperties.ON_CLICK_ACTION;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.ButtonProperties.TEXT_ID;
+import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.CURRENT_SCREEN;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.CreditCardSuggestionProperties.APPLY_DEACTIVATED_STYLE;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.CreditCardSuggestionProperties.CARD_IMAGE;
 import static org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.CreditCardSuggestionProperties.FIRST_LINE_LABEL;
@@ -48,6 +50,7 @@ import androidx.appcompat.content.res.AppCompatResources;
 
 import org.chromium.chrome.browser.autofill.AutofillUiUtils;
 import org.chromium.chrome.browser.touch_to_fill.common.FillableItemCollectionInfo;
+import org.chromium.chrome.browser.touch_to_fill.payments.TouchToFillPaymentMethodProperties.AllLoyaltyCardsItemProperties;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyModel;
@@ -102,6 +105,8 @@ class TouchToFillPaymentMethodViewBinder {
             PropertyModel model, TouchToFillPaymentMethodView view, PropertyKey propertyKey) {
         if (propertyKey == DISMISS_HANDLER) {
             view.setDismissHandler(model.get(DISMISS_HANDLER));
+        } else if (propertyKey == BACK_PRESS_HANDLER) {
+            view.setBackPressHandler(model.get(BACK_PRESS_HANDLER));
         } else if (propertyKey == VISIBLE) {
             boolean visibilityChangeSuccessful = view.setVisible(model.get(VISIBLE));
             if (!visibilityChangeSuccessful && model.get(VISIBLE)) {
@@ -110,7 +115,12 @@ class TouchToFillPaymentMethodViewBinder {
                 view.destroy();
             }
         } else if (propertyKey == SHEET_ITEMS) {
+            // SHEET_ITEMS and CURRENT_SCREEN properties are always updated together.
+            view.setCurrentScreen(model.get(CURRENT_SCREEN));
             TouchToFillPaymentMethodCoordinator.setUpCardItems(model, view);
+            view.updateScreenHeight();
+        } else if (propertyKey == CURRENT_SCREEN) {
+            // Intentionally ignored.
         } else {
             assert false : "Unhandled update to property:" + propertyKey;
         }
@@ -253,6 +263,24 @@ class TouchToFillPaymentMethodViewBinder {
             view.setOnClickListener(unusedView -> model.get(ON_LOYALTY_CARD_CLICK_ACTION).run());
         } else {
             assert false : "Unhandled update to property:" + propertyKey;
+        }
+    }
+
+    static View createAllLoyaltyCardsItemView(ViewGroup parent) {
+        View view =
+                LayoutInflater.from(parent.getContext())
+                        .inflate(R.layout.touch_to_fill_all_loyalty_cards_item, parent, false);
+        AutofillUiUtils.setFilterTouchForSecurity(view);
+        return view;
+    }
+
+    static void bindAllLoyaltyCardsItemView(
+            PropertyModel model, View view, PropertyKey propertyKey) {
+        if (propertyKey == AllLoyaltyCardsItemProperties.ON_CLICK_ACTION) {
+            view.setOnClickListener(
+                    unusedView -> model.get(AllLoyaltyCardsItemProperties.ON_CLICK_ACTION).run());
+        } else {
+            assert false : "Unhandled update to property: " + propertyKey;
         }
     }
 

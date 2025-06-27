@@ -32,6 +32,7 @@
 #include "media/base/audio_bus.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_processing.h"
+#include "media/base/audio_sample_types.h"
 #include "media/webrtc/constants.h"
 #include "media/webrtc/webrtc_features.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -504,7 +505,8 @@ class AudioProcessorPlayoutTest : public AudioProcessorTest {
                          params_,
                          params_,
                          mock_webrtc_apm_,
-                         /*needs_playout_reference=*/true) {}
+                         /*needs_playout_reference=*/true,
+                         /*added_aec_delay*/ base::TimeDelta()) {}
 
   webrtc::scoped_refptr<webrtc::test::MockAudioProcessing> mock_webrtc_apm_;
   AudioProcessor audio_processor_;

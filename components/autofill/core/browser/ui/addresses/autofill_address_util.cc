@@ -406,7 +406,6 @@ AddressUIComponentIconType GetAddressUIComponentIconTypeForFieldType(
     case PRICE:
     case NUMERIC_QUANTITY:
     case SEARCH_TERM:
-    case IMPROVED_PREDICTION:
     case PASSPORT_NAME_TAG:
     case PASSPORT_NUMBER:
     case PASSPORT_ISSUING_COUNTRY:
@@ -445,6 +444,8 @@ AddressUIComponentIconType GetAddressUIComponentIconTypeForFieldType(
     case ADDRESS_HOME_CITY:
     case ADDRESS_HOME_STATE:
     case ADDRESS_HOME_ZIP:
+    case ADDRESS_HOME_ZIP_PREFIX:
+    case ADDRESS_HOME_ZIP_SUFFIX:
     case ADDRESS_HOME_COUNTRY:
     case ADDRESS_HOME_DEPENDENT_LOCALITY:
     case ADDRESS_HOME_STREET_NAME:

@@ -4,6 +4,7 @@
 
 #include "components/user_data_importer/utility/safari_data_importer.h"
 
+#include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
@@ -15,6 +16,9 @@
 #include "base/test/run_until.h"
 #include "base/test/task_environment.h"
 #include "components/affiliations/core/browser/fake_affiliation_service.h"
+#include "components/autofill/core/browser/foundations/test_autofill_client.h"
+#include "components/history/core/browser/history_service.h"
+#include "components/history/core/test/history_service_test_util.h"
 #include "components/password_manager/core/browser/import/csv_password_sequence.h"
 #include "components/password_manager/core/browser/import/import_results.h"
 #include "components/password_manager/core/browser/import/password_importer.h"
@@ -23,7 +27,7 @@
 #include "components/password_manager/core/browser/ui/saved_passwords_presenter.h"
 #include "components/password_manager/core/common/password_manager_constants.h"
 #include "components/password_manager/services/csv_password/fake_password_parser_service.h"
-#include "components/user_data_importer/utility/safari_data_import_manager.h"
+#include "components/user_data_importer/utility/bookmark_parser.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -32,27 +36,28 @@
 
 namespace user_data_importer {
 
-class TestSafariDataImportManager : public SafariDataImportManager {
- public:
-  TestSafariDataImportManager() = default;
-  ~TestSafariDataImportManager() override = default;
-
-  void ParseBookmarks(
-      const base::FilePath& bookmarks_html,
-      base::OnceCallback<void(BookmarkParsingResult)> callback) override {}
-};
-
 class SafariDataImporterTest : public testing::Test {
  public:
-  SafariDataImporterTest()
-      : receiver_{&service_},
-        importer_(&presenter_,
-                  std::make_unique<TestSafariDataImportManager>()) {
+  SafariDataImporterTest() : receiver_{&service_} {}
+  ~SafariDataImporterTest() override = default;
+
+  SafariDataImporterTest(const SafariDataImporterTest&) = delete;
+  SafariDataImporterTest& operator=(const SafariDataImporterTest&) = delete;
+
+ protected:
+  void SetUp() override {
+    CHECK(history_dir_.CreateUniqueTempDir());
+    history_service_ = history::CreateHistoryService(history_dir_.GetPath(),
+                                                     /*create_db=*/false);
+    importer_ = std::make_unique<SafariDataImporter>(
+        &presenter_, &client_.GetPersonalDataManager().payments_data_manager(),
+        history_service_.get(), MakeBookmarkParser(), "en-US");
+
     mojo::PendingRemote<password_manager::mojom::CSVPasswordParser>
         pending_remote{receiver_.BindNewPipeAndPassRemote()};
-    importer_.password_importer_->SetServiceForTesting(
+    importer_->password_importer_->SetServiceForTesting(
         std::move(pending_remote));
-    importer_.password_importer_->SetDeleteFileForTesting(
+    importer_->password_importer_->SetDeleteFileForTesting(
         mock_delete_file_.Get());
 
     profile_store_->Init(/*prefs=*/nullptr,
@@ -66,10 +71,7 @@ class SafariDataImporterTest : public testing::Test {
     WaitUntilPresenterIsReady();
   }
 
-  SafariDataImporterTest(const SafariDataImporterTest&) = delete;
-  SafariDataImporterTest& operator=(const SafariDataImporterTest&) = delete;
-
-  ~SafariDataImporterTest() override {
+  void TearDown() override {
     account_store_->ShutdownOnUIThread();
     profile_store_->ShutdownOnUIThread();
     task_environment_.RunUntilIdle();
@@ -117,11 +119,13 @@ class SafariDataImporterTest : public testing::Test {
 
   void ImportBookmarks(std::string html_data) {
     bookmarks_callback_called_ = false;
-    base::ScopedTempFile file;
-    ASSERT_TRUE(file.Create());
-    base::WriteFile(file.path(), html_data);
-    importer_.ImportBookmarks(
-        std::move(file),
+    base::ScopedTempDir dir;
+    ASSERT_TRUE(dir.CreateUniqueTempDir());
+    base::FilePath path = dir.GetPath().AppendASCII("bookmarks.html");
+    ASSERT_TRUE(base::WriteFile(path, html_data));
+
+    importer_->ImportBookmarks(
+        path,
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
         base::BindOnce(&SafariDataImporterTest::OnBookmarksConsumed,
@@ -132,7 +136,7 @@ class SafariDataImporterTest : public testing::Test {
 
   void ImportHistory() {
     history_callback_called_ = false;
-    importer_.ImportHistory(
+    importer_->ImportHistory(
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
         base::BindOnce(&SafariDataImporterTest::OnURLsConsumed,
@@ -143,7 +147,7 @@ class SafariDataImporterTest : public testing::Test {
 
   void ImportPasswords(std::string csv_data) {
     passwords_callback_called_ = false;
-    importer_.ImportPasswords(
+    importer_->ImportPasswords(
         std::move(csv_data),
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
@@ -153,9 +157,9 @@ class SafariDataImporterTest : public testing::Test {
         base::test::RunUntil([&]() { return passwords_callback_called_; }));
   }
 
-  void ExecuteImportPasswords() {
+  void ExecuteImport() {
     passwords_callback_called_ = false;
-    importer_.ContinueImport(
+    importer_->ContinueImport(
         std::vector<int>(),
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
@@ -173,7 +177,7 @@ class SafariDataImporterTest : public testing::Test {
 
   void ResolvePasswordConflicts(const std::vector<int>& selected_ids) {
     passwords_callback_called_ = false;
-    importer_.ContinueImport(
+    importer_->ContinueImport(
         selected_ids,
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
@@ -189,10 +193,10 @@ class SafariDataImporterTest : public testing::Test {
         base::test::RunUntil([&]() { return passwords_callback_called_; }));
   }
 
-  void ImportPaymentCards(std::string json_data) {
+  void ImportPaymentCards(std::vector<PaymentCardEntry> payment_cards) {
     payment_cards_callback_called_ = false;
-    importer_.ImportPaymentCards(
-        std::move(json_data),
+    importer_->ImportPaymentCards(
+        std::move(payment_cards),
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
         base::BindOnce(&SafariDataImporterTest::OnPaymentCardsConsumed,
@@ -207,7 +211,7 @@ class SafariDataImporterTest : public testing::Test {
     history_callback_called_ = false;
     payment_cards_callback_called_ = false;
 
-    importer_.StartImport(
+    importer_->StartImport(
         base::FilePath(FILE_PATH_LITERAL("/invalid/path/to/zip/file")),
         // Use of Unretained below is safe because the RunUntil loop below
         // guarantees this outlives the tasks.
@@ -224,6 +228,54 @@ class SafariDataImporterTest : public testing::Test {
       return passwords_callback_called_ && payment_cards_callback_called_ &&
              bookmarks_callback_called_ && history_callback_called_;
     })) << CallbackTimeoutMessage();
+  }
+
+  void ImportFile() {
+    base::FilePath zip_archive_path;
+    ASSERT_TRUE(base::PathService::Get(base::DIR_ASSETS, &zip_archive_path));
+    zip_archive_path =
+        zip_archive_path.Append(FILE_PATH_LITERAL("test_archive.zip"));
+
+    passwords_callback_called_ = false;
+    bookmarks_callback_called_ = false;
+    history_callback_called_ = false;
+    payment_cards_callback_called_ = false;
+
+    importer_->StartImport(
+        zip_archive_path,
+        // Use of Unretained below is safe because the RunUntil loop below
+        // guarantees this outlives the tasks.
+        base::BindOnce(&SafariDataImporterTest::OnPasswordsConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnBookmarksConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnURLsConsumed,
+                       base::Unretained(this)),
+        base::BindOnce(&SafariDataImporterTest::OnPaymentCardsConsumed,
+                       base::Unretained(this)));
+
+    ASSERT_TRUE(base::test::RunUntil([&]() {
+      return passwords_callback_called_ && payment_cards_callback_called_ &&
+             bookmarks_callback_called_ && history_callback_called_;
+    })) << CallbackTimeoutMessage();
+  }
+
+  void CancelImport() { importer_->CancelImport(); }
+
+  void SetHistorySizeThreshold(size_t history_size_threshold) {
+    importer_->history_size_threshold_ = history_size_threshold;
+    importer_->history_size_threshold_ = history_size_threshold;
+  }
+
+  // Asserts that GetNumberOfBookmarksImported() is `num_bookmarks` on platforms
+  // where bookmark import is implemented, or 0 (callback ran with error) on
+  // other platforms.
+  void ExpectBookmarksIfImplemented(int num_bookmarks) {
+#if BUILDFLAG(IS_IOS)
+    EXPECT_EQ(GetNumberOfBookmarksImported(), num_bookmarks);
+#else
+    EXPECT_EQ(GetNumberOfBookmarksImported(), 0);
+#endif  // BUILDFLAG(IS_IOS)
   }
 
  private:
@@ -268,6 +320,11 @@ class SafariDataImporterTest : public testing::Test {
   }
 
   base::test::TaskEnvironment task_environment_;
+  password_manager::FakePasswordParserService service_;
+  mojo::Receiver<password_manager::mojom::CSVPasswordParser> receiver_;
+  autofill::TestAutofillClient client_;
+  base::ScopedTempDir history_dir_;
+  std::unique_ptr<history::HistoryService> history_service_;
   bool presenter_ready_ = false;
   password_manager::ImportResults import_results_;
   bool passwords_callback_called_ = false;
@@ -277,8 +334,6 @@ class SafariDataImporterTest : public testing::Test {
   int number_bookmarks_imported_ = -1;
   int number_urls_imported_ = -1;
   int number_payment_cards_imported_ = -1;
-  password_manager::FakePasswordParserService service_;
-  mojo::Receiver<password_manager::mojom::CSVPasswordParser> receiver_;
   scoped_refptr<password_manager::TestPasswordStore> profile_store_ =
       base::MakeRefCounted<password_manager::TestPasswordStore>(
           password_manager::IsAccountStore(false));
@@ -288,17 +343,26 @@ class SafariDataImporterTest : public testing::Test {
   affiliations::FakeAffiliationService affiliation_service_;
   password_manager::SavedPasswordsPresenter presenter_{
       &affiliation_service_, profile_store_, account_store_};
-  SafariDataImporter importer_;
+  std::unique_ptr<SafariDataImporter> importer_;
   testing::StrictMock<base::MockCallback<
       password_manager::PasswordImporter::DeleteFileCallback>>
       mock_delete_file_;
 };
 
-TEST_F(SafariDataImporterTest, NoBookmark) {
-  ImportBookmarks("");
-
-  ASSERT_EQ(GetNumberOfBookmarksImported(), 0);
+// TODO(crbug.com/407587751): Enable Bookmark tests on non-IOS once stub method
+// in content_bookmark_parser is functional.
+#if BUILDFLAG(IS_IOS)
+TEST_F(SafariDataImporterTest, WithBookmarks) {
+  ImportBookmarks(
+      "<!DOCTYPE NETSCAPE-Bookmark-file-1>\
+       <!--This is an automatically generated file.\
+       It will be read and overwritten.\
+       Do Not Edit! -->\
+       <Title>Bookmarks</Title>\
+       <H1>Bookmarks</H1>");
+  ASSERT_EQ(GetNumberOfBookmarksImported(), 1);
 }
+#endif  // BUILDFLAG(IS_IOS)
 
 TEST_F(SafariDataImporterTest, NoHistory) {
   ImportHistory();
@@ -314,7 +378,7 @@ TEST_F(SafariDataImporterTest, NoPassword) {
 }
 
 TEST_F(SafariDataImporterTest, NoPaymentCard) {
-  ImportPaymentCards("");
+  ImportPaymentCards(std::vector<PaymentCardEntry>());
 
   ASSERT_EQ(GetNumberOfPaymentCardsImported(), 0);
 }
@@ -332,7 +396,7 @@ TEST_F(SafariDataImporterTest, PasswordImport) {
   ASSERT_EQ(import_results.number_to_import, 3u);
 
   // Confirm password import.
-  ExecuteImportPasswords();
+  ExecuteImport();
   import_results = GetImportResults();
   ASSERT_EQ(import_results.number_imported, 3u);
   ASSERT_EQ(import_results.number_to_import, 0u);
@@ -357,7 +421,7 @@ TEST_F(SafariDataImporterTest, PasswordImportConflicts) {
   ASSERT_EQ(import_results.number_to_import, 3u);
 
   // Confirm password import.
-  ExecuteImportPasswords();
+  ExecuteImport();
   import_results = GetImportResults();
   ASSERT_EQ(import_results.number_imported, 3u);
   ASSERT_EQ(import_results.number_to_import, 0u);
@@ -382,6 +446,47 @@ TEST_F(SafariDataImporterTest, PasswordImportConflicts) {
 
 TEST_F(SafariDataImporterTest, CallbacksAreCalled) {
   ImportInvalidFile();
+}
+
+TEST_F(SafariDataImporterTest, CancelImport) {
+  ImportFile();
+
+  password_manager::ImportResults import_results = GetImportResults();
+  ASSERT_EQ(import_results.number_to_import, 3u);
+  // TODO(crbug.com/407587751): Update test when bookmarks parsing is
+  // implemented.
+  ExpectBookmarksIfImplemented(1);
+  ASSERT_EQ(GetNumberOfPaymentCardsImported(), 3);
+  ASSERT_EQ(GetNumberOfURLsImported(), 5);  // Note: Approximation.
+
+  CancelImport();
+}
+
+TEST_F(SafariDataImporterTest, ExecuteImport) {
+  ImportFile();
+
+  password_manager::ImportResults import_results = GetImportResults();
+  ASSERT_EQ(import_results.number_to_import, 3u);
+  ASSERT_EQ(import_results.number_imported, 0u);
+  // TODO(crbug.com/407587751): Update test when bookmarks parsing is
+  // implemented.
+  ExpectBookmarksIfImplemented(1);
+  ASSERT_EQ(GetNumberOfPaymentCardsImported(), 3);
+  ASSERT_EQ(GetNumberOfURLsImported(), 5);  // Note: Approximation.
+
+  // Use a small history size threshold so that ParseHistoryCallback gets called
+  // multiple times internally.
+  SetHistorySizeThreshold(3u);
+
+  ExecuteImport();
+  import_results = GetImportResults();
+  ASSERT_EQ(import_results.number_imported, 3u);
+  ASSERT_EQ(import_results.number_to_import, 0u);
+  // TODO(crbug.com/407587751): Update test when bookmarks parsing is
+  // implemented.
+  ASSERT_EQ(GetNumberOfBookmarksImported(), 0);
+  ASSERT_EQ(GetNumberOfPaymentCardsImported(), 3);
+  ASSERT_EQ(GetNumberOfURLsImported(), 5);
 }
 
 }  // namespace user_data_importer

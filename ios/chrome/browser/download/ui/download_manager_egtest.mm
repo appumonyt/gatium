@@ -408,7 +408,7 @@ using download::WaitForOpenPDFButton;
 // Tests successful download up to the point where "Open in..." button is
 // presented. EarlGrey does not allow testing "Open in..." dialog, because it
 // is run in a separate process. Performs download in Incognito.
-#if !TARGET_IPHONE_SIMULATOR
+#if !TARGET_OS_SIMULATOR
 // TODO(crbug.com/40678419): Test consistently failing on device.
 #define MAYBE_testSuccessfulDownloadInIncognito \
   DISABLED_testSuccessfulDownloadInIncognito
@@ -474,7 +474,8 @@ using download::WaitForOpenPDFButton;
 
 // Tests that a pdf that is displayed in the web view can be downloaded.
 // Only valid with "Save to drive" enabled.
-- (void)testDownloadDisplayedPDF {
+// TODO(crbug.com/416603589): Fix and re-enable this test.
+- (void)FLAKY_testDownloadDisplayedPDF {
   [ChromeEarlGrey loadURL:self.testServer->GetURL("/two_pages.pdf")];
   [ChromeEarlGrey waitForPageToFinishLoading];
   GREYAssert(WaitForDownloadButton(/*loading*/ true),

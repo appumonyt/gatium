@@ -22,58 +22,19 @@
 #import "components/omnibox/common/omnibox_feature_configs.h"
 #import "components/search_engines/template_url_starter_pack_data.h"
 #import "ios/chrome/browser/omnibox/model/omnibox_edit_model_ios.h"
-#import "ios/chrome/browser/omnibox/model/omnibox_view_ios.h"
 #import "ui/gfx/geometry/rect.h"
 
 OmniboxControllerIOS::OmniboxControllerIOS(
     OmniboxClient* client,
     base::TimeDelta autocomplete_stop_timer_duration)
-    : client_(client->AsWeakPtr()),
-      autocomplete_controller_(std::make_unique<AutocompleteController>(
-          client_->CreateAutocompleteProviderClient(),
+    : autocomplete_controller_(std::make_unique<AutocompleteController>(
+          client->CreateAutocompleteProviderClient(),
           AutocompleteClassifier::DefaultOmniboxProviders(),
           autocomplete_stop_timer_duration)) {
   // Register the `AutocompleteController` with `AutocompleteControllerEmitter`.
-  if (auto* emitter = client_->GetAutocompleteControllerEmitter()) {
+  if (auto* emitter = client->GetAutocompleteControllerEmitter()) {
     autocomplete_controller_->AddObserver(emitter);
   }
 }
 
-constexpr bool is_ios = !!BUILDFLAG(IS_IOS);
-
 OmniboxControllerIOS::~OmniboxControllerIOS() = default;
-
-void OmniboxControllerIOS::StartAutocomplete(
-    const AutocompleteInput& input) const {
-  TRACE_EVENT0("omnibox", "OmniboxControllerIOS::StartAutocomplete");
-
-  // We don't explicitly clear OmniboxPopupModel::manually_selected_match, as
-  // Start ends up invoking OmniboxPopupModel::OnResultChanged which clears it.
-  autocomplete_controller_->Start(input);
-}
-
-void OmniboxControllerIOS::StopAutocomplete(bool clear_result) const {
-  TRACE_EVENT0("omnibox", "OmniboxControllerIOS::StopAutocomplete");
-  autocomplete_controller_->Stop(clear_result
-                                     ? AutocompleteStopReason::kClobbered
-                                     : AutocompleteStopReason::kInteraction);
-}
-
-void OmniboxControllerIOS::StartZeroSuggestPrefetch() {
-  TRACE_EVENT0("omnibox", "OmniboxControllerIOS::StartZeroSuggestPrefetch");
-  auto page_classification =
-      client_->GetPageClassification(/*is_prefetch=*/true);
-
-  GURL current_url = client_->GetURL();
-  std::u16string text = base::UTF8ToUTF16(current_url.spec());
-
-  if (omnibox::IsNTPPage(page_classification) || !is_ios) {
-    text.clear();
-  }
-
-  AutocompleteInput input(text, page_classification,
-                          client_->GetSchemeClassifier());
-  input.set_current_url(current_url);
-  input.set_focus_type(metrics::OmniboxFocusType::INTERACTION_FOCUS);
-  autocomplete_controller_->StartPrefetch(input);
-}

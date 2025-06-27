@@ -41,6 +41,9 @@ BASE_DECLARE_FEATURE(kClientSideDetectionBrandAndIntentForScamDetection);
 
 BASE_DECLARE_FEATURE(kClientSideDetectionDebuggingMetadataCache);
 
+// Extract only the visual features during the phishing classifier.
+BASE_DECLARE_FEATURE(kClientSideDetectionOnlyExtractVisualFeatures);
+
 // Pass the LlamaTriggerRuleInfo from RTLookupResponse to ClientPhishingRequest
 // if it exists and the force request mechanism occurs.
 BASE_DECLARE_FEATURE(kClientSideDetectionSendLlamaForcedTriggerInfo);
@@ -180,6 +183,10 @@ extern const base::FeatureParam<int>
 // Enables reporting of external app redirects
 BASE_DECLARE_FEATURE(kExternalAppRedirectTelemetry);
 
+// Replace the high confidence allowlist check gating notification warnings with
+// a check of the global cache list specific to safe notification sites.
+BASE_DECLARE_FEATURE(kGlobalCacheListForGatingNotificationProtections);
+
 // Communicated to the server to determine DBSC on google.com. This
 // allows us to slice metrics by google.com DBSC state without any
 // Google-specific code in the net stack.
@@ -244,14 +251,6 @@ extern const base::FeatureParam<std::string>
     kMaliciousApkDownloadCheckServiceUrlOverride;
 #endif
 
-// Killswitch for fetching and executing the notification content detection
-// model. This also gates logging metrics related to this model.
-BASE_DECLARE_FEATURE(kOnDeviceNotificationContentDetectionModel);
-// Determines the percentage of notifications from allowlisted sites that we
-// will check the model for. The value should be between 0 and 100.
-extern const base::FeatureParam<int>
-    kOnDeviceNotificationContentDetectionModelAllowlistSamplingRate;
-
 // Enable the collection of Notification Telemetry to track potentially abusive
 // notifications.
 BASE_DECLARE_FEATURE(kNotificationTelemetry);
@@ -294,9 +293,6 @@ extern const base::FeatureParam<int> kSafeBrowsingDailyPhishingReportsLimitESB;
 // See go/skip-sync-hpd-allowlist-android for details.
 BASE_DECLARE_FEATURE(kSafeBrowsingSyncCheckerCheckAllowlist);
 #endif
-
-// Automatically revoke abusive notifications in Safety Hub.
-BASE_DECLARE_FEATURE(kSafetyHubAbusiveNotificationRevocation);
 
 // Enables saving gaia password hash from the Profile Picker sign-in flow.
 BASE_DECLARE_FEATURE(kSavePasswordHashFromProfilePicker);

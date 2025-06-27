@@ -10,6 +10,7 @@
 
 #include "base/callback_list.h"
 #include "base/functional/callback_forward.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
@@ -84,6 +85,7 @@ class GlicWindowControllerImpl
               base::TimeDelta duration,
               base::OnceClosure callback) override;
   void EnableDragResize(bool enabled) override;
+  void MaybeSetWidgetCanResize() override;
   gfx::Size GetSize() override;
   void SetDraggableAreas(
       const std::vector<gfx::Rect>& draggable_areas) override;
@@ -186,7 +188,7 @@ class GlicWindowControllerImpl
   void DetachFinished();
 
   // Save the top-right corner position for re-opening.
-  void SaveWidgetPosition(bool is_drag);
+  void SaveWidgetPosition(bool user_modified);
 
   // Clear the previous position if the widget would not be on an existing
   // display when shown.

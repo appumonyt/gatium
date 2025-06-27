@@ -81,7 +81,7 @@ static void AppendMailtoPostFormDataToURL(KURL& url,
     // Convention seems to be to decode, and s/&/\r\n/. Also, spaces are encoded
     // as %20.
     body = DecodeURLEscapeSequences(
-        String(body.Replace('&', "\r\n").Replace('+', ' ') + "\r\n"),
+        StrCat({body.Replace('&', "\r\n").Replace('+', ' '), "\r\n"}),
         DecodeURLMode::kUTF8OrIsomorphic);
   }
 
@@ -258,9 +258,9 @@ FormSubmission* FormSubmission::Create(HTMLFormElement* form,
       is_multi_part_form = false;
     }
   }
-  WTF::TextEncoding data_encoding =
+  TextEncoding data_encoding =
       is_mailto_form
-          ? UTF8Encoding()
+          ? Utf8Encoding()
           : FormDataEncoder::EncodingFromAcceptCharset(
                 copied_attributes.AcceptCharset(), document.Encoding());
   FormData* dom_form_data = form->ConstructEntryList(
@@ -306,7 +306,7 @@ FormSubmission* FormSubmission::Create(HTMLFormElement* form,
       resource_request->SetHTTPContentType(encoding_type);
     } else {
       resource_request->SetHTTPContentType(
-          AtomicString(WTF::StrCat({encoding_type, "; boundary=", boundary})));
+          AtomicString(StrCat({encoding_type, "; boundary=", boundary})));
     }
   }
   LocalFrame* form_local_frame = form->GetDocument().GetFrame();

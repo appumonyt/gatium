@@ -13,7 +13,6 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/common/buildflags.h"
 
-class ChromeAutofillAiClient;
 class FileSystemAccessPageActionController;
 class FromGWSNavigationAndKeepAliveRequestObserver;
 class IntentPickerViewPageActionController;
@@ -30,6 +29,10 @@ class TabUIHelper;
 class TranslatePageActionController;
 class QwacWebContentsObserver;
 class ManagePasswordsPageActionController;
+
+namespace actor {
+class ActorUiTabController;
+}  // namespace actor
 
 namespace commerce {
 class CommerceUiTabHelper;
@@ -58,7 +61,6 @@ class ExtensionSidePanelManager;
 
 #if BUILDFLAG(ENABLE_GLIC)
 namespace glic {
-class GlicPageContextEligibilityObserver;
 class GlicTabIndicatorHelper;
 }
 #endif
@@ -158,10 +160,6 @@ class TabFeatures {
     return side_panel_registry_.get();
   }
 
-  ChromeAutofillAiClient* chrome_autofill_ai_client() {
-    return chrome_autofill_ai_client_.get();
-  }
-
   ReadAnythingSidePanelController* read_anything_side_panel_controller() {
     return read_anything_side_panel_controller_.get();
   }
@@ -252,6 +250,10 @@ class TabFeatures {
 
   TabUIHelper* tab_ui_helper() { return tab_ui_helper_.get(); }
 
+  actor::ActorUiTabController* actor_ui_tab_controller() {
+    return actor_ui_tab_controller_.get();
+  }
+
   // Note: Temporary until there is a more uniform way to swap out features for
   // testing.
   TabResourceUsageTabHelper* SetResourceUsageHelperForTesting(
@@ -259,13 +261,6 @@ class TabFeatures {
 
   TabUIHelper* SetTabUIHelperForTesting(
       std::unique_ptr<TabUIHelper> tab_ui_helper);
-
-#if BUILDFLAG(ENABLE_GLIC)
-  glic::GlicPageContextEligibilityObserver*
-  glic_page_context_eligibility_observer() {
-    return glic_page_context_eligibility_observer_.get();
-  }
-#endif
 
   TabAlertController* tab_alert_controller() {
     return tab_alert_controller_.get();
@@ -309,8 +304,6 @@ class TabFeatures {
   // Responsible for the customize chrome tab-scoped side panel.
   std::unique_ptr<customize_chrome::SidePanelController>
       customize_chrome_side_panel_controller_;
-
-  std::unique_ptr<ChromeAutofillAiClient> chrome_autofill_ai_client_;
 
   std::unique_ptr<ReadAnythingSidePanelController>
       read_anything_side_panel_controller_;
@@ -391,9 +384,6 @@ class TabFeatures {
 
 #if BUILDFLAG(ENABLE_GLIC)
   std::unique_ptr<glic::GlicTabIndicatorHelper> glic_tab_indicator_helper_;
-
-  std::unique_ptr<glic::GlicPageContextEligibilityObserver>
-      glic_page_context_eligibility_observer_;
 #endif
 
   std::unique_ptr<memory_saver::MemorySaverChipController>
@@ -414,6 +404,8 @@ class TabFeatures {
   std::unique_ptr<TabUIHelper> tab_ui_helper_;
 
   std::unique_ptr<QwacWebContentsObserver> qwac_web_contents_observer_;
+
+  std::unique_ptr<actor::ActorUiTabController> actor_ui_tab_controller_;
 
   // Must be the last member.
   base::WeakPtrFactory<TabFeatures> weak_factory_{this};

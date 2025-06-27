@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_COLLABORATION_INTERNAL_COLLABORATION_CONTROLLER_H_
 #define COMPONENTS_COLLABORATION_INTERNAL_COLLABORATION_CONTROLLER_H_
 
+#include <array>
 #include <map>
 #include <memory>
 
@@ -133,7 +134,7 @@ class CollaborationController
     data_sharing::GroupToken share_token_;
   };
 
-  using FinishCallback = base::OnceCallback<void()>;
+  using FinishCallback = base::OnceCallback<void(const void*)>;
 
   explicit CollaborationController(
       const Flow& flow,
@@ -168,11 +169,9 @@ class CollaborationController
   Flow& flow() { return flow_; }
 
   // Called to transition to another state.
-  void TransitionTo(
-      StateId state,
-      const CollaborationControllerDelegate::ErrorInfo& error =
-          CollaborationControllerDelegate::ErrorInfo(
-              CollaborationControllerDelegate::ErrorInfo::Type::kUnknown));
+  void TransitionTo(StateId state,
+                    const CollaborationControllerDelegate::ErrorInfo& error =
+                        CollaborationControllerDelegate::ErrorInfo());
 
   // Called to refocus the current flow.
   void PromoteCurrentSession();
@@ -354,6 +353,7 @@ class CollaborationController
   void CancelShareOrManageFlow(const tab_groups::EitherGroupID& either_id);
   bool IsValidStateTransition(StateId from, StateId to);
   std::unique_ptr<ControllerState> CreateStateObject(StateId state);
+  void Start();
 
   THREAD_CHECKER(thread_checker_);
 

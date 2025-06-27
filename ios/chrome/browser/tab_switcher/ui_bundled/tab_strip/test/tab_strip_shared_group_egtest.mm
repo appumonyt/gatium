@@ -12,7 +12,6 @@
 #import "ios/chrome/browser/authentication/ui_bundled/signin_earl_grey.h"
 #import "ios/chrome/browser/authentication/ui_bundled/signin_earl_grey_ui_test_util.h"
 #import "ios/chrome/browser/shared/model/url/chrome_url_constants.h"
-#import "ios/chrome/browser/shared/public/features/features.h"
 #import "ios/chrome/browser/signin/model/fake_system_identity.h"
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/tab_group_app_interface.h"
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/tab_groups_constants.h"
@@ -72,7 +71,6 @@ void AddSharedGroup(BOOL owner) {
 
 - (AppLaunchConfiguration)appConfigurationForTestCase {
   AppLaunchConfiguration config;
-  config.features_enabled.push_back(kTabGroupSync);
   config.features_enabled.push_back(
       data_sharing::features::kDataSharingFeature);
   // Add the flag to use FakeTabGroupSyncService.
@@ -242,7 +240,7 @@ void AddSharedGroup(BOOL owner) {
 // Tests that when closing the last tab of shared group as an member of the
 // group, an alert is displayed and works.
 // TODO(crbug.com/415929742): Test fails on device.
-#if !TARGET_IPHONE_SIMULATOR
+#if !TARGET_OS_SIMULATOR
 #define MAYBE_testTabStripLastTabCloseInSharedGroupAlertAsMember \
   DISABLED_testTabStripLastTabCloseInSharedGroupAlertAsMember
 #else
@@ -331,7 +329,7 @@ void AddSharedGroup(BOOL owner) {
 // Tests that when closing the last tab of shared group as owner of the group,
 // an alert is displayed and works.
 // TODO(crbug.com/415929742): Test fails on device.
-#if !TARGET_IPHONE_SIMULATOR
+#if !TARGET_OS_SIMULATOR
 #define MAYBE_testTabStripLastTabCloseInSharedGroupAlertAsOwner \
   DISABLED_testTabStripLastTabCloseInSharedGroupAlertAsOwner
 #else

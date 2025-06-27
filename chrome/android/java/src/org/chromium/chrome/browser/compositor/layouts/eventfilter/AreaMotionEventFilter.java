@@ -10,12 +10,15 @@ import android.view.MotionEvent;
 
 import androidx.annotation.VisibleForTesting;
 
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.ui.util.MotionEventUtils;
 
 /**
  * A {@link AreaMotionEventFilter} intercepts all events that start in a specific Rect on the
  * screen.
  */
+@NullMarked
 public class AreaMotionEventFilter extends MotionEventFilter {
     private final RectF mTriggerRect = new RectF();
 
@@ -43,7 +46,7 @@ public class AreaMotionEventFilter extends MotionEventFilter {
     public AreaMotionEventFilter(
             Context context,
             MotionEventHandler handler,
-            RectF triggerRect,
+            @Nullable RectF triggerRect,
             boolean autoOffset,
             boolean useDefaultLongPress) {
         super(context, handler, autoOffset, useDefaultLongPress);
@@ -54,7 +57,7 @@ public class AreaMotionEventFilter extends MotionEventFilter {
     /**
      * @param rect The area that events should be stolen from in dp.
      */
-    public void setEventArea(RectF rect) {
+    public void setEventArea(@Nullable RectF rect) {
         if (rect == null) {
             mTriggerRect.setEmpty();
         } else {

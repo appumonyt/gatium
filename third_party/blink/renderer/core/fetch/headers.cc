@@ -105,8 +105,10 @@ void Headers::append(ScriptState* script_state,
   }
   // "4. Otherwise, if guard is |request| and |name| is a forbidden header
   //     name, return."
-  if (guard_ == kRequestGuard && cors::IsForbiddenRequestHeader(name, value))
+  if (guard_ == kRequestGuard && !bypass_request_forbidden_header_check_ &&
+      cors::IsForbiddenRequestHeader(name, value)) {
     return;
+  }
   // 5. Otherwise, if guard is |request-no-cors|:
   if (guard_ == kRequestNoCorsGuard) {
     // Let |temporaryValue| be the result of getting name from |headers|’s
@@ -120,7 +122,7 @@ void Headers::append(ScriptState* script_state,
     if (temp.IsNull()) {
       temp = normalized_value;
     } else {
-      temp = WTF::StrCat({temp, ", ", normalized_value});
+      temp = StrCat({temp, ", ", normalized_value});
     }
 
     // If |name|/|temporaryValue| is not a no-CORS-safelisted request-header,

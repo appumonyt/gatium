@@ -457,6 +457,11 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   bool AreThirdPartyCookiesGenerallyAllowed(
       content::BrowserContext* browser_context,
       content::WebContents* web_contents) override;
+  void PrewarmServiceWorkerRegistrationForDSE(
+      content::BrowserContext* browser_context,
+      content::ServiceWorkerContext& service_worker_context) override;
+  static std::optional<int>&
+  PrewarmServiceWorkerRegistrationForDSECalledCountForTesting();
   bool CanSendSCTAuditingReport(
       content::BrowserContext* browser_context) override;
   void OnNewSCTAuditingReportSent(
@@ -539,16 +544,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   base::FilePath GetNetLogDefaultDirectory() override;
   base::FilePath GetFirstPartySetsDirectory() override;
   std::optional<base::FilePath> GetLocalTracesDirectory() override;
-  void DidCreatePpapiPlugin(content::BrowserPpapiHost* browser_host) override;
-  content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
-      int plugin_process_id) override;
-  bool AllowPepperSocketAPI(
-      content::BrowserContext* browser_context,
-      const GURL& url,
-      bool private_api,
-      const content::SocketPermissionRequest* params) override;
-  bool IsPepperVpnProviderAPIAllowed(content::BrowserContext* browser_context,
-                                     const GURL& url) override;
   std::unique_ptr<content::VpnServiceProxy> GetVpnServiceProxy(
       content::BrowserContext* browser_context) override;
   std::unique_ptr<ui::SelectFilePolicy> CreateSelectFilePolicy(
@@ -1135,6 +1130,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
 
 #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
   void BindTranslationManager(
+      content::RenderProcessHost* host,
       content::BrowserContext* browser_context,
       base::SupportsUserData* context_user_data,
       const url::Origin& origin,
@@ -1206,6 +1202,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       std::optional<ukm::SourceId> ukm_source_id,
       content::KeepAliveRequestTracker::IsContextDetachedCallback
           is_context_detached_callback) override;
+
+  std::optional<std::vector<std::u16string>> GetClipboardTypesIfPolicyApplied(
+      const ui::ClipboardSequenceNumberToken& seqno) override;
 
  protected:
   static bool HandleWebUI(GURL* url, content::BrowserContext* browser_context);

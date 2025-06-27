@@ -8,6 +8,7 @@ import static org.chromium.content.browser.accessibility.AccessibilityContentShe
 import static org.chromium.content.browser.accessibility.AccessibilityContentShellTestUtils.END_OF_TEST_ERROR;
 import static org.chromium.content.browser.accessibility.AccessibilityContentShellTestUtils.NODE_TIMEOUT_ERROR;
 import static org.chromium.content.browser.accessibility.AccessibilityContentShellTestUtils.READY_FOR_TEST_ERROR;
+import static org.chromium.content.browser.accessibility.AccessibilityContentShellTestUtils.sClassNameMatcher;
 import static org.chromium.content.browser.accessibility.AccessibilityContentShellTestUtils.sContentShellDelegate;
 import static org.chromium.ui.accessibility.AccessibilityState.EVENT_TYPE_MASK_ALL;
 import static org.chromium.ui.accessibility.AccessibilityState.StateIdentifierForTesting.EVENT_TYPE_MASK;
@@ -73,19 +74,32 @@ public class AccessibilityContentShellActivityTestRule extends ContentShellActiv
     /**
      * Helper methods for setup of a basic web contents accessibility unit test.
      *
-     * This method replaces the usual setUp() method annotated with @Before because we wish to
-     * load different data with each test, but the process is the same for all tests.
+     * <p>Equivalent to calling {@link #setupTestFromFile(String, boolean)} with true
      *
-     * Leaving a commented @Before annotation on each method as a reminder/context clue.
      */
     /* @Before */
     protected void setupTestFromFile(String file) {
+        // Default behavior: ignore trivial TYPE_WINDOW_CONTENT_CHANGED events.
+        setupTestFromFile(file, /* shouldFilterTrivialEvents= */ true);
+    }
+
+    /**
+     * Helper methods for setup of a basic web contents accessibility unit test.
+     *
+     * <p>This method replaces the usual setUp() method annotated with @Before because we wish to
+     * load different data with each test, but the process is the same for all tests.
+     *
+     * @param file                          Test file URL, including path and name
+     * @param shouldFilterTrivialEvents     Flag to filter out TYPE_WINDOW_CONTENT_CHANGED event
+     */
+    /* @Before */
+    protected void setupTestFromFile(String file, boolean shouldFilterTrivialEvents) {
         // Verify file exists before beginning the test.
         verifyInputFile(file);
 
         launchContentShellWithUrl(UrlUtils.getIsolatedTestFileUrl(file));
         waitForActiveShellToBeDoneLoading();
-        setupTestFramework();
+        setupTestFramework(shouldFilterTrivialEvents);
         setAccessibilityDelegate();
 
         // To prevent flakes, do not disable accessibility mid tests.
@@ -97,9 +111,23 @@ public class AccessibilityContentShellActivityTestRule extends ContentShellActiv
     /**
      * Helper method to set up our tests. This method replaces the @Before method. Leaving a
      * commented @Before annotation on method as a reminder/context clue.
+     *
+     * <p>Equivalent to calling {@link #setupTestFramework(boolean)} with true
+     *
      */
     /* @Before */
     public void setupTestFramework() {
+        setupTestFramework(/* shouldFilterTrivialEvents= */ true);
+    }
+
+    /**
+     * Helper method to set up our tests. This method replaces the @Before method. Leaving a
+     * commented @Before annotation on method as a reminder/context clue.
+     *
+     * @param shouldFilterTrivialEvents     Flag to filter out TYPE_WINDOW_CONTENT_CHANGED event
+     */
+    /* @Before */
+    public void setupTestFramework(boolean shouldFilterTrivialEvents) {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
                     AccessibilityState.setIsAnyAccessibilityServiceEnabledForTesting(true);
@@ -110,7 +138,7 @@ public class AccessibilityContentShellActivityTestRule extends ContentShellActiv
         mWcax = getWebContentsAccessibility();
         mNodeProvider = getAccessibilityNodeProvider();
 
-        mTracker = new AccessibilityActionAndEventTracker();
+        mTracker = new AccessibilityActionAndEventTracker(shouldFilterTrivialEvents);
         mWcax.setAccessibilityTrackerForTesting(mTracker);
     }
 
@@ -368,10 +396,84 @@ public class AccessibilityContentShellActivityTestRule extends ContentShellActiv
     }
 
     /**
+     * {@return the WebView's full AccessibilityNodeInfo tree as a String, excluding screen size
+     * dependent attributes}
+     */
+    public String generateAccessibilityNodeInfoTree() {
+        return generateAccessibilityNodeInfoTree(false);
+    }
+
+    /**
+     * {@return the WebView's full AccessibilityNodeInfo tree as a String}
+     *
+     * @param includeScreenSizeDependentAttributes whether to include attributes that depend on
+     *     screen size (e.g. bounds).
+     */
+    public String generateAccessibilityNodeInfoTree(boolean includeScreenSizeDependentAttributes) {
+        StringBuilder builder = new StringBuilder();
+
+        // Find the root node and generate its string.
+        int rootNodevvId = waitForNodeMatching(sClassNameMatcher, "android.webkit.WebView");
+        AccessibilityNodeInfoCompat nodeInfo = createAccessibilityNodeInfoBlocking(rootNodevvId);
+        builder.append(
+                AccessibilityNodeInfoUtils.toString(
+                        nodeInfo, includeScreenSizeDependentAttributes));
+
+        // Recursively generate strings for all descendants.
+        for (int i = 0; i < nodeInfo.getChildCount(); ++i) {
+            int childId = getChildId(nodeInfo, i);
+            AccessibilityNodeInfoCompat childNodeInfo =
+                    createAccessibilityNodeInfoBlocking(childId);
+            recursivelyFormatTree(
+                    childNodeInfo, builder, "++", includeScreenSizeDependentAttributes);
+        }
+
+        return builder.toString();
+    }
+
+    /**
+     * Recursively add AccessibilityNodeInfo descendants to the given builder.
+     *
+     * @param node the node to print all descendants for
+     * @param builder the builder to add generated Strings to
+     * @param indent the prefix to indent each generation with, e.g. "++"
+     * @param includeScreenSizeDependentAttributes whether to include attributes that depend on
+     *     screen size (e.g. bounds).
+     */
+    private void recursivelyFormatTree(
+            AccessibilityNodeInfoCompat node,
+            StringBuilder builder,
+            String indent,
+            boolean includeScreenSizeDependentAttributes) {
+        builder.append("\n")
+                .append(indent)
+                .append(
+                        AccessibilityNodeInfoUtils.toString(
+                                node, includeScreenSizeDependentAttributes));
+        for (int j = 0; j < node.getChildCount(); ++j) {
+            int childId = getChildId(node, j);
+            AccessibilityNodeInfoCompat childNodeInfo =
+                    createAccessibilityNodeInfoBlocking(childId);
+            recursivelyFormatTree(
+                    childNodeInfo, builder, indent + "++", includeScreenSizeDependentAttributes);
+        }
+    }
+
+    /**
+     * {@return the AccessibilityNodeInfoCompat object for the given virtual view ID}
+     *
+     * @param virtualViewId the virtual view ID of the node to create.
+     */
+    private AccessibilityNodeInfoCompat createAccessibilityNodeInfoBlocking(int virtualViewId) {
+        return ThreadUtils.runOnUiThreadBlocking(
+                () -> mNodeProvider.createAccessibilityNodeInfo(virtualViewId));
+    }
+
+    /**
      * Read the contents of a file, and return as a String.
      *
-     * @param file                  File to read (including path and name)
-     * @return String               Contents of the given file.
+     * @param file relative file path to read (including path and name)
+     * @return contents of the given file.
      */
     protected String readExpectationFile(String file) {
         String directory = Environment.getExternalStorageDirectory().getPath() + BASE_DIRECTORY;

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -61,7 +62,41 @@
 
 namespace optimization_guide {
 
+BASE_FEATURE(kHintsBatchUpdateForActiveTabsAndTopHosts,
+             "OptimizationGuideHintsBatchUpdateForActiveTabsAndTopHosts",
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
+
+BASE_FEATURE(kHintsMaxConcurrentBatchUpdateFetchesOverride,
+             "OptimizationGuideHintsMaxConcurrentBatchUpdateFetchesOverride",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE_PARAM(size_t,
+                   kHintsMaxConcurrentBatchUpdateFetches,
+                   &kHintsMaxConcurrentBatchUpdateFetchesOverride,
+                   "OptimizationGuideHintsMaxConcurrentBatchUpdateFetches",
+                   20);
+
+BASE_FEATURE(kHintsMaxConcurrentNavigationFetchesOverride,
+             "OptimizationGuideHintsMaxConcurrentNavigationFetchesOverride",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE_PARAM(size_t,
+                   kHintsMaxConcurrentNavigationFetches,
+                   &kHintsMaxConcurrentNavigationFetchesOverride,
+                   "OptimizationGuideHintsMaxConcurrentNavigationFetches",
+                   20);
+
 namespace {
+
+// The duration of the time window between fetches for hints for the
+// URLs opened in active tabs.
+constexpr base::TimeDelta kActiveTabsFetchRefreshDuration = base::Hours(1);
+
+// The max duration since the time a tab has to be shown to be
+// considered active for a hints refresh.
+constexpr base::TimeDelta kActiveTabsStalenessTolerace = base::Days(90);
 
 // The component version used with a manual config. This ensures that any hint
 // component received from the Optimization Hints component on a subsequent
@@ -69,8 +104,7 @@ namespace {
 constexpr char kManualConfigComponentVersion[] = "0.0.0";
 
 base::TimeDelta RandomFetchDelay() {
-  return base::RandTimeDelta(features::ActiveTabsHintsFetchRandomMinDelay(),
-                             features::ActiveTabsHintsFetchRandomMaxDelay());
+  return base::RandTimeDelta(base::Seconds(30), base::Seconds(60));
 }
 
 void MaybeRunUpdateClosure(base::OnceClosure update_closure) {
@@ -321,8 +355,6 @@ bool ShouldContextResponsePopulateHintCache(
       return false;
     case proto::RequestContext::CONTEXT_GLIC_ZERO_STATE_SUGGESTIONS:
       return false;
-    case proto::RequestContext::CONTEXT_GLIC_PAGE_CONTEXT:
-      return false;
   }
   NOTREACHED();
 }
@@ -335,6 +367,17 @@ void RecordOptimizationFilterStatus(proto::OptimizationType optimization_type,
           GetStringNameForOptimizationType(optimization_type).c_str()),
       static_cast<int>(status),
       static_cast<int>(OptimizationFilterStatus::kMaxValue));
+}
+
+GURL GetHintsURL() {
+  // Command line override takes priority.
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kOptimizationGuideServiceGetHintsURL)) {
+    // Assume the command line switch is correct and return it.
+    return GURL(command_line->GetSwitchValueASCII(
+        switches::kOptimizationGuideServiceGetHintsURL));
+  }
+  return GURL(kOptimizationGuideServiceGetHintsDefaultURL);
 }
 
 }  // namespace
@@ -359,13 +402,13 @@ HintsManager::HintsManager(
       hint_cache_(
           std::make_unique<HintCache>(hint_store,
                                       features::MaxHostKeyedHintCacheSize())),
-      batch_update_hints_fetchers_(features::MaxConcurrentBatchUpdateFetches()),
+      batch_update_hints_fetchers_(kHintsMaxConcurrentBatchUpdateFetches.Get()),
       page_navigation_hints_fetchers_(
-          features::MaxConcurrentPageNavigationFetches()),
-      hints_fetcher_factory_(std::make_unique<HintsFetcherFactory>(
-          url_loader_factory,
-          features::GetOptimizationGuideServiceGetHintsURL(),
-          pref_service)),
+          kHintsMaxConcurrentNavigationFetches.Get()),
+      hints_fetcher_factory_(
+          std::make_unique<HintsFetcherFactory>(url_loader_factory,
+                                                GetHintsURL(),
+                                                pref_service)),
       top_host_provider_(top_host_provider),
       tab_url_provider_(tab_url_provider),
       push_notification_manager_(std::move(push_notification_manager)),
@@ -390,7 +433,6 @@ HintsManager::HintsManager(
       base::BindOnce(&HintsManager::OnHintCacheInitialized,
                      weak_ptr_factory_.GetWeakPtr()));
 }
-
 HintsManager::~HintsManager() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
@@ -685,7 +727,7 @@ void HintsManager::OnComponentHintsUpdated(base::OnceClosure update_closure,
 }
 
 void HintsManager::InitiateHintsFetchScheduling() {
-  if (features::ShouldBatchUpdateHintsForActiveTabsAndTopHosts()) {
+  if (base::FeatureList::IsEnabled(kHintsBatchUpdateForActiveTabsAndTopHosts)) {
     SetLastHintsFetchAttemptTime(clock_->Now());
 
     if (switches::ShouldOverrideFetchHintsTimer() ||
@@ -719,11 +761,9 @@ void HintsManager::SetClockForTesting(const base::Clock* clock) {
 void HintsManager::ScheduleActiveTabsHintsFetch() {
   DCHECK(!active_tabs_hints_fetch_timer_.IsRunning());
 
-  const base::TimeDelta active_tabs_refresh_duration =
-      features::GetActiveTabsFetchRefreshDuration();
   const base::TimeDelta time_since_last_fetch =
       clock_->Now() - GetLastHintsFetchAttemptTime();
-  if (time_since_last_fetch >= active_tabs_refresh_duration) {
+  if (time_since_last_fetch >= kActiveTabsFetchRefreshDuration) {
     // Fetched hints in the store should be updated and an attempt has not
     // been made in last
     // |features::GetActiveTabsFetchRefreshDuration()|.
@@ -735,7 +775,7 @@ void HintsManager::ScheduleActiveTabsHintsFetch() {
     // If the fetched hints in the store are still up-to-date, set a timer
     // for when the hints need to be updated.
     base::TimeDelta fetcher_delay =
-        active_tabs_refresh_duration - time_since_last_fetch;
+        kActiveTabsFetchRefreshDuration - time_since_last_fetch;
     active_tabs_hints_fetch_timer_.Start(
         FROM_HERE, fetcher_delay, this,
         &HintsManager::ScheduleActiveTabsHintsFetch);
@@ -747,8 +787,8 @@ const std::vector<GURL> HintsManager::GetActiveTabURLsToRefresh() {
     return {};
   }
 
-  std::vector<GURL> active_tab_urls = tab_url_provider_->GetUrlsOfActiveTabs(
-      features::GetActiveTabsStalenessTolerance());
+  std::vector<GURL> active_tab_urls =
+      tab_url_provider_->GetUrlsOfActiveTabs(kActiveTabsStalenessTolerace);
 
   std::set<GURL> urls_to_refresh;
   for (const auto& url : active_tab_urls) {
@@ -763,10 +803,21 @@ const std::vector<GURL> HintsManager::GetActiveTabURLsToRefresh() {
   return std::vector<GURL>(urls_to_refresh.begin(), urls_to_refresh.end());
 }
 
+// Helper method to check if any registered optimization type is allowed for
+// proactive personalization
+bool HintsManager::HasPersonalizableTypesRegistered() {
+  return std::any_of(
+      registered_optimization_types_.begin(),
+      registered_optimization_types_.end(), [this](auto opt_type) {
+        return allowed_optimization_types_for_proactive_personalization_.Has(
+            opt_type);
+      });
+}
+
 void HintsManager::FetchHintsForActiveTabs() {
   active_tabs_hints_fetch_timer_.Stop();
   active_tabs_hints_fetch_timer_.Start(
-      FROM_HERE, features::GetActiveTabsFetchRefreshDuration(), this,
+      FROM_HERE, kActiveTabsFetchRefreshDuration, this,
       &HintsManager::ScheduleActiveTabsHintsFetch);
 
   if (!IsUserPermittedToFetchFromRemoteOptimizationGuide(is_off_the_record_,
@@ -813,6 +864,28 @@ void HintsManager::FetchHintsForActiveTabs() {
       proto::CONTEXT_BATCH_UPDATE_ACTIVE_TABS, registered_optimization_types_,
       active_tab_urls_to_refresh, top_hosts, optimization_guide_logger_);
 
+  auto hints_fetched_callback =
+      base::BindOnce(&HintsManager::OnHintsForActiveTabsFetched,
+                     weak_ptr_factory_.GetWeakPtr(), top_hosts_set,
+                     base::flat_set<GURL>(active_tab_urls_to_refresh.begin(),
+                                          active_tab_urls_to_refresh.end()));
+  auto do_fetch_callback = base::BindOnce(
+      &HintsManager::FetchHintsForActiveTabsInternal,
+      weak_ptr_factory_.GetWeakPtr(), top_hosts, active_tab_urls_to_refresh,
+      proto::CONTEXT_BATCH_UPDATE_ACTIVE_TABS,
+      std::move(hints_fetched_callback));
+  HandleTokenRequestFlow(
+      HasPersonalizableTypesRegistered(), identity_manager_,
+      {GaiaConstants::kOptimizationGuideServiceGetHintsOAuth2Scope},
+      std::move(do_fetch_callback));
+}
+
+void HintsManager::FetchHintsForActiveTabsInternal(
+    const std::vector<std::string>& top_hosts,
+    const std::vector<GURL>& active_tab_urls_to_refresh,
+    optimization_guide::proto::RequestContext request_context,
+    HintsFetchedCallback hints_fetched_callback,
+    const std::string& access_token) {
   if (!active_tabs_batch_update_hints_fetcher_) {
     DCHECK(hints_fetcher_factory_);
     active_tabs_batch_update_hints_fetcher_ =
@@ -821,13 +894,9 @@ void HintsManager::FetchHintsForActiveTabs() {
   active_tabs_batch_update_hints_fetcher_->FetchOptimizationGuideServiceHints(
       top_hosts, active_tab_urls_to_refresh, registered_optimization_types_,
       proto::CONTEXT_BATCH_UPDATE_ACTIVE_TABS, application_locale_,
-      /*access_token=*/std::string(),
-      /*skip_cache=*/false,
-      base::BindOnce(&HintsManager::OnHintsForActiveTabsFetched,
-                     weak_ptr_factory_.GetWeakPtr(), top_hosts_set,
-                     base::flat_set<GURL>(active_tab_urls_to_refresh.begin(),
-                                          active_tab_urls_to_refresh.end())),
-      std::nullopt);
+      access_token,
+      /*skip_cache=*/false, std::move(hints_fetched_callback),
+      /*request_context_metadata=*/std::nullopt);
 }
 
 void HintsManager::OnHintsForActiveTabsFetched(
@@ -844,8 +913,8 @@ void HintsManager::OnHintsForActiveTabsFetched(
 
   hint_cache_->UpdateFetchedHints(
       std::move(*get_hints_response),
-      clock_->Now() + features::GetActiveTabsFetchRefreshDuration(),
-      hosts_fetched, urls_fetched,
+      clock_->Now() + kActiveTabsFetchRefreshDuration, hosts_fetched,
+      urls_fetched,
       base::BindOnce(&HintsManager::OnFetchedActiveTabsHintsStored,
                      weak_ptr_factory_.GetWeakPtr()));
   OPTIMIZATION_GUIDE_LOG(optimization_guide_common::mojom::LogSource::HINTS,
@@ -876,7 +945,7 @@ void HintsManager::OnPageNavigationHintsFetched(
 
   hint_cache_->UpdateFetchedHints(
       std::move(*get_hints_response),
-      clock_->Now() + features::GetActiveTabsFetchRefreshDuration(),
+      clock_->Now() + kActiveTabsFetchRefreshDuration,
       page_navigation_hosts_requested, page_navigation_urls_requested,
       base::BindOnce(&HintsManager::OnFetchedPageNavigationHintsStored,
                      weak_ptr_factory_.GetWeakPtr(), navigation_data_weak_ptr,
@@ -986,6 +1055,22 @@ void HintsManager::FetchHintsForURLs(const std::vector<GURL>& urls,
                              target_urls.vector(), target_hosts.vector(),
                              optimization_guide_logger_);
 
+  auto do_fetch_callback = base::BindOnce(
+      &HintsManager::FetchHintsForURLsInternal, weak_ptr_factory_.GetWeakPtr(),
+      target_hosts, target_urls, request_context);
+  HandleTokenRequestFlow(
+      HasPersonalizableTypesRegistered(), identity_manager_,
+      {GaiaConstants::kOptimizationGuideServiceGetHintsOAuth2Scope},
+      base::BindOnce(&HintsManager::FetchHintsForURLsInternal,
+                     weak_ptr_factory_.GetWeakPtr(), target_hosts, target_urls,
+                     request_context));
+}
+
+void HintsManager::FetchHintsForURLsInternal(
+    const InsertionOrderedSet<std::string>& target_hosts,
+    const InsertionOrderedSet<GURL>& target_urls,
+    optimization_guide::proto::RequestContext request_context,
+    const std::string& access_token) {
   std::pair<int32_t, HintsFetcher*> request_id_and_fetcher =
       CreateAndTrackBatchUpdateHintsFetcher();
 
@@ -997,7 +1082,7 @@ void HintsManager::FetchHintsForURLs(const std::vector<GURL>& urls,
   request_id_and_fetcher.second->FetchOptimizationGuideServiceHints(
       target_hosts.vector(), target_urls.vector(),
       registered_optimization_types_, request_context, application_locale_,
-      /*access_token=*/std::string(),
+      access_token,
       /*skip_cache=*/false,
       base::BindOnce(
           &HintsManager::OnBatchUpdateHintsFetched,
@@ -1168,21 +1253,14 @@ void HintsManager::CanApplyOptimizationOnDemand(
       request_context_metadata = std::nullopt;
     }
   }
-  if (allowed_contexts_for_personalized_metadata_.Has(request_context)) {
-    // Request access token before fetching hints.
-    RequestAccessToken(
-        identity_manager_,
-        {GaiaConstants::kOptimizationGuideServiceGetHintsOAuth2Scope},
-        base::BindOnce(&HintsManager::FetchOptimizationGuideServiceBatchHints,
-                       weak_ptr_factory_.GetWeakPtr(), hosts_to_fetch,
-                       urls_to_fetch, optimization_types, request_context,
-                       callback, request_context_metadata));
-  } else {
-    FetchOptimizationGuideServiceBatchHints(hosts_to_fetch, urls_to_fetch,
-                                            optimization_types, request_context,
-                                            callback, request_context_metadata,
-                                            /*access_token=*/std::string());
-  }
+  HandleTokenRequestFlow(
+      allowed_contexts_for_personalized_metadata_.Has(request_context),
+      identity_manager_,
+      {GaiaConstants::kOptimizationGuideServiceGetHintsOAuth2Scope},
+      base::BindOnce(&HintsManager::FetchOptimizationGuideServiceBatchHints,
+                     weak_ptr_factory_.GetWeakPtr(), hosts_to_fetch,
+                     urls_to_fetch, optimization_types, request_context,
+                     callback, request_context_metadata));
 }
 
 void HintsManager::FetchOptimizationGuideServiceBatchHints(
@@ -1344,8 +1422,8 @@ void HintsManager::OnBatchUpdateHintsFetched(
   // right one.
   hint_cache_->UpdateFetchedHints(
       std::move(*get_hints_response),
-      clock_->Now() + features::GetActiveTabsFetchRefreshDuration(),
-      hosts_requested, urls_requested,
+      clock_->Now() + kActiveTabsFetchRefreshDuration, hosts_requested,
+      urls_requested,
       base::BindOnce(&HintsManager::OnBatchUpdateHintsStored,
                      weak_ptr_factory_.GetWeakPtr(), urls_with_pending_callback,
                      optimization_types, callback));
@@ -1697,23 +1775,12 @@ void HintsManager::OnNavigationStartOrRedirect(
     return;
   }
 
-  if (std::any_of(
-          registered_optimization_types_.begin(),
-          registered_optimization_types_.end(), [&](auto opt_type) {
-            return allowed_optimization_types_for_proactive_personalization_
-                .Has(opt_type);
-          })) {
-    // Request access token before fetching hints.
-    RequestAccessToken(
-        identity_manager_,
-        {GaiaConstants::kOptimizationGuideServiceGetHintsOAuth2Scope},
-        base::BindOnce(&HintsManager::MaybeFetchHintsForNavigation,
-                       weak_ptr_factory_.GetWeakPtr(),
-                       navigation_data->GetWeakPtr()));
-  } else {
-    MaybeFetchHintsForNavigation(navigation_data->GetWeakPtr(),
-                                 /*access_token=*/std::string());
-  }
+  HandleTokenRequestFlow(
+      HasPersonalizableTypesRegistered(), identity_manager_,
+      {GaiaConstants::kOptimizationGuideServiceGetHintsOAuth2Scope},
+      base::BindOnce(&HintsManager::MaybeFetchHintsForNavigation,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     navigation_data->GetWeakPtr()));
 }
 
 void HintsManager::MaybeFetchHintsForNavigation(

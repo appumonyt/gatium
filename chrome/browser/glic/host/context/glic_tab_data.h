@@ -9,6 +9,7 @@
 #include <variant>
 
 #include "base/functional/callback_forward.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/types/expected.h"
@@ -18,6 +19,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 
+class SkBitmap;
 namespace glic {
 
 // TODO: Detect changes to windowID.
@@ -31,15 +33,13 @@ class TabDataObserver : public content::WebContentsObserver,
   // stop providing updates if the primary page changes.
   TabDataObserver(
       content::WebContents* web_contents,
-      bool observe_current_page_only,
       base::RepeatingCallback<void(glic::mojom::TabDataPtr)> tab_data_changed);
   ~TabDataObserver() override;
   TabDataObserver(const TabDataObserver&) = delete;
   TabDataObserver& operator=(const TabDataObserver&) = delete;
 
   // Returns the web contents being observed. Returns null if the web contents
-  // was null originally, the web contents has been destroyed, or the primary
-  // page has changed, and observe_current_page_only is true.
+  // was null originally or the web contents has been destroyed.
   content::WebContents* web_contents() {
     // const_cast is safe because a non-const WebContents is passed in this
     // class's constructor.
@@ -63,8 +63,14 @@ class TabDataObserver : public content::WebContentsObserver,
   void SendUpdate();
   void ClearObservation();
 
-  bool observe_current_page_only_ = false;
+  // Handler for TabInterface callback subscription.
+  void OnTabWillDetach(tabs::TabInterface* tab,
+                       tabs::TabInterface::DetachReason reason);
+
   base::RepeatingCallback<void(glic::mojom::TabDataPtr)> tab_data_changed_;
+
+  // Subscription to TabInterface detach callback.
+  base::CallbackListSubscription tab_detach_subscription_;
 };
 
 // Either a focused tab, or an error string.
@@ -111,6 +117,12 @@ glic::mojom::TabDataPtr CreateTabData(content::WebContents* web_contents);
 // Populates and returns a FocusedTabDataPtr from a given FocusedTabData.
 glic::mojom::FocusedTabDataPtr CreateFocusedTabData(
     const FocusedTabData& focused_tab_data);
+
+// Checks if two SkBitmap images -- used for favicons -- are visually the same.
+// This is not a highly optimized comparison but should be good enough for
+// comparing (small) favicon images.
+bool FaviconEquals(const ::SkBitmap& a, const ::SkBitmap& b);
+
 }  // namespace glic
 
 #endif  // CHROME_BROWSER_GLIC_HOST_CONTEXT_GLIC_TAB_DATA_H_

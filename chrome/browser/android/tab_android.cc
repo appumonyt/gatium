@@ -17,6 +17,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/user_metrics.h"
+#include "base/notimplemented.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/slim/layer.h"
 #include "chrome/browser/android/background_tab_manager.h"
@@ -48,6 +49,7 @@
 #include "components/infobars/content/content_infobar_manager.h"
 #include "components/no_state_prefetch/browser/no_state_prefetch_manager.h"
 #include "components/sessions/content/session_tab_helper.h"
+#include "components/tabs/public/supports_handles.h"
 #include "components/tabs/public/tab_collection.h"
 #include "components/tabs/public/tab_group_tab_collection.h"
 #include "content/public/browser/browser_thread.h"
@@ -112,6 +114,8 @@ WEB_CONTENTS_USER_DATA_KEY_IMPL(TabAndroidHelper);
 
 namespace tabs {
 
+DEFINE_HANDLE_FACTORY(TabInterface);
+
 // static
 TabInterface* TabInterface::GetFromContents(
     content::WebContents* web_contents) {
@@ -131,6 +135,11 @@ TabInterface* MaybeGetFromContents(content::WebContents* web_contents) {
 TabAndroid* TabAndroid::FromWebContents(
     const content::WebContents* web_contents) {
   return TabAndroidHelper::FromWebContents(web_contents);
+}
+
+// static
+TabAndroid* TabAndroid::FromTabHandle(tabs::TabHandle handle) {
+  return static_cast<TabAndroid*>(handle.Get());
 }
 
 // static
@@ -224,6 +233,11 @@ TabAndroid::GetWebContentsByteBuffer() {
 }
 
 base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetJavaObject() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return weak_java_tab_.get(env);
+}
+
+base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetJavaObject() const {
   JNIEnv* env = base::android::AttachCurrentThread();
   return weak_java_tab_.get(env);
 }
@@ -712,13 +726,9 @@ bool TabAndroid::IsSplit() const {
 
 std::optional<tab_groups::TabGroupId> TabAndroid::GetGroup() const {
   JNIEnv* env = base::android::AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> j_token =
+  std::optional<base::Token> token =
       Java_TabImpl_getTabGroupId(env, weak_java_tab_.get(env));
-  if (j_token.is_null()) {
-    return std::nullopt;
-  }
-  return tab_groups::TabGroupId::FromRawToken(
-      base::android::TokenAndroid::FromJavaToken(env, j_token));
+  return tab_groups::TabGroupId::FromOptionalToken(token);
 }
 
 // Split tabs is currently desktop only.

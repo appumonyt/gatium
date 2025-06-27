@@ -229,6 +229,9 @@ extern const base::FeatureParam<int>
 extern const base::FeatureParam<bool>
     kNtpMostRelevantTabResumptionModuleFilterLocalTabsParam;
 
+extern const base::FeatureParam<int>
+    kNtpSearchboxComposeEntrypointMaxAnimationsParam;
+
 // Returns the timeout after which the load of a module should be aborted.
 base::TimeDelta GetModulesLoadTimeout();
 
@@ -252,6 +255,8 @@ int GetWallpaperSearchButtonAnimationShownThreshold();
 int GetWallpaperSearchButtonHideCondition();
 
 std::string GetMobilePromoTargetURL();
+
+bool IsNtpComposeboxEnabled();
 }  // namespace ntp_features
 
 #endif  // COMPONENTS_SEARCH_NTP_FEATURES_H_

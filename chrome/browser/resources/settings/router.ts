@@ -23,7 +23,6 @@ export interface SettingsRoutes {
   AUTOFILL_AI: Route;
   BASIC: Route;
   CAPTIONS: Route;
-  CHROME_CLEANUP: Route;
   CLEAR_BROWSER_DATA: Route;
   COMPARE: Route;
   COOKIES: Route;
@@ -58,7 +57,6 @@ export interface SettingsRoutes {
   SEARCH_ENGINES: Route;
   SECURITY: Route;
   SECURITY_KEYS: Route;
-  SECURITY_KEYS_PHONES: Route;
   SITE_SETTINGS: Route;
   SITE_SETTINGS_ADS: Route;
   SITE_SETTINGS_ALL: Route;

@@ -18,6 +18,7 @@
 #include "base/values.h"
 #include "base/version.h"
 #include "build/build_config.h"
+#include "chrome/updater/external_constants.h"
 #include "chrome/updater/test/server.h"
 #include "chrome/updater/update_service.h"
 #include "chrome/updater/updater_version.h"
@@ -155,9 +156,12 @@ base::TimeDelta GetOverinstallTimeoutForEnterTestMode();
 void EnterTestMode(const GURL& update_url,
                    const GURL& crash_upload_url,
                    const GURL& app_logo_url,
+                   const GURL& event_logging_url,
                    base::TimeDelta idle_timeout,
                    base::TimeDelta server_keep_alive_time,
-                   base::TimeDelta ceca_connection_timeout);
+                   base::TimeDelta ceca_connection_timeout,
+                   std::optional<EventLoggingPermissionProvider>
+                       event_logging_permission_provider);
 
 // Takes the updater our of the test mode by deleting the external constants
 // JSON file.
@@ -521,12 +525,14 @@ void RunOfflineInstallOsNotSupported(UpdaterScope scope,
 void RunMockOfflineMetaInstall(UpdaterScope scope,
                                const std::string& app_id,
                                const base::Version& version,
+                               const std::string& tag,
                                const base::FilePath& installer_path,
                                const std::string& arguments,
                                bool is_silent_install,
                                const std::string& platform,
-                               int string_resource_id_to_find,
-                               const std::string& language,
+                               const std::string& installer_text,
+                               const bool always_launch_cmd,
+                               const int expected_exit_code,
                                bool expect_success);
 
 base::CommandLine MakeElevated(base::CommandLine command_line);
@@ -565,6 +571,17 @@ void ExpectEnterpriseCompanionAppNotInstalled();
 
 // Uninstalls the enterprise companion app, always at the system scope.
 void UninstallEnterpriseCompanionApp();
+
+// Configures whether an app allows the transmission of usage statistics. The
+// app is indicated by a platform-specific `identifier` following the semantics
+// of the event logging permission provider. That is, on macOS the basename of
+// an application's directory within Application Support and an AppId on
+// Windows.
+void SetAppAllowsUsageStats(UpdaterScope scope,
+                            const std::string& identifier,
+                            bool allowed);
+void ClearAppAllowsUsageStats(UpdaterScope scope,
+                              const std::string& identifier);
 
 void ExpectDeviceManagementRequest(ScopedServer* test_server,
                                    const std::string& request_type,

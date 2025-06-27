@@ -748,12 +748,9 @@ scoped_refptr<StaticBitmapImage> DrawingBuffer::TransferToStaticBitmapImage() {
 
   DCHECK(release_callback);
 
-  const auto format = shared_image->format();
-  const auto size = shared_image->size();
-
   return AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(
       std::move(shared_image), sync_token,
-      /* shared_image_texture_id = */ 0, size, format, kPremul_SkAlphaType,
+      /*shared_image_texture_id=*/0, kPremul_SkAlphaType,
       gfx::ColorSpace::CreateSRGB(), context_provider_->GetWeakPtr(),
       base::PlatformThread::CurrentRef(),
       ThreadScheduler::Current()->CleanupTaskRunner(),
@@ -775,8 +772,7 @@ DrawingBuffer::CreateOrRecycleColorBuffer() {
 }
 
 scoped_refptr<ExternalCanvasResource>
-DrawingBuffer::ExportLowLatencyCanvasResource(
-    base::WeakPtr<CanvasResourceProvider> resource_provider) {
+DrawingBuffer::ExportLowLatencyCanvasResource() {
   // Swap chain must be presented before resource is exported.
   ResolveAndPresentSwapChainIfNeeded();
 
@@ -795,8 +791,7 @@ DrawingBuffer::ExportLowLatencyCanvasResource(
   return ExternalCanvasResource::Create(
       color_buffer->shared_image, gpu::SyncToken(),
       viz::TransferableResource::ResourceSource::kDrawingBuffer, hdr_metadata_,
-      viz::ReleaseCallback(), context_provider_->GetWeakPtr(),
-      resource_provider);
+      viz::ReleaseCallback(), context_provider_->GetWeakPtr());
 }
 
 scoped_refptr<CanvasResource> DrawingBuffer::ExportCanvasResource() {
@@ -820,8 +815,7 @@ scoped_refptr<CanvasResource> DrawingBuffer::ExportCanvasResource() {
   return ExternalCanvasResource::Create(
       client_si, sync_token,
       viz::TransferableResource::ResourceSource::kDrawingBuffer, hdr_metadata_,
-      std::move(out_release_callback), context_provider_->GetWeakPtr(),
-      /*resource_provider=*/nullptr);
+      std::move(out_release_callback), context_provider_->GetWeakPtr());
 }
 
 DrawingBuffer::ColorBuffer::ColorBuffer(
@@ -1870,15 +1864,14 @@ void DrawingBuffer::ResolveAndPresentSwapChainIfNeeded() {
   }
 
   CopyStagingTextureToBackColorBufferIfNeeded();
-  gpu::SyncToken sync_token;
-  gl_->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+  gpu::SyncToken sync_token = back_color_buffer_->EndAccess();
 
   auto* sii = ContextProvider()->SharedImageInterface();
   sii->PresentSwapChain(sync_token,
                         back_color_buffer_->shared_image->mailbox());
 
-  sync_token = sii->GenUnverifiedSyncToken();
-  gl_->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+  back_color_buffer_->BeginAccess(sii->GenUnverifiedSyncToken(),
+                                  /*readonly=*/false);
 
   // If a multisample fbo is used it already preserves the previous contents.
   if (preserve_drawing_buffer_ == kPreserve && !WantExplicitResolve()) {
@@ -1890,7 +1883,7 @@ void DrawingBuffer::ResolveAndPresentSwapChainIfNeeded() {
     GLuint dest_texture_id =
         staging_texture_ ? staging_texture_ : back_color_buffer_->texture_id();
     front_color_buffer_->BeginAccess(gpu::SyncToken(), /*readonly=*/true);
-    ;
+
     gl_->CopySubTextureCHROMIUM(front_color_buffer_->texture_id(), 0,
                                 dest_texture_target, dest_texture_id, 0, 0, 0,
                                 0, 0, size_.width(), size_.height(), GL_FALSE,

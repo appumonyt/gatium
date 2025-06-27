@@ -120,6 +120,10 @@ ContextualSearch::ContextualSearch() {
       base::FeatureParam<bool>(&kContextualSuggestionsAblateOthersWhenPresent,
                                "AblateSearchOnly", false)
           .Get();
+  contextual_suggestions_ablate_url_only =
+      base::FeatureParam<bool>(&kContextualSuggestionsAblateOthersWhenPresent,
+                               "AblateUrlOnly", false)
+          .Get();
   starter_pack_page = feature_enabled(kStarterPackPage);
   contextual_zero_suggest_lens_fulfillment =
       feature_enabled(kContextualZeroSuggestLensFulfillment);
@@ -189,12 +193,53 @@ BASE_FEATURE(Toolbelt::kOmniboxToolbelt,
 
 Toolbelt::Toolbelt() {
   enabled = base::FeatureList::IsEnabled(kOmniboxToolbelt);
-  keep_toolbelt_after_zps =
-      base::FeatureParam<bool>(&kOmniboxToolbelt, "KeepToolbeltAfterZps", false)
+  keep_toolbelt_after_input =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "KeepToolbeltAfterInput",
+                               enabled)
           .Get();
   always_include_lens_action =
       base::FeatureParam<bool>(&kOmniboxToolbelt, "AlwaysIncludeLensAction",
                                false)
+          .Get();
+
+  show_lens_action_on_non_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowLensActionOnNonNtp",
+                               enabled)
+          .Get();
+  show_lens_action_on_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowLensActionOnNtp", false)
+          .Get();
+  show_ai_mode_action_on_non_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowAiModeActionOnNonNtp",
+                               enabled)
+          .Get();
+  show_ai_mode_action_on_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowAiModeActionOnNtp",
+                               enabled)
+          .Get();
+  show_history_action_on_non_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowHistoryActionOnNonNtp",
+                               enabled)
+          .Get();
+  show_history_action_on_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowHistoryActionOnNtp",
+                               enabled)
+          .Get();
+  show_bookmarks_action_on_non_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowBookmarksActionOnNonNtp",
+                               enabled)
+          .Get();
+  show_bookmarks_action_on_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowBookmarksActionOnNtp",
+                               enabled)
+          .Get();
+  show_tabs_action_on_non_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowTabsActionOnNonNtp",
+                               enabled)
+          .Get();
+  show_tabs_action_on_ntp =
+      base::FeatureParam<bool>(&kOmniboxToolbelt, "ShowTabsActionOnNtp",
+                               enabled)
           .Get();
 }
 
@@ -354,6 +399,10 @@ SearchAggregatorProvider::SearchAggregatorProvider() {
   scoring_people_score_boost =
       base::FeatureParam<int>(&kSearchAggregatorProvider,
                               "scoring_people_score_boost", 100)
+          .Get();
+  scoring_people_email_match_score_boost =
+      base::FeatureParam<int>(&kSearchAggregatorProvider,
+                              "scoring_people_email_match_score_boost", 400)
           .Get();
   scoring_prefer_contents_over_queries =
       base::FeatureParam<bool>(&kSearchAggregatorProvider,

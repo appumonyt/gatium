@@ -27,6 +27,17 @@ targets.mixin(
 )
 
 targets.mixin(
+    name = "10_fleet",
+    generate_pyl_entry = False,
+    swarming = targets.swarming(
+        dimensions = {
+            "device_os": "QQ1A.191205.008",
+            "device_os_flavor": "google",
+        },
+    ),
+)
+
+targets.mixin(
     name = "11-x86-emulator",
     args = [
         "--avd-config=../../tools/android/avd/proto/android_30_google_apis_x86.textpb",
@@ -512,7 +523,22 @@ targets.mixin(
 )
 
 targets.mixin(
+    name = "skylab-50-tests-per-shard",
+    skylab = targets.skylab(
+        cros_test_max_in_shard = 50,
+    ),
+)
+
+targets.mixin(
+    name = "skylab-20-tests-per-shard",
+    skylab = targets.skylab(
+        cros_test_max_in_shard = 20,
+    ),
+)
+
+targets.mixin(
     name = "chromeos-generic-vm",
+    generate_pyl_entry = False,
     args = [
         "--magic-vm-cache=magic_cros_vm_cache",
     ],
@@ -614,21 +640,6 @@ targets.mixin(
     swarming = targets.swarming(
         dimensions = {
             "device_os": "PQ3A.190801.002",
-            "device_os_flavor": "google",
-            "device_type": "walleye",
-            "os": "Android",
-            "pool": "chromium.tests",
-        },
-    ),
-)
-
-# TODO(crbug.com/416556639): Remove this after the migration is done.
-targets.mixin(
-    name = "chromium_pixel_2_pie_or_q",
-    generate_pyl_entry = False,
-    swarming = targets.swarming(
-        dimensions = {
-            "device_os": "PQ3A.190801.002|QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_type": "walleye",
             "os": "Android",
@@ -852,6 +863,13 @@ targets.mixin(
             "gce": "1",
         },
     ),
+)
+
+targets.mixin(
+    name = "gpu_gtest_common_args",
+    android_args = [
+        targets.magic_args.ANDROID_DESKTOP_FORCE_MAIN_USER,
+    ],
 )
 
 targets.mixin(
@@ -1302,6 +1320,19 @@ targets.mixin(
 )
 
 targets.mixin(
+    name = "ios_runtime_cache_26_0",
+    generate_pyl_entry = False,
+    swarming = targets.swarming(
+        named_caches = [
+            swarming.cache(
+                name = "runtime_ios_26_0",
+                path = "Runtime-ios-26.0",
+            ),
+        ],
+    ),
+)
+
+targets.mixin(
     name = "ioswpt-chromium-swarming-pool",
     generate_pyl_entry = False,
     swarming = targets.swarming(
@@ -1313,6 +1344,7 @@ targets.mixin(
 
 targets.mixin(
     name = "isolate_profile_data",
+    generate_pyl_entry = False,
     isolate_profile_data = True,
 )
 
@@ -1681,6 +1713,17 @@ targets.mixin(
         dimensions = {
             "cpu": "arm64",
             "os": "Mac-15",
+        },
+    ),
+)
+
+targets.mixin(
+    name = "mac_26_arm64",
+    generate_pyl_entry = False,
+    swarming = targets.swarming(
+        dimensions = {
+            "cpu": "arm64",
+            "os": "Mac-26",
         },
     ),
 )
@@ -2566,6 +2609,23 @@ targets.mixin(
         named_caches = [
             swarming.cache(
                 name = "xcode_ios_16f6",
+                path = "Xcode.app",
+            ),
+        ],
+    ),
+)
+
+targets.mixin(
+    name = "xcode_26_beta",
+    generate_pyl_entry = False,
+    args = [
+        "--xcode-build-version",
+        "17a5241o",
+    ],
+    swarming = targets.swarming(
+        named_caches = [
+            swarming.cache(
+                name = "xcode_ios_17a5241o",
                 path = "Xcode.app",
             ),
         ],

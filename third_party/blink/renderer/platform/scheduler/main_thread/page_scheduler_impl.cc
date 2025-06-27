@@ -297,6 +297,12 @@ void PageSchedulerImpl::SetPageBackForwardCached(
                         "PageSchedulerImpl::SetPageBackForwardCached_Restore");
     stored_in_back_forward_cache_timestamp_ = base::TimeTicks();
   } else {
+    // When storing a page in BFCache, call this function before calling
+    // SetPageFrozen(). The policy update triggered by SetPageFrozen() depends
+    // on the state set here to keep BFCache-runnable tasks from being frozen.
+    // TODO(crbug.com/427130212): Remove this CHECK once the lifecycle state
+    // logic is refactored to make this dependency unnecessary.
+    CHECK(!is_frozen_);
     TRACE_EVENT_INSTANT("navigation",
                         "PageSchedulerImpl::SetPageBackForwardCached_Store");
     stored_in_back_forward_cache_timestamp_ =
@@ -420,13 +426,6 @@ bool PageSchedulerImpl::OptedOutFromAggressiveThrottlingForTest() const {
 
 bool PageSchedulerImpl::OptedOutFromAggressiveThrottling() const {
   return opted_out_from_aggressive_throttling_;
-}
-
-bool PageSchedulerImpl::RequestBeginMainFrameNotExpected(bool new_state) {
-  CHECK(!base::FeatureList::IsEnabled(kUseWidgetSchedulerForIdlePeriodSignals));
-  if (!delegate_)
-    return false;
-  return delegate_->RequestBeginMainFrameNotExpected(new_state);
 }
 
 scoped_refptr<WidgetScheduler> PageSchedulerImpl::CreateWidgetScheduler(

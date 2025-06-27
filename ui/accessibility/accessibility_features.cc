@@ -317,7 +317,7 @@ bool IsAccessibilityShakeToLocateEnabled() {
 
 BASE_FEATURE(kAccessibilityManifestV3BrailleIme,
              "AccessibilityManifestV3BrailleIme",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 bool IsAccessibilityManifestV3EnabledForBrailleIme() {
   return base::FeatureList::IsEnabled(
       ::features::kAccessibilityManifestV3BrailleIme);
@@ -546,6 +546,16 @@ bool IsWasmTtsComponentUpdaterEnabled() {
   return base::FeatureList::IsEnabled(::features::kReadAnythingReadAloud) &&
          base::FeatureList::IsEnabled(
              ::features::kWasmTtsComponentUpdaterEnabled);
+}
+
+BASE_FEATURE(kWasmTtsComponentUpdaterV3Enabled,
+             "WasmTtsComponentUpdaterV3Enabled",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+bool IsWasmTtsComponentUpdaterV3Enabled() {
+  return base::FeatureList::IsEnabled(
+             ::features::kWasmTtsComponentUpdaterEnabled) &&
+         base::FeatureList::IsEnabled(
+             ::features::kWasmTtsComponentUpdaterV3Enabled);
 }
 
 BASE_FEATURE(kWasmTtsEngineAutoInstallDisabled,

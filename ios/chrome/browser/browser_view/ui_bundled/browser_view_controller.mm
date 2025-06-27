@@ -818,7 +818,7 @@ enum HeaderBehaviour {
   _bookmarksCoordinator = nil;
 }
 
-#pragma mark - NSObject
+#pragma mark - UIAccessibilityAction
 
 - (BOOL)accessibilityPerformEscape {
   [self dismissPopups];
@@ -2242,6 +2242,10 @@ enum HeaderBehaviour {
 }
 
 - (void)initiateNewTabForegroundAnimationForWebState:(web::WebState*)webState {
+  BOOL isNTP = IsURLNewTabPage(webState->GetVisibleURL());
+  BOOL isIncognito = _isOffTheRecord;
+  __weak id<OmniboxCommands> omniboxHandler = self.omniboxCommandsHandler;
+
   // Initiates the new tab foreground animation, which is phone-specific.
   if (IsRegularXRegularSizeClass(self)) {
     if (self.foregroundTabWasAddedCompletionBlock) {
@@ -2250,6 +2254,10 @@ enum HeaderBehaviour {
       __weak BrowserViewController* weakSelf = self;
       base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(^{
+            if (isNTP && isIncognito) {
+              [omniboxHandler focusOmniboxForVoiceOver];
+            }
+
             [weakSelf executeAndClearForegroundTabWasAddedCompletionBlock:YES];
           }));
     }

@@ -84,7 +84,7 @@ public class KeyboardShortcuts {
         KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_TOOLBAR,
         KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_BOOKMARKS,
         KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_SWITCH_ROW_OF_TOP_ELEMENTS,
-        KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_OPEN_CONTEXT_MENU,
+        KeyboardShortcutsSemanticMeaning.FOCUSED_TAB_STRIP_ITEM_OPEN_CONTEXT_MENU,
         KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_REORDER_LEFT,
         KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_REORDER_RIGHT,
         KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_CURRENT_OPEN_TAB_REORDER_LEFT,
@@ -160,7 +160,7 @@ public class KeyboardShortcuts {
         int KEYBOARD_FOCUS_TOOLBAR = 21;
         int KEYBOARD_FOCUS_BOOKMARKS = 22;
         int KEYBOARD_FOCUS_SWITCH_ROW_OF_TOP_ELEMENTS = 23;
-        int NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_OPEN_CONTEXT_MENU = 24;
+        int FOCUSED_TAB_STRIP_ITEM_OPEN_CONTEXT_MENU = 24;
         int NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_REORDER_LEFT = 25;
         int NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_REORDER_RIGHT = 26;
         int NOT_IMPLEMENTED_CURRENT_OPEN_TAB_REORDER_LEFT = 27;
@@ -348,6 +348,46 @@ public class KeyboardShortcuts {
                     resId,
                     groupId,
                     /* alternateShortcuts= */ new KeyCombo[] {});
+        }
+
+        /**
+         * Build a new instance with no alternate key combinations and null integer values for resId
+         * and groupId.
+         *
+         * @param semanticMeaning An integer representing the meaning or purpose of the shortcut.
+         * @param primaryShortcut A KeyCombo object that contains the keycode and modifier for the
+         *     shortcut.
+         */
+        KeyboardShortcutDefinition(
+                @KeyboardShortcutsSemanticMeaning int semanticMeaning, KeyCombo primaryShortcut) {
+            this(
+                    semanticMeaning,
+                    primaryShortcut,
+                    /* resId= */ Resources.ID_NULL,
+                    /* groupId= */ Resources.ID_NULL);
+        }
+
+        /**
+         * Build a new instance with no alternate key combinations and null integer values for resId
+         * and groupId.
+         *
+         * @param semanticMeaning An integer representing the meaning or purpose of the shortcut.
+         * @param primaryShortcut A KeyCombo object that contains the keycode and modifier for the
+         *     shortcut.
+         * @param alternateShortcuts An array of KeyCombo objects that contain alternative keycode
+         *     and modifier combinations for the shortcut. These will be added to the semantic map
+         *     but will not be displayed in the keyboard shortcut helper window.
+         */
+        KeyboardShortcutDefinition(
+                @KeyboardShortcutsSemanticMeaning int semanticMeaning,
+                KeyCombo primaryShortcut,
+                KeyCombo[] alternateShortcuts) {
+            this(
+                    semanticMeaning,
+                    primaryShortcut,
+                    /* resId= */ Resources.ID_NULL,
+                    /* groupId= */ Resources.ID_NULL,
+                    alternateShortcuts);
         }
     }
 
@@ -541,6 +581,21 @@ public class KeyboardShortcuts {
                     new KeyCombo(KeyEvent.KEYCODE_BUTTON_START, NO_MODIFIER)
                 });
 
+        // Top controls.
+        new KeyboardShortcutDefinition(
+                KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_TOOLBAR,
+                new KeyCombo(KeyEvent.KEYCODE_T, KeyEvent.META_ALT_ON | KeyEvent.META_SHIFT_ON));
+        new KeyboardShortcutDefinition(
+                KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_BOOKMARKS,
+                new KeyCombo(KeyEvent.KEYCODE_B, KeyEvent.META_ALT_ON | KeyEvent.META_SHIFT_ON));
+        new KeyboardShortcutDefinition(
+                KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_SWITCH_ROW_OF_TOP_ELEMENTS,
+                new KeyCombo(KeyEvent.KEYCODE_F6, NO_MODIFIER));
+        new KeyboardShortcutDefinition(
+                KeyboardShortcutsSemanticMeaning
+                        .FOCUSED_TAB_STRIP_ITEM_OPEN_CONTEXT_MENU,
+                new KeyCombo(KeyEvent.KEYCODE_F10, KeyEvent.META_SHIFT_ON));
+
         // Bookmark shortcuts.
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.TOGGLE_BOOKMARK_BAR,
@@ -629,150 +684,84 @@ public class KeyboardShortcuts {
         // TODO(crbug.com/402775002): Figure out what shortcut does TOGGLE_MULTITASK_MENU.
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_TAB_SEARCH,
-                new KeyCombo(KeyEvent.KEYCODE_A, (KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON)),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_A, (KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON)));
         // TODO(crbug.com/402775002): Change fn signature to allow (Alt + F then X) or
         // Command+Q
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_CLOSE_WINDOW,
                 new KeyCombo(KeyEvent.KEYCODE_W, (KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON)),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL,
                 new KeyCombo[] {new KeyCombo(KeyEvent.KEYCODE_F4, KeyEvent.META_ALT_ON)});
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_FOCUS_WEB_CONTENTS_PANE,
-                new KeyCombo(KeyEvent.KEYCODE_F6, KeyEvent.META_CTRL_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_F6, KeyEvent.META_CTRL_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_SCROLL_DOWN,
-                new KeyCombo(KeyEvent.KEYCODE_SPACE, NO_MODIFIER),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_SPACE, NO_MODIFIER));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_SCROLL_UP,
-                new KeyCombo(KeyEvent.KEYCODE_SPACE, KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
-        new KeyboardShortcutDefinition(
-                KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_TOOLBAR,
-                new KeyCombo(KeyEvent.KEYCODE_T, KeyEvent.META_ALT_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
-        new KeyboardShortcutDefinition(
-                KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_BOOKMARKS,
-                new KeyCombo(KeyEvent.KEYCODE_B, KeyEvent.META_ALT_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
-        new KeyboardShortcutDefinition(
-                KeyboardShortcutsSemanticMeaning.KEYBOARD_FOCUS_SWITCH_ROW_OF_TOP_ELEMENTS,
-                new KeyCombo(KeyEvent.KEYCODE_F6, NO_MODIFIER),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
-        new KeyboardShortcutDefinition(
-                KeyboardShortcutsSemanticMeaning
-                        .NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_OPEN_CONTEXT_MENU,
-                new KeyCombo(KeyEvent.KEYCODE_F10, KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_SPACE, KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning
                         .NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_REORDER_LEFT,
-                new KeyCombo(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.META_CTRL_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.META_CTRL_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning
                         .NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_REORDER_RIGHT,
-                new KeyCombo(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.META_CTRL_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.META_CTRL_ON));
         // TODO(crbug.com/402775002): Change fn signature to allow CTRL+SHIFT+FN+UpArrow.
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_CURRENT_OPEN_TAB_REORDER_LEFT,
                 new KeyCombo(
-                        KeyEvent.KEYCODE_PAGE_UP, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                        KeyEvent.KEYCODE_PAGE_UP, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON));
         // TODO(crbug.com/402775002): Change fn signature to allow CTRL+SHIFT+FN+DownArrow.
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_CURRENT_OPEN_TAB_REORDER_RIGHT,
                 new KeyCombo(
-                        KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                        KeyEvent.KEYCODE_PAGE_DOWN,
+                        KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_TOGGLE_CARET_BROWSING,
-                new KeyCombo(KeyEvent.KEYCODE_F7, KeyEvent.META_CTRL_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_F7, KeyEvent.META_CTRL_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_FOCUS_ON_INACTIVE_DIALOGS,
-                new KeyCombo(KeyEvent.KEYCODE_A, KeyEvent.META_ALT_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_A, KeyEvent.META_ALT_ON | KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_BOOKMARK_ALL_TABS,
-                new KeyCombo(KeyEvent.KEYCODE_D, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_D, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON));
         // TODO(crbug.com/402775002): Allow long press on Esc.
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_TOGGLE_IMMERSIVE,
-                new KeyCombo(KeyEvent.KEYCODE_F11, NO_MODIFIER),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_F11, NO_MODIFIER));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_DEV_TOOLS_CONSOLE,
-                new KeyCombo(KeyEvent.KEYCODE_J, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_J, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_DEV_TOOLS_INSPECT,
-                new KeyCombo(KeyEvent.KEYCODE_C, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_C, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_DEV_TOOLS_TOGGLE,
-                new KeyCombo(KeyEvent.KEYCODE_F12, NO_MODIFIER),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_F12, NO_MODIFIER));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_VIEW_SOURCE,
-                new KeyCombo(KeyEvent.KEYCODE_U, KeyEvent.META_CTRL_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_U, KeyEvent.META_CTRL_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_SHOW_DOWNLOADS,
-                new KeyCombo(KeyEvent.KEYCODE_J, KeyEvent.META_CTRL_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_J, KeyEvent.META_CTRL_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_CLEAR_BROWSING_DATA,
-                new KeyCombo(KeyEvent.KEYCODE_DEL, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_DEL, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_BASIC_PRINT,
-                new KeyCombo(KeyEvent.KEYCODE_P, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_P, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_AVATAR_MENU,
-                new KeyCombo(KeyEvent.KEYCODE_M, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_M, KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_FEEDBACK_FORM,
-                new KeyCombo(KeyEvent.KEYCODE_I, KeyEvent.META_ALT_ON | KeyEvent.META_SHIFT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_I, KeyEvent.META_ALT_ON | KeyEvent.META_SHIFT_ON));
         new KeyboardShortcutDefinition(
                 KeyboardShortcutsSemanticMeaning.NOT_IMPLEMENTED_HOME,
-                new KeyCombo(KeyEvent.KEYCODE_HOME, KeyEvent.META_ALT_ON),
-                /* resId= */ Resources.ID_NULL,
-                /* groupId= */ Resources.ID_NULL);
+                new KeyCombo(KeyEvent.KEYCODE_HOME, KeyEvent.META_ALT_ON));
     }
 
     /**
@@ -1139,7 +1128,7 @@ public class KeyboardShortcuts {
                         return false;
                     }
                 case KeyboardShortcutsSemanticMeaning
-                        .NOT_IMPLEMENTED_FOCUSED_TAB_STRIP_ITEM_OPEN_CONTEXT_MENU:
+                        .FOCUSED_TAB_STRIP_ITEM_OPEN_CONTEXT_MENU:
                     if (ChromeFeatureList.isEnabled(ChromeFeatureList.ANDROID_KEYBOARD_A11Y)) {
                         return menuOrKeyboardActionController.onMenuOrKeyboardAction(
                                 R.id.open_tab_strip_context_menu, /* fromMenu= */ false);

@@ -39,8 +39,8 @@ export interface AppElement {
     toolbar: ReadAnythingToolbarElement,
     appFlexParent: HTMLElement,
     container: HTMLElement,
-    containerParent: HTMLElement,
     languageToast: LanguageToastElement,
+    containerScroller: HTMLElement,
   };
 }
 
@@ -239,7 +239,7 @@ export class AppElement extends AppElementBase implements
       }
     };
 
-    this.$.containerParent.onscroll = () => {
+    this.$.containerScroller.onscroll = () => {
       chrome.readingMode.onScroll(this.scrollingOnSelection_);
       this.scrollingOnSelection_ = false;
       if (this.isReadAloudEnabled_) {
@@ -384,7 +384,8 @@ export class AppElement extends AppElementBase implements
 
     if (url && element.nodeName === 'A') {
       element.setAttribute('href', url);
-      element.onclick = () => {
+      element.onclick = (event: MouseEvent) => {
+        event.preventDefault();
         chrome.readingMode.onLinkClicked(nodeId);
       };
     }
@@ -674,7 +675,7 @@ export class AppElement extends AppElementBase implements
   }
 
   protected updateLinks_() {
-    if (!this.shadowRoot) {
+    if (!this.shadowRoot || !this.hasContent_) {
       return;
     }
 
@@ -696,7 +697,8 @@ export class AppElement extends AppElementBase implements
   }
 
   protected updateImages_() {
-    if (!this.shadowRoot || !chrome.readingMode.imagesFeatureEnabled) {
+    if (!this.shadowRoot || !chrome.readingMode.imagesFeatureEnabled ||
+        !this.hasContent_) {
       return;
     }
 

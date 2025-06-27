@@ -32,7 +32,6 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/desktop_browser_window_capabilities_delegate.h"
 #include "chrome/browser/ui/chrome_web_modal_dialog_manager_delegate.h"
-#include "chrome/browser/ui/signin/signin_view_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/unload_controller.h"
@@ -72,7 +71,6 @@ class BrowserLiveTabContext;
 class BrowserView;
 class BrowserWindow;
 class BrowserWindowFeatures;
-class ExclusiveAccessManager;
 class FindBarController;
 class OverscrollPrefManager;
 class Profile;
@@ -371,7 +369,8 @@ class Browser : public TabStripModelObserver,
 
   // Constructors, Creation, Showing //////////////////////////////////////////
 
-  // Creates a browser instance with the provided params.
+  // Creates a browser instance with the provided params. Returns an unowned
+  // pointer to the created browser.
   // Crashes if the requested browser creation is not allowed.
   // For example, browser creation will not be allowed for profiles that
   // disallow browsing (like sign-in profile on Chrome OS).
@@ -383,6 +382,14 @@ class Browser : public TabStripModelObserver,
   // If |params.window| or |params.skip_window_init_for_testing| are set, the
   // caller is expected to take the ownership of the created Browser instance.
   static Browser* Create(const CreateParams& params);
+
+  // WARNING: Use of this is DEPRECATED and exists only to support pre-existing
+  // browser unittests. Similar to Create() above, however the created browser
+  // is owned by the caller.
+  // TODO(crbug.com/417766643): Remove this once all use of Browser in unittests
+  // has been eliminated.
+  static std::unique_ptr<Browser> DeprecatedCreateOwnedForTesting(
+      const CreateParams& params);
 
   // Returns whether a browser window can be created for the specified profile.
   static CreationStatus GetCreationStatusForProfile(Profile* profile);
@@ -493,22 +500,12 @@ class Browser : public TabStripModelObserver,
   web_app::AppBrowserController* app_controller() {
     return app_controller_.get();
   }
-  SigninViewController* signin_view_controller() {
-    return &signin_view_controller_;
-  }
   BrowserWindowFeatures* browser_window_features() const {
     return features_.get();
   }
 
   base::WeakPtr<Browser> AsWeakPtr();
   base::WeakPtr<const Browser> AsWeakPtr() const;
-
-  // Get the FindBarController for this browser, creating it if it does not
-  // yet exist.
-  FindBarController* GetFindBarController();
-
-  // Returns true if a FindBarController exists for this browser.
-  bool HasFindBarController() const;
 
   // Returns the state of the bookmark bar.
   BookmarkBar::State bookmark_bar_state() const { return bookmark_bar_state_; }
@@ -799,10 +796,6 @@ class Browser : public TabStripModelObserver,
   // Called each time the browser window is shown.
   void OnWindowDidShow();
 
-  ExclusiveAccessManager* exclusive_access_manager() {
-    return exclusive_access_manager_.get();
-  }
-
   bool ShouldRunUnloadListenerBeforeClosing(content::WebContents* web_contents);
   bool RunUnloadListenerBeforeClosing(content::WebContents* web_contents);
 
@@ -844,6 +837,7 @@ class Browser : public TabStripModelObserver,
       ActiveTabChangeCallback callback) override;
   tabs::TabInterface* GetActiveTabInterface() override;
   BrowserWindowFeatures& GetFeatures() override;
+  const BrowserWindowFeatures& GetFeatures() const override;
   UnownedUserDataHost& GetUnownedUserDataHost() override;
   const UnownedUserDataHost& GetUnownedUserDataHost() const override;
   web_modal::WebContentsModalDialogHost*
@@ -1313,6 +1307,15 @@ class Browser : public TabStripModelObserver,
       tabs::TabInterface* tab,
       std::optional<tab_groups::TabGroupId> group);
 
+  // Create `FindBarController` if it does not exist.
+  // TODO(crbug.com/423956131): Convert to `GetFindBarController` which returns
+  // existing `FindBarController`.
+  FindBarController* CreateOrGetFindBarController();
+
+  // Returns true if a `FindBarController` exists for this browser.
+  // TODO(crbug.com/423956131): Remove this function.
+  bool HasFindBarController();
+
   // Data members /////////////////////////////////////////////////////////////
 
   PrefChangeRegistrar profile_pref_registrar_;
@@ -1403,10 +1406,6 @@ class Browser : public TabStripModelObserver,
 
   UnloadController unload_controller_;
 
-  // The Find Bar. This may be NULL if there is no Find Bar, and if it is
-  // non-NULL, it may or may not be visible.
-  std::unique_ptr<FindBarController> find_bar_controller_;
-
   // Dialog box used for opening and saving files.
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
 
@@ -1424,8 +1423,6 @@ class Browser : public TabStripModelObserver,
 
   BookmarkBar::State bookmark_bar_state_;
 
-  std::unique_ptr<ExclusiveAccessManager> exclusive_access_manager_;
-
   std::unique_ptr<BrowserActions> browser_actions_;
 
   std::unique_ptr<chrome::BrowserCommandController> command_controller_;
@@ -1434,9 +1431,6 @@ class Browser : public TabStripModelObserver,
   bool window_has_shown_;
 
   std::string user_title_;
-
-  // Controls both signin and sync consent.
-  SigninViewController signin_view_controller_;
 
   // Listens for browser-related breadcrumb events to be added to crash reports.
   std::unique_ptr<BreadcrumbManagerBrowserAgent>

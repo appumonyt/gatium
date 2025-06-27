@@ -7,6 +7,7 @@
 #import "ios/chrome/browser/app_launcher/model/app_launcher_tab_helper.h"
 #import "ios/chrome/browser/autofill/model/autofill_tab_helper.h"
 #import "ios/chrome/browser/autofill/model/bottom_sheet/autofill_bottom_sheet_tab_helper.h"
+#import "ios/chrome/browser/autofill/model/form_suggestion_tab_helper.h"
 #import "ios/chrome/browser/browser_container/model/edit_menu_tab_helper.h"
 #import "ios/chrome/browser/commerce/model/price_notifications/price_notifications_tab_helper.h"
 #import "ios/chrome/browser/contextual_panel/model/contextual_panel_tab_helper.h"
@@ -16,6 +17,7 @@
 #import "ios/chrome/browser/follow/model/follow_tab_helper.h"
 #import "ios/chrome/browser/itunes_urls/model/itunes_urls_handler_tab_helper.h"
 #import "ios/chrome/browser/lens/model/lens_tab_helper.h"
+#import "ios/chrome/browser/mini_map/model/mini_map_tab_helper.h"
 #import "ios/chrome/browser/ntp/model/new_tab_page_tab_helper.h"
 #import "ios/chrome/browser/overscroll_actions/model/overscroll_actions_tab_helper.h"
 #import "ios/chrome/browser/passwords/model/password_tab_helper.h"
@@ -89,6 +91,11 @@
   DCHECK(_snapshotGeneratorDelegate);
   SnapshotTabHelper::FromWebState(webState)->SetDelegate(
       _snapshotGeneratorDelegate);
+
+  FormSuggestionTabHelper::CreateForWebState(webState, @[
+    PasswordTabHelper::FromWebState(webState)->GetSuggestionProvider(),
+    AutofillTabHelper::FromWebState(webState)->GetSuggestionProvider(),
+  ]);
 
   PasswordTabHelper* passwordTabHelper =
       PasswordTabHelper::FromWebState(webState);
@@ -189,6 +196,12 @@
         HandlerForProtocol(_commandDispatcher, UnitConversionCommands));
   }
 
+  MiniMapTabHelper* miniMapTabHelper = MiniMapTabHelper::FromWebState(webState);
+  if (miniMapTabHelper) {
+    miniMapTabHelper->SetMiniMapCommands(
+        HandlerForProtocol(_commandDispatcher, MiniMapCommands));
+  }
+
   PriceNotificationsTabHelper* priceNotificationsTabHelper =
       PriceNotificationsTabHelper::FromWebState(webState);
   if (priceNotificationsTabHelper) {
@@ -282,6 +295,11 @@
     annotationsTabHelper->SetUnitConversionCommands(nil);
   }
 
+  MiniMapTabHelper* miniMapTabHelper = MiniMapTabHelper::FromWebState(webState);
+  if (miniMapTabHelper) {
+    miniMapTabHelper->SetMiniMapCommands(nil);
+  }
+
   PriceNotificationsTabHelper* priceNotificationsTabHelper =
       PriceNotificationsTabHelper::FromWebState(webState);
   if (priceNotificationsTabHelper) {
@@ -302,6 +320,8 @@
   if (editMenuTabHelper) {
     editMenuTabHelper->SetEditMenuBuilder(nil);
   }
+
+  FormSuggestionTabHelper::RemoveFromWebState(webState);
 }
 
 @end

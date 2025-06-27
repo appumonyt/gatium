@@ -29,10 +29,17 @@
 template <typename T>
 class scoped_refptr;
 
-namespace WTF {
+namespace blink {
+
+class StringBuilder;
 
 template <typename T>
 class StringBuffer;
+
+}  // namespace blink
+
+namespace WTF {
+
 class PartitionAllocator;
 template <typename T,
           wtf_size_t inlineCapacity = 0,
@@ -40,29 +47,22 @@ template <typename T,
 class Vector;
 
 class AtomicString;
-class CaseMap;
 class OrdinalNumber;
 class SegmentedBuffer;
 class SharedBuffer;
 class String;
-class StringBuilder;
 class StringImpl;
 class StringView;
-class TextOffsetMap;
 
 }  // namespace WTF
 
 using WTF::Vector;
 
 using WTF::AtomicString;
-using WTF::CaseMap;
 using WTF::SegmentedBuffer;
 using WTF::SharedBuffer;
 using WTF::String;
-using WTF::StringBuffer;
-using WTF::StringBuilder;
 using WTF::StringImpl;
 using WTF::StringView;
-using WTF::TextOffsetMap;
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_FORWARD_H_

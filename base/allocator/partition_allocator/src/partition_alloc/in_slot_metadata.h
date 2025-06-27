@@ -355,6 +355,11 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) InSlotMetadata {
   PA_ALWAYS_INLINE uint32_t requested_size() const { return requested_size_; }
 #endif  // PA_CONFIG(IN_SLOT_METADATA_STORE_REQUESTED_SIZE)
 
+  // The function here is called right before crashing with
+  // `DoubleFreeOrCorruptionDetected()`. We provide an address for the slot
+  // start to the function, and it may use that for debugging purpose.
+  static void SetCorruptionDetectedFn(void (*fn)(uintptr_t));
+
  private:
   // If there are some dangling raw_ptr<>. Turn on the error flag, and
   // emit the `DanglingPtrDetected` once to embedders.
@@ -437,10 +442,13 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) InSlotMetadata {
   }
 #endif  // PA_CONFIG(IN_SLOT_METADATA_CHECK_COOKIE)
 
-  [[noreturn]] PA_NOINLINE PA_NOT_TAIL_CALLED static void
-  DoubleFreeOrCorruptionDetected(CountType count,
-                                 uintptr_t slot_start,
-                                 SlotSpanMetadata<MetadataKind::kReadOnly>*);
+#if !PA_BUILDFLAG(IS_IOS)
+  [[noreturn]]
+#endif  // !PA_BUILDFLAG(IS_IOS)
+  PA_NOINLINE PA_NOT_TAIL_CALLED static void DoubleFreeOrCorruptionDetected(
+      CountType count,
+      uintptr_t slot_start,
+      SlotSpanMetadata<MetadataKind::kReadOnly>*);
 
   // Note that in free slots, this is overwritten by encoded freelist
   // pointer(s). The way the pointers are encoded on 64-bit little-endian
@@ -563,6 +571,13 @@ static inline constexpr size_t kInSlotMetadataSizeAdjustment =
 #else
     0ul;
 #endif
+
+#if PA_BUILDFLAG(IS_IOS)
+// Once called, all detected double frees are just ignored.
+void SuppressDoubleFreeDetectedCrash();
+// Once called, all corruptions detected are just ignored.
+void SuppressCorruptionDetectedCrash();
+#endif  // PA_BUILDFLAG(IS_IOS)
 
 }  // namespace partition_alloc::internal
 

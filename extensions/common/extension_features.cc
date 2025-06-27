@@ -48,7 +48,7 @@ BASE_FEATURE(kApiOdfsConfigPrivate,
 
 BASE_FEATURE(kApiEnterpriseReportingPrivateOnDataMaskingRulesTriggered,
              "ApiEnterpriseReportingPrivateOnDataMaskingRulesTriggered",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Other Features
@@ -198,6 +198,15 @@ BASE_FEATURE(kRemoveCoreSiteInstance,
              "RemoveCoreSiteInstance",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
+             "DisableDisableExtensionsExceptCommandLineSwitch",
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
+);
+
 BASE_FEATURE(kDisableLoadExtensionCommandLineSwitch,
              "DisableLoadExtensionCommandLineSwitch",
 // --load-extension is disabled for chrome-branded release builds except on
@@ -210,6 +219,18 @@ BASE_FEATURE(kDisableLoadExtensionCommandLineSwitch,
 #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
 );
 
+BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
+             "DisableExtensionsOnChromeUrlsSwitch",
+// TODO (crbug.com/426554244): Determine if this switch should be
+// removed for desktop-android builds as well.
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS) && \
+    !BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
+
 BASE_FEATURE(kUserScriptUserExtensionToggle,
              "UserScriptUserExtensionToggle",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -220,6 +241,18 @@ BASE_FEATURE(kDebuggerAPIRestrictedToDevMode,
 
 BASE_FEATURE(kExtensionBrowserNamespaceAlternative,
              "ExtensionBrowserNamespaceAlternative",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kRuntimeOnMessagePromiseReturnSupport,
+             "RuntimeOnMessagePromiseReturnSupport",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kOptimizeServiceWorkerStartRequests,
+             "OptimizeServiceWorkerStartRequests",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kAvoidCloneArgsOnExtensionFunctionDispatch,
+             "AvoidCloneArgsOnExtensionFunctionDispatch",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace extensions_features

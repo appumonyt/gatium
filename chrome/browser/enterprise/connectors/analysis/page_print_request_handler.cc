@@ -107,7 +107,8 @@ void PagePrintRequestHandler::ReportWarningBypass(
       /*mime_type*/ std::string(),
       extensions::SafeBrowsingPrivateEventRouter::kTriggerPagePrint,
       /*content_tranfer_method*/ "", safe_browsing::DeepScanAccessPoint::PRINT,
-      /*content_size*/ -1, response_, user_justification);
+      /*content_size*/ -1, content_analysis_info_->referrer_chain(), response_,
+      user_justification);
 }
 
 void PagePrintRequestHandler::UploadForDeepScanning(
@@ -184,8 +185,11 @@ void PagePrintRequestHandler::OnContentAnalysisResponse(
       /*sha256*/ std::string(),
       /*mime_type*/ std::string(),
       extensions::SafeBrowsingPrivateEventRouter::kTriggerPagePrint,
-      /*content_tranfer_method*/ "", safe_browsing::DeepScanAccessPoint::PRINT,
-      /*content_size*/ -1, result, response_,
+      /*content_tranfer_method*/ "",
+      content_analysis_info_->GetContentAreaAccountEmail(),
+      safe_browsing::DeepScanAccessPoint::PRINT,
+      /*content_size*/ -1, content_analysis_info_->referrer_chain(), result,
+      response_,
       CalculateEventResult(content_analysis_info_->settings(),
                            request_handler_result.complies, should_warn));
 

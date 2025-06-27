@@ -78,7 +78,6 @@ ts_modules = [
   "background/editing/rich_editable_text.ts",
   "background/editing/text_edit_handler.ts",
   "background/editing/typing_echo.ts",
-  "background/es6_loader.ts",
   "background/event_source.ts",
   "background/event/base_automation_handler.ts",
   "background/event/desktop_automation_handler.ts",
@@ -170,6 +169,9 @@ ts_modules = [
   "panel/panel_menu.ts",
   "panel/panel_menu_item.ts",
   "panel/panel_mode.ts",
+
+  # TODO(crbug.com/388867840): Move ja_phonetic_*.ts to the background
+  # directory (follow same structure as mv2).
   "third_party/tamachiyomi/ja_phonetic_data.ts",
   "third_party/tamachiyomi/ja_phonetic_map.ts",
 ]
@@ -235,6 +237,8 @@ generate_message_formatting_data("i18n_data") {
 
 # Instead of setting up one copy target for each subdirectory, use a script
 # to copy all files.
+# TODO(crbug.com/388867840): Use bundle_js and minify_js for the background and
+# panel scripts, similar to what is done for mv2.
 run_jsbundler("copied_files") {
   mode = "copy"
   dest_dir = chromevox_out_dir
@@ -258,15 +262,6 @@ run_jsbundler("copied_files") {
   ]
 
   sources = [
-    "earcons/chromevox_loaded.ogg",
-    "earcons/chromevox_loading.ogg",
-    "earcons/control.wav",
-    "earcons/invalid_keypress.ogg",
-    "earcons/selection.ogg",
-    "earcons/selection_reverse.ogg",
-    "earcons/skim.wav",
-    "earcons/small_room_2.wav",
-    "earcons/static.wav",
     "images/chromevox.svg",
     "images/close-36.png",
     "images/close-hover-36.png",
@@ -417,6 +412,7 @@ js2gtest("chromevox_extension_js_tests") {
     "background/input/smart_sticky_mode_test.js",
     "background/live_regions_test.js",
     "background/logging/log_store_test.js",
+    "background/math_handler_test.js",
     "background/output/output_test.js",
     "background/panel/i_search_test.js",
     "background/panel/panel_background_test.js",

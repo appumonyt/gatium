@@ -26,21 +26,6 @@ class OmniboxControllerIOS : public AutocompleteController::Observer {
   OmniboxControllerIOS(const OmniboxControllerIOS&) = delete;
   OmniboxControllerIOS& operator=(const OmniboxControllerIOS&) = delete;
 
-  // The current_url field of input is only set for mobile ports.
-  void StartAutocomplete(const AutocompleteInput& input) const;
-
-  // Cancels any pending asynchronous query. If `clear_result` is true, will
-  // also erase the result set.
-  void StopAutocomplete(bool clear_result) const;
-
-  // Starts an autocomplete prefetch request so that zero-prefix providers can
-  // optionally start a prefetch request to warm up the their underlying
-  // service(s) and/or optionally cache their otherwise async response.
-  // Virtual for testing.
-  virtual void StartZeroSuggestPrefetch();
-
-  OmniboxClient* client() { return client_.get(); }
-
   AutocompleteController* autocomplete_controller() {
     return autocomplete_controller_.get();
   }
@@ -59,8 +44,6 @@ class OmniboxControllerIOS : public AutocompleteController::Observer {
   }
 
  private:
-  base::WeakPtr<OmniboxClient> client_;
-
   std::unique_ptr<AutocompleteController> autocomplete_controller_;
 
   base::WeakPtrFactory<OmniboxControllerIOS> weak_ptr_factory_{this};

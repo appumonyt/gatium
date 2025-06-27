@@ -268,9 +268,10 @@
         </cr-link-row>
     </template>
 </if>
-    <cr-link-row id="v8SettingLink" class="hr" on-click="onV8SettingsClick_"
-        label="$i18n{securityV8LinkTitle}"
-        sub-label="$i18n{securityV8LinkDescription}"
+    <cr-link-row id="javascriptOptimizerSettingLink" class="hr"
+        on-click="onJavascriptOptimizerSettingsClick_"
+        label="$i18n{securityJavascriptOptimizerLinkTitle}"
+        sub-label="[[javascriptOptimizerSubLabel_]]"
         role-description="$i18n{subpageArrowRoleDescription}">
     </cr-link-row>
     <template is="dom-if" if="[[enableSecurityKeysSubpage_]]">
@@ -281,16 +282,6 @@
             role-description="$i18n{subpageArrowRoleDescription}">
         </cr-link-row>
     </template>
-
-<if expr="is_win">
-    <template is="dom-if" if="[[enableSecurityKeysPhonesSubpage_]]">
-        <cr-link-row id="securityKeysPhonesSubpageTrigger"
-            label="$i18n{securityKeysPhonesManage}"
-            sub-label="$i18n{securityKeysPhonesManageDesc}"
-            on-click="onManagePhonesClick_">
-        </cr-link-row>
-    </template>
-</if>
 
     <cr-link-row id="manageCertificatesLinkRow" class="hr"
         role-description="$i18n{subpageArrowRoleDescription}"

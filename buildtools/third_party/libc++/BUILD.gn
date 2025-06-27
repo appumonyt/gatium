@@ -4,9 +4,14 @@
 
 import("//build/config/c++/c++.gni")
 import("//build/config/clang/clang.gni")
+import("//build/config/compiler/compiler.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/toolchain/toolchain.gni")
 import("//buildtools/third_party/libc++/libcxx_headers.gni")
+
+if (is_mac) {
+  import("//build/config/mac/mac_sdk.gni")
+}
 
 # Used by libc++ and libc++abi.
 # See //build/config/c++:runtime_library for the config used by users of libc++.
@@ -22,15 +27,21 @@ config("config") {
       "-Wno-macro-redefined",
     ]
 
-    cflags_cc = [
-      # We want to use a uniform C++ version across all of chromium, but
-      # upstream libc++ requires C++20 so we have to make an exception here.
-      # No other target should override the default -std= flag.
-      "-std:c++20",
-    ]
+    # We want to use a uniform C++ version across all of chromium, but upstream
+    # libc++ requires at least C++20 so we have to make an exception here. No
+    # other target should override the default -std= flag.
+    if (use_cxx23) {
+      cflags_cc = [ "-std:c++23" ]
+    } else {
+      cflags_cc = [ "-std:c++20" ]
+    }
   } else {
     cflags += [ "-fPIC" ]
-    cflags_cc = [ "-std=c++20" ]
+    if (use_cxx23) {
+      cflags_cc = [ "-std=c++23" ]
+    } else {
+      cflags_cc = [ "-std=c++20" ]
+    }
   }
 
   defines = [ "_LIBCPP_BUILDING_LIBRARY" ]
@@ -58,64 +69,154 @@ configs_to_remove = [
 ]
 
 if (use_libcxx_modules) {
-  template("sysroot_modules") {
+  template("modulemap") {
     source_set(target_name) {
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "public_deps",
+                             ])
       use_libcxx_modules = false
-      sources = [ "//build/linux/amd64/module.modulemap" ]
+      sources = [ invoker.modulemap ]
+      configs -= configs_to_remove
+      configs += configs_to_add
+    }
+  }
+
+  if (is_mac) {
+    template("DarwinBasic_modules") {
+      modulemap(target_name) {
+        forward_variables_from(invoker, [ "public_deps" ])
+        modulemap = "$mac_sdk_path/usr/include/DarwinBasic.modulemap"
+      }
+    }
+
+    DarwinBasic_modules("sys_types") {
+    }
+
+    template("DarwinFoundation_modules") {
+      modulemap(target_name) {
+        forward_variables_from(invoker, [ "public_deps" ])
+        modulemap = "$mac_sdk_path/usr/include/DarwinFoundation.modulemap"
+      }
+    }
+
+    DarwinFoundation_modules("DarwinFoundation") {
+    }
+
+    DarwinFoundation_modules("_sys_select") {
+      public_deps = [ ":DarwinFoundation" ]
+    }
+
+    template("c_standard_library_modules") {
+      modulemap(target_name) {
+        forward_variables_from(invoker, [ "public_deps" ])
+        modulemap = "$mac_sdk_path/usr/include/c_standard_library.modulemap"
+      }
+    }
+
+    c_standard_library_modules("__wctype") {
+      public_deps = [ ":_ctype" ]
+    }
+
+    c_standard_library_modules("_assert") {
+    }
+
+    c_standard_library_modules("_ctype") {
+    }
+
+    c_standard_library_modules("_errno") {
+    }
+
+    c_standard_library_modules("_inttypes") {
+      public_deps = [ ":_stdint" ]
+    }
+
+    c_standard_library_modules("_limits") {
+    }
+
+    c_standard_library_modules("_locale") {
+    }
+
+    c_standard_library_modules("_setjmp") {
+    }
+
+    c_standard_library_modules("_signal") {
+      public_deps = [ ":DarwinFoundation" ]
+    }
+
+    c_standard_library_modules("_stdint") {
+    }
+
+    c_standard_library_modules("_stdio") {
+    }
+
+    c_standard_library_modules("_stdlib") {
+      public_deps = [
+        ":_signal",
+        ":_stdint",
+      ]
+    }
+
+    c_standard_library_modules("_string") {
+    }
+
+    c_standard_library_modules("_time") {
+    }
+
+    c_standard_library_modules("_wchar") {
+      public_deps = [
+        ":__wctype",
+        ":_stdio",
+        ":_time",
+      ]
+    }
+
+    c_standard_library_modules("_wctype") {
+      public_deps = [ ":__wctype" ]
+    }
+  }
+
+  template("sysroot_modules") {
+    modulemap(target_name) {
+      forward_variables_from(invoker, [ "public_deps" ])
+      modulemap = SYSROOT_MODULEMAP
       deps = [
         ":copy_custom_headers",
         ":copy_libcxx_headers",
       ]
-
-      configs -= configs_to_remove
-      configs += configs_to_add
-      if (defined(invoker.deps)) {
-        deps += invoker.deps
-      } else {
-        not_needed(invoker, "*")
-      }
     }
   }
 
-  sysroot_modules("sysroot_features") {
-  }
+  if (is_linux || is_chromeos) {
+    sysroot_modules("sysroot_features") {
+    }
 
-  sysroot_modules("sysroot_bits") {
-    deps = [
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
-  }
+    sysroot_modules("sysroot_bits") {
+      public_deps = [
+        ":sysroot_features",
+        ":sysroot_time",
+      ]
+    }
 
-  sysroot_modules("sysroot_time") {
-    deps = [ ":sysroot_features" ]
-  }
+    sysroot_modules("sysroot_time") {
+      public_deps = [ ":sysroot_features" ]
+    }
 
-  sysroot_modules("sysroot_types") {
-    deps = [
-      ":_Builtin_stddef",
-      ":std_config",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
+    sysroot_modules("sysroot_types") {
+      public_deps = [
+        ":sysroot_bits",
+        ":sysroot_features",
+        ":sysroot_time",
+      ]
+    }
   }
 
   template("builtin_modules") {
     # This is a template to build clang builtin's module file.
-    source_set(target_name) {
-      use_libcxx_modules = false
-      sources = [ "${clang_base_path}/lib/clang/${clang_version}/include/module.modulemap" ]
-
-      configs -= configs_to_remove
-      configs += configs_to_add
-
-      deps = []
-      if (defined(invoker.deps)) {
-        deps += invoker.deps
-      } else {
-        not_needed(invoker, "*")
-      }
+    modulemap(target_name) {
+      forward_variables_from(invoker, [ "public_deps" ])
+      modulemap = "${clang_base_path}/lib/clang/${clang_version}/include/module.modulemap"
     }
   }
 
@@ -123,30 +224,21 @@ if (use_libcxx_modules) {
   }
 
   builtin_modules("_Builtin_intrinsics") {
-    deps = [
-      ":_Builtin_limits",
-      ":_Builtin_stddef",
-      ":std_config",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-      ":sysroot_types",
-    ]
+    if (is_linux) {
+      public_deps = [
+        ":_Builtin_limits",
+        ":_Builtin_stddef",
+      ]
+    }
+    if (is_mac) {
+      public_deps = [ ":_Builtin_stdint" ]
+    }
   }
 
   builtin_modules("_Builtin_inttypes") {
-    deps = [
-      ":_Builtin_stdarg",
-      ":_Builtin_stddef",
-      ":_Builtin_stdint",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
   }
 
   builtin_modules("_Builtin_limits") {
-    deps = [ ":sysroot_features" ]
   }
 
   builtin_modules("_Builtin_stdalign") {
@@ -156,14 +248,6 @@ if (use_libcxx_modules) {
   }
 
   builtin_modules("_Builtin_stdatomic") {
-    deps = [
-      ":_Builtin_stddef",
-      ":_Builtin_stdint",
-      ":std_config",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
   }
 
   builtin_modules("_Builtin_stdbool") {
@@ -173,13 +257,8 @@ if (use_libcxx_modules) {
   }
 
   builtin_modules("_Builtin_stdint") {
-    deps = [
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
     if (is_mac) {
-      deps += [
+      public_deps = [
         ":_Builtin_stdarg",
         ":_Builtin_stddef",
       ]
@@ -187,12 +266,14 @@ if (use_libcxx_modules) {
   }
 
   builtin_modules("_Builtin_unwind") {
-    deps = [
-      ":_Builtin_stdint",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
+    if (is_linux || is_mac) {
+      public_deps = [ ":_Builtin_stdint" ]
+    }
+  }
+
+  if (is_mac) {
+    builtin_modules("ptrauth") {
+    }
   }
 
   # We need to have libc++ headers, __assertion_handler and __config_site in the
@@ -214,37 +295,19 @@ if (use_libcxx_modules) {
 
   template("libcxx_modules") {
     # This is a template to build libc++'s module file.
-    source_set(target_name) {
-      use_libcxx_modules = false
-      deps = []
-      sources =
-          [ "${root_gen_dir}/third_party/libc++/src/include/module.modulemap" ]
-      deps += [
+    modulemap(target_name) {
+      forward_variables_from(invoker, [ "public_deps" ])
+      modulemap =
+          "${root_gen_dir}/third_party/libc++/src/include/module.modulemap"
+      deps = [
         ":copy_custom_headers",
         ":copy_libcxx_headers",
       ]
-
-      configs -= configs_to_remove
-      configs += configs_to_add
-
-      if (defined(invoker.deps)) {
-        deps += invoker.deps
-      } else {
-        not_needed(invoker, "*")
-      }
     }
   }
 
   libcxx_modules("std") {
-    deps = [
-      ":_Builtin_float",
-      ":_Builtin_inttypes",
-      ":_Builtin_limits",
-      ":_Builtin_stdalign",
-      ":_Builtin_stdarg",
-      ":_Builtin_stddef",
-      ":_Builtin_stdint",
-      ":std_config",
+    public_deps = [
       ":std_core",
       ":std_ctype_h",
       ":std_errno_h",
@@ -256,154 +319,63 @@ if (use_libcxx_modules) {
       ":std_string_h",
       ":std_uchar_h",
       ":std_wctype_h",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-      ":sysroot_types",
     ]
   }
 
   libcxx_modules("std_config") {
-    deps = [ ":sysroot_features" ]
   }
 
   libcxx_modules("std_core") {
-    deps = [
-      ":_Builtin_stdarg",
-      ":_Builtin_stddef",
-      ":_Builtin_stdint",
-      ":std_config",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
   }
 
   libcxx_modules("std_ctype_h") {
-    deps = [
-      ":_Builtin_stdarg",
-      ":_Builtin_stddef",
-      ":std_config",
-      ":sysroot_features",
-    ]
   }
 
   libcxx_modules("std_errno_h") {
-    deps = [
-      ":std_config",
-      ":sysroot_features",
-    ]
   }
 
   libcxx_modules("std_fenv_h") {
-    deps = [
-      ":std_config",
-      ":sysroot_features",
-    ]
   }
 
   libcxx_modules("std_float_h") {
-    deps = [
-      ":_Builtin_float",
-      ":std_config",
-      ":sysroot_features",
-    ]
   }
 
   libcxx_modules("std_inttypes_h") {
-    deps = [
-      ":_Builtin_inttypes",
-      ":_Builtin_stdarg",
-      ":_Builtin_stddef",
-      ":_Builtin_stdint",
-      ":std_config",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
   }
 
   libcxx_modules("std_math_h") {
-    deps = [
-      ":_Builtin_limits",
-      ":_Builtin_stdarg",
-      ":_Builtin_stddef",
-      ":_Builtin_stdint",
-      ":std_config",
-      ":std_core",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-      ":sysroot_types",
-    ]
+    if (is_linux || is_mac) {
+      public_deps = [ ":std_core" ]
+    }
   }
 
   libcxx_modules("std_private_mbstate_t") {
-    deps = [
-      ":_Builtin_stdarg",
-      ":_Builtin_stddef",
-      ":std_config",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-      ":sysroot_types",
-    ]
   }
 
   libcxx_modules("std_stdatomic_h") {
-    deps = [
-      ":_Builtin_stdatomic",
-      ":_Builtin_stddef",
-      ":_Builtin_stdint",
-      ":std_config",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-    ]
   }
 
   libcxx_modules("std_stdbool_h") {
-    deps = [
-      ":_Builtin_stdbool",
-      ":std_config",
-      ":sysroot_features",
-    ]
   }
 
   libcxx_modules("std_stddef_h") {
   }
 
   libcxx_modules("std_string_h") {
-    deps = [
-      ":_Builtin_stdarg",
-      ":_Builtin_stddef",
-      ":std_config",
-      ":sysroot_features",
-    ]
   }
 
   libcxx_modules("std_uchar_h") {
-    deps = [
-      ":_Builtin_stddef",
-      ":std_config",
-      ":sysroot_bits",
-      ":sysroot_features",
-      ":sysroot_time",
-      ":sysroot_types",
-    ]
-    if (is_mac) {
-      deps += [ ":std_private_mbstate_t" ]
+    if (is_linux || is_mac) {
+      public_deps = [ ":std_private_mbstate_t" ]
     }
   }
 
+  libcxx_modules("std_wchar_h") {
+  }
+
   libcxx_modules("std_wctype_h") {
-    deps = [
-      ":_Builtin_stddef",
-      ":std_config",
-      ":sysroot_features",
-    ]
     if (is_mac) {
-      deps += [ ":std_ctype_h" ]
+      public_deps = [ ":std_ctype_h" ]
     }
   }
 }

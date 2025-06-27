@@ -60,17 +60,15 @@ namespace {
 
 void WaitForHistogram(const std::string& histogram_name) {
   // Continue if histogram was already recorded.
-  if (base::StatisticsRecorder::FindHistogram(histogram_name))
+  if (base::StatisticsRecorder::FindHistogram(histogram_name)) {
     return;
+  }
 
   // Else, wait until the histogram is recorded.
   base::RunLoop run_loop;
   auto histogram_observer =
       std::make_unique<base::StatisticsRecorder::ScopedHistogramSampleObserver>(
-          histogram_name,
-          base::BindLambdaForTesting(
-              [&](std::string_view histogram_name, uint64_t name_hash,
-                  base::HistogramBase::Sample32 sample) { run_loop.Quit(); }));
+          histogram_name, run_loop.QuitClosure());
   run_loop.Run();
 }
 
@@ -502,7 +500,15 @@ class AppBoundEncryptionWinReencryptTest
 };
 
 // Test the basic interface to Encrypt and Decrypt data.
-IN_PROC_BROWSER_TEST_P(AppBoundEncryptionWinReencryptTest, EncryptDecrypt) {
+// TODO(crbug.com/417904984, crbug.com/419245842): fails flakily on
+// win-rel-ready.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_EncryptDecrypt DISABLED_EncryptDecrypt
+#else
+#define MAYBE_EncryptDecrypt EncryptDecrypt
+#endif
+IN_PROC_BROWSER_TEST_P(AppBoundEncryptionWinReencryptTest,
+                       MAYBE_EncryptDecrypt) {
   ASSERT_TRUE(install_static::IsSystemInstall());
   const std::string plaintext("plaintext");
   std::string ciphertext;
@@ -601,6 +607,10 @@ IN_PROC_BROWSER_TEST_P(AppBoundEncryptionWinReencryptTest, KeyProviderTest) {
       // Re-encryption should always change the encrypted value, because the
       // underlying encryption schemes use random IVs, nonces or salts.
       EXPECT_NE(prefs.GetString(kPrefName), encrypted_key);
+      // Verify the encrypted key pref (base64, with the header "APPB") is long
+      // enough to be a valid encrypted key, and not just empty or truncated. A
+      // truncated key will be 'QVBQQg==' which is base64 for 'APPB'.
+      EXPECT_GT(prefs.GetString(kPrefName).length(), 10u);
     } else {
       EXPECT_EQ(prefs.GetString(kPrefName), encrypted_key);
     }

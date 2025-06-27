@@ -27,6 +27,7 @@
 #import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_feature.h"
 #import "ios/chrome/browser/policy/model/policy_earl_grey_utils.h"
 #import "ios/chrome/browser/policy/model/policy_util.h"
+#import "ios/chrome/browser/reading_list/ui_bundled/reading_list_egtest_utils.h"
 #import "ios/chrome/browser/recent_tabs/ui_bundled/recent_tabs_constants.h"
 #import "ios/chrome/browser/settings/ui_bundled/google_services/manage_sync_settings_constants.h"
 #import "ios/chrome/browser/settings/ui_bundled/settings_table_view_controller_constants.h"
@@ -52,6 +53,7 @@
 using chrome_test_util::BookmarksNavigationBarDoneButton;
 using chrome_test_util::ButtonWithAccessibilityLabelId;
 using chrome_test_util::GoogleServicesSettingsButton;
+using chrome_test_util::GoogleServicesSettingsView;
 using chrome_test_util::IdentityCellMatcherForEmail;
 using chrome_test_util::PrimarySignInButton;
 using chrome_test_util::SecondarySignInButton;
@@ -153,7 +155,6 @@ void SetSigninEnterprisePolicyValue(BrowserSigninMode signinMode) {
     // still work when kIdentityDiscAccountMenu is enabled.
     config.features_disabled.push_back(kIdentityDiscAccountMenu);
   }
-
   return config;
 }
 
@@ -411,59 +412,6 @@ void SetSigninEnterprisePolicyValue(BrowserSigninMode signinMode) {
 // Interrupted at: user consent.
 - (void)testDismissSigninFromRecentTabs {
   [self assertOpenURLWhenSigninFromView:OpenSigninMethodFromRecentTabs];
-}
-
-// Tests to dismiss sign-in by opening an URL from another app.
-// Sign-in opened from: tab switcher.
-// Interrupted at: user consent.
-- (void)testDismissSigninFromTabSwitcher {
-  // TODO(crbug.com/422731851): Test is failing on iPad. Re-enable when fixed.
-  if ([ChromeEarlGrey isIPadIdiom]) {
-    EARL_GREY_TEST_DISABLED(@"Failing on iPad.");
-  }
-
-  // When Tab Groups is the third panel (i.e. when Tab Group Sync is enabled),
-  // Recent Tabs is not reachable from the Tab Grid. So the sign-in flow is not
-  // supported with Tab Group Sync enabled.
-  if ([ChromeEarlGrey isTabGroupSyncEnabled]) {
-    EARL_GREY_TEST_SKIPPED(@"Recent Tabs is not available in Tab Grid when "
-                           @"Tab Group Sync is enabled.");
-  }
-
-  [self assertOpenURLWhenSigninFromView:OpenSigninMethodFromTabSwitcher];
-}
-
-// Tests to dismiss sign-in by opening an URL from another app.
-// Sign-in opened from: tab switcher.
-// Interrupted at: identity picker.
-- (void)testDismissSigninFromTabSwitcherFromIdentityPicker {
-  // TODO(crbug.com/422731851): Test is failing on iPad. Re-enable when fixed.
-  if ([ChromeEarlGrey isIPadIdiom]) {
-    EARL_GREY_TEST_DISABLED(@"Failing on iPad.");
-  }
-
-  // When Tab Groups is the third panel (i.e. when Tab Group Sync is enabled),
-  // Recent Tabs is not reachable from the Tab Grid. So the sign-in flow is not
-  // supported with Tab Group Sync enabled.
-  if ([ChromeEarlGrey isTabGroupSyncEnabled]) {
-    EARL_GREY_TEST_SKIPPED(@"Recent Tabs is not available in Tab Grid when "
-                           @"Tab Group Sync is enabled.");
-  }
-
-  FakeSystemIdentity* fakeIdentity = [FakeSystemIdentity fakeIdentity1];
-  [SigninEarlGrey addFakeIdentity:fakeIdentity];
-  [self openSigninFromView:OpenSigninMethodFromTabSwitcher];
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
-                                          kIdentityButtonControlIdentifier)]
-      performAction:grey_tap()];
-
-  // Open the URL as if it was opened from another app.
-  GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
-  const GURL expectedURL = self.testServer->GetURL("/echo");
-  [ChromeEarlGrey
-      simulateExternalAppURLOpeningAndWaitUntilOpenedWithGURL:expectedURL];
-
-  [SigninEarlGrey verifySignedOut];
 }
 
 // Opens the reauth dialog and interrupts it by open an URL from an external
@@ -735,8 +683,8 @@ void SetSigninEnterprisePolicyValue(BrowserSigninMode signinMode) {
       selectElementWithMatcher:grey_accessibilityID(kNTPFeedHeaderIdentityDisc)]
       performAction:grey_tap()];
 
-  // Ensure the Settings menu is displayed.
-  [[EarlGrey selectElementWithMatcher:SettingsCollectionView()]
+  // Ensure the Google Service settings  screen menu is displayed.
+  [[EarlGrey selectElementWithMatcher:GoogleServicesSettingsView()]
       assertWithMatcher:grey_sufficientlyVisible()];
 }
 
@@ -1102,6 +1050,23 @@ void SetSigninEnterprisePolicyValue(BrowserSigninMode signinMode) {
                          kRecentTabsTableViewControllerAccessibilityIdentifier),
                      grey_sufficientlyVisible(), nil)]
       assertWithMatcher:grey_notNil()];
+}
+
+// Interrupt the instant sign-in from the reading list. The sign-in flow is
+// interrupted while the sign-in flow displays the managed identity dialog.
+- (void)testInterruptInstantSigninInReadingList {
+  FakeSystemIdentity* fakeIdentity = [FakeSystemIdentity fakeManagedIdentity];
+  [SigninEarlGrey addFakeIdentity:fakeIdentity];
+  reading_list_test_utils::OpenReadingList();
+  [[EarlGrey
+      selectElementWithMatcher:grey_allOf(PrimarySignInButton(),
+                                          grey_sufficientlyVisible(), nil)]
+      performAction:grey_tap()];
+  GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
+  const GURL expectedURL = self.testServer->GetURL("/echo");
+  [ChromeEarlGrey
+      simulateExternalAppURLOpeningAndWaitUntilOpenedWithGURL:expectedURL];
+  [SigninEarlGrey verifySignedOut];
 }
 
 @end

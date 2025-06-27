@@ -12,6 +12,7 @@
 #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
+#include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/block_break_token.h"
 #include "third_party/blink/renderer/core/layout/constraint_space.h"
 #include "third_party/blink/renderer/core/layout/disable_layout_side_effects_scope.h"
@@ -46,6 +47,7 @@
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_inline_text.h"
 #include "third_party/blink/renderer/core/layout/unpositioned_float.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/core/style/fit_text.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/clear_collection_scope.h"
 
 namespace blink {
@@ -1003,24 +1005,30 @@ bool InlineLayoutAlgorithm::AddAnyClearanceAfterLine(
   return true;
 }
 
-LayoutUnit InlineLayoutAlgorithm::SetupLineClampEllipsis() {
+// static
+InlineLayoutAlgorithm::LineClampEllipsis
+InlineLayoutAlgorithm::ShapeLineClampEllipsis(const InlineNode& node) {
   DCHECK(RuntimeEnabledFeatures::CSSLineClampLineBreakingEllipsisEnabled());
-  const Font* font = node_.Style().GetFont();
+  const Font* font = node.Style().GetFont();
   const SimpleFontData* font_data = font->PrimaryFont();
   DCHECK(font_data);
   String ellipsis_text =
-      font_data && font_data->GlyphForCharacter(kHorizontalEllipsisCharacter)
-          ? String(base::span_from_ref(kHorizontalEllipsisCharacter))
+      font_data && font_data->GlyphForCharacter(uchar::kHorizontalEllipsis)
+          ? String(base::span_from_ref(uchar::kHorizontalEllipsis))
           : String(u"...");
   HarfBuzzShaper shaper(ellipsis_text);
-  const ShapeResult* shape_result = shaper.Shape(font, Node().BaseDirection());
+  const ShapeResult* shape_result = shaper.Shape(font, node.BaseDirection());
   DCHECK(shape_result);
 
-  FontHeight text_metrics = font_data->GetFontMetrics().GetFontHeight(
-      Node().Style().GetFontBaseline());
+  FontHeight text_metrics =
+      font_data->GetFontMetrics().GetFontHeight(node.Style().GetFontBaseline());
 
-  line_clamp_ellipsis_.emplace(ellipsis_text, shape_result, text_metrics);
-  return shape_result->SnappedWidth();
+  return LineClampEllipsis(ellipsis_text, shape_result, text_metrics);
+}
+
+LayoutUnit InlineLayoutAlgorithm::SetupLineClampEllipsis() {
+  line_clamp_ellipsis_.emplace(ShapeLineClampEllipsis(Node()));
+  return line_clamp_ellipsis_->shape_result->SnappedWidth();
 }
 
 const LayoutResult* InlineLayoutAlgorithm::Layout() {
@@ -1102,6 +1110,39 @@ const LayoutResult* InlineLayoutAlgorithm::Layout() {
 
   if (break_token && break_token->IsInParallelBlockFlow()) {
     container_builder_.SetIsLineForParallelFlow();
+  }
+
+  if (RuntimeEnabledFeatures::CssFitWidthTextEnabled()) {
+    const ComputedStyle& style = Node().Style();
+    bool apply_text_grow = style.TextGrow().Target() != FitTextTarget::kNone;
+    bool apply_text_shrink =
+        style.TextShrink().Target() != FitTextTarget::kNone;
+    if (apply_text_grow || apply_text_shrink) {
+      if (Node().HasFloats() || Node().HasInitialLetterBox() ||
+          Node().HasRuby()) {
+        if (apply_text_grow) {
+          Node().GetDocument().AddConsoleMessage(
+              MakeGarbageCollected<ConsoleMessage>(
+                  ConsoleMessage::Source::kRendering,
+                  ConsoleMessage::Level::kInfo,
+                  "Disable `text-grow` due to `float`, `initial-letter`, or "
+                  "ruby annotations."),
+              /* discard_duplicates */ true);
+          apply_text_grow = false;
+        }
+        if (apply_text_shrink) {
+          Node().GetDocument().AddConsoleMessage(
+              MakeGarbageCollected<ConsoleMessage>(
+                  ConsoleMessage::Source::kRendering,
+                  ConsoleMessage::Level::kInfo,
+                  "Disable `text-shrink` due to `float`, `initial-letter`, or "
+                  "ruby annotations."),
+              /* discard_duplicates */ true);
+          apply_text_shrink = false;
+        }
+      }
+    }
+    apply_fit_text_ = apply_text_grow || apply_text_shrink;
   }
 
   FragmentItemsBuilder* const items_builder = context_->ItemsBuilder();
@@ -1532,7 +1573,7 @@ InlineLayoutAlgorithm::DoesRemainderFitInLineWithoutEllipsis(
                item.Type() == InlineItem::kBidiControl) {
       if (breakpoint_status != kHasBreakpoints &&
           item.Type() == InlineItem::kControl &&
-          text[item.StartOffset()] == kZeroWidthSpaceCharacter) {
+          text[item.StartOffset()] == uchar::kZeroWidthSpace) {
         breakpoint_status = kHasBreakpoints;
       }
       if (current.text_offset == item.EndOffset()) {

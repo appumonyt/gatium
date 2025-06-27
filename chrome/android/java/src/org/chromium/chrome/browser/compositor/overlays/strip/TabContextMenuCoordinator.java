@@ -4,19 +4,20 @@
 
 package org.chromium.chrome.browser.compositor.overlays.strip;
 
+import static org.chromium.build.NullUtil.assumeNonNull;
 import static org.chromium.chrome.browser.share.ShareDelegate.ShareOrigin.TAB_STRIP_CONTEXT_MENU;
 import static org.chromium.ui.listmenu.BasicListMenu.buildMenuDivider;
 
 import android.app.Activity;
+import android.content.res.Resources;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
-import androidx.core.content.res.ResourcesCompat;
 
 import org.chromium.base.MathUtils;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.supplier.Supplier;
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.collaboration.CollaborationServiceFactory;
 import org.chromium.chrome.browser.multiwindow.MultiInstanceManager;
 import org.chromium.chrome.browser.multiwindow.MultiWindowUtils;
@@ -25,6 +26,7 @@ import org.chromium.chrome.browser.share.ShareDelegate;
 import org.chromium.chrome.browser.share.ShareUtils;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab_group_sync.TabGroupSyncServiceFactory;
+import org.chromium.chrome.browser.tabmodel.TabClosingSource;
 import org.chromium.chrome.browser.tabmodel.TabClosureParams;
 import org.chromium.chrome.browser.tabmodel.TabClosureParamsUtils;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
@@ -47,6 +49,7 @@ import java.util.List;
  * A coordinator for the context menu on the tab strip by long-pressing on a tab. It is responsible
  * for creating a list of menu items, setting up the menu, and displaying the menu.
  */
+@NullMarked
 public class TabContextMenuCoordinator extends TabOverflowMenuCoordinator<Integer> {
     private final Supplier<TabModel> mTabModelSupplier;
     private final WindowAndroid mWindowAndroid;
@@ -58,7 +61,7 @@ public class TabContextMenuCoordinator extends TabOverflowMenuCoordinator<Intege
             MultiInstanceManager multiInstanceManager,
             Supplier<ShareDelegate> shareDelegateSupplier,
             WindowAndroid windowAndroid,
-            TabGroupSyncService tabGroupSyncService,
+            @Nullable TabGroupSyncService tabGroupSyncService,
             CollaborationService collaborationService) {
         super(
                 R.layout.tab_switcher_action_menu_layout,
@@ -96,11 +99,11 @@ public class TabContextMenuCoordinator extends TabOverflowMenuCoordinator<Intege
             MultiInstanceManager multiInstanceManager,
             Supplier<ShareDelegate> shareDelegateSupplier,
             WindowAndroid windowAndroid) {
-        Profile profile = tabModelSupplier.get().getProfile();
-        @Nullable
-        TabGroupSyncService tabGroupSyncService =
+        Profile profile = assumeNonNull(tabModelSupplier.get().getProfile());
+
+        @Nullable TabGroupSyncService tabGroupSyncService =
                 profile.isOffTheRecord() ? null : TabGroupSyncServiceFactory.getForProfile(profile);
-        @NonNull
+
         CollaborationService collaborationService =
                 CollaborationServiceFactory.getForProfile(profile);
 
@@ -152,7 +155,10 @@ public class TabContextMenuCoordinator extends TabOverflowMenuCoordinator<Intege
                 boolean allowUndo = TabClosureParamsUtils.shouldAllowUndo(listViewTouchTracker);
                 tabModel.getTabRemover()
                         .closeTabs(
-                                TabClosureParams.closeTab(tab).allowUndo(allowUndo).build(),
+                                TabClosureParams.closeTab(tab)
+                                        .allowUndo(allowUndo)
+                                        .tabClosingSource(TabClosingSource.TABLET_TAB_STRIP)
+                                        .build(),
                                 /* allowDialog= */ true);
                 RecordUserAction.record("MobileToolbarTabMenu.CloseTab");
             }
@@ -172,9 +178,9 @@ public class TabContextMenuCoordinator extends TabOverflowMenuCoordinator<Intege
                 tabId,
                 /* horizontalOverlapAnchor= */ true,
                 /* verticalOverlapAnchor= */ false,
-                /* animStyle= */ ResourcesCompat.ID_NULL,
+                /* animStyle= */ Resources.ID_NULL,
                 HorizontalOrientation.LAYOUT_DIRECTION,
-                mWindowAndroid.getActivity().get());
+                assumeNonNull(mWindowAndroid.getActivity().get()));
         RecordUserAction.record("MobileToolbarTabMenu.Shown");
     }
 
@@ -203,7 +209,7 @@ public class TabContextMenuCoordinator extends TabOverflowMenuCoordinator<Intege
 
         if (tab.getTabGroupId() == null && MultiWindowUtils.isMultiInstanceApi31Enabled()) {
             // Show the option to move the tab to another window iff the tab is not in a group.
-            Activity activity = mWindowAndroid.getActivity().get();
+            Activity activity = assumeNonNull(mWindowAndroid.getActivity().get());
             itemList.add(
                     BrowserUiListMenuUtils.buildMenuListItemWithIncognitoBranding(
                             activity.getResources()
@@ -236,9 +242,8 @@ public class TabContextMenuCoordinator extends TabOverflowMenuCoordinator<Intege
                 getDimensionPixelSize(R.dimen.tab_strip_context_menu_max_width));
     }
 
-    @Nullable
     @Override
-    protected String getCollaborationIdOrNull(Integer id) {
+    protected @Nullable String getCollaborationIdOrNull(Integer id) {
         var tab = mTabModelSupplier.get().getTabById(id);
         if (tab == null) return null;
         return TabShareUtils.getCollaborationIdOrNull(tab.getTabGroupId(), mTabGroupSyncService);

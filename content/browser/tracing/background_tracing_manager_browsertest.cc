@@ -42,6 +42,7 @@
 #include "content/browser/tracing/background_tracing_rule.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/background_tracing_test_support.h"
@@ -265,7 +266,7 @@ perfetto::protos::gen::ChromeFieldTracingConfig CreateSimpleScenarioConfig() {
             }
           }
         }
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
     }
   )pb";
@@ -287,7 +288,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         manual_trigger_name: "upload_trigger"
       }
       trace_config: {
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
     }
   )pb";
@@ -335,7 +336,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         manual_trigger_name: "start_trigger"
       }
       trace_config: {
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
     }
   )pb";
@@ -374,7 +375,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         manual_trigger_name: "upload_trigger"
       }
       trace_config: {
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
     }
   )pb";
@@ -491,7 +492,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
       }
       stop_rules: { name: "stop_trigger" manual_trigger_name: "stop_trigger" }
       trace_config: {
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
     }
     scenarios: {
@@ -501,7 +502,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         manual_trigger_name: "other_start_trigger"
       }
       trace_config: {
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
     }
   )pb";
@@ -531,7 +532,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
       start_rules: { manual_trigger_name: "start_trigger" }
       stop_rules: { manual_trigger_name: "stop_trigger" }
       trace_config: {
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
       nested_scenarios: {
         scenario_name: "nested_scenario"
@@ -726,9 +727,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   background_tracing_helper.WaitForTraceReceived();
 
   EXPECT_TRUE(background_tracing_helper.trace_received());
-  EXPECT_TRUE(background_tracing_helper.TraceHasMatchingString("cpu-brand"));
-  EXPECT_TRUE(background_tracing_helper.TraceHasMatchingString("network-type"));
-  EXPECT_TRUE(background_tracing_helper.TraceHasMatchingString("user-agent"));
+  EXPECT_TRUE(background_tracing_helper.TraceHasMatchingString("os-name"));
 }
 
 // This tests that histogram triggers for preemptive mode configs.
@@ -749,7 +748,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
       start_rules: { manual_trigger_name: "start_trigger" }
       upload_rules: { histogram: { histogram_name: "fake" min_value: 1 } }
       trace_config: {
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
     }
   )pb";
@@ -950,7 +949,7 @@ IN_PROC_BROWSER_TEST_F(ProtoBackgroundTracingTest,
       scenario_name: "test_scenario"
       start_rules: { manual_trigger_name: "start_trigger" }
       trace_config: {
-        data_sources: { config: { name: "org.chromium.trace_metadata" } }
+        data_sources: { config: { name: "org.chromium.trace_metadata2" } }
       }
     }
   )pb";

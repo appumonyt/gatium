@@ -136,8 +136,7 @@ SafetyHubCardState GetOverallState(Profile* profile) {
       rp_service->GetCachedResult();
   if (opt_usp_result.has_value()) {
     auto* result =
-        static_cast<RevokedPermissionsService::RevokedPermissionsResult*>(
-            opt_usp_result.value().get());
+        static_cast<RevokedPermissionsResult*>(opt_usp_result.value().get());
     if (!result->GetRevokedOrigins().empty()) {
       return SafetyHubCardState::kWarning;
     }
@@ -148,8 +147,7 @@ SafetyHubCardState GetOverallState(Profile* profile) {
   std::optional<std::unique_ptr<SafetyHubService::Result>> opt_npr_result =
       npr_service->GetCachedResult();
   if (opt_npr_result.has_value()) {
-    auto* result = static_cast<
-        NotificationPermissionsReviewService::NotificationPermissionsResult*>(
+    auto* result = static_cast<NotificationPermissionsReviewResult*>(
         opt_npr_result.value().get());
     if (!result->GetSortedNotificationPermissions().empty()) {
       return SafetyHubCardState::kWarning;

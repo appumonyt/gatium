@@ -48,11 +48,11 @@ class TouchToFillPaymentMethodControllerImpl
   bool ShowIbans(std::unique_ptr<TouchToFillPaymentMethodView> view,
                  base::WeakPtr<TouchToFillDelegate> delegate,
                  base::span<const Iban> ibans_to_suggest) override;
-  bool ShowLoyaltyCards(
-      std::unique_ptr<TouchToFillPaymentMethodView> view,
-      base::WeakPtr<TouchToFillDelegate> delegate,
-      base::span<const LoyaltyCard> affiliated_loyalty_cards,
-      base::span<const LoyaltyCard> all_loyalty_cards) override;
+  bool ShowLoyaltyCards(std::unique_ptr<TouchToFillPaymentMethodView> view,
+                        base::WeakPtr<TouchToFillDelegate> delegate,
+                        base::span<const LoyaltyCard> affiliated_loyalty_cards,
+                        base::span<const LoyaltyCard> all_loyalty_cards,
+                        bool first_time_usage) override;
   void Hide() override;
 
   // content::WebContentsObserver:
@@ -72,11 +72,11 @@ class TouchToFillPaymentMethodControllerImpl
   void ShowPaymentMethodSettings(JNIEnv* env) override;
   void CreditCardSuggestionSelected(
       JNIEnv* env,
-      base::android::JavaParamRef<jstring> unique_id,
+      const base::android::JavaParamRef<jstring>& unique_id,
       bool is_virtual) override;
   void LocalIbanSuggestionSelected(
       JNIEnv* env,
-      base::android::JavaParamRef<jstring> guid) override;
+      const base::android::JavaParamRef<jstring>& guid) override;
   void ServerIbanSuggestionSelected(JNIEnv* env, long instrument_id) override;
   void LoyaltyCardSuggestionSelected(
       JNIEnv* env,

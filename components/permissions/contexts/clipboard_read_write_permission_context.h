@@ -6,15 +6,16 @@
 #define COMPONENTS_PERMISSIONS_CONTEXTS_CLIPBOARD_READ_WRITE_PERMISSION_CONTEXT_H_
 
 #include "components/content_settings/core/common/content_settings.h"
+#include "components/permissions/content_setting_permission_context_base.h"
 #include "components/permissions/contexts/clipboard_permission_context_delegate.h"
-#include "components/permissions/permission_context_base.h"
 #include "components/permissions/permission_request_data.h"
 
 namespace permissions {
 
 // Manages Clipboard API user permissions, including unsanitized read and write,
 // as well as sanitized read.
-class ClipboardReadWritePermissionContext : public PermissionContextBase {
+class ClipboardReadWritePermissionContext
+    : public ContentSettingPermissionContextBase {
  public:
   explicit ClipboardReadWritePermissionContext(
       content::BrowserContext* browser_context,
@@ -32,15 +33,15 @@ class ClipboardReadWritePermissionContext : public PermissionContextBase {
                         BrowserPermissionCallback callback) override;
 
   // PermissionContextBase:
-  ContentSetting GetPermissionStatusInternal(
-      content::RenderFrameHost* render_frame_host,
-      const GURL& requesting_origin,
-      const GURL& embedding_origin) const override;
-
-  // PermissionContextBase:
   void UpdateTabContext(const PermissionRequestID& id,
                         const GURL& requesting_frame,
                         bool allowed) override;
+
+  // ContentSettingPermissionContextBase:
+  ContentSetting GetContentSettingStatusInternal(
+      content::RenderFrameHost* render_frame_host,
+      const GURL& requesting_origin,
+      const GURL& embedding_origin) const override;
 
   std::unique_ptr<ClipboardPermissionContextDelegate> delegate_;
 };

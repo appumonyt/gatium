@@ -103,6 +103,7 @@
 #include "chrome/browser/ui/webui/metrics_reporter/metrics_reporter_service.h"
 #include "chrome/browser/ui/webui/new_tab_footer/new_tab_footer.mojom.h"
 #include "chrome/browser/ui/webui/new_tab_footer/new_tab_footer_ui.h"
+#include "chrome/browser/ui/webui/new_tab_page/composebox/composebox.mojom.h"
 #include "chrome/browser/ui/webui/new_tab_page/new_tab_page.mojom.h"
 #include "chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.h"
 #include "chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.h"
@@ -704,6 +705,11 @@ void PopulateChromeWebUIFrameBinders(
         file_suggestion::mojom::MicrosoftFilesPageHandler, NewTabPageUI>(map);
   }
 
+  if (ntp_features::IsNtpComposeboxEnabled()) {
+    RegisterWebUIControllerInterfaceBinder<
+        composebox::mojom::ComposeboxPageHandler, NewTabPageUI>(map);
+  }
+
 #if BUILDFLAG(IS_CHROMEOS)
   RegisterWebUIControllerInterfaceBinder<
       ash::mojom::HidPreservingBluetoothStateController,
@@ -1223,12 +1229,9 @@ void PopulateChromeWebUIFrameBinders(
   }
 #endif
 
-  if (base::FeatureList::IsEnabled(
-          privacy_sandbox::kPrivacySandboxInternalsDevUI)) {
-    RegisterWebUIControllerInterfaceBinder<
-        privacy_sandbox_internals::mojom::PageHandler,
-        privacy_sandbox_internals::PrivacySandboxInternalsUI>(map);
-  }
+  RegisterWebUIControllerInterfaceBinder<
+      privacy_sandbox_internals::mojom::PageHandler,
+      privacy_sandbox_internals::PrivacySandboxInternalsUI>(map);
 
 #if !BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(privacy_sandbox::kRelatedWebsiteSetsDevUI)) {

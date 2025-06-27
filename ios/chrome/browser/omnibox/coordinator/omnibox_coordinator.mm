@@ -28,12 +28,10 @@
 #import "ios/chrome/browser/omnibox/model/omnibox_controller_ios.h"
 #import "ios/chrome/browser/omnibox/model/omnibox_edit_model_ios.h"
 #import "ios/chrome/browser/omnibox/model/omnibox_pedal_annotator.h"
-#import "ios/chrome/browser/omnibox/model/omnibox_popup_view_ios.h"
 #import "ios/chrome/browser/omnibox/model/omnibox_text_controller.h"
 #import "ios/chrome/browser/omnibox/model/omnibox_text_model.h"
-#import "ios/chrome/browser/omnibox/model/omnibox_view_ios.h"
-#import "ios/chrome/browser/omnibox/model/placeholder_service.h"
-#import "ios/chrome/browser/omnibox/model/placeholder_service_factory.h"
+#import "ios/chrome/browser/omnibox/model/placeholder_service/placeholder_service.h"
+#import "ios/chrome/browser/omnibox/model/placeholder_service/placeholder_service_factory.h"
 #import "ios/chrome/browser/omnibox/public/omnibox_util.h"
 #import "ios/chrome/browser/omnibox/ui/keyboard_assist/omnibox_assistive_keyboard_delegate.h"
 #import "ios/chrome/browser/omnibox/ui/keyboard_assist/omnibox_assistive_keyboard_mediator.h"
@@ -95,7 +93,6 @@
 
   // OmniboxCoordinator temporarely owns these class until they are removed
   // after the refactoring crbug.com/390409559.
-  std::unique_ptr<OmniboxViewIOS> _omniboxView;
   std::unique_ptr<OmniboxControllerIOS> _omniboxController;
   std::unique_ptr<OmniboxEditModelIOS> _omniboxEditModel;
   std::unique_ptr<OmniboxTextModel> _omniboxTextModel;
@@ -104,6 +101,9 @@
   OmniboxAutocompleteController* _omniboxAutocompleteController;
   /// Controller for the omnibox text.
   OmniboxTextController* _omniboxTextController;
+
+  /// Metrics recorder.
+  OmniboxMetricsRecorder* _omniboxMetricsRecorder;
 
   /// Object handling interactions in the keyboard accessory view.
   OmniboxAssistiveKeyboardMediator* _keyboardMediator;
@@ -181,14 +181,19 @@
 
   DCHECK(_client.get());
 
-  _omniboxTextModel = std::make_unique<OmniboxTextModel>();
+  _omniboxTextModel = std::make_unique<OmniboxTextModel>(_client.get());
   OmniboxTextFieldIOS* textField = viewController.textField;
   _omniboxController = std::make_unique<OmniboxControllerIOS>(_client.get());
-  _omniboxView = std::make_unique<OmniboxViewIOS>(textField);
+
+  _omniboxMetricsRecorder =
+      [[OmniboxMetricsRecorder alloc] initWithClient:_client.get()
+                                           textModel:_omniboxTextModel.get()];
+  [_omniboxMetricsRecorder
+      setAutocompleteController:_omniboxController->autocomplete_controller()];
+
   _omniboxEditModel = std::make_unique<OmniboxEditModelIOS>(
-      _omniboxController.get(), _omniboxView.get(), _omniboxTextModel.get());
-  _omniboxView->SetOmniboxEditModel(_omniboxEditModel.get());
-  _omniboxView->SetOmniboxController(_omniboxController.get());
+      _omniboxController.get(), _client.get(), _omniboxTextModel.get(),
+      _omniboxMetricsRecorder);
 
   self.pasteDelegate = [[OmniboxTextFieldPasteDelegate alloc] init];
   [textField setPasteDelegate:self.pasteDelegate];
@@ -209,17 +214,15 @@
   _keyboardMediator.omniboxTextField = textField;
   _keyboardMediator.delegate = self;
 
-  self.zeroSuggestPrefetchHelper = [[ZeroSuggestPrefetchHelper alloc]
-      initWithWebStateList:browser->GetWebStateList()
-                controller:_omniboxController.get()];
-
   _omniboxAutocompleteController = [[OmniboxAutocompleteController alloc]
       initWithOmniboxController:_omniboxController.get()
-               omniboxEditModel:_omniboxEditModel.get()];
+                  omniboxClient:_client.get()
+               omniboxEditModel:_omniboxEditModel.get()
+               omniboxTextModel:_omniboxTextModel.get()];
 
   _omniboxTextController = [[OmniboxTextController alloc]
       initWithOmniboxController:_omniboxController.get()
-                 omniboxViewIOS:_omniboxView.get()
+                  omniboxClient:_client.get()
                omniboxEditModel:_omniboxEditModel.get()
                omniboxTextModel:_omniboxTextModel.get()
                   inLensOverlay:_isLensOverlay];
@@ -229,11 +232,21 @@
       _omniboxAutocompleteController;
   _omniboxTextController.textField = textField;
   _omniboxAutocompleteController.omniboxTextController = _omniboxTextController;
+  _omniboxAutocompleteController.omniboxMetricsRecorder =
+      _omniboxMetricsRecorder;
 
   _omniboxEditModel->set_text_controller(_omniboxTextController);
+  _omniboxEditModel->set_omnibox_autocomplete_controller(
+      _omniboxAutocompleteController);
+  _omniboxMetricsRecorder.omniboxAutocompleteController =
+      _omniboxAutocompleteController;
 
   mediator.omniboxTextController = _omniboxTextController;
-  _omniboxView->SetOmniboxTextController(_omniboxTextController);
+
+  self.zeroSuggestPrefetchHelper = [[ZeroSuggestPrefetchHelper alloc]
+      initWithWebStateList:browser->GetWebStateList()];
+  self.zeroSuggestPrefetchHelper.omniboxAutocompleteController =
+      _omniboxAutocompleteController;
 
   CommandDispatcher* dispatcher = browser->GetCommandDispatcher();
   OmniboxPedalAnnotator* annotator = [[OmniboxPedalAnnotator alloc] init];
@@ -264,15 +277,16 @@
   _omniboxAutocompleteController = nil;
   [_omniboxTextController disconnect];
   _omniboxTextController = nil;
+  [_omniboxMetricsRecorder disconnect];
+  _omniboxMetricsRecorder = nil;
 
   [self.popupCoordinator stop];
   self.popupCoordinator = nil;
 
   _omniboxEditModel.reset();
-  _omniboxView.reset();
   _omniboxController.reset();
-  _client.reset();
   _omniboxTextModel.reset();
+  _client.reset();
 
   self.viewController = nil;
   self.mediator.templateURLService = nullptr;  // Unregister the observer.
@@ -311,16 +325,12 @@
 - (OmniboxPopupCoordinator*)createPopupCoordinator:
     (id<OmniboxPopupPresenterDelegate>)presenterDelegate {
   DCHECK(!_popupCoordinator);
-  std::unique_ptr<OmniboxPopupViewIOS> popupView =
-      std::make_unique<OmniboxPopupViewIOS>(_omniboxEditModel.get(),
-                                            _omniboxAutocompleteController);
 
   OmniboxPopupCoordinator* coordinator = [[OmniboxPopupCoordinator alloc]
          initWithBaseViewController:nil
                             browser:self.browser
              autocompleteController:_omniboxController
                                         ->autocomplete_controller()
-                          popupView:std::move(popupView)
       omniboxAutocompleteController:_omniboxAutocompleteController];
   coordinator.presenterDelegate = presenterDelegate;
 

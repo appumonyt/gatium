@@ -857,12 +857,24 @@ class VideoTextureBacking : public cc::TextureBacking {
     return raster_context_provider_;
   }
 
-  // Used only for recycling this TextureBacking - where we need to keep the
-  // texture/mailbox alive, but replace the SkImage. |access| is the access to
-  // the SharedImage backing this SkImage.
-  void ReplaceAcceleratedSkImage(
-      sk_sp<SkImage> sk_image,
-      std::unique_ptr<ScopedSharedImageAccess> access) {
+  // Create and replace SkImage and access for the non-gpu-rasterization case.
+  // Returns false when failing to create SkImage, and true if the creation
+  // is successful or not necessary.
+  bool BeginAccess(gpu::raster::RasterInterface* ri) {
+    if (raster_context_provider()->ContextCapabilities().gpu_rasterization) {
+      return true;
+    }
+
+    GLuint texture = ri->CreateAndConsumeForGpuRaster(GetMailbox());
+
+    auto access = std::make_unique<ScopedSharedImageAccess>(ri, texture);
+    auto sk_image = WrapGLTexture(texture, GetSharedImage()->size(),
+                                  raster_context_provider().get());
+    if (!sk_image) {
+      // Couldn't create the SkImage.
+      return false;
+    }
+
     DCHECK(sk_image->isTextureBacked());
     sk_image_ = sk_image;
     sk_image_info_ = sk_image->imageInfo();
@@ -870,6 +882,7 @@ class VideoTextureBacking : public cc::TextureBacking {
     // The client should have called clear_access() before invoking this method.
     DCHECK(!access_);
     access_ = std::move(access);
+    return true;
   }
 
   void clear_access() { access_.reset(); }
@@ -1845,26 +1858,10 @@ bool PaintCanvasVideoRenderer::UpdateLastImage(
     // In OOPR mode, we can keep the entire TextureBacking. In non-OOPR,
     // we can recycle the mailbox/texture, but have to replace the SkImage.
     if (!gpu_rasterization) {
-      cache_->source_texture =
-          ri->CreateAndConsumeForGpuRaster(client_shared_image->mailbox());
-
-      auto access =
-          std::make_unique<ScopedSharedImageAccess>(ri, cache_->source_texture);
-      auto source_image =
-          WrapGLTexture(cache_->source_texture, video_frame->coded_size(),
-                        raster_context_provider);
-      if (!source_image) {
-        // Couldn't create the SkImage.
-        cache_.reset();
-        return false;
-      }
       if (!cache_->texture_backing) {
         cache_->texture_backing = sk_make_sp<VideoTextureBacking>(
-            std::move(source_image), std::move(client_shared_image),
-            raster_context_provider, std::move(access));
-      } else {
-        cache_->texture_backing->ReplaceAcceleratedSkImage(
-            std::move(source_image), std::move(access));
+            std::move(client_shared_image), SkImageInfo(),
+            raster_context_provider);
       }
     } else if (!cache_->texture_backing) {
       SkImageInfo sk_image_info = SkImageInfo::Make(
@@ -1877,6 +1874,12 @@ bool PaintCanvasVideoRenderer::UpdateLastImage(
     }
     paint_image_builder.set_texture_backing(cache_->texture_backing,
                                             cc::PaintImage::GetNextContentId());
+
+    bool success = cache_->texture_backing->BeginAccess(ri);
+    if (!success) {
+      cache_.reset();
+      return false;
+    }
   } else {
     cache_.emplace(video_frame->unique_id());
     paint_image_builder.set_paint_image_generator(

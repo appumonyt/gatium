@@ -211,6 +211,19 @@ WebString GetAttribute(const WebElement& element) {
   return element.GetAttribute(GetWebString<attribute>());
 }
 
+// Indicates whether we want to extract forms on `url`.
+bool IsAdmissibleUrl(const blink::WebURL& url) {
+  if (url.ProtocolIs("https") || url.ProtocolIs("http") ||
+      url.ProtocolIs("data")) {
+    return true;
+  }
+  if (url.ProtocolIs("about") && GURL(url).IsAboutSrcdoc()) {
+    return true;
+  }
+  return !base::FeatureList::IsEnabled(
+      features::kAutofillExtractOnlyOnAdmissibleUrls);
+}
+
 // Returns the form's |name| attribute if non-empty; otherwise the form's |id|
 // attribute.
 std::u16string GetFormIdentifier(const WebFormElement& form) {
@@ -2065,6 +2078,10 @@ std::optional<FormData> ExtractFormDataWithFieldsAndFrames(
     return std::nullopt;
   }
 
+  if (!IsAdmissibleUrl(document.Url())) {
+    return std::nullopt;
+  }
+
   std::vector<WebFormControlElement> control_elements =
       GetOwnedAutofillableFormControls(document, form_element);
   if (base::FeatureList::IsEnabled(features::kAutofillOptimizeFormExtraction) &&
@@ -2227,12 +2244,8 @@ std::optional<InferredLabel> InferredLabel::BuildIfValid(std::u16string label,
     return !base::Contains(kInvalidChars, c) &&
            !base::Contains(std::u16string_view(base::kWhitespaceUTF16), c);
   };
-  auto is_slash_or_dot = [](char16_t c) { return c == u'/' || c == u'.'; };
   // LINT.ThenChange(/components/autofill/ios/form_util/resources/fill_element_inference_util.ts:InvalidLabelCriteria)
-  if (std::ranges::any_of(label, is_valid_label_character) ||
-      (std::ranges::any_of(label, is_slash_or_dot) &&
-       !base::FeatureList::IsEnabled(
-           features::kAutofillDisallowSlashDotLabels))) {
+  if (std::ranges::any_of(label, is_valid_label_character)) {
     base::TrimWhitespace(label, base::TRIM_ALL, &label);
     return InferredLabel{std::move(label), source};
   }
@@ -2319,10 +2332,7 @@ std::optional<FormControlType> ToAutofillFormControlType(
     case blink::mojom::FormControlType::kTextArea:
       return FormControlType::kTextArea;
     case blink::mojom::FormControlType::kInputDate:
-      if (base::FeatureList::IsEnabled(features::kAutofillExtractInputDate)) {
-        return FormControlType::kInputDate;
-      }
-      break;
+      return FormControlType::kInputDate;
     case blink::mojom::FormControlType::kButtonButton:
     case blink::mojom::FormControlType::kButtonSubmit:
     case blink::mojom::FormControlType::kButtonReset:
@@ -2534,17 +2544,18 @@ FindFormAndFieldForFormControlElement(
 
 std::optional<FormData> FindFormForContentEditable(
     const WebElement& content_editable) {
+  WebDocument document = content_editable.GetDocument();
+
   if (content_editable.DynamicTo<WebFormElement>() ||
       content_editable.DynamicTo<WebFormControlElement>() ||
       !content_editable.IsContentEditable() ||
       content_editable != content_editable.RootEditableElement() ||
-      !IsAccessible(content_editable)) {
+      !IsAccessible(content_editable) || !IsAdmissibleUrl(document.Url())) {
     return std::nullopt;
   }
 
   std::vector<FormFieldData> fields(1);
   FormFieldData& field = fields.back();
-  WebDocument document = content_editable.GetDocument();
   field.set_id_attribute(content_editable.GetIdAttribute().Utf16());
   field.set_name_attribute(GetAttribute<kName>(content_editable).Utf16());
   field.set_name(!field.id_attribute().empty() ? field.id_attribute()

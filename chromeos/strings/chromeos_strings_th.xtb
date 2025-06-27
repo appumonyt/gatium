@@ -221,7 +221,6 @@
 <translation id="181434555916624618">ในตอนนี้ระบบจะไม่แสดงผลการค้นหาที่มีผู้คน โปรดลองใช้พรอมต์อื่น</translation>
 <translation id="1815850098929213707">คีย์ที่เลือกคือ <ph name="KEYS" /> แตะปุ่มเพื่อแก้ไขตัวควบคุม</translation>
 <translation id="1818174214124933000">เมื่อคุณเลือกส่ง ระบบจะส่งความคิดเห็นและเนื้อหาของคุณ (ดังที่แสดงด้านล่าง) ไปยัง Google ข้อมูลดังกล่าวจะได้รับการตรวจสอบโดยเจ้าหน้าที่ และใช้เพื่อฝึกหรือปรับปรุงผลิตภัณฑ์และบริการโดยเป็นไปตาม<ph name="LINK_POLICY_BEGIN" />นโยบายความเป็นส่วนตัว<ph name="LINK_POLICY_END" />และ<ph name="LINK_TERMS_OF_SERVICE_BEGIN" />ข้อกำหนดในการให้บริการของ Google<ph name="LINK_TERMS_OF_SERVICE_END" /></translation>
-<translation id="1821075635029692203">ครูของคุณส่งแหล่งข้อมูลที่ระบบไม่รองรับ โปรดแจ้งให้ครูทราบ</translation>
 <translation id="1823120442877418684">ตัวละคร</translation>
 <translation id="1827738518074806965">แกลเลอรีศิลปะ</translation>
 <translation id="183287940576828840">ไม่เหมาะสม/ไม่ปลอดภัย</translation>
@@ -758,6 +757,7 @@
 <translation id="430786093962686457">ชีฟอง</translation>
 <translation id="4310735698903592804">วอลเปเปอร์ล่าสุดที่ทำงานด้วยระบบ AI ของ Google</translation>
 <translation id="4320904097188876154">ชมพูนีออน</translation>
+<translation id="432961742358282111">คลิกขวาหรือกดค้างไว้เพื่อรับคำจำกัดความ คำแปล หรือการแปลงหน่วย ใช้แป้นลูกศรซ้ายหรือขวาเพื่อจัดการฟีเจอร์นี้</translation>
 <translation id="4333390807948134856">กดปุ่ม <ph name="KEY_NAME" /> อยู่</translation>
 <translation id="4334293042716981313">คุณยัง<ph name="BEGIN_LINK_FREEFORM_SUBPAGE" />เขียนพรอมต์ของคุณเอง<ph name="END_LINK_FREEFORM_SUBPAGE" />ได้ด้วย</translation>
 <translation id="4354430579665871434">แป้น</translation>
@@ -1437,7 +1437,6 @@
 <translation id="7302860742311162920">ICCID</translation>
 <translation id="7305884605064981971">EDGE</translation>
 <translation id="7308203371573257315">ถามผู้เชี่ยวชาญในฟอรัมความช่วยเหลือของ Chromebook</translation>
-<translation id="7309823890857024809">ภาพนิ่งสไตล์มินิมอลของดอกป๊อปปี้ในแจกันแก้วบนพื้นหลังสีดำ</translation>
 <translation id="7311368985037279727">สีแป้นพิมพ์</translation>
 <translation id="7317831949569936035">การลงทะเบียนโรงเรียน</translation>
 <translation id="7319430975418800333">A3</translation>

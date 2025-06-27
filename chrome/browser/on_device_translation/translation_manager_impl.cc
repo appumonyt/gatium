@@ -24,7 +24,6 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/crx_file/id_util.h"
 #include "components/services/on_device_translation/public/cpp/features.h"
-#include "content/public/browser/render_frame_host.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "third_party/blink/public/common/features.h"
@@ -45,6 +44,7 @@ using blink::mojom::TranslationManagerCreateTranslatorClient;
 using blink::mojom::TranslatorLanguageCode;
 using blink::mojom::TranslatorLanguageCodePtr;
 using content::BrowserContext;
+using content::RenderProcessHost;
 
 // TODO(crbug.com/419848973): This is a workaround until the "he" language code
 // is fully supported.
@@ -80,13 +80,17 @@ TranslationManagerImpl* TranslationManagerImpl::translation_manager_for_test_ =
 
 TranslationManagerImpl::TranslationManagerImpl(
     base::PassKey<TranslationManagerImpl>,
+    RenderProcessHost* process_host,
     BrowserContext* browser_context,
     const url::Origin& origin)
-    : TranslationManagerImpl(browser_context, origin) {}
+    : TranslationManagerImpl(process_host, browser_context, origin) {}
 
-TranslationManagerImpl::TranslationManagerImpl(BrowserContext* browser_context,
+TranslationManagerImpl::TranslationManagerImpl(RenderProcessHost* process_host,
+                                               BrowserContext* browser_context,
                                                const url::Origin& origin)
-    : browser_context_(browser_context->GetWeakPtr()), origin_(origin) {}
+    : process_host_(process_host),
+      browser_context_(browser_context->GetWeakPtr()),
+      origin_(origin) {}
 
 TranslationManagerImpl::~TranslationManagerImpl() = default;
 
@@ -99,11 +103,13 @@ base::AutoReset<TranslationManagerImpl*> TranslationManagerImpl::SetForTesting(
 
 // static
 void TranslationManagerImpl::Bind(
+    RenderProcessHost* process_host,
     BrowserContext* browser_context,
     base::SupportsUserData* context_user_data,
     const url::Origin& origin,
     mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
-  auto* manager = GetOrCreate(browser_context, context_user_data, origin);
+  auto* manager =
+      GetOrCreate(process_host, browser_context, context_user_data, origin);
   CHECK(manager);
   CHECK_EQ(manager->origin_, origin);
   manager->receiver_set_.Add(manager, std::move(receiver));
@@ -111,6 +117,7 @@ void TranslationManagerImpl::Bind(
 
 // static
 TranslationManagerImpl* TranslationManagerImpl::GetOrCreate(
+    RenderProcessHost* process_host,
     BrowserContext* browser_context,
     base::SupportsUserData* context_user_data,
     const url::Origin& origin) {
@@ -126,11 +133,21 @@ TranslationManagerImpl* TranslationManagerImpl::GetOrCreate(
     return manager;
   }
   auto manager = std::make_unique<TranslationManagerImpl>(
-      base::PassKey<TranslationManagerImpl>(), browser_context, origin);
+      base::PassKey<TranslationManagerImpl>(), process_host, browser_context,
+      origin);
   auto* manager_ptr = manager.get();
   context_user_data->SetUserData(kTranslationManagerUserDataKey,
                                  std::move(manager));
   return manager_ptr;
+}
+
+bool TranslationManagerImpl::AccessedFromValidStoragePartition() {
+  if (process_host()->GetStoragePartition() !=
+      browser_context()->GetDefaultStoragePartition()) {
+    return !origin_.GetURL().SchemeIsHTTPOrHTTPS();
+  }
+
+  return true;
 }
 
 base::Value TranslationManagerImpl::GetInitializedTranslationsValue() {
@@ -275,9 +292,17 @@ void TranslationManagerImpl::CreateTranslator(
       GetBestFitLanguageCode(options->target_lang->code);
 
   // TranslationAvailable should have been called on these language codes which
-  // has already verified that a best fit language code exists.
-  CHECK(maybe_source_language.has_value());
-  CHECK(maybe_target_language.has_value());
+  // has already verified that a best fit language code exists, but if the
+  // renderer is compromised, the CreateTranslator mojo function could be called
+  // directly with invalid values.
+  if (!maybe_source_language.has_value() ||
+      !maybe_target_language.has_value()) {
+    mojo::Remote(std::move(client))
+        ->OnResult(CreateTranslatorResult::NewError(
+                       CreateTranslatorError::kFailedToCreateTranslator),
+                   nullptr, nullptr);
+    return;
+  }
 
   std::string source_language = *std::move(maybe_source_language);
   std::string target_language = *std::move(maybe_target_language);
@@ -289,6 +314,14 @@ void TranslationManagerImpl::CreateTranslator(
     mojo::Remote(std::move(client))
         ->OnResult(CreateTranslatorResult::NewError(
                        CreateTranslatorError::kDisallowedByPolicy),
+                   nullptr, nullptr);
+    return;
+  }
+
+  if (!AccessedFromValidStoragePartition()) {
+    mojo::Remote(std::move(client))
+        ->OnResult(CreateTranslatorResult::NewError(
+                       CreateTranslatorError::kInvalidStoragePartition),
                    nullptr, nullptr);
     return;
   }
@@ -358,6 +391,12 @@ void TranslationManagerImpl::TranslationAvailable(
 
   if (!IsTranslatorAllowed(browser_context())) {
     std::move(callback).Run(CanCreateTranslatorResult::kNoDisallowedByPolicy);
+    return;
+  }
+
+  if (!AccessedFromValidStoragePartition()) {
+    std::move(callback).Run(
+        CanCreateTranslatorResult::kNoInvalidStoragePartition);
     return;
   }
 

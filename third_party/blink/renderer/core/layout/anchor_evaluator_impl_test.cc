@@ -42,7 +42,8 @@ struct AnchorTestData {
     Vector<AnchorTestData> items;
     for (auto entry : anchor_query) {
       if (auto** name = std::get_if<const AnchorScopedName*>(&entry.key)) {
-        items.push_back(AnchorTestData{(*name)->GetName(), entry.value->rect});
+        items.push_back(AnchorTestData{(*name)->GetName(),
+                                       entry.value->RectWithoutTransforms()});
       }
     }
     std::sort(items.begin(), items.end(),
@@ -356,7 +357,7 @@ TEST_F(AnchorEvaluatorImplTest, Scroll) {
   )HTML");
   Element* container = GetElementById("container");
   ASSERT_NE(container, nullptr);
-  container->scrollTo(30, 20);
+  container->scrollToForTesting(30, 20);
   UpdateAllLifecyclePhasesForTest();
 
   const PhysicalAnchorQuery* anchor_query = AnchorQuery(*container);

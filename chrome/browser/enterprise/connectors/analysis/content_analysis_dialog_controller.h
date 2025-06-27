@@ -106,9 +106,6 @@ class ContentAnalysisDialogController
           FinalContentAnalysisResult::SUCCESS,
       download::DownloadItem* download_item = nullptr);
 
-  // views::DialogDelegate:
-  views::View* GetContentsView() override;
-
   // content::WebContentsObserver:
   void WebContentsDestroyed() override;
   void PrimaryPageChanged(content::Page& page) override;
@@ -122,9 +119,6 @@ class ContentAnalysisDialogController
   // Cancels the dialog an schedules it for deletion if visible, otherwise
   // simply deletes it soon.
   void CancelDialogAndDelete();
-
-  // Returns true if should use dark version of top image.
-  bool ShouldUseDarkTopImage() const;
 
   // Accessors used to validate the views in tests.
   views::ImageView* GetTopImageForTesting() const;
@@ -156,12 +150,6 @@ class ContentAnalysisDialogController
   // Helper function to determine whether dialog should be shown immediately.
   bool ShouldShowDialogNow();
 
-  // Resizes the already shown dialog to accommodate changes in its content.
-  void Resize(int height_to_add);
-
-  // Returns a newly created side icon.
-  std::unique_ptr<views::View> CreateSideIcon();
-
   void AcceptButtonCallback();
   void CancelButtonCallback();
 
@@ -183,9 +171,6 @@ class ContentAnalysisDialogController
   std::unique_ptr<ContentAnalysisDelegateBase> delegate_base_;
 
   base::TimeTicks first_shown_timestamp_;
-
-  // Used to animate dialog height changes.
-  std::unique_ptr<views::BoundsAnimator> bounds_animator_;
 
   // `DownloadItem` for dialogs corresponding to a download with a reviewable
   // verdict. nullptr otherwise.

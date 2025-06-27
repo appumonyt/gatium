@@ -109,7 +109,7 @@ ActionsFromCurrentData CreateActionsFromCurrentPrepopulateData(
     const TemplateURL* default_search_provider);
 
 // MergeEnginesFromStarterPackData merges search engines from the built-in
-// TemplateURLStarterPackData class into `template_urls`. Calls
+// `template_url_starter_pack_data` class into `template_urls`. Calls
 // CreateActionsFromCurrentStarterPackData() to collect actions and then applies
 // them on `template_urls`. MergeEgninesFromStarterPackData is invoked when the
 // version of the starter pack data changes. If `removed_keyword_guids` is not
@@ -146,18 +146,6 @@ void ApplyActionsFromCurrentData(
     TemplateURLService::OwnedTemplateURLVector* template_urls,
     TemplateURL* default_search_provider,
     std::set<std::string>* removed_keyword_guids);
-
-// Returns the GUID of the default search provider.
-// Migrates `kSyncedDefaultSearchProviderGUID` to `kDefaultSearchProviderGUID`
-// if the latter is empty and the search engine choice feature is enabled.
-// Gets the value of the corresponding preference based on the search engine
-// choice feature flag.
-const std::string& GetDefaultSearchProviderGuidFromPrefs(PrefService& prefs);
-
-// Sets the corresponding default search provider preference based on the search
-// engine choice feature flag.
-void SetDefaultSearchProviderGuidToPrefs(PrefService& prefs,
-                                         const std::string& value);
 
 // Processes the results of KeywordWebDataService::GetKeywords, combining it
 // with prepopulated search providers to result in:

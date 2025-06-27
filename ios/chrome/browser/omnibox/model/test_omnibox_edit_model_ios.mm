@@ -11,52 +11,19 @@
 
 TestOmniboxEditModelIOS::TestOmniboxEditModelIOS(
     OmniboxControllerIOS* omnibox_controller,
-    OmniboxViewIOS* view,
+    OmniboxClient* omnibox_client,
     PrefService* pref_service,
-    OmniboxTextModel* text_model)
-    : OmniboxEditModelIOS(omnibox_controller, view, text_model),
+    OmniboxTextModel* text_model,
+    OmniboxMetricsRecorder* omnibox_metrics_recorder)
+    : OmniboxEditModelIOS(omnibox_controller,
+                          omnibox_client,
+                          text_model,
+                          omnibox_metrics_recorder),
       popup_is_open_(false),
       pref_service_(pref_service) {}
 
 TestOmniboxEditModelIOS::~TestOmniboxEditModelIOS() = default;
 
-bool TestOmniboxEditModelIOS::PopupIsOpen() const {
-  return popup_is_open_;
-}
-
-AutocompleteMatch TestOmniboxEditModelIOS::CurrentMatch(
-    GURL* alternate_nav_url) const {
-  if (override_current_match_) {
-    return *override_current_match_;
-  }
-
-  return OmniboxEditModelIOS::CurrentMatch(alternate_nav_url);
-}
-
 void TestOmniboxEditModelIOS::SetPopupIsOpen(bool open) {
   popup_is_open_ = open;
-}
-
-void TestOmniboxEditModelIOS::SetCurrentMatchForTest(
-    const AutocompleteMatch& match) {
-  override_current_match_ = std::make_unique<AutocompleteMatch>(match);
-}
-
-void TestOmniboxEditModelIOS::OnPopupDataChanged(
-    const std::u16string& inline_autocompletion,
-    const std::u16string& additional_text,
-    const AutocompleteMatch& match) {
-  OmniboxEditModelIOS::OnPopupDataChanged(inline_autocompletion,
-                                          additional_text, match);
-  text_ = inline_autocompletion;
-}
-
-PrefService* TestOmniboxEditModelIOS::GetPrefService() {
-  return const_cast<PrefService*>(
-      const_cast<const TestOmniboxEditModelIOS*>(this)->GetPrefService());
-}
-
-const PrefService* TestOmniboxEditModelIOS::GetPrefService() const {
-  return pref_service_ == nullptr ? OmniboxEditModelIOS::GetPrefService()
-                                  : pref_service_.get();
 }

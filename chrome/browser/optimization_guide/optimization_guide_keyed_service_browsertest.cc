@@ -46,7 +46,6 @@
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_prefs.h"
 #include "components/optimization_guide/core/optimization_guide_switches.h"
-#include "components/optimization_guide/core/optimization_guide_test_util.h"
 #include "components/optimization_guide/proto/hints.pb.h"
 #include "components/optimization_guide/proto/model_quality_service.pb.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
@@ -1268,19 +1267,6 @@ class OptimizationGuideKeyedServicePermissionsCheckDisabledTest
   ~OptimizationGuideKeyedServicePermissionsCheckDisabledTest() override =
       default;
 
-  void SetUp() override {
-    scoped_feature_list_.InitAndEnableFeature(
-        features::kRemoteOptimizationGuideFetching);
-
-    OptimizationGuideKeyedServiceBrowserTest::SetUp();
-  }
-
-  void TearDown() override {
-    OptimizationGuideKeyedServiceBrowserTest::TearDown();
-
-    scoped_feature_list_.Reset();
-  }
-
   void SetUpCommandLine(base::CommandLine* cmd) override {
     OptimizationGuideKeyedServiceBrowserTest::SetUpCommandLine(cmd);
 
@@ -1290,9 +1276,6 @@ class OptimizationGuideKeyedServicePermissionsCheckDisabledTest
     cmd->AppendSwitch(
         switches::kDisableFetchingHintsAtNavigationStartForTesting);
   }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 IN_PROC_BROWSER_TEST_F(

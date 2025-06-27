@@ -190,7 +190,6 @@ bool IsTagType(FieldType type) {
     case ADDRESS_HOME_APT_TYPE:
     case LOYALTY_MEMBERSHIP_ID:
     case SINGLE_USERNAME_WITH_INTERMEDIATE_VALUES:
-    case IMPROVED_PREDICTION:
     case ALTERNATIVE_FULL_NAME:
     case ALTERNATIVE_GIVEN_NAME:
     case ALTERNATIVE_FAMILY_NAME:
@@ -213,6 +212,8 @@ bool IsTagType(FieldType type) {
     case VEHICLE_YEAR:
     case VEHICLE_PLATE_STATE:
     case EMAIL_OR_LOYALTY_MEMBERSHIP_ID:
+    case ADDRESS_HOME_ZIP_PREFIX:
+    case ADDRESS_HOME_ZIP_SUFFIX:
     case MAX_VALID_FIELD_TYPE:
       return false;
   }

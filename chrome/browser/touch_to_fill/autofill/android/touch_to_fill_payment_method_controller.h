@@ -10,13 +10,13 @@
 #include "base/containers/span.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/touch_to_fill/autofill/android/touch_to_fill_payment_method_view_controller.h"
-#include "components/autofill/core/browser/suggestions/suggestion.h"
 
 namespace autofill {
 
 class ContentAutofillClient;
 class Iban;
 class LoyaltyCard;
+struct Suggestion;
 class TouchToFillDelegate;
 class TouchToFillPaymentMethodView;
 
@@ -48,13 +48,15 @@ class TouchToFillPaymentMethodController
                          base::span<const Iban> ibans_to_suggest) = 0;
 
   // Shows the Touch To Fill `view`. `delegate` will provide the fillable
-  // loyalty cards and be notified of the user's decision. Returns whether the
-  // surface was successfully shown.
+  // loyalty cards and be notified of the user's decision. `first_time_usage` is
+  // true if the user has never seen the loyalty card IPH or the Touch To Fill
+  // view before. Returns whether the surface was successfully shown.
   virtual bool ShowLoyaltyCards(
       std::unique_ptr<TouchToFillPaymentMethodView> view,
       base::WeakPtr<TouchToFillDelegate> delegate,
       base::span<const LoyaltyCard> affiliated_loyalty_cards,
-      base::span<const LoyaltyCard> all_loyalty_cards) = 0;
+      base::span<const LoyaltyCard> all_loyalty_cards,
+      bool first_time_usage) = 0;
 
   // Hides the surface if it is currently shown.
   virtual void Hide() = 0;

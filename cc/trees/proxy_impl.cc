@@ -44,6 +44,7 @@
 #include "cc/trees/swap_promise.h"
 #include "cc/trees/task_runner_provider.h"
 #include "cc/trees/trace_utils.h"
+#include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/delay_based_time_source.h"
 #include "components/viz/common/frame_timing_details.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
@@ -353,7 +354,6 @@ void ProxyImpl::NotifyReadyToCommitOnImpl(
     std::unique_ptr<CommitState> commit_state,
     const ThreadUnsafeCommitState* unsafe_state,
     base::TimeTicks main_thread_start_time,
-    const viz::BeginFrameArgs& commit_args,
     bool scroll_and_viewport_changes_synced,
     CommitTimestamps* commit_timestamps,
     bool commit_timeout) {
@@ -395,7 +395,7 @@ void ProxyImpl::NotifyReadyToCommitOnImpl(
   scheduler_->NotifyBeginMainFrameStarted(main_thread_start_time);
 
   auto& begin_main_frame_metrics = commit_state->begin_main_frame_metrics;
-  host_impl_->ReadyToCommit(commit_args, scroll_and_viewport_changes_synced,
+  host_impl_->ReadyToCommit(scroll_and_viewport_changes_synced,
                             begin_main_frame_metrics.get(), commit_timeout);
 
   int source_frame_number = commit_state->source_frame_number;
@@ -1014,12 +1014,6 @@ void ProxyImpl::SetSpeculativeDecodeRequestInFlight(bool value) {
 void ProxyImpl::SetSourceURL(ukm::SourceId source_id, const GURL& url) {
   DCHECK(IsImplThread());
   host_impl_->SetActiveURL(url, source_id);
-}
-
-void ProxyImpl::SetUkmSmoothnessDestination(
-    base::WritableSharedMemoryMapping ukm_smoothness_data) {
-  DCHECK(IsImplThread());
-  host_impl_->SetUkmSmoothnessDestination(std::move(ukm_smoothness_data));
 }
 
 void ProxyImpl::SetUkmDroppedFramesDestination(

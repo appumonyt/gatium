@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
-import("//components/nacl/toolchain.gni")
 import("//gpu/vulkan/features.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 
@@ -27,6 +26,11 @@ group("command_buffer_traits") {
   }
 }
 
+source_set("export") {
+  visibility = [ "//gpu/ipc/common/*" ]
+  sources = [ "gpu_ipc_common_export.h" ]
+}
+
 source_set("command_buffer_traits_sources") {
   # External code should depend on this via
   # //gpu/ipc/common:command_buffer_traits above rather than depending on this
@@ -45,6 +49,7 @@ source_set("command_buffer_traits_sources") {
   ]
 
   public_deps = [
+    ":export",
     "//gpu/command_buffer/common:common_sources",
     "//ipc",
     "//ui/gfx/ipc",
@@ -57,7 +62,7 @@ source_set("command_buffer_traits_sources") {
     "//ui/gfx/ipc/geometry",
   ]
 
-  if (!is_nacl && !is_minimal_toolchain) {
+  if (!is_nacl) {
     deps += [ "//ui/gfx/ipc/skia" ]
   }
 }
@@ -67,7 +72,10 @@ source_set("memory_stats_sources") {
     "memory_stats.cc",
     "memory_stats.h",
   ]
-  public_deps = [ "//base" ]
+  public_deps = [
+    ":export",
+    "//base",
+  ]
   configs += [ "//gpu:gpu_implementation" ]
 }
 
@@ -126,6 +134,7 @@ source_set("ipc_common_sources") {
 
   public_deps = [
     ":command_buffer_traits_sources",
+    ":export",
     ":gpu_channel_mojom",
     ":gpu_peak_memory",
     ":interfaces_cpp_sources",
@@ -140,7 +149,6 @@ source_set("ipc_common_sources") {
   deps = [
     "//base",
     "//components/viz/common:shared_image_format",
-    "//gpu/command_buffer/client:client_gmb_manager",
     "//gpu/command_buffer/common:common_sources",
     "//gpu/config:config_sources",
     "//third_party/libyuv",
@@ -169,7 +177,7 @@ source_set("ipc_common_sources") {
     ]
   }
 
-  if (!is_nacl && !is_minimal_toolchain) {
+  if (!is_nacl) {
     deps += [ "//ui/gfx/ipc/skia" ]
   }
 
@@ -177,8 +185,6 @@ source_set("ipc_common_sources") {
     sources += [
       "android/android_hardware_buffer_utils.cc",
       "android/android_hardware_buffer_utils.h",
-      "android/scoped_surface_request_conduit.cc",
-      "android/scoped_surface_request_conduit.h",
       "gpu_surface_lookup.cc",
       "gpu_surface_lookup.h",
       "gpu_surface_tracker.cc",
@@ -205,13 +211,17 @@ component("vulkan_ycbcr_info") {
     "vulkan_ycbcr_info.cc",
     "vulkan_ycbcr_info.h",
   ]
+  public_deps = [ ":export" ]
   deps = [ "//base" ]
   configs += [ "//gpu:gpu_implementation" ]
 }
 
 source_set("vulkan_types") {
   sources = [ "vulkan_types.h" ]
-  public_deps = [ "//ui/gfx" ]
+  public_deps = [
+    ":export",
+    "//ui/gfx",
+  ]
   all_dependent_configs =
       [ "//third_party/vulkan-headers/src:vulkan_headers_config" ]
   configs += [ "//gpu:gpu_implementation" ]
@@ -303,21 +313,6 @@ mojom("gpu_channel_mojom") {
   export_class_attribute = "GPU_EXPORT"
   export_header = "gpu/gpu_export.h"
   cpp_configs = [ "//gpu:gpu_implementation" ]
-}
-
-mojom("gmb_interface") {
-  generate_java = true
-  visibility = [
-    "//gpu/*",
-    "//services/*",
-  ]
-  sources = [ "client_gmb_interface.mojom" ]
-  deps = [
-    ":surface_handle",
-    "//mojo/public/mojom/base",
-    "//ui/gfx/geometry/mojom",
-    "//ui/gfx/mojom",
-  ]
 }
 
 mojom("shared_image_pool_client_interface") {
@@ -656,7 +651,6 @@ mojom("interfaces") {
         },
       ]
       traits_headers = [ "mailbox_mojom_traits.h" ]
-      traits_public_deps = [ "//gpu" ]
     },
     {
       types = [
@@ -666,7 +660,6 @@ mojom("interfaces") {
         },
       ]
       traits_headers = [ "mailbox_holder_mojom_traits.h" ]
-      traits_public_deps = [ "//gpu" ]
     },
     {
       types = [
@@ -677,7 +670,6 @@ mojom("interfaces") {
         },
       ]
       traits_headers = [ "exported_shared_image_mojom_traits.h" ]
-      traits_public_deps = [ "//gpu" ]
     },
     {
       types = [
@@ -697,7 +689,6 @@ mojom("interfaces") {
         },
       ]
       traits_headers = [ "sync_token_mojom_traits.h" ]
-      traits_public_deps = [ "//gpu" ]
     },
   ]
 
@@ -727,7 +718,7 @@ mojom("interfaces") {
           },
         ]
         traits_headers = [ "luid_mojom_traits.h" ]
-        traits_public_deps = [ "//gpu" ]
+        traits_public_deps = []
       },
     ]
   }

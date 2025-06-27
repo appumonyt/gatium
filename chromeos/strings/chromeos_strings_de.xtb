@@ -221,7 +221,6 @@
 <translation id="181434555916624618">Ergebnisse mit Personen werden vorerst nicht angezeigt. Versuche es mit einem anderen Prompt.</translation>
 <translation id="1815850098929213707">Die ausgewählte Taste ist „<ph name="KEYS" />“. Wenn du das Steuerelement bearbeiten möchtest, tippe auf die Schaltfläche.</translation>
 <translation id="1818174214124933000">Wenn du „Senden“ auswählst, werden dein Feedback und deine Inhalte (wie unten angezeigt) gemäß der <ph name="LINK_POLICY_BEGIN" />Datenschutzerklärung<ph name="LINK_POLICY_END" /> und den <ph name="LINK_TERMS_OF_SERVICE_BEGIN" />Google-Nutzungsbedingungen<ph name="LINK_TERMS_OF_SERVICE_END" /> an Google gesendet, manuell geprüft und dazu verwendet, unsere Produkte und Dienste zu trainieren und zu verbessern.</translation>
-<translation id="1821075635029692203">Deine Lehrkraft hat eine nicht unterstützte Ressource gesendet. Informiere sie darüber.</translation>
 <translation id="1823120442877418684">Objekte</translation>
 <translation id="1827738518074806965">Kunstgalerie</translation>
 <translation id="183287940576828840">Anstößig/bedenklich</translation>
@@ -758,6 +757,7 @@
 <translation id="430786093962686457">Chiffon</translation>
 <translation id="4310735698903592804">Zuletzt verwendete Hintergründe, die auf Google AI basieren</translation>
 <translation id="4320904097188876154">neonrosa</translation>
+<translation id="432961742358282111">Mit der rechten Maustaste anklicken oder gedrückt halten, um Definitionen, Übersetzungen oder Umrechnungen von Einheiten abzurufen. Zum Verwalten der Funktion Rechts- und Linkspfeiltaste verwenden.</translation>
 <translation id="4333390807948134856">Die Taste „<ph name="KEY_NAME" />“ wird gedrückt</translation>
 <translation id="4334293042716981313">Du kannst auch <ph name="BEGIN_LINK_FREEFORM_SUBPAGE" />deine eigenen Prompts schreiben<ph name="END_LINK_FREEFORM_SUBPAGE" /></translation>
 <translation id="4354430579665871434">Taste</translation>
@@ -1437,7 +1437,6 @@
 <translation id="7302860742311162920">ICCID</translation>
 <translation id="7305884605064981971">EDGE</translation>
 <translation id="7308203371573257315">Experten im Chromebook-Hilfeforum fragen</translation>
-<translation id="7309823890857024809">minimalistisches Stillleben mit einigen Klatschmohnstielen in einer Glasvase vor schwarzem Hintergrund</translation>
 <translation id="7311368985037279727">Tastaturfarbe</translation>
 <translation id="7317831949569936035">Registrierung bei einer Bildungseinrichtung</translation>
 <translation id="7319430975418800333">A3</translation>

@@ -189,6 +189,9 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHiOSWelcomeBackFeature,
     &kIPHIOSBWGPromoFeature,
     &kIPHiOSSafariImportFeature,
+    &kIPHIOSPageActionMenu,
+    &kIPHiOSHomepageLensNewBadge,
+    &kIPHiOSHomepageCustomizationNewBadge,
 #endif  // BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
@@ -205,7 +208,6 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHDesktopNewTabPageModulesCustomizeFeature,
     &kIPHDiscardRingFeature,
     &kIPHDownloadEsbPromoFeature,
-    &kIPHExperimentalAIPromoFeature,
     &kIPHExplicitBrowserSigninPreferenceRememberedFeature,
     &kIPHGlicPromoFeature,
     &kIPHHistorySearchFeature,
@@ -269,6 +271,7 @@ const base::Feature* const kAllFeatures[] = {
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
     &kIPHAutofillAiOptInFeature,
     &kIPHAutofillBnplAffirmOrZipSuggestionFeature,
+    &kIPHAutofillBnplAffirmZipOrKlarnaSuggestionFeature,
     &kIPHAutofillCardInfoRetrievalSuggestionFeature,
     &kIPHAutofillCreditCardBenefitFeature,
     &kIPHAutofillDisabledVirtualCardSuggestionFeature,

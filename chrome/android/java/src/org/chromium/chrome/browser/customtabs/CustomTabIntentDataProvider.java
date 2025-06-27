@@ -89,6 +89,7 @@ import org.chromium.chrome.browser.customtabs.CustomTabsFeatureUsage.CustomTabsF
 import org.chromium.chrome.browser.flags.ActivityType;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.share.ShareUtils;
+import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarButtonVariant;
 import org.chromium.chrome.browser.ui.google_bottom_bar.GoogleBottomBarCoordinator;
 import org.chromium.chrome.browser.ui.google_bottom_bar.proto.IntentParams.GoogleBottomBarIntentParams;
 import org.chromium.chrome.browser.ui.web_app_header.WebAppHeaderUtils;
@@ -757,7 +758,7 @@ public class CustomTabIntentDataProvider extends BrowserServicesIntentDataProvid
             if (TextUtils.isEmpty(title) || pendingIntent == null) {
                 continue;
             }
-            mMenuEntries.add(new Pair<String, PendingIntent>(title, pendingIntent));
+            mMenuEntries.add(new Pair<>(title, pendingIntent));
         }
     }
 
@@ -937,7 +938,7 @@ public class CustomTabIntentDataProvider extends BrowserServicesIntentDataProvid
                 mShowShareItemInMenu = true;
             }
         } else if (mShareState == CustomTabsIntent.SHARE_STATE_ON) {
-            if (mToolbarButtons.isEmpty()) {
+            if (mToolbarButtons.isEmpty() || isCpaOnlyOpenInBrowserDefault()) {
                 mToolbarButtons.add(
                         CustomButtonParamsImpl.createShareButton(
                                 context, getColorProvider().getToolbarColor()));
@@ -981,7 +982,7 @@ public class CustomTabIntentDataProvider extends BrowserServicesIntentDataProvid
         }
 
         if (openInBrowserState == CustomTabsButtonState.BUTTON_STATE_ON) {
-            if (mToolbarButtons.isEmpty()) {
+            if (mToolbarButtons.isEmpty() || isCpaOnlyOpenInBrowserDefault()) {
                 mToolbarButtons.add(
                         CustomButtonParamsImpl.createOpenInBrowserButton(
                                 context, getColorProvider().getToolbarColor()));
@@ -1645,6 +1646,8 @@ public class CustomTabIntentDataProvider extends BrowserServicesIntentDataProvid
     }
 
     @Override
+    // TODO (http://crbug.com/422968546) Remove flag check and package name check once
+    // isInteractiveOmniboxEnabled is used in the implementation.
     public boolean isInteractiveOmniboxAllowed() {
         if (!ChromeFeatureList.sSearchInCCT.isEnabled()) return false;
         if (isOffTheRecord()) return false;
@@ -1654,6 +1657,14 @@ public class CustomTabIntentDataProvider extends BrowserServicesIntentDataProvid
         return isPackageNameInList(
                 getClientPackageName(),
                 ChromeFeatureList.sSearchinCctOmniboxAllowedPackageNames.getValue());
+    }
+
+    @Override
+    public boolean isInteractiveOmniboxEnabled() {
+        return ChromeFeatureList.sSearchInCCT.isEnabled()
+                && isPackageNameInList(
+                        getClientPackageName(),
+                        ChromeFeatureList.sSearchinCctOmniboxAllowedPackageNames.getValue());
     }
 
     @Override
@@ -1721,6 +1732,11 @@ public class CustomTabIntentDataProvider extends BrowserServicesIntentDataProvid
         return mShareState;
     }
 
+    @Override
+    public boolean isOptionalButtonSupported() {
+        return ChromeFeatureList.sCctAdaptiveButton.isEnabled() && !isTrustedWebActivity();
+    }
+
     private @DisplayMode.EnumType int resolveDisplayMode() {
         TrustedWebActivityDisplayMode displayMode = getProvidedTwaDisplayMode();
         if (displayMode == null) {
@@ -1746,16 +1762,20 @@ public class CustomTabIntentDataProvider extends BrowserServicesIntentDataProvid
     }
 
     @Override
-    public @Nullable Long getTwaStartupUptimeMillis() {
-        if (!isTrustedWebActivity()) return null;
-        long value = IntentUtils.safeGetLongExtra(getIntent(), EXTRA_TWA_STARTUP_UPTIME_MS, 0);
-        return value != 0 ? Long.valueOf(value) : null;
+    public long getTwaStartupUptimeMillis() {
+        if (!isTrustedWebActivity()) return 0;
+        return IntentUtils.safeGetLongExtra(getIntent(), EXTRA_TWA_STARTUP_UPTIME_MS, 0);
     }
 
     @Override
-    public @Nullable Integer getAndroidBrowserHelperVersion() {
-        int value =
-                IntentUtils.safeGetIntExtra(getIntent(), EXTRA_ANDROID_BROWSER_HELPER_VERSION, 0);
-        return value != 0 ? Integer.valueOf(value) : null;
+    public int getAndroidBrowserHelperVersion() {
+        return IntentUtils.safeGetIntExtra(getIntent(), EXTRA_ANDROID_BROWSER_HELPER_VERSION, 0);
+    }
+
+    private boolean isCpaOnlyOpenInBrowserDefault() {
+        return ChromeFeatureList.sCctAdaptiveButtonContextualOnly.getValue()
+                && ChromeFeatureList.sCctAdaptiveButtonEnableOpenInBrowser.getValue()
+                && ChromeFeatureList.sCctAdaptiveButtonDefaultVariant.getValue()
+                        == AdaptiveToolbarButtonVariant.OPEN_IN_BROWSER;
     }
 }

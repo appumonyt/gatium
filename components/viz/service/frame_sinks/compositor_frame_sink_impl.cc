@@ -204,8 +204,8 @@ void CompositorFrameSinkImpl::NotifyNewLocalSurfaceIdExpectedWhilePaused() {
 
 void CompositorFrameSinkImpl::BindLayerContext(
     mojom::PendingLayerContextPtr context,
-    bool draw_mode_is_gpu) {
-  support_->BindLayerContext(*context, draw_mode_is_gpu);
+    mojom::LayerContextSettingsPtr settings) {
+  support_->BindLayerContext(*context, std::move(settings));
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -219,8 +219,8 @@ void CompositorFrameSinkImpl::OnClientConnectionLost() {
   // has done something invalid and the connection to the client was terminated.
   // Destroy |this| to free up resources as it's no longer useful.
   FrameSinkId frame_sink_id = support_->frame_sink_id();
-  support_->frame_sink_manager()->DestroyCompositorFrameSink(frame_sink_id,
-                                                             base::DoNothing());
+  support_->frame_sink_manager()->DestroyCompositorFrameSink(
+      frame_sink_id, std::nullopt, base::DoNothing());
 }
 
 }  // namespace viz

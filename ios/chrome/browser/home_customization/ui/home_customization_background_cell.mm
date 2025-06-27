@@ -11,6 +11,7 @@
 #import "ios/chrome/browser/shared/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
+#import "url/gurl.h"
 
 // Define constants within the namespace
 namespace {
@@ -88,13 +89,10 @@ const CGFloat kFeedsWidth = 70.0;
 
 @implementation HomeCustomizationBackgroundCell {
   // Associated background configuration.
-  BackgroundCustomizationConfiguration* _backgroundConfiguration;
+  id<BackgroundCustomizationConfiguration> _backgroundConfiguration;
 
   // The background image of the cell.
   UIImageView* _backgroundImageView;
-
-  // Tracks whether the cell has already been configured with option.
-  BOOL _isConfigured;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -195,15 +193,16 @@ const CGFloat kFeedsWidth = 70.0;
   ]];
 }
 
-- (void)
-    configureWithBackgroundOption:(BackgroundCustomizationConfiguration*)option
-                       logoVendor:(id<LogoVendor>)logoVendor
-                     colorPalette:(HomeCustomizationColorPaletteConfiguration*)
-                                      colorPalette {
-  if (_isConfigured) {
+- (void)configureWithBackgroundOption:
+            (id<BackgroundCustomizationConfiguration>)option
+                           logoVendor:(id<LogoVendor>)logoVendor
+                         colorPalette:
+                             (HomeCustomizationColorPaletteConfiguration*)
+                                 colorPalette {
+  if (_backgroundConfiguration) {
     return;
   }
-  _backgroundConfiguration = option;
+
   BOOL imageBackground = !option.thumbnailURL.is_empty();
 
   logoVendor.usesMonochromeLogo = colorPalette || imageBackground;
@@ -211,9 +210,11 @@ const CGFloat kFeedsWidth = 70.0;
   logoView.translatesAutoresizingMaskIntoConstraints = NO;
 
   // Change the tint of the logo based on the background.
-  logoView.tintColor = imageBackground ? [UIColor whiteColor]
-                       : colorPalette  ? colorPalette.darkColor
-                                       : logoView.tintColor;
+  if (imageBackground) {
+    logoView.tintColor = [UIColor whiteColor];
+  } else if (colorPalette) {
+    logoView.tintColor = colorPalette.darkColor;
+  }
 
   // Insert the logo view right after the spacer.
   [self.innerContentView insertArrangedSubview:logoView atIndex:1];
@@ -224,7 +225,8 @@ const CGFloat kFeedsWidth = 70.0;
   ]];
 
   [self.innerContentView setCustomSpacing:kOmniboxTopMargin afterView:logoView];
-  _isConfigured = YES;
+
+  _backgroundConfiguration = option;
 }
 
 - (void)updateBackgroundImage:(UIImage*)image {

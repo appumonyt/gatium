@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
@@ -658,14 +659,6 @@ base::WeakPtr<content::NavigationHandle> Navigate(NavigateParams* params) {
     // the navigation should appear to be cancelled.
     return nullptr;
   }
-#endif  // BUILDFLAG(IS_CHROMEOS)
-
-#if !BUILDFLAG(IS_ANDROID)
-  // Force isolated PWAs to open in an app window.
-  params->force_open_pwa_window =
-      content::SiteIsolationPolicy::ShouldUrlUseApplicationIsolationLevel(
-          params->initiating_profile, params->url);
-  params->open_pwa_window_if_possible |= params->force_open_pwa_window;
 #endif
 
   if (!AdjustNavigateParamsForURL(params)) {
@@ -774,7 +767,8 @@ base::WeakPtr<content::NavigationHandle> Navigate(NavigateParams* params) {
     ShowSingletonTabOverwritingNTP(params);
     return nullptr;
   }
-  if (params->force_open_pwa_window) {
+  if (content::SiteIsolationPolicy::ShouldUrlUseApplicationIsolationLevel(
+          params->initiating_profile, params->url)) {
     CHECK(web_app::AppBrowserController::IsWebApp(params->browser));
   }
 #if BUILDFLAG(IS_CHROMEOS)

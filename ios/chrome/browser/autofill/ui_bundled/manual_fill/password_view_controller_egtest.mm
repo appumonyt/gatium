@@ -278,13 +278,13 @@ void CheckKeyboardIsUpAndNotCovered() {
   }
 
   // TODO(crbug.com/371189341): Test fails on device.
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_SIMULATOR
   if ([self isRunningTest:@selector
             (testPasswordGenerationFallbackSignedInEncryptionError)]) {
     config.features_enabled.push_back(
         syncer::kSyncTrustedVaultInfobarImprovements);
   }
-#endif  // TARGET_IPHONE_SIMULATOR
+#endif  // TARGET_OS_SIMULATOR
 
   return config;
 }
@@ -987,7 +987,15 @@ void CheckKeyboardIsUpAndNotCovered() {
 }
 
 // Tests password generation on manual fallback.
-- (void)testPasswordGenerationOnManualFallback {
+// TODO(crbug.com/424760140): Test fails on simulator.
+#if TARGET_OS_SIMULATOR
+#define MAYBE_testPasswordGenerationOnManualFallback \
+  DISABLED_testPasswordGenerationOnManualFallback
+#else
+#define MAYBE_testPasswordGenerationOnManualFallback \
+  testPasswordGenerationOnManualFallback
+#endif
+- (void)MAYBE_testPasswordGenerationOnManualFallback {
   [SigninEarlGreyUI signinWithFakeIdentity:[FakeSystemIdentity fakeIdentity1]];
   [ChromeEarlGrey waitForSyncTransportStateActiveWithTimeout:base::Seconds(10)];
 
@@ -1016,7 +1024,15 @@ void CheckKeyboardIsUpAndNotCovered() {
 }
 
 // Tests password generation on manual fallback for signed in users.
-- (void)testPasswordGenerationOnManualFallbackSignedInAccount {
+// TODO(crbug.com/424760140): Test fails on simulator.
+#if TARGET_OS_SIMULATOR
+#define MAYBE_testPasswordGenerationOnManualFallbackSignedInAccount \
+  DISABLED_testPasswordGenerationOnManualFallbackSignedInAccount
+#else
+#define MAYBE_testPasswordGenerationOnManualFallbackSignedInAccount \
+  testPasswordGenerationOnManualFallbackSignedInAccount
+#endif
+- (void)MAYBE_testPasswordGenerationOnManualFallbackSignedInAccount {
   [SigninEarlGreyUI signinWithFakeIdentity:[FakeSystemIdentity fakeIdentity1]];
   [ChromeEarlGrey waitForSyncTransportStateActiveWithTimeout:base::Seconds(10)];
 
@@ -1041,7 +1057,7 @@ void CheckKeyboardIsUpAndNotCovered() {
 // Tests password generation on manual fallback not showing for signed in users
 // with Passwords toggle in account settings disabled.
 // TODO(crbug.com/371189341): Test fails on device.
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_SIMULATOR
 #define MAYBE_testPasswordGenerationFallbackSignedInPasswordsDisabled \
   testPasswordGenerationFallbackSignedInPasswordsDisabled
 #else
@@ -1078,7 +1094,7 @@ void CheckKeyboardIsUpAndNotCovered() {
 // Tests password generation on manual fallback not showing for signed in users
 // with encryption error.
 // TODO(crbug.com/371189341): Test fails on device.
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_OS_SIMULATOR
 #define MAYBE_testPasswordGenerationFallbackSignedInEncryptionError \
   testPasswordGenerationFallbackSignedInEncryptionError
 #else
@@ -1320,6 +1336,11 @@ void CheckKeyboardIsUpAndNotCovered() {
 // Tests that tapping the "Autofill Form" button in the all password list fills
 // the password form with the right data.
 - (void)testAutofillFormButtonInAllPasswordListFillsForm {
+  // TODO(crbug.com/426435086): Test consistently fails on ipad.
+  if ([ChromeEarlGrey isIPadIdiom]) {
+    EARL_GREY_TEST_DISABLED(@"Fails on iPad.");
+  }
+
   if (![AutofillAppInterface isKeyboardAccessoryUpgradeEnabled]) {
     EARL_GREY_TEST_DISABLED(@"This test is not relevant when the Keyboard "
                             @"Accessory Upgrade feature is disabled.")

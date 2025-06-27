@@ -253,19 +253,6 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
     return config;
   }
 
-  if (kIPHExperimentalAIPromoFeature.name == feature->name) {
-    FeatureConfig config;
-    config.valid = true;
-    config.availability = Comparator(ANY, 0);
-    config.session_rate = Comparator(EQUAL, 0);
-    // Show the IPH once per year.
-    config.trigger = EventConfig("iph_experimental_ai_promo_trigger",
-                                 Comparator(EQUAL, 0), 360, 360);
-    config.used = EventConfig("iph_experimental_ai_promo_shown",
-                              Comparator(EQUAL, 0), 360, 360);
-    return config;
-  }
-
   if (kIPHBatterySaverModeFeature.name == feature->name) {
     // Show promo once a year when the battery saver toolbar icon is visible.
     FeatureConfig config;
@@ -1903,6 +1890,25 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
 
     return config;
   }
+  if (kIPHAutofillEnableLoyaltyCardsFeature.name == feature->name) {
+    // A config that allows autofill loyalty card IPH to be shown
+    // only one time when the user first encounter the feature.
+    FeatureConfig config;
+    config.valid = true;
+    config.availability = Comparator(ANY, 0);
+    config.session_rate = Comparator(EQUAL, 0);
+    config.session_rate_impact.type = SessionRateImpact::Type::ALL;
+    config.trigger = EventConfig("keyboard_accessory_loyalty_cards_iph_trigger",
+                                 Comparator(LESS_THAN, 1),
+                                 feature_engagement::kMaxStoragePeriod,
+                                 feature_engagement::kMaxStoragePeriod);
+    config.used =
+        EventConfig("keyboard_accessory_loyalty_cards_autofilled",
+                    Comparator(EQUAL, 0), feature_engagement::kMaxStoragePeriod,
+                    feature_engagement::kMaxStoragePeriod);
+
+    return config;
+  }
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) || \
@@ -2335,6 +2341,40 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
     return config;
   }
 
+  if (kIPHiOSHomepageLensNewBadge.name == feature->name) {
+    FeatureConfig config;
+    config.valid = true;
+    config.availability = Comparator(ANY, 0);  // Available immediately
+    config.session_rate = Comparator(LESS_THAN, 1);
+    config.used =
+        EventConfig("ios_homepage_lens_badge_used", Comparator(ANY, 0),
+                    feature_engagement::kMaxStoragePeriod,
+                    feature_engagement::kMaxStoragePeriod);
+    config.trigger =
+        EventConfig("ios_homepage_lens_badge_trigger", Comparator(LESS_THAN, 3),
+                    feature_engagement::kMaxStoragePeriod,
+                    feature_engagement::kMaxStoragePeriod);
+    config.groups.push_back(kiOSHomepageNewBadgesGroup.name);
+    return config;
+  }
+
+  if (kIPHiOSHomepageCustomizationNewBadge.name == feature->name) {
+    FeatureConfig config;
+    config.valid = true;
+    config.availability = Comparator(ANY, 0);  // Available immediately
+    config.session_rate = Comparator(LESS_THAN, 1);
+    config.used =
+        EventConfig("ios_homepage_customization_badge_used", Comparator(ANY, 0),
+                    feature_engagement::kMaxStoragePeriod,
+                    feature_engagement::kMaxStoragePeriod);
+    config.trigger = EventConfig("ios_homepage_customization_badge_trigger",
+                                 Comparator(LESS_THAN, 3),
+                                 feature_engagement::kMaxStoragePeriod,
+                                 feature_engagement::kMaxStoragePeriod);
+    config.groups.push_back(kiOSHomepageNewBadgesGroup.name);
+    return config;
+  }
+
   if (kIPHiOSPromoPasswordManagerWidgetFeature.name == feature->name) {
     // A config to allow a user to be shown the Password Manager widget promo in
     // the Password Manager. The promo will be shown for a maximum of three
@@ -2577,23 +2617,6 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
     return config;
   }
 
-  if (kIPHPlusAddressCreateSuggestionFeature.name == feature->name) {
-    // A config that allows a user education bubble to be shown for the plus
-    // address feature. Will be shown up to 9 times in the 90 day window with
-    // the exception of 2 times if the user accepted the suggestion.
-
-    FeatureConfig config;
-    config.valid = true;
-    config.availability = Comparator(ANY, 0);
-    config.session_rate = Comparator(EQUAL, 0);
-    config.trigger =
-        EventConfig("plus_address_create_suggestion_feature_trigger",
-                    Comparator(LESS_THAN, 10), 90, 360);
-    config.used = EventConfig("plus_address_create_suggestion_feature_used",
-                              Comparator(LESS_THAN, 2), 90, 360);
-    return config;
-  }
-
   if (kIPHHomeCustomizationMenuFeature.name == feature->name) {
     FeatureConfig config;
     config.valid = true;
@@ -2731,6 +2754,25 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
     return config;
   }
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  if (kIPHPlusAddressCreateSuggestionFeature.name == feature->name) {
+    // A config that allows a user education bubble to be shown for the plus
+    // address feature. Will be shown up to 9 times in the 90 day window with
+    // the exception of 2 times if the user accepted the suggestion.
+
+    FeatureConfig config;
+    config.valid = true;
+    config.availability = Comparator(ANY, 0);
+    config.session_rate = Comparator(EQUAL, 0);
+    config.trigger =
+        EventConfig("plus_address_create_suggestion_feature_trigger",
+                    Comparator(LESS_THAN, 9), 90, 360);
+    config.used = EventConfig("plus_address_create_suggestion_feature_used",
+                              Comparator(LESS_THAN, 2), 90, 360);
+    return config;
+  }
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 
   if (kIPHDummyFeature.name == feature->name) {
     // Only used for tests. Various magic tricks are used below to ensure this

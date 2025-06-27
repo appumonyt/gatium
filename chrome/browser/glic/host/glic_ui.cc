@@ -12,6 +12,7 @@
 #include "chrome/browser/glic/glic_keyed_service_factory.h"
 #include "chrome/browser/glic/host/glic_page_handler.h"
 #include "chrome/browser/glic/host/guest_util.h"
+#include "chrome/browser/glic/resources/glic_resources.h"
 #include "chrome/browser/glic/resources/grit/glic_browser_resources.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/channel_info.h"
@@ -49,6 +50,11 @@ GlicUI::GlicUI(content::WebUI* web_ui) : ui::MojoWebUIController(web_ui) {
       {"errorNotice", IDS_GLIC_ERROR_NOTICE},
       {"errorNoticeActionButton", IDS_GLIC_ERROR_NOTICE_ACTION_BUTTON},
       {"errorNoticeHeader", IDS_GLIC_ERROR_NOTICE_HEADER},
+      {"ineligibleProfileNotice", IDS_GLIC_INELIGIBLE_PROFILE_NOTICE},
+      {"ineligibleProfileNoticeActionButton",
+       IDS_GLIC_INELIGIBLE_PROFILE_NOTICE_ACTION_BUTTON},
+      {"ineligibleProfileNoticeHeader",
+       IDS_GLIC_INELIGIBLE_PROFILE_NOTICE_HEADER},
       {"offlineNoticeAction", IDS_GLIC_OFFLINE_NOTICE_ACTION},
       {"offlineNoticeActionButton", IDS_GLIC_OFFLINE_NOTICE_ACTION_BUTTON},
       {"offlineNoticeHeader", IDS_GLIC_OFFLINE_NOTICE_HEADER},
@@ -103,7 +109,7 @@ GlicUI::GlicUI(content::WebUI* web_ui) : ui::MojoWebUIController(web_ui) {
   source->AddInteger("maxLoadingTimeMs", max_loading_time_ms);
   source->AddBoolean("simulateNoConnection", simulate_no_connection_);
 
-  source->AddResourcePath("glic_logo.svg", IDR_GLIC_LOGO);
+  source->AddResourcePath("glic_logo.svg", GetResourceID(IDR_GLIC_LOGO));
 
   // Set up guest api source.
   // This comes from 'glic_api_injection' in
@@ -140,6 +146,9 @@ GlicUI::GlicUI(content::WebUI* web_ui) : ui::MojoWebUIController(web_ui) {
                      features::kGlicClientResponsivenessCheckTimeoutMs.Get());
   source->AddInteger("clientUnresponsiveUiMaxTimeMs",
                      features::kGlicClientUnresponsiveUiMaxTimeMs.Get());
+  source->AddBoolean("enableWebClientUnresponsiveMetrics",
+                     base::FeatureList::IsEnabled(
+                         features::kGlicWebClientUnresponsiveMetrics));
 }
 
 WEB_UI_CONTROLLER_TYPE_IMPL(GlicUI)

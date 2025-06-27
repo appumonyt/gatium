@@ -17,6 +17,7 @@
 #include "base/json/json_reader.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -41,6 +42,7 @@
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/signin/signin_view_controller.h"
 #include "chrome/browser/ui/singleton_tabs.h"
@@ -675,7 +677,9 @@ void PeopleHandler::HandleStartSyncingWithEmail(const base::Value::List& args) {
       if (!browser) {
         return;
       }
-      browser->signin_view_controller()->ShowModalHistorySyncOptInDialog();
+      browser->GetFeatures()
+          .signin_view_controller()
+          ->ShowModalHistorySyncOptInDialog();
     }
     return;
   }
@@ -850,7 +854,7 @@ void PeopleHandler::HandleSignout(const base::Value::List& args) {
   if (!browser) {
     return;
   }
-  browser->signin_view_controller()->SignoutOrReauthWithPrompt(
+  browser->GetFeatures().signin_view_controller()->SignoutOrReauthWithPrompt(
       signin_metrics::AccessPoint::kSettingsSignoutConfirmationPrompt,
       signin_metrics::ProfileSignout::kUserClickedSignoutSettings,
       signin_metrics::SourceForRefreshTokenOperation::kSettings_Signout);
@@ -886,7 +890,7 @@ void PeopleHandler::HandleTurnOffSync(bool delete_profile,
     if (browser) {
       // Clearing the primary account isn't sufficient to signout SAML accounts,
       // see http://crbug.com/1114646.
-      browser->signin_view_controller()->ShowGaiaLogoutTab(
+      browser->GetFeatures().signin_view_controller()->ShowGaiaLogoutTab(
           signin_metrics::SourceForRefreshTokenOperation::kSettings_Signout);
     }
 
@@ -1404,7 +1408,7 @@ void PeopleHandler::HandleSetChromeSigninUserChoice(
   CHECK_NE(user_choice, ChromeSigninUserChoice::kNoChoice);
 
   CHECK(args[1].is_string());
-  std::string signed_in_email = args[1].GetString();
+  const std::string& signed_in_email = args[1].GetString();
   CHECK(!signed_in_email.empty());
 
   AccountInfo account =

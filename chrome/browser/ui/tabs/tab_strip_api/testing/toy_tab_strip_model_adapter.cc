@@ -4,6 +4,10 @@
 
 #include "chrome/browser/ui/tabs/tab_strip_api/testing/toy_tab_strip_model_adapter.h"
 
+#include <utility>
+
+#include "base/strings/string_number_conversions.h"
+
 namespace tabs_api::testing {
 
 ToyTabStripModelAdapter::ToyTabStripModelAdapter(ToyTabStrip* tab_strip)
@@ -36,13 +40,14 @@ void ToyTabStripModelAdapter::ActivateTab(size_t idx) {
 
 void ToyTabStripModelAdapter::MoveTab(tabs::TabHandle handle,
                                       Position position) {
-  tab_strip_->MoveTab(handle, position.index);
+  tab_strip_->MoveTab(handle, position.index());
 }
 
 mojom::TabCollectionContainerPtr
 ToyTabStripModelAdapter::GetTabStripTopology() {
   auto tab_collection = tabs_api::mojom::TabCollection::New();
-  tab_collection->id = tabs_api::TabId(tabs_api::TabId::Type::kCollection, "0");
+  tab_collection->id =
+      tabs_api::NodeId(tabs_api::NodeId::Type::kCollection, "0");
   tab_collection->collection_type =
       tabs_api::mojom::TabCollection::CollectionType::kTabStrip;
 
@@ -52,8 +57,8 @@ ToyTabStripModelAdapter::GetTabStripTopology() {
   std::vector<tabs::TabHandle> tabs = tab_strip_->GetTabs();
   for (auto& handle : tabs) {
     auto tab = tabs_api::mojom::Tab::New();
-    tab->id = tabs_api::TabId(tabs_api::TabId::Type::kContent,
-                              base::NumberToString(handle.raw_value()));
+    tab->id = tabs_api::NodeId(tabs_api::NodeId::Type::kContent,
+                               base::NumberToString(handle.raw_value()));
     auto tab_container = tabs_api::mojom::TabContainer::New();
     tab_container->tab = std::move(tab);
     auto element =

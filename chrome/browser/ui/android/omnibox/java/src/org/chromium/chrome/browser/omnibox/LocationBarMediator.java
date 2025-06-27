@@ -44,6 +44,7 @@ import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider.ControlsPosition;
+import org.chromium.chrome.browser.composeplate.ComposeplateMetricsUtils;
 import org.chromium.chrome.browser.composeplate.ComposeplateUtils;
 import org.chromium.chrome.browser.device.DeviceClassManager;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
@@ -205,7 +206,7 @@ class LocationBarMediator
     private boolean mUrlFocusedWithPastedText;
     private boolean mIsUrlFocusChangeInProgress;
     private final boolean mIsTablet;
-    private final boolean mIsComposeplateEnabled;
+    private boolean mIsComposeplateEnabled;
     private boolean mShouldShowLensButtonWhenUnfocused;
     private boolean mShouldShowMicButtonWhenUnfocused;
     // Whether the microphone and bookmark buttons should be shown in the tablet location bar. These
@@ -267,8 +268,6 @@ class LocationBarMediator
         mTabModelSelectorSupplier = tabModelSelectorSupplier;
         mBrowserControlsStateProvider = browserControlsStateProvider;
         mOfflineDownloader = offlineDownloader;
-
-        mIsComposeplateEnabled = ChromeFeatureList.sAndroidComposeplate.isEnabled();
     }
 
     /**
@@ -749,9 +748,13 @@ class LocationBarMediator
                 || !mTabModelSelectorSupplier.hasValue()) return;
 
         Tab tab = mTabModelSelectorSupplier.get().getCurrentTab();
-        if (tab == null || tab.isIncognito()) return;
+        if (tab == null || tab.isIncognito() || !mTemplateUrlServiceSupplier.hasValue()) return;
 
-        tab.loadUrl(new LoadUrlParams(ComposeplateUtils.getComposeplateURL()));
+        GURL url = mTemplateUrlServiceSupplier.get().getComposeplateUrl();
+        if (url == null) return;
+
+        tab.loadUrl(new LoadUrlParams(url));
+        ComposeplateMetricsUtils.recordFakeSearchBoxComposeplateButtonClick();
     }
 
     /** package */
@@ -1122,6 +1125,7 @@ class LocationBarMediator
     private void setProfile(Profile profile) {
         if (profile == null || !mNativeInitialized) return;
 
+        mIsComposeplateEnabled = ComposeplateUtils.isComposeplateEnabled(mIsTablet, profile);
         assumeNonNull(mOmniboxPrerender);
         mOmniboxPrerender.initializeForProfile(profile);
 
@@ -1313,7 +1317,7 @@ class LocationBarMediator
         }
 
         // When this method is called on UI inflation, return false as the native is not ready.
-        if (!mNativeInitialized || mIsTablet) {
+        if (!mNativeInitialized) {
             return false;
         }
 

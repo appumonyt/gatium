@@ -96,9 +96,6 @@ constexpr unsigned char kIndexNamesKeyTypeByte = 201;
 constexpr unsigned char kObjectMetaDataTypeMaximum = 255;
 constexpr unsigned char kIndexMetaDataTypeMaximum = 255;
 
-const constexpr int kDatabaseLockPartition = 0;
-const constexpr int kObjectStoreLockPartition = 1;
-
 IndexedDBKey InvalidKey() {
   return IndexedDBKey{blink::mojom::IDBKeyType::Invalid};
 }
@@ -420,13 +417,14 @@ bool MaybeEncodeIDBKey(const IndexedDBKey& value, std::string* into) {
   return EncodeIDBKeyRecursively(value, into, 0);
 }
 
-void EncodeSortableIDBKey(const IndexedDBKey& value, std::string* into) {
+void EncodeSortableIDBKeyRecursively(const IndexedDBKey& value,
+                                     std::string* into) {
   size_t previous_size = into->size();
   switch (value.type()) {
     case blink::mojom::IDBKeyType::Array: {
       EncodeByte(kOrderedArrayTypeByte, into);
       for (const IndexedDBKey& key : value.array()) {
-        EncodeSortableIDBKey(key, into);
+        EncodeSortableIDBKeyRecursively(key, into);
       }
       EncodeByte(kSentinel, into);
       DCHECK_GT(into->size(), previous_size);
@@ -454,6 +452,12 @@ void EncodeSortableIDBKey(const IndexedDBKey& value, std::string* into) {
     default:
       NOTREACHED();
   }
+}
+
+std::string EncodeSortableIDBKey(const IndexedDBKey& value) {
+  std::string encoded;
+  EncodeSortableIDBKeyRecursively(value, &encoded);
+  return encoded;
 }
 
 #define COMPILE_ASSERT_MATCHING_VALUES(a, b)                          \
@@ -1515,22 +1519,6 @@ std::string IndexedDBKeyToDebugString(std::string_view key) {
   }
   result << "]";
   return result.str();
-}
-
-PartitionedLockId GetDatabaseLockId(std::u16string database_name) {
-  return {kDatabaseLockPartition, base::UTF16ToUTF8(database_name)};
-}
-
-PartitionedLockId GetObjectStoreLockId(int64_t database_id,
-                                       int64_t object_store_id) {
-  // These keys used to attempt to be bytewise-comparable, which is why
-  // it uses big-endian encoding here. There was a goal to match the
-  // existing leveldb key scheme used by IndexedDB. This is no longer a goal.
-  std::array<uint8_t, 16u> chars;
-  auto [db, obj] = base::span(chars).split_at<8u>();
-  db.copy_from(base::U64ToBigEndian(static_cast<uint64_t>(database_id)));
-  obj.copy_from(base::U64ToBigEndian(static_cast<uint64_t>(object_store_id)));
-  return {kObjectStoreLockPartition, std::string(chars.begin(), chars.end())};
 }
 
 KeyPrefix::KeyPrefix()

@@ -14,6 +14,7 @@
 #include "base/path_service.h"
 #include "components/history/core/browser/features.h"
 #include "components/metrics/persistent_histograms.h"
+#include "components/payments/content/android/payment_feature_map.h"
 #include "components/permissions/features.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "components/translate/core/common/translate_util.h"
@@ -110,7 +111,19 @@ void AwFieldTrials::RegisterFeatureOverrides(base::FeatureList* feature_list) {
   // kVulkan in case it becomes enabled by default.
   aw_feature_overrides.DisableFeature(::features::kVulkan);
 
+  // WebView does not support web-app (service-worker) based payment apps for
+  // Payment Request.
   aw_feature_overrides.DisableFeature(::features::kServiceWorkerPaymentApps);
+
+  // Payment Request on WebView does not send down the deprecated parameters to
+  // Android payment apps.
+  aw_feature_overrides.EnableFeature(
+      ::payments::android::kAndroidPaymentIntentsOmitDeprecatedParameters);
+
+  // WebView does not support Secure Payment Confirmation, and thus should not
+  // expose the PaymentRequest.securePaymentConfirmationAvailability API.
+  aw_feature_overrides.DisableFeature(
+      blink::features::kSecurePaymentConfirmationAvailabilityAPI);
 
   // WebView does not support overlay fullscreen yet for video overlays.
   aw_feature_overrides.DisableFeature(media::kOverlayFullscreenVideo);
@@ -256,6 +269,11 @@ void AwFieldTrials::RegisterFeatureOverrides(base::FeatureList* feature_list) {
   // Sharing ANGLE's Vulkan queue is not supported on WebView.
   aw_feature_overrides.DisableFeature(::features::kVulkanFromANGLE);
 
+  // This feature has not been experimented with yet on WebView.
+  // TODO(crbug.com/371512561): Disable this feature for WebView only if webview
+  // itself is using GLES.
+  aw_feature_overrides.DisableFeature(::features::kDefaultANGLEVulkan);
+
   // Partitioned :visited links history is not supported on WebView.
   aw_feature_overrides.DisableFeature(
       blink::features::kPartitionVisitedLinkDatabaseWithSelfLinks);
@@ -268,4 +286,8 @@ void AwFieldTrials::RegisterFeatureOverrides(base::FeatureList* feature_list) {
   // TODO(crbug.com/422161917): Revert this for the ablation study.
   aw_feature_overrides.EnableFeature(
       features::kServiceWorkerBackgroundUpdateForRegisteredStorageKeys);
+
+  // Explicitly disable PrefetchProxy instead of relying only on passing an
+  // empty URL.
+  aw_feature_overrides.DisableFeature(features::kPrefetchProxy);
 }

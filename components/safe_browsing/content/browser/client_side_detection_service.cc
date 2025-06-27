@@ -25,7 +25,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "components/optimization_guide/core/optimization_guide_model_provider.h"
+#include "components/optimization_guide/core/delivery/optimization_guide_model_provider.h"
 #include "components/optimization_guide/core/optimization_guide_util.h"
 #include "components/optimization_guide/proto/common_types.pb.h"
 #include "components/optimization_guide/proto/models.pb.h"
@@ -156,6 +156,7 @@ ClientSideDetectionService::~ClientSideDetectionService() {
 
 void ClientSideDetectionService::Shutdown() {
   url_loader_factory_.reset();
+  // TODO(crbug.com/424104358): Call intelligent scan delegate instead.
   delegate_->StopListeningToOnDeviceModelUpdate();
   delegate_.reset();
   enabled_ = false;
@@ -188,6 +189,7 @@ void ClientSideDetectionService::OnPrefsUpdated() {
               kClientSideDetectionBrandAndIntentForScamDetection) ||
           base::FeatureList::IsEnabled(
               kClientSideDetectionLlamaForcedTriggerInfoForScamDetection)) {
+        // TODO(crbug.com/424104358): Call intelligent scan delegate instead.
         delegate_->StartListeningToOnDeviceModelUpdate();
       }
     } else {
@@ -216,6 +218,7 @@ void ClientSideDetectionService::OnPrefsUpdated() {
 }
 
 void ClientSideDetectionService::UnsubscribeToModelSubscription() {
+  // TODO(crbug.com/424104358): Call intelligent scan delegate instead.
   delegate_->StopListeningToOnDeviceModelUpdate();
   on_device_model_available_ = false;
   // We will check for the model object below because we also call this function
@@ -229,15 +232,13 @@ void ClientSideDetectionService::NotifyOnDeviceModelAvailable() {
   on_device_model_available_ = true;
 }
 
-bool ClientSideDetectionService::IsOnDeviceModelAvailable() {
-  return on_device_model_available_;
-}
-
-void ClientSideDetectionService::LogOnDeviceModelEligibilityReason() {
-  // Delegate can be null in unit tests.
-  if (delegate_) {
+bool ClientSideDetectionService::IsOnDeviceModelAvailable(
+    bool log_failed_eligibility_reason) {
+  if (log_failed_eligibility_reason && !on_device_model_available_ &&
+      delegate_) {
     delegate_->LogOnDeviceModelEligibilityReason();
   }
+  return on_device_model_available_;
 }
 
 void ClientSideDetectionService::SendClientReportPhishingRequest(
@@ -859,7 +860,7 @@ void ClientSideDetectionService::InquireOnDeviceModel(
         callback) {
   // We have checked the model availability prior to calling this function, but
   // we want to check one last time before creating a session.
-  if (!IsOnDeviceModelAvailable()) {
+  if (!IsOnDeviceModelAvailable(/*log_failed_eligibility_reason=*/false)) {
     std::move(callback).Run(std::nullopt);
     return;
   }

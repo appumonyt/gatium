@@ -255,8 +255,8 @@ void AXComputedNodeData::ComputeUnignoredValues(
     unignored_parent_id_for_child = owner_->id();
   int unignored_child_count = 0;
   std::vector<AXNodeID> unignored_child_ids;
-  for (auto iter = owner_->AllChildrenBegin(); iter != owner_->AllChildrenEnd();
-       ++iter) {
+  for (auto iter = owner_->AllChildrenBegin(), end = owner_->AllChildrenEnd();
+       iter != end; ++iter) {
     const AXComputedNodeData& computed_data = iter->GetComputedNodeData();
     int new_index_in_parent = starting_index_in_parent + unignored_child_count;
 
@@ -473,7 +473,7 @@ std::string AXComputedNodeData::ComputeTextContentUTF8() const {
       // visible via e.g. a tooltip.
       case ax::mojom::NameFrom::kTitle:
       case ax::mojom::NameFrom::kPopoverTarget:
-      case ax::mojom::NameFrom::kInterestTarget:
+      case ax::mojom::NameFrom::kInterestFor:
         return std::string();
 
       case ax::mojom::NameFrom::kContents:
@@ -489,8 +489,9 @@ std::string AXComputedNodeData::ComputeTextContentUTF8() const {
   }
 
   std::string text_content;
-  for (auto it = owner_->UnignoredChildrenCrossingTreeBoundaryBegin();
-       it != owner_->UnignoredChildrenCrossingTreeBoundaryEnd(); ++it) {
+  for (auto it = owner_->UnignoredChildrenCrossingTreeBoundaryBegin(),
+            end = owner_->UnignoredChildrenCrossingTreeBoundaryEnd();
+       it != end; ++it) {
     text_content += it->GetTextContentUTF8();
   }
   return text_content;

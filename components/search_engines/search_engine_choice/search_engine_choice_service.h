@@ -111,6 +111,12 @@ class SearchEngineChoiceService : public KeyedService {
       bool is_regular_profile,
       const TemplateURLService& template_url_service);
 
+  // Records the specified choice screen condition at profile initialization.
+  void RecordStaticEligibility(SearchEngineChoiceScreenConditions condition);
+
+  // Records the specified choice screen condition for relevant navigations.
+  void RecordDynamicEligibility(SearchEngineChoiceScreenConditions condition);
+
   // Returns key information needed to show a search engine choice screen, like
   // the template URLs for the engines to show. See
   // `search_engines::ChoiceScreenData` for more details.
@@ -172,10 +178,10 @@ class SearchEngineChoiceService : public KeyedService {
   static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
 
  private:
-  // Checks if the search engine choice should be prompted again, based on
-  // experiment parameters. If a reprompt is needed, some preferences related to
-  // the choice are cleared, which triggers a reprompt on the next page load.
-  void PreprocessPrefsForReprompt();
+  // Checks if the search engine choice should be invalidated, based on pref
+  // inconsistencies, command line args, or experiment parameters. Returns a
+  // wipe reason if the choice should be cleared, or nullopt otherwise.
+  std::optional<SearchEngineChoiceWipeReason> CheckPrefsForWipeReason();
 
   void ProcessPendingChoiceScreenDisplayState();
 

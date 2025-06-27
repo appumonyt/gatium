@@ -10,7 +10,6 @@
 #import "base/containers/contains.h"
 #import "base/metrics/field_trial_params.h"
 #import "components/country_codes/country_codes.h"
-#import "components/data_sharing/public/features.h"
 #import "components/segmentation_platform/public/features.h"
 #import "components/sync/base/features.h"
 #import "components/version_info/channel.h"
@@ -42,10 +41,6 @@ SegmentedDefaultBrowserExperimentTypeEnabled() {
 
 BASE_FEATURE(kIOSKeyboardAccessoryUpgradeForIPad,
              "IOSKeyboardAccessoryUpgradeForIPad",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kIOSKeyboardAccessoryUpgradeShortManualFillMenu,
-             "IOSKeyboardAccessoryUpgradeShortManualFillMenu",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kTestFeature, "TestFeature", base::FEATURE_DISABLED_BY_DEFAULT);
@@ -207,10 +202,6 @@ BASE_FEATURE(kEnableLensViewFinderUnifiedExperience,
              "EnableLensViewFinderUnifiedExperience",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kEnableLensContextMenuUnifiedExperience,
-             "EnableLensContextMenuUnifiedExperience",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // Update to the correct milestone after launch.
 // Also update in components/omnibox/browser/autocomplete_result.cc.
 const base::NotFatalUntil kLensOverlayNotFatalUntil = base::NotFatalUntil::M200;
@@ -255,20 +246,24 @@ BASE_FEATURE(kLensOverlayForceShowOnboardingScreen,
              "EnableLensOverlayForceShowOnboardingScreen",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-const char kLensOverlayOnboardingParam[] = "kLensOverlayOnboardingParam";
-const char kLensOverlayOnboardingParamSpeedbumpMenu[] =
-    "kLensOverlayOnboardingParamSpeedbumpMenu";
-const char kLensOverlayOnboardingParamUpdatedStrings[] =
-    "kLensOverlayOnboardingParamUpdatedStrings";
-const char kLensOverlayOnboardingParamUpdatedStringsAndVisuals[] =
-    "kLensOverlayOnboardingParamUpdatedStringsAndVisuals";
-
-BASE_FEATURE(kLensOverlayAlternativeOnboarding,
-             "LensOverlayAlternativeOnboarding",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 BASE_FEATURE(kLensOverlayNavigationHistory,
              "LensOverlayNavigationHistory",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Variations of MIA NTP entrypoint.
+const char kNTPMIAEntrypointParam[] = "kNTPMIAEntrypointParam";
+const char kNTPMIAEntrypointParamOmniboxContainedSingleButton[] =
+    "kNTPMIAEntrypointParamOmniboxContainedSingleButton";
+const char kNTPMIAEntrypointParamOmniboxContainedInline[] =
+    "kNTPMIAEntrypointParamOmniboxContainedInline";
+const char kNTPMIAEntrypointParamOmniboxContainedEnlargedFakebox[] =
+    "kNTPMIAEntrypointParamOmniboxContainedEnlargedFakebox";
+const char kNTPMIAEntrypointParamEnlargedFakeboxNoIncognito[] =
+    "kNTPMIAEntrypointParamEnlargedFakeboxNoIncognito";
+
+// Feature flag to change the MIA entrypoint in NTP.
+BASE_FEATURE(kNTPMIAEntrypoint,
+             "kNTPMIAEntrypoint",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnableTraitCollectionWorkAround,
@@ -505,30 +500,13 @@ BASE_FEATURE(kFullscreenImprovement,
              "FullscreenImprovement",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kTabGroupSync, "TabGroupSync", base::FEATURE_DISABLED_BY_DEFAULT);
-
 bool IsTabGroupSyncEnabled() {
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_TABLET) {
-    return base::FeatureList::IsEnabled(kTabGroupSync);
-  }
   return true;
 }
 
-BASE_FEATURE(kTabGroupIndicator,
-             "TabGroupIndicator",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 bool IsTabGroupIndicatorEnabled() {
-  if (ui::GetDeviceFormFactor() != ui::DEVICE_FORM_FACTOR_TABLET) {
-    return true;
-  }
-  return base::FeatureList::IsEnabled(kTabGroupIndicator);
-}
-
-bool IsTabGroupSendFeedbackAvailable() {
-  return base::GetFieldTrialParamByFeatureAsBool(
-      data_sharing::features::kDataSharingFeature, "show_send_feedback",
-      /*default=*/false);
+  return true;
 }
 
 BASE_FEATURE(kNewSyncOptInIllustration,
@@ -759,12 +737,6 @@ bool IsContentPushNotificationsSetUpListRegistrationOnly() {
 bool IsKeyboardAccessoryUpgradeEnabled() {
   return (ui::GetDeviceFormFactor() != ui::DEVICE_FORM_FACTOR_TABLET) ||
          base::FeatureList::IsEnabled(kIOSKeyboardAccessoryUpgradeForIPad);
-}
-
-bool IsKeyboardAccessoryUpgradeWithShortManualFillMenuEnabled() {
-  return (ui::GetDeviceFormFactor() != ui::DEVICE_FORM_FACTOR_TABLET) &&
-         base::FeatureList::IsEnabled(
-             kIOSKeyboardAccessoryUpgradeShortManualFillMenu);
 }
 
 // Feature disabled by default.
@@ -1299,10 +1271,7 @@ bool IsFeedbackIncludeGWSVariationsEnabled() {
   return base::FeatureList::IsEnabled(kFeedbackIncludeGWSVariations);
 }
 
-BASE_FEATURE(kDefaultBrowserPromoPropensityModel,
-             "DefaultBrowserPromoPropensityModel",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 bool IsDefaultBrowserPromoPropensityModelEnabled() {
-  return base::FeatureList::IsEnabled(kDefaultBrowserPromoPropensityModel);
+  return base::FeatureList::IsEnabled(
+      segmentation_platform::features::kDefaultBrowserPromoPropensityModel);
 }

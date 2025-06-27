@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/frame/page_scale_constraints_set.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/geometry/box_strut.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
@@ -345,17 +346,6 @@ int ComputeMaxCaptureSize(Document& document,
       2 * std::max(snapshot_root_size.width(), snapshot_root_size.height());
 
   return std::min(max_bounds_based_on_viewport, max_texture_size_in_layout);
-}
-
-gfx::Transform ConvertFromTopLeftToCenter(
-    const gfx::Transform& transform_from_top_left,
-    const PhysicalSize& box_size) {
-  gfx::Transform transform_from_center;
-  transform_from_center.Translate(-box_size.width / 2, -box_size.height / 2);
-  transform_from_center.PreConcat(transform_from_top_left);
-  transform_from_center.Translate(box_size.width / 2, box_size.height / 2);
-
-  return transform_from_center;
 }
 
 float DevicePixelRatioFromDocument(Document& document) {
@@ -806,7 +796,7 @@ bool ViewTransitionStyleTracker::FlattenAndVerifyElements(
     VectorOf<Element>& elements,
     VectorOf<AtomicString>& transition_names) {
   // Fail if the document element does not exist, since that's the place where
-  // we attach pseudo elements, and if it's not there, we can't do a transition.
+  // we attach pseudo-elements, and if it's not there, we can't do a transition.
   if (!document_->documentElement()) {
     return false;
   }
@@ -991,7 +981,7 @@ bool ViewTransitionStyleTracker::Capture(bool snap_browser_controls) {
 
   view_transition_names_ = std::move(transition_names);
 
-  // We need a style invalidation to generate the pseudo element tree.
+  // We need a style invalidation to generate the pseudo-element tree.
   InvalidateStyleAndCompositing();
 
   set_element_sequence_id_ = 0;
@@ -1228,7 +1218,7 @@ bool ViewTransitionStyleTracker::Start() {
   DCHECK_GE(document_->Lifecycle().GetState(),
             DocumentLifecycle::kPrePaintClean);
 
-  // We need a style invalidation to generate new content pseudo elements for
+  // We need a style invalidation to generate new content pseudo-elements for
   // new elements in the DOM.
   InvalidateStyleAndCompositing();
 
@@ -1262,7 +1252,7 @@ void ViewTransitionStyleTracker::EndTransition() {
   state_ = State::kFinished;
   InvalidateHitTestingCache();
 
-  // We need a style invalidation to remove the pseudo element tree. This needs
+  // We need a style invalidation to remove the pseudo-element tree. This needs
   // to be done before we clear the data, since we need to invalidate the
   // transition elements stored in `element_data_map_`.
   InvalidateStyleAndCompositing();
@@ -1343,7 +1333,7 @@ PseudoElement* ViewTransitionStyleTracker::CreatePseudoElement(
           element_data_map_.find(view_transition_name)->value;
 
       // If live data is tracking new elements then use the cached data for
-      // the pseudo element displaying snapshot of old element.
+      // the pseudo-element displaying snapshot of old element.
       bool use_cached_data = HasLiveNewContent();
       auto captured_rect = element_data->GetCapturedSubrect(use_cached_data);
       auto reference_rect_in_enclosing_layer_space =
@@ -1547,8 +1537,10 @@ bool ViewTransitionStyleTracker::RunPostPrePaintStepsForElement(
   auto group_children_css_properties =
       std::move(group_children_css_property_builder).Finish();
 
-  gfx::Vector2d border_offset(layout_object->StyleRef().BorderLeftWidth(),
-                              layout_object->StyleRef().BorderTopWidth());
+  const auto& style = layout_object->StyleRef();
+  gfx::Vector2d border_offset(
+      AdjustForAbsoluteZoom::AdjustInt(style.BorderLeftWidth(), style),
+      AdjustForAbsoluteZoom::AdjustInt(style.BorderTopWidth(), style));
 
   if (element_data->container_properties == container_properties &&
       visual_overflow_rect_in_layout_space ==
@@ -1576,7 +1568,7 @@ bool ViewTransitionStyleTracker::RunPostPrePaintStepsForElement(
   DCHECK(scope);
   if (auto* pseudo_element =
           scope->GetStyledPseudoElement(live_content_element, name)) {
-    // A pseudo element of type |tansition*content| must be created using
+    // A pseudo-element of type |tansition*content| must be created using
     // ViewTransitionContentElement.
     bool use_cached_data = false;
     auto captured_rect = element_data->GetCapturedSubrect(use_cached_data);
@@ -1632,9 +1624,6 @@ void ViewTransitionStyleTracker::ComputeLiveElementGeometry(
   gfx::Vector2d snapshot_to_fixed_offset = -GetFixedToSnapshotRootOffset();
   snapshot_matrix_in_layout_space.PostTranslate(snapshot_to_fixed_offset);
 
-  auto snapshot_matrix_in_css_space = snapshot_matrix_in_layout_space;
-  snapshot_matrix_in_css_space.Zoom(1.0 / device_pixel_ratio_);
-
   PhysicalOffset offset_in_css_space;
   // In this mode, the max extents rect (the capture rect we guess here) and
   // the border box are in the enclosing layer coordinate space. That's a more
@@ -1678,9 +1667,6 @@ void ViewTransitionStyleTracker::ComputeLiveElementGeometry(
     border_box_size_in_css_space.Scale(device_to_css_pixels_ratio);
   }
 
-  snapshot_matrix_in_css_space = ConvertFromTopLeftToCenter(
-      snapshot_matrix_in_css_space, border_box_size_in_css_space);
-
   if (auto* box = DynamicTo<LayoutBoxModelObject>(layout_object)) {
     visual_overflow_rect_in_layout_space = ComputeVisualOverflowRect(*box);
   }
@@ -1691,6 +1677,10 @@ void ViewTransitionStyleTracker::ComputeLiveElementGeometry(
   captured_rect_in_layout_space = ComputeCaptureRect(
       max_capture_size, visual_overflow_rect_in_layout_space,
       snapshot_matrix_in_layout_space, *snapshot_root_layout_size_at_capture_);
+
+  auto snapshot_matrix_in_css_space = snapshot_matrix_in_layout_space;
+  snapshot_matrix_in_css_space.Zoom(1.0 / device_pixel_ratio_);
+
   container_properties = {
       PhysicalRect(offset_in_css_space, border_box_size_in_css_space),
       snapshot_matrix_in_css_space};
@@ -2175,13 +2165,14 @@ CSSStyleSheet& ViewTransitionStyleTracker::UAStyleSheet() {
     builder.AddUAStyle(RuntimeEnabledFeatures::ScopedViewTransitionsEnabled()
                            ? AnimationUAStylesScoped()
                            : AnimationUAStyles());
+    builder.AddFlagGuardedDefaultAnimationStyles();
   }
 
   // If we started the animation then we always create the full dynamic style
   // sheet. However, before the animation phase, the dynamic sheet should only
-  // be created for the internal non-exposed pseudo elements. Specifically, if
+  // be created for the internal non-exposed pseudo-elements. Specifically, if
   // we're `in_get_computed_style_scope_` they should *not* be added, and only
-  // static UA style sheet is meant to be used because the pseudo elements are
+  // static UA style sheet is meant to be used because the pseudo-elements are
   // not yet exposed. See steps in
   // https://www.w3.org/TR/css-view-transitions-1/#lifecycle for details.
   if (in_start_phase || !in_get_computed_style_scope_) {
@@ -2197,29 +2188,29 @@ CSSStyleSheet& ViewTransitionStyleTracker::UAStyleSheet() {
         continue;
       }
 
-      gfx::Transform old_parent_inverse_transform;
-      gfx::Transform new_parent_inverse_transform;
+      gfx::Transform old_parent_transform;
+      gfx::Transform new_parent_transform;
       if (element_data->containing_group_name && HasLiveNewContent()) {
         CHECK(element_data_map_.Contains(element_data->containing_group_name));
         const auto& containing_group_data =
             element_data_map_.at(element_data->containing_group_name);
 
-        auto compute_parent_inverse = [](gfx::Transform matrix,
-                                         const gfx::Vector2d& border_offset) {
+        auto compute_parent_transform = [](gfx::Transform matrix,
+                                           const gfx::Vector2d& border_offset) {
           matrix.Translate(border_offset);
-          return matrix.InverseOrIdentity();
+          return matrix;
         };
 
-        old_parent_inverse_transform = compute_parent_inverse(
+        old_parent_transform = compute_parent_transform(
             containing_group_data->cached_container_properties.snapshot_matrix,
             containing_group_data->border_offset);
 
         if (containing_group_data->container_properties) {
           const auto& new_container_properties =
               *containing_group_data->container_properties;
-          new_parent_inverse_transform =
-              compute_parent_inverse(new_container_properties.snapshot_matrix,
-                                     containing_group_data->border_offset);
+          new_parent_transform =
+              compute_parent_transform(new_container_properties.snapshot_matrix,
+                                       containing_group_data->border_offset);
         }
       }
 
@@ -2227,7 +2218,7 @@ CSSStyleSheet& ViewTransitionStyleTracker::UAStyleSheet() {
       // https://drafts.csswg.org/css-view-transitions-1/#style-transition-pseudo-elements-algorithm.
       builder.AddContainerStyles(
           view_transition_name, *element_data->container_properties,
-          element_data->captured_css_properties, new_parent_inverse_transform);
+          element_data->captured_css_properties, new_parent_transform);
 
       builder.AddGroupChildrenStyles(
           view_transition_name, element_data->group_children_css_properties);
@@ -2248,7 +2239,7 @@ CSSStyleSheet& ViewTransitionStyleTracker::UAStyleSheet() {
         builder.AddAnimations(type, view_transition_name,
                               element_data->cached_container_properties,
                               element_data->cached_animated_css_properties,
-                              old_parent_inverse_transform);
+                              old_parent_transform);
       }
     }
   }
@@ -2289,7 +2280,7 @@ void ViewTransitionStyleTracker::InvalidateHitTestingCache() {
   // version is incremented any time there is a DOM modification or an attribute
   // change to some element (which can result in a new style). However, with
   // view transitions, we dynamically create and destroy hit-testable
-  // pseudo elements based on the current state. This means that we have to
+  // pseudo-elements based on the current state. This means that we have to
   // manually modify the DOM tree version since there is no other mechanism that
   // will do it.
   document_->IncDOMTreeVersion();
@@ -2472,6 +2463,28 @@ void ViewTransitionStyleTracker::InvalidateInternalPseudoStyle() {
   if (HasInternalPseudoElements()) {
     InvalidatePseudoStyle();
   }
+}
+
+gfx::Transform ViewTransitionStyleTracker::ContainerProperties::
+    ComputeRelativeTransformWithCenterOrigin(
+        const gfx::Transform& parent_transform) const {
+  // Start with the parent inverse.
+  gfx::Transform top_left_transform = parent_transform.InverseOrIdentity();
+
+  // Add the current snapshot matrix transform.
+  top_left_transform.PreConcat(snapshot_matrix);
+
+  // Convert the transform from top-left to center space.
+  gfx::Transform center_transform;
+  center_transform.Translate(
+      -border_box_rect_in_enclosing_layer_css_space.size.width / 2,
+      -border_box_rect_in_enclosing_layer_css_space.size.height / 2);
+  center_transform.PreConcat(top_left_transform);
+  center_transform.Translate(
+      border_box_rect_in_enclosing_layer_css_space.size.width / 2,
+      border_box_rect_in_enclosing_layer_css_space.size.height / 2);
+
+  return center_transform;
 }
 
 }  // namespace blink

@@ -14,22 +14,22 @@ import android.widget.Button;
 import androidx.annotation.AnyThread;
 import androidx.annotation.IdRes;
 import androidx.annotation.MainThread;
-import androidx.annotation.Nullable;
 
 import org.chromium.base.Callback;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.Promise;
 import org.chromium.base.ThreadUtils;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.components.signin.AccountManagerFacade;
 import org.chromium.components.signin.AccountManagerFacadeProvider;
 import org.chromium.components.signin.AccountsChangeObserver;
 import org.chromium.components.signin.Tribool;
 import org.chromium.components.signin.base.AccountCapabilities;
 import org.chromium.components.signin.base.AccountInfo;
-import org.chromium.components.signin.base.CoreAccountId;
 import org.chromium.components.signin.base.CoreAccountInfo;
-import org.chromium.components.signin.base.GaiaId;
+import org.chromium.google_apis.gaia.CoreAccountId;
+import org.chromium.google_apis.gaia.GaiaId;
 import org.chromium.google_apis.gaia.GoogleServiceAuthError;
 import org.chromium.google_apis.gaia.GoogleServiceAuthErrorState;
 
@@ -70,7 +70,7 @@ public class FakeAccountManagerFacade implements AccountManagerFacade {
         public static final @IdRes int CANCEL_BUTTON_ID = R.id.cancel_button;
 
         @Override
-        public void onCreate(Bundle savedInstanceState) {
+        public void onCreate(@Nullable Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
 
             setContentView(R.layout.test_add_account_layout);
@@ -438,15 +438,19 @@ public class FakeAccountManagerFacade implements AccountManagerFacade {
     }
 
     /**
-     * Replaces any capabilities that have been previously set with the given accountCapabilities.
-     * and notifies AccountsChangeObservers.
+     * Updates the previously set capabilities with the ones in accountCapabilities and notifies
+     * AccountsChangeObservers if there has been a change. New capabilities that were not already
+     * set are added and existing ones are updated with the new values.
      */
-    public void setAccountCapabilities(
+    public void updateAccountCapabilities(
             CoreAccountId accountId, AccountCapabilities accountCapabilities) {
         ThreadUtils.checkUiThread();
         assert accountId != null;
         AccountHolder accountHolder = getAccountHolder(accountId);
-        accountHolder.setAccountCapabilities(accountCapabilities);
-        fireOnAccountsChangedNotification();
+        boolean capabilitiesChanged =
+                accountHolder.getAccountCapabilities().updateWith(accountCapabilities);
+        if (capabilitiesChanged) {
+            fireOnAccountsChangedNotification();
+        }
     }
 }

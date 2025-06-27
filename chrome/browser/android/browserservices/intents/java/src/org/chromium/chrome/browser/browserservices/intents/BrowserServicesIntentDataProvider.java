@@ -683,8 +683,15 @@ public abstract class BrowserServicesIntentDataProvider {
         return ACTIVITY_SIDE_SHEET_POSITION_END;
     }
 
+    // TODO(crbug.com/422968546): Update java doc once the flag is removed from the method
+    // implementation.
     /** Return whether calling package should be allowed to present an interactive Omnibox. */
     public boolean isInteractiveOmniboxAllowed() {
+        return false;
+    }
+
+    /** Return whether omnibox should be enabled for the calling package. */
+    public boolean isInteractiveOmniboxEnabled() {
         return false;
     }
 
@@ -777,17 +784,24 @@ public abstract class BrowserServicesIntentDataProvider {
     }
 
     /**
-     * @return the TWA startup timestamp associated with an intent in the uptimeMillis timebase, or
-     *     null.
+     * @return if optional button on the toolbar can be shown.
      */
-    public @Nullable Long getTwaStartupUptimeMillis() {
-        return null;
+    public boolean isOptionalButtonSupported() {
+        return false;
     }
 
     /**
-     * @return the version of android_browser_helper, or null.
+     * @return the TWA startup timestamp associated with an intent in the uptimeMillis timebase, or
+     *     zero.
      */
-    public @Nullable Integer getAndroidBrowserHelperVersion() {
-        return null;
+    public long getTwaStartupUptimeMillis() {
+        return 0;
+    }
+
+    /**
+     * @return the version code of android_browser_helper, or zero.
+     */
+    public int getAndroidBrowserHelperVersion() {
+        return 0;
     }
 }

@@ -187,7 +187,7 @@ void SetCurrentTaskAsCallbackParent(
   auto* tracker =
       scheduler::TaskAttributionTracker::From(script_state->GetIsolate());
   if (tracker && script_state->World().IsMainWorld()) {
-    callback->SetParentTask(tracker->RunningTask());
+    callback->SetTaskState(tracker->CurrentTaskState());
   }
 }
 
@@ -260,7 +260,7 @@ LocalDOMWindow::LocalDOMWindow(LocalFrame& frame, WindowAgent* agent)
       network_state_observer_(MakeGarbageCollected<NetworkStateObserver>(this)),
       closewatcher_stack_(
           MakeGarbageCollected<CloseWatcher::WatcherStack>(this)),
-      navigation_id_(WTF::CreateCanonicalUUIDString()) {}
+      navigation_id_(CreateCanonicalUUIDString()) {}
 
 void LocalDOMWindow::BindContentSecurityPolicy() {
   DCHECK(!GetContentSecurityPolicy()->IsBound());
@@ -366,7 +366,7 @@ bool LocalDOMWindow::IsCrossSiteSubframe() const {
   // It'd be nice to avoid the url::Origin temporaries, but that would require
   // exposing the net internal helper.
   // TODO: If the helper gets exposed, we could do this without any new
-  // allocations using StringUTF8Adaptor.
+  // allocations using StringUtf8Adaptor.
   auto* top_origin =
       GetFrame()->Tree().Top().GetSecurityContext()->GetSecurityOrigin();
   return !net::registry_controlled_domains::SameDomainOrHost(
@@ -490,9 +490,9 @@ bool LocalDOMWindow::CanExecuteScripts(
       AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
           mojom::blink::ConsoleMessageSource::kSecurity,
           mojom::blink::ConsoleMessageLevel::kError,
-          WTF::StrCat({"Blocked script execution in '", Url().ElidedString(),
-                       "' because the document's frame is sandboxed and the "
-                       "'allow-scripts' permission is not set."})));
+          StrCat({"Blocked script execution in '", Url().ElidedString(),
+                  "' because the document's frame is sandboxed and the "
+                  "'allow-scripts' permission is not set."})));
     }
     return false;
   }
@@ -993,17 +993,17 @@ void LocalDOMWindow::EnqueueHashchangeEvent(const String& old_url,
 
 void LocalDOMWindow::DispatchPopstateEvent(
     scoped_refptr<SerializedScriptValue> state_object,
-    scheduler::TaskAttributionInfo* parent_task,
+    scheduler::TaskAttributionInfo* task_state,
     bool has_ua_visual_transition) {
   DCHECK(GetFrame());
   std::optional<scheduler::TaskAttributionTracker::TaskScope>
       task_attribution_scope;
-  if (parent_task) {
+  if (task_state) {
     auto* tracker = scheduler::TaskAttributionTracker::From(GetIsolate());
     ScriptState* script_state = ToScriptStateForMainWorld(GetFrame());
     if (script_state && tracker) {
       task_attribution_scope = tracker->CreateTaskScope(
-          script_state, parent_task,
+          script_state, task_state,
           scheduler::TaskAttributionTracker::TaskScopeType::kPopState);
     }
   }
@@ -1242,7 +1242,7 @@ void LocalDOMWindow::SchedulePostMessage(PostedMessage* posted_message) {
   scheduler::TaskAttributionInfo* task_context = nullptr;
   if (source == this) {
     if (auto* tracker = scheduler::TaskAttributionTracker::From(GetIsolate())) {
-      task_context = tracker->RunningTask();
+      task_context = tracker->CurrentTaskState();
     }
   }
 
@@ -1275,7 +1275,7 @@ void LocalDOMWindow::DispatchPostMessage(
     scoped_refptr<const SecurityOrigin> intended_target_origin,
     SourceLocation* location,
     const base::UnguessableToken& source_agent_cluster_id,
-    scheduler::TaskAttributionInfo* parent_task) {
+    scheduler::TaskAttributionInfo* task_state) {
   // Do not report postMessage tasks to the ad tracker. This allows non-ad
   // script to perform operations in response to events created by ad frames.
   probe::AsyncTask async_task(this, event->async_task_context(),
@@ -1296,12 +1296,12 @@ void LocalDOMWindow::DispatchPostMessage(
 
   std::optional<scheduler::TaskAttributionTracker::TaskScope>
       task_attribution_scope;
-  if (parent_task) {
+  if (task_state) {
     if (ScriptState* script_state = ToScriptStateForMainWorld(GetFrame())) {
       auto* tracker = scheduler::TaskAttributionTracker::From(GetIsolate());
       CHECK(tracker);
       task_attribution_scope = tracker->CreateTaskScope(
-          script_state, parent_task,
+          script_state, task_state,
           scheduler::TaskAttributionTracker::TaskScopeType::kPostMessage);
     }
   }
@@ -1322,10 +1322,10 @@ void LocalDOMWindow::DispatchMessageEventWithOriginCheck(
     if (!valid_target) {
       String message = ExceptionMessages::FailedToExecute(
           "postMessage", "DOMWindow",
-          WTF::StrCat({"The target origin provided ('",
-                       intended_target_origin->ToString(),
-                       "') does not match the recipient window's origin ('",
-                       GetSecurityOrigin()->ToString(), "')."}));
+          StrCat({"The target origin provided ('",
+                  intended_target_origin->ToString(),
+                  "') does not match the recipient window's origin ('",
+                  GetSecurityOrigin()->ToString(), "')."}));
       auto* console_message = MakeGarbageCollected<ConsoleMessage>(
           mojom::ConsoleMessageSource::kSecurity,
           mojom::ConsoleMessageLevel::kWarning, message, location);
@@ -2309,8 +2309,8 @@ DOMWindow* LocalDOMWindow::open(v8::Isolate* isolate,
     UseCounter::Count(entered_window, WebFeature::kWindowOpenWithInvalidURL);
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
-        WTF::StrCat({"Unable to open a window with invalid URL '",
-                     completed_url.GetString(), "'.\n"}));
+        StrCat({"Unable to open a window with invalid URL '",
+                completed_url.GetString(), "'.\n"}));
     return nullptr;
   }
 
@@ -2695,7 +2695,7 @@ void LocalDOMWindow::SetStorageAccessApiStatus(
 }
 
 void LocalDOMWindow::GenerateNewNavigationId() {
-  navigation_id_ = WTF::CreateCanonicalUUIDString();
+  navigation_id_ = CreateCanonicalUUIDString();
 }
 
 void LocalDOMWindow::SetHasBeenRevealed(bool revealed) {

@@ -2629,7 +2629,7 @@ TEST_F(StyleEngineTest, RejectSelectorForPseudoElement) {
   GetStyleEngine().RecalcStyle();
 
   // Should fast reject ".not-in-filter div::before {}" for both the div and its
-  // ::before pseudo element.
+  // ::before pseudo-element.
   EXPECT_EQ(2u, stats->rules_fast_rejected);
 }
 
@@ -6148,7 +6148,7 @@ TEST_F(StyleEngineTest, ScrollbarStyleNoExcessiveCaching) {
   )HTML");
   UpdateAllLifecyclePhases();
 
-  // We currently don't cache ::-webkit-scrollbar-* pseudo element styles, so
+  // We currently don't cache ::-webkit-scrollbar-* pseudo-element styles, so
   // the cache is always empty. If we decide to cache them, we should make sure
   // that the cache size remains bounded.
 
@@ -7433,6 +7433,19 @@ TEST_F(StyleEngineTest, ScrollStateUseCounter) {
   EXPECT_TRUE(
       IsWebDXFeatureCounted(WebDXFeature::kContainerScrollStateQueries));
   ClearWebDXFeatureCounter(WebDXFeature::kContainerScrollStateQueries);
+}
+
+TEST_F(StyleEngineTest, MissingVarArgument_IdentFunctionDisabled) {
+  ScopedCSSIdentFunctionForTest scoped_feature(false);
+  GetDocument().body()->setInnerHTML(R"HTML(
+    <style>
+      div {
+        color: var();
+      }
+    </style>
+    <div></div>
+  )HTML");
+  UpdateAllLifecyclePhasesForTest();
 }
 
 TEST_F(StyleEngineTest, CSSVarFallbackCycleCounter) {

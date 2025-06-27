@@ -10,6 +10,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/ptr_util.h"
+#include "base/notimplemented.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/buildflag.h"
 #include "ui/accessibility/accessibility_features.h"
@@ -24,7 +25,6 @@
 #include "ui/views/accessibility/atomic_view_ax_tree_manager.h"
 #include "ui/views/accessibility/ax_update_notifier.h"
 #include "ui/views/accessibility/ax_virtual_view.h"
-#include "ui/views/accessibility/widget_ax_tree_id_map.h"
 #include "ui/views/view.h"
 #include "ui/views/view_utils.h"
 #include "ui/views/widget/root_view.h"
@@ -1478,12 +1478,69 @@ ViewAccessibility::GetAtomicViewAXTreeManagerForTesting() const {
   return nullptr;
 }
 
+Widget* ViewAccessibility::GetWidget() const {
+  if (!view_) {
+    return nullptr;
+  }
+  return view_->GetWidget();
+}
+
+ViewAccessibility* ViewAccessibility::GetViewAccessibilityParent() const {
+  if (!view_) {
+    return nullptr;
+  }
+  if (auto* parent = view_->parent()) {
+    return &parent->GetViewAccessibility();
+  }
+  return nullptr;
+}
+
+ViewAccessibility* ViewAccessibility::GetUnignoredParent() const {
+  ViewAccessibility* parent = GetViewAccessibilityParent();
+  while (parent && parent->GetIsIgnored()) {
+    parent = parent->GetViewAccessibilityParent();
+  }
+  return parent;
+}
+
 gfx::NativeViewAccessible ViewAccessibility::GetFocusedDescendant() {
   CHECK(view_);
   if (focused_virtual_child_) {
     return focused_virtual_child_->GetNativeObject();
   }
   return view_->GetNativeViewAccessible();
+}
+
+std::vector<raw_ptr<ViewAccessibility>> ViewAccessibility::GetChildren() const {
+  std::vector<raw_ptr<ViewAccessibility>> out;
+
+  if (IsLeaf()) {
+    return out;
+  }
+
+  // The virtual children always override any real children the view might have.
+  if (!virtual_children_.empty()) {
+    out.reserve(virtual_children_.size());
+    for (auto& v : virtual_children_) {
+      out.push_back(v.get());
+    }
+    return out;
+  }
+
+  if (!view_) {
+    return out;
+  }
+
+  const auto& view_children = view_->children();
+  out.reserve(view_children.size());
+  for (auto child_view : view_children) {
+    out.push_back(&child_view->GetViewAccessibility());
+  }
+  return out;
+}
+
+std::string ViewAccessibility::GetDebugString() const {
+  return std::string(view_ ? view_->GetClassName() : "ViewAccessibility");
 }
 
 void ViewAccessibility::FireNativeEvent(ax::mojom::Event event_type) {

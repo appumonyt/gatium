@@ -396,7 +396,7 @@ Node* Node::PseudoAwarePreviousSibling() const {
   }
 
   // Note the [[fallthrough]] attributes, the order of the cases matters and
-  // corresponds to the ordering of pseudo elements in a traversal:
+  // corresponds to the ordering of pseudo-elements in a traversal:
   // ::scroll-marker-group(before), ::marker, ::scroll-marker,
   // ::scroll-button(), ::checkmark,
   // ::before, non-pseudo Elements, ::after, ::picker-icon,
@@ -1599,7 +1599,7 @@ void Node::SetNeedsStyleRecalc(StyleChangeType change_type,
     // done after resolving style for the author DOM. See
     // StyleEngine::RecalcTransitionPseudoStyle.
     // Since the dirty bits from the originating element (root element) are not
-    // propagated to these pseudo elements during the default walk, we need to
+    // propagated to these pseudo-elements during the default walk, we need to
     // invalidate style for these elements here.
     bool mark_transition_pseudos =
         RuntimeEnabledFeatures::ScopedViewTransitionsEnabled()
@@ -2346,9 +2346,7 @@ void Node::setTextContent(const String& text) {
       // mutation observer listeners attached.
       if (container->HasOneTextChild() &&
           To<Text>(container->firstChild())->data() == text && !text.empty() &&
-          (!RuntimeEnabledFeatures::
-               SameValueTextContentFiresMutationObserversEnabled() ||
-           !GetDocument().HasMutationObservers())) {
+          !GetDocument().HasMutationObservers()) {
         return;
       }
 
@@ -2543,10 +2541,14 @@ void Node::MovedFrom(ContainerNode& old_parent) {}
 void Node::RemovedFrom(ContainerNode& insertion_point) {
   DCHECK(IsContainerNode() || IsInTreeScope() || GetDOMParts());
   if (insertion_point.isConnected()) {
-    ClearNeedsStyleRecalc();
-    ClearChildNeedsStyleRecalc();
-    ClearNeedsStyleInvalidation();
-    ClearChildNeedsStyleInvalidation();
+    // Don't clear the layout/style flags on `moveBefore`, so that the layout is
+    // recomputed and reattached on the next style recalc.
+    if (!GetDocument().StatePreservingAtomicMoveInProgress()) {
+      ClearNeedsStyleRecalc();
+      ClearChildNeedsStyleRecalc();
+      ClearNeedsStyleInvalidation();
+      ClearChildNeedsStyleInvalidation();
+    }
     ClearFlag(kIsConnectedFlag);
 #if DCHECK_IS_ON()
     insertion_point.GetDocument().DecrementNodeCount();

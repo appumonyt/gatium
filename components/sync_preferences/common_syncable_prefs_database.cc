@@ -133,6 +133,8 @@ enum {
   kAutomaticPasskeyUpgrades = 83,
   kSyncablePriorityPrefForTesting = 84,               // For tests.
   kSyncableAlwaysSyncingPriorityPrefForTesting = 85,  // For tests.
+  kFacilitatedPaymentsPixAccountLinking = 86,
+  kShowSearchTools = 87,
   // See components/sync_preferences/README.md about adding new entries here.
   // vvvvv IMPORTANT! vvvvv
   // Note to the reviewer: IT IS YOUR RESPONSIBILITY to ensure that new syncable
@@ -336,6 +338,9 @@ constexpr auto kCommonSyncablePrefsAllowlist =
         {autofill::prefs::kFacilitatedPaymentsEwallet,
          {syncable_prefs_ids::kFacilitatedPaymentsEwallet, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kFacilitatedPaymentsPixAccountLinking,
+         {syncable_prefs_ids::kFacilitatedPaymentsPixAccountLinking,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
 #endif  // BUILDFLAG(IS_ANDROID)
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
@@ -356,6 +361,9 @@ constexpr auto kCommonSyncablePrefsAllowlist =
           syncer::PRIORITY_PREFERENCES,
           PrefSensitivity::kExemptFromUserControlWhileSignedIn,
           MergeBehavior::kNone}},
+        {omnibox::kShowSearchTools,
+         {syncable_prefs_ids::kShowSearchTools, syncer::PREFERENCES,
+          PrefSensitivity::kNone, MergeBehavior::kNone}},
     });
 
 }  // namespace

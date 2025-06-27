@@ -9,6 +9,8 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/metrics/user_metrics.h"
+#include "base/notimplemented.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/glic/browser_ui/scoped_glic_button_indicator.h"
@@ -19,6 +21,7 @@
 #include "chrome/browser/glic/glic_metrics.h"
 #include "chrome/browser/glic/glic_pref_names.h"
 #include "chrome/browser/glic/glic_profile_manager.h"
+#include "chrome/browser/glic/host/glic.mojom-data-view.h"
 #include "chrome/browser/glic/host/glic.mojom.h"
 #include "chrome/browser/glic/host/host.h"
 #include "chrome/browser/glic/host/webui_contents_container.h"
@@ -241,11 +244,6 @@ class GlicWindowControllerImpl::WindowEventObserver : public ui::EventObserver {
           glic_view_->IsPointWithinDraggableArea(mouse_location);
       initial_press_loc_ = mouse_location;
     }
-    if (event.type() == ui::EventType::kMouseReleased &&
-        event.AsMouseEvent()->IsRightMouseButton() &&
-        mouse_down_in_draggable_area_) {
-      glic_window_controller_->ShowTitleBarContextMenuAt(mouse_location);
-    }
     if (event.type() == ui::EventType::kMouseReleased ||
         event.type() == ui::EventType::kMouseExited) {
       mouse_down_in_draggable_area_ = false;
@@ -393,7 +391,8 @@ void GlicWindowControllerImpl::OnWidgetUserResizeEnded() {
   }
 
   if (GetGlicWidget()) {
-    glic_size_ = GetGlicWidget()->GetSize();
+    glic_size_ = GetGlicWidget()->GetClientAreaBoundsInScreen().size();
+    SaveWidgetPosition(/*user_modified=*/true);
   }
 
   glic_window_animator_->ResetLastTargetSize();
@@ -425,7 +424,7 @@ void GlicWindowControllerImpl::Toggle(BrowserWindowInterface* bwi,
       fre_controller_->DismissFreIfOpenOnActiveTab(new_attached_browser);
       return;
     }
-    fre_controller_->ShowFreDialog(new_attached_browser);
+    fre_controller_->ShowFreDialog(new_attached_browser, source);
     return;
   }
 
@@ -458,18 +457,6 @@ void GlicWindowControllerImpl::Toggle(BrowserWindowInterface* bwi,
   // If floaty is closed, open floaty
   if (state_ == State::kClosed) {
     Show(new_attached_browser, source);
-    return;
-  }
-
-  if (state_ == State::kOpen && window_config_.ShouldResetOnClose()) {
-    previous_position_.reset();
-    gfx::Rect new_bounds = GetInitialBounds(new_attached_browser);
-    MaybeAdjustSizeForDisplay(window_config_.ShouldAnimate());
-    base::TimeDelta duration = window_config_.ShouldAnimate()
-                                   ? kAnimationDuration
-                                   : base::Milliseconds(0);
-    glic_window_animator_->AnimatePosition(new_bounds.origin(), duration,
-                                           base::DoNothing());
     return;
   }
 
@@ -610,6 +597,8 @@ void GlicWindowControllerImpl::Show(Browser* browser,
   if (source == mojom::InvocationSource::kTopChromeButton &&
       window_config_.ShouldResetOnOpen()) {
     previous_position_.reset();
+    base::RecordAction(
+        base::UserMetricsAction("Glic.Widget.ResetPositionOnOpen"));
   }
   if (window_config_.ShouldResetOnNewSession()) {
     previous_position_.reset();
@@ -996,9 +985,44 @@ void GlicWindowControllerImpl::EnableDragResize(bool enabled) {
     SetGlicWindowToFloatingMode(!enabled);
   }
 
-  GetGlicWidget()->widget_delegate()->SetCanResize(enabled);
+  MaybeSetWidgetCanResize();
   GetGlicView()->UpdateBackgroundColor();
   glic_window_animator_->MaybeAnimateToTargetSize();
+}
+
+void GlicWindowControllerImpl::MaybeSetWidgetCanResize() {
+  if (!GetGlicWidget()) {
+    return;
+  }
+  if (GetGlicWidget()->widget_delegate()->CanResize() == user_resizable_ ||
+      glic_window_animator_->IsAnimating()) {
+    // If the resize state is already correct or the widget is animating do not
+    // update the resize state.
+    return;
+  }
+
+#if BUILDFLAG(IS_WIN)
+  // On Windows when resize is enabled there is an invisible border added
+  // around the client area. We need to make the widget larger or smaller to
+  // keep the visible client area the same size.
+  gfx::Rect previous_client_bounds =
+      GetGlicWidget()->GetClientAreaBoundsInScreen();
+#endif  // BUILDFLAG(IS_WIN)
+
+  // Update resize state on widget delegate.
+  GetGlicWidget()->widget_delegate()->SetCanResize(user_resizable_);
+
+#if BUILDFLAG(IS_WIN)
+  if (user_resizable_) {
+    // Resizable so the widget area is larger than the client area.
+    gfx::Rect new_widget_bounds =
+        GetGlicWidget()->VisibleToWidgetBounds(previous_client_bounds);
+    GetGlicWidget()->SetBoundsConstrained(new_widget_bounds);
+  } else {
+    // Not resizable so the client and widget areas are the same.
+    GetGlicWidget()->SetBoundsConstrained(previous_client_bounds);
+  }
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 gfx::Size GlicWindowControllerImpl::GetSize() {
@@ -1038,7 +1062,7 @@ void GlicWindowControllerImpl::Close() {
   }
 
   // Save the widge position on close so we can restore in the same position.
-  SaveWidgetPosition(/*is_drag=*/false);
+  SaveWidgetPosition(/*user_modified=*/false);
   window_config_.SetLastCloseTime();
 
   glic_window_animator_.reset();
@@ -1075,11 +1099,11 @@ void GlicWindowControllerImpl::Close() {
   }
 }
 
-void GlicWindowControllerImpl::SaveWidgetPosition(bool is_drag) {
+void GlicWindowControllerImpl::SaveWidgetPosition(bool user_modified) {
   if (!GetGlicWidget() || !GetGlicWidget()->IsVisible()) {
     return;
   }
-  if (!is_drag && window_config_.ShouldSetPostionOnDrag() &&
+  if (window_config_.ShouldSetPostionOnDrag() && !user_modified &&
       !previous_position_.has_value()) {
     profile_->GetPrefs()->ClearPref(prefs::kGlicPreviousPositionX);
     profile_->GetPrefs()->ClearPref(prefs::kGlicPreviousPositionY);
@@ -1144,7 +1168,7 @@ void GlicWindowControllerImpl::HandleWindowDragWithOffset(
     glic_window_animator_->MaybeAnimateToTargetSize();
 
     AdjustPositionIfNeeded();
-    SaveWidgetPosition(/*is_drag=*/true);
+    SaveWidgetPosition(/*user_modified=*/true);
 
     if (!AlwaysDetached()) {
       // set glic z-order back to normal after drag is done.

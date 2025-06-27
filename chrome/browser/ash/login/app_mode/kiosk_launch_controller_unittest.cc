@@ -314,7 +314,7 @@ class KioskLaunchControllerTest : public extensions::ExtensionServiceTestBase {
   void CleanUpController() { controller().CleanUp(); }
 
   void LoginFakeUser() {
-    fake_user_manager_->AddWebKioskAppUser(kiosk_app_id().account_id);
+    fake_user_manager_->AddKioskWebAppUser(kiosk_app_id().account_id);
     fake_user_manager_->LoginUser(kiosk_app_id().account_id);
   }
 
@@ -666,7 +666,7 @@ TEST_F(KioskLaunchControllerTest, ConfigureNetworkDuringInstallation) {
       HasViewState(
           AppLaunchSplashScreenView::AppLaunchState::kInstallingApplication));
 
-  screen().ContinueAppLaunch();
+  screen().CloseNetworkConfigureUI();
   EXPECT_THAT(
       screen(),
       HasViewState(

@@ -50,8 +50,8 @@
 #include "components/commerce/core/subscriptions/subscriptions_observer.h"
 #include "components/commerce/core/web_wrapper.h"
 #include "components/grit/components_resources.h"
+#include "components/optimization_guide/core/hints/hints_fetcher.h"
 #include "components/optimization_guide/core/hints/optimization_guide_decider.h"
-#include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_util.h"
 #include "components/optimization_guide/proto/hints.pb.h"
 #include "components/power_bookmarks/core/power_bookmark_service.h"
@@ -636,8 +636,7 @@ void ShoppingService::PDPMetricsCallback(
   metrics::RecordPDPMetrics(decision, metadata, pref_service_,
                             is_off_the_record, IsShoppingListEligible(), url);
 
-  bool supported_country =
-      IsRegionLockedFeatureEnabled(kShoppingList, kShoppingListRegionLaunched);
+  bool supported_country = IsRegionLockedFeatureEnabled(kShoppingList);
   metrics::RecordShoppingListIneligibilityReasons(
       pref_service_, account_checker_.get(), is_off_the_record,
       supported_country);
@@ -869,8 +868,7 @@ void ShoppingService::GetUpdatedProductInfoForBookmarks(
 }
 
 size_t ShoppingService::GetMaxProductBookmarkUpdatesPerBatch() {
-  return optimization_guide::features::
-      MaxUrlsForOptimizationGuideServiceHintsFetch();
+  return optimization_guide::HintsFetcher::kMaxUrls;
 }
 
 void ShoppingService::GetAllPriceTrackedBookmarks(
@@ -1012,6 +1010,12 @@ bool ShoppingService::IsRegionLockedFeatureEnabled(
   return commerce::IsRegionLockedFeatureEnabled(
       feature, region_specific_feature, country_on_startup_,
       locale_on_startup_);
+}
+
+bool ShoppingService::IsRegionLockedFeatureEnabled(
+    const base::Feature& feature) {
+  return commerce::IsRegionLockedFeatureEnabled(feature, country_on_startup_,
+                                                locale_on_startup_);
 }
 
 const std::vector<UrlInfo> ShoppingService::GetUrlInfosForActiveWebWrappers() {

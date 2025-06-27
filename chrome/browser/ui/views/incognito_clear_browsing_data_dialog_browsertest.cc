@@ -10,6 +10,8 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/test/test_browser_dialog.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/toolbar_button_provider.h"
@@ -48,26 +50,31 @@ class IncognitoClearBrowsingDataDialogTest : public InProcessBrowserTest {
   }
 
   IncognitoClearBrowsingDataDialogCoordinator* GetCoordinator() {
-    return IncognitoClearBrowsingDataDialogCoordinator::GetOrCreateForBrowser(
-        incognito_browser_);
+    return incognito_browser_->GetFeatures()
+        .incognito_clear_browsing_data_dialog_coordinator();
   }
 
  private:
   raw_ptr<Browser, AcrossTasksDanglingUntriaged> incognito_browser_ = nullptr;
 };
 
-// Used to test that the bubble widget is destroyed before the browser.
+// Used to test that the bubble widget is destroyed before the host browser.
 class BubbleWidgetDestroyedObserver : public views::WidgetObserver {
  public:
-  explicit BubbleWidgetDestroyedObserver(views::Widget* bubble_widget) {
+  BubbleWidgetDestroyedObserver(BrowserWindowInterface* host_browser,
+                                views::Widget* bubble_widget)
+      : host_browser_(host_browser->GetWeakPtr()) {
     bubble_widget->AddObserver(this);
   }
   ~BubbleWidgetDestroyedObserver() override = default;
 
   // views::WidgetObserver:
   void OnWidgetDestroyed(views::Widget* widget) override {
-    ASSERT_GT(BrowserList::GetIncognitoBrowserCount(), 0u);
+    ASSERT_TRUE(host_browser_);
   }
+
+ private:
+  base::WeakPtr<BrowserWindowInterface> host_browser_;
 };
 
 }  // namespace
@@ -104,8 +111,8 @@ IN_PROC_BROWSER_TEST_F(IncognitoClearBrowsingDataDialogTest,
                        TestCloseWindowsButton) {
   base::HistogramTester histogram_tester;
   OpenDialog(IncognitoClearBrowsingDataDialogInterface::Type::kDefaultBubble);
-  auto destroyed_observer =
-      BubbleWidgetDestroyedObserver(GetDialogView()->GetWidget());
+  auto destroyed_observer = BubbleWidgetDestroyedObserver(
+      GetIncognitoBrowser(), GetDialogView()->GetWidget());
 
   GetDialogView()->AcceptDialog();
   histogram_tester.ExpectBucketCount(
@@ -134,7 +141,8 @@ IN_PROC_BROWSER_TEST_F(IncognitoClearBrowsingDataDialogTest, TestCancelButton) {
 IN_PROC_BROWSER_TEST_F(IncognitoClearBrowsingDataDialogTest,
                        TestBrowserCloseEventClosesDialogFirst) {
   OpenDialog(IncognitoClearBrowsingDataDialogInterface::Type::kDefaultBubble);
-  auto destroyed_observer = BubbleWidgetDestroyedObserver(GetDialogWidget());
+  auto destroyed_observer =
+      BubbleWidgetDestroyedObserver(GetIncognitoBrowser(), GetDialogWidget());
 
   CloseBrowserSynchronously(GetIncognitoBrowser());
 
@@ -149,8 +157,8 @@ IN_PROC_BROWSER_TEST_F(IncognitoClearBrowsingDataDialogTest,
   std::u16string current_tab_title;
   ui_test_utils::GetCurrentTabTitle(incognito_browser, &current_tab_title);
   EXPECT_EQ(u"about:blank", current_tab_title);
-  auto* coordinator = IncognitoClearBrowsingDataDialogCoordinator::FromBrowser(
-      incognito_browser);
+  auto* coordinator = incognito_browser->GetFeatures()
+                          .incognito_clear_browsing_data_dialog_coordinator();
   ASSERT_TRUE(coordinator->IsShowing());
 }
 

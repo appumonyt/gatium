@@ -16,7 +16,6 @@
 #import "ios/chrome/browser/authentication/ui_bundled/signin_earl_grey_ui_test_util.h"
 #import "ios/chrome/browser/share_kit/model/test_constants.h"
 #import "ios/chrome/browser/shared/model/url/chrome_url_constants.h"
-#import "ios/chrome/browser/shared/public/features/features.h"
 #import "ios/chrome/browser/signin/model/fake_system_identity.h"
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/recent_activity_constants.h"
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/tab_group_app_interface.h"
@@ -167,8 +166,6 @@ void AddSharedGroup(BOOL owner) {
 AppLaunchConfiguration SharedTabGroupAppLaunchConfiguration(
     bool join_only = false) {
   AppLaunchConfiguration config;
-  config.features_enabled.push_back(kTabGroupSync);
-  config.features_enabled.push_back(kTabGroupIndicator);
   config.features_enabled.push_back(
       collaboration::features::kCollaborationMessaging);
   if (join_only) {
@@ -665,13 +662,7 @@ void WaitForFakeJoinFlowView() {
 // Checks last tab close alert as owner of the group open a new tab and close
 // the last tab, when "Keep Group" is pressed and delete the group when "Delete
 // Group" is pressed.
-// TODO(crbug.com/414607496): This fails on device.
-#if !TARGET_OS_SIMULATOR
-#define MAYBE_testLastTabClosedOwnerAlert DISABLED_testLastTabClosedOwnerAlert
-#else
-#define MAYBE_testLastTabClosedOwnerAlert testLastTabClosedOwnerAlert
-#endif
-- (void)MAYBE_testLastTabClosedOwnerAlert {
+- (void)testLastTabClosedOwnerAlert {
   if (@available(iOS 17, *)) {
   } else if ([ChromeEarlGrey isIPadIdiom]) {
     EARL_GREY_TEST_SKIPPED(@"Only available on iOS 17+ on iPad.");
@@ -804,13 +795,7 @@ void WaitForFakeJoinFlowView() {
 
 // Ensures the last tab close alert as a member is displayed when the group is
 // shared.
-// TODO(crbug.com/414607496): This fails on device.
-#if !TARGET_OS_SIMULATOR
-#define MAYBE_testLastTabClosedMemberAlert DISABLED_testLastTabClosedMemberAlert
-#else
-#define MAYBE_testLastTabClosedMemberAlert testLastTabClosedMemberAlert
-#endif
-- (void)MAYBE_testLastTabClosedMemberAlert {
+- (void)testLastTabClosedMemberAlert {
   if (@available(iOS 17, *)) {
   } else if ([ChromeEarlGrey isIPadIdiom]) {
     EARL_GREY_TEST_SKIPPED(@"Only available on iOS 17+ on iPad.");
@@ -896,6 +881,10 @@ void WaitForFakeJoinFlowView() {
   if (@available(iOS 17, *)) {
   } else if ([ChromeEarlGrey isIPadIdiom]) {
     EARL_GREY_TEST_SKIPPED(@"Only available on iOS 17+ on iPad.");
+  }
+  if (@available(iOS 19.0, *)) {
+    // TODO(crbug.com/427699033): Re-enable test on iOS 26.
+    EARL_GREY_TEST_DISABLED(@"Test disabled on iOS 26.");
   }
   // Load regular tab 1 on the first window.
   AddSharedGroup(/*owner=*/NO);

@@ -52,7 +52,8 @@ bool IsNewTabPage(content::WebContents* const web_contents) {
   const GURL& url = entry->GetURL();
   return NewTabUI::IsNewTab(url) || NewTabPageUI::IsNewTabPageOrigin(url) ||
          NewTabPageThirdPartyUI::IsNewTabPageOrigin(url) ||
-         search::NavEntryIsInstantNTP(web_contents, entry);
+         search::NavEntryIsInstantNTP(web_contents, entry) ||
+         search::IsSplitViewNewTabPage(url);
 }
 
 }  // namespace
@@ -211,25 +212,25 @@ void LensOverlayEntryPointController::InvokeAction(
   // (e.g., toolbar, page action, etc.). Triggers from a page action will have a
   // valid PageActionTrigger property set.
   if (page_action_trigger != page_actions::kInvalidPageActionTrigger) {
-    switch (static_cast<page_actions::PageActionTrigger>(page_action_trigger)) {
-      case page_actions::PageActionTrigger::kKeyboard:
-        active_tab->GetBrowserWindowInterface()
-            ->GetFeatures()
-            .lens_region_search_controller()
-            ->Start(active_tab->GetContents(), /*use_fullscreen_capture=*/true,
-                    /*is_google_default_search_provider=*/true,
-                    lens::AmbientSearchEntryPoint::
-                        LENS_OVERLAY_LOCATION_BAR_ACCESSIBILITY_FALLBACK);
+    if (static_cast<page_actions::PageActionTrigger>(page_action_trigger) ==
+            page_actions::PageActionTrigger::kKeyboard &&
+        !lens::features::IsLensOverlayKeyboardSelectionEnabled()) {
+      active_tab->GetBrowserWindowInterface()
+          ->GetFeatures()
+          .lens_region_search_controller()
+          ->Start(active_tab->GetContents(), /*use_fullscreen_capture=*/true,
+                  /*is_google_default_search_provider=*/true,
+                  lens::AmbientSearchEntryPoint::
+                      LENS_OVERLAY_LOCATION_BAR_ACCESSIBILITY_FALLBACK);
 
-        break;
-      default:
-        lens::RecordAmbientSearchQuery(
-            lens::AmbientSearchEntryPoint::LENS_OVERLAY_LOCATION_BAR);
-        search_controller->OpenLensOverlay(
-            lens::LensOverlayInvocationSource::kOmnibox);
-        active_tab->GetBrowserWindowInterface()
-            ->GetUserEducationInterface()
-            ->NotifyNewBadgeFeatureUsed(lens::features::kLensOverlay);
+    } else {
+      lens::RecordAmbientSearchQuery(
+          lens::AmbientSearchEntryPoint::LENS_OVERLAY_LOCATION_BAR);
+      search_controller->OpenLensOverlay(
+          lens::LensOverlayInvocationSource::kOmnibox);
+      active_tab->GetBrowserWindowInterface()
+          ->GetUserEducationInterface()
+          ->NotifyNewBadgeFeatureUsed(lens::features::kLensOverlay);
     }
     return;
   }

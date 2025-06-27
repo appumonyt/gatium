@@ -94,7 +94,7 @@ class CORE_EXPORT OffscreenCanvas final
     disable_reading_from_canvas_ = true;
   }
 
-  CanvasResourceProvider* GetOrCreateResourceProvider();
+  CanvasResourceProvider* GetOrCreateResourceProviderForCanvas2D();
 
   void SetFrameSinkId(uint32_t client_id, uint32_t sink_id) {
     client_id_ = client_id;
@@ -123,7 +123,7 @@ class CORE_EXPORT OffscreenCanvas final
                  const SkIRect& damage_rect) override;
   void DidDraw(const SkIRect&) override;
   using CanvasRenderingContextHost::DidDraw;
-  void Commit(scoped_refptr<CanvasResource>&& bitmap_image,
+  bool Commit(scoped_refptr<CanvasResource>&& bitmap_image,
               const SkIRect& damage_rect) override;
   bool ShouldAccelerate2dContext() const override;
   CanvasResourceDispatcher* GetOrCreateResourceDispatcher() override;
@@ -179,9 +179,6 @@ class CORE_EXPORT OffscreenCanvas final
     return gfx::SizeF(width(), height());
   }
   bool IsOpaque() const final;
-
-  // overrides CanvasImageSource::IsAccelerated()
-  bool IsAccelerated() const final;
 
   // overrides CanvasRenderingContextHost::EnableAccelerationForCanvas2D()
   bool EnableAccelerationForCanvas2D() final;

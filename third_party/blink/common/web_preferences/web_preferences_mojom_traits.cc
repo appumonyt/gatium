@@ -128,8 +128,6 @@ bool StructTraits<blink::mojom::WebPreferencesDataView,
   out->sync_xhr_in_documents_enabled = data.sync_xhr_in_documents_enabled();
   out->target_blank_implies_no_opener_enabled_will_be_removed =
       data.target_blank_implies_no_opener_enabled_will_be_removed();
-  out->allow_non_empty_navigator_plugins =
-      data.allow_non_empty_navigator_plugins();
   out->ignore_permission_for_device_changed_event =
       data.ignore_permission_for_device_changed_event();
   out->number_of_cpu_cores = data.number_of_cpu_cores();
@@ -241,6 +239,8 @@ bool StructTraits<blink::mojom::WebPreferencesDataView,
   out->subapps_apis_require_user_gesture_and_authorization =
       data.require_transient_activation_and_user_confirmation_for_subapps_api();
   out->payment_request_enabled = data.payment_request_enabled();
+  out->api_based_fingerprinting_interventions_enabled =
+      data.api_based_fingerprinting_interventions_enabled();
   return true;
 }
 

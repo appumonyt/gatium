@@ -392,7 +392,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="WebRTC.Audio.EchoCanceller.Clockdrift" enum="ClockdriftLevel"
-    expires_after="2025-10-08">
+    expires_after="2025-12-07">
   <owner>gustaf@chromium.org</owner>
   <owner>peah@chromium.org</owner>
   <owner>webrtc-audio-uma@google.com</owner>
@@ -763,14 +763,14 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="WebRTC.BWE.InitiallyLostPackets" units="packets"
-    expires_after="2025-08-03">
+    expires_after="2025-12-14">
   <owner>holmer@chromium.org</owner>
   <summary>
     The number of video packets lost durig the first 2 seconds in a WebRTC call.
   </summary>
 </histogram>
 
-<histogram name="WebRTC.BWE.InitialRtt" units="ms" expires_after="2025-10-05">
+<histogram name="WebRTC.BWE.InitialRtt" units="ms" expires_after="2025-12-07">
   <owner>holmer@chromium.org</owner>
   <summary>
     The round-trip time as measured 2 seconds into a WebRTC call.
@@ -778,7 +778,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="WebRTC.BWE.InitialVsConvergedDiff" units="kbps"
-    expires_after="2025-10-05">
+    expires_after="2025-12-07">
   <owner>holmer@chromium.org</owner>
   <summary>
     The difference between the bandwidth estimate at 2 seconds and 20 seconds
@@ -902,7 +902,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="WebRTC.Call.AudioBitrateReceivedInKbps" units="kbps"
-    expires_after="2025-10-05">
+    expires_after="2025-12-07">
   <owner>holmer@chromium.org</owner>
   <summary>
     Average audio bitrate received during a call, counted from first packet
@@ -932,7 +932,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="WebRTC.Call.LifetimeInSeconds" units="seconds"
-    expires_after="2025-10-05">
+    expires_after="2025-12-07">
   <owner>asapersson@chromium.org</owner>
   <summary>
     The lifetime of a call. Recorded when a Call instance is destroyed.
@@ -950,7 +950,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="WebRTC.Call.RtcpBitrateReceivedInBps" units="bits/s"
-    expires_after="2025-10-05">
+    expires_after="2025-12-07">
   <owner>holmer@chromium.org</owner>
   <summary>
     Average RTCP bitrate received during a call, counted from first packet
@@ -1077,23 +1077,8 @@ chromium-metrics-reviews@google.com.
   <token key="CapturerType" variants="CapturerType"/>
 </histogram>
 
-<histogram name="WebRTC.DesktopCapture.IsZeroHzActive.{CapturerType}"
-    enum="BooleanActive" expires_after="2025-06-30">
-  <owner>henrika@chromium.org</owner>
-  <owner>webrtc-dev@chromium.org</owner>
-  <summary>
-    A boolean is recorded to this histogram for each captured video frame where
-    the desktop media source is given by {CapturerType}. Only recorded for
-    capturers that support detection of whether 0Hz is active or not which
-    requires that each captured frame must contain a representation of what
-    regions have been updated since the last frame. Windows WGC is an example of
-    a capturer which does not support this.
-  </summary>
-  <token key="CapturerType" variants="CapturerType"/>
-</histogram>
-
 <histogram name="WebRTC.DesktopCapture.RefreshRate.{CapturerType}" units="fps"
-    expires_after="2025-10-05">
+    expires_after="2025-12-07">
   <owner>henrika@chromium.org</owner>
   <owner>webrtc-dev@chromium.org</owner>
   <summary>
@@ -1251,6 +1236,17 @@ chromium-metrics-reviews@google.com.
 
     Warning: This histogram was expired from 2022-08-28 to 2022-10-10. Data may
     be missing.
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.PeerConnection.CandidateAddressType"
+    enum="IpAddressType" expires_after="2026-06-03">
+  <owner>hta@chromium.org</owner>
+  <owner>ortuno@chromium.org</owner>
+  <owner>webrtc-dev@chromium.org</owner>
+  <summary>
+    Counts the different address types used in ICE candidates. Recorded when
+    adding a candidate.
   </summary>
 </histogram>
 
@@ -1462,6 +1458,17 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="WebRTC.PeerConnection.RestrictedCandidates.MungeAllowed"
+    enum="Boolean" expires_after="2025-12-31">
+  <owner>hta@chromium.org</owner>
+  <owner>webrtc-dev@chromium.org</owner>
+  <owner>tov@chromium.org</owner>
+  <summary>
+    For added remote candidates with munged ufrag, this records whether the
+    candidate was allowed or not in the check for restricted addresses.
+  </summary>
+</histogram>
+
 <histogram name="WebRTC.PeerConnection.RestrictedCandidates.Port"
     units="candidates" expires_after="2025-12-31">
   <owner>tov@chromium.org</owner>
@@ -1666,7 +1673,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="WebRTC.PeerConnection.ValidIceChars" enum="Boolean"
-    expires_after="2025-10-12">
+    expires_after="2025-12-14">
   <owner>hta@chromium.org</owner>
   <owner>webrtc-dev@chromium.org</owner>
   <owner>phancke@microsoft.com</owner>
@@ -1676,6 +1683,21 @@ chromium-metrics-reviews@google.com.
     backward compability with deployed software. Recorded during the first DTLS
     connection establishment.
   </summary>
+</histogram>
+
+<histogram name="WebRTC.PeerConnection.{ServerType}.ServerAddressType"
+    enum="IpAddressType" expires_after="2026-06-03">
+  <owner>hta@chromium.org</owner>
+  <owner>ortuno@chromium.org</owner>
+  <owner>webrtc-dev@chromium.org</owner>
+  <summary>
+    Counts the different address types used in STUN/TURN servers. Recorded
+    before attempting to connect to the server.
+  </summary>
+  <token key="ServerType">
+    <variant name="Stun"/>
+    <variant name="Turn"/>
+  </token>
 </histogram>
 
 <histogram name="WebRTC.ReceivedAudioTrackDuration" units="ms"
@@ -1730,39 +1752,6 @@ chromium-metrics-reviews@google.com.
     is captured. Once the slideshow stops, the editor will be captured again.
     This is recorded the first time this feature is activated, but only once per
     screensharing session.
-  </summary>
-</histogram>
-
-<histogram name="WebRTC.Screenshare.ZeroHz.DelayMs" units="ms"
-    expires_after="2025-11-21">
-  <owner>henrika@chromium.org</owner>
-  <owner>handellm@google.com</owner>
-  <summary>
-    The number of milliseconds from the point a frame is received in
-    FrameCadenceAdapterImpl::OnFrame() until it is delivered for encoding in
-    ZeroHertzAdapterMode::SendFrameNow(). Recorded for each frame which is not a
-    repeated frame when 0Hz screen share is enabled.
-  </summary>
-</histogram>
-
-<histogram name="WebRTC.Screenshare.ZeroHz.QueueOverload" enum="Boolean"
-    expires_after="2025-02-10">
-  <owner>henrika@chromium.org</owner>
-  <owner>handellm@google.com</owner>
-  <summary>
-    This histogram logs whether a queue overload was detected or not when
-    delivering a captured frame to the Video Stream Encoder for encoding.
-    Recorded for each captured frame when 0Hz screen share is enabled.
-  </summary>
-</histogram>
-
-<histogram name="WebRTC.Screenshare.ZeroHz.TimeUntilFirstFrameMs" units="ms"
-    expires_after="2024-11-03">
-  <owner>handellm@google.com</owner>
-  <owner>ilnik@chromium.org</owner>
-  <summary>
-    The number of milliseconds from the point a zero-Hz frame cadence adapter is
-    created until the first frame arrives from a connected source.
   </summary>
 </histogram>
 

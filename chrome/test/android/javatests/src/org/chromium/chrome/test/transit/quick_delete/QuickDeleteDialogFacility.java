@@ -83,10 +83,8 @@ public class QuickDeleteDialogFacility extends ModalDialogFacility {
                 new RegularTabSwitcherStation(
                         /* regularTabsExist= */ true, /* incognitoTabsExist= */ false);
         QuickDeleteSnackbarFacility snackbar = new QuickDeleteSnackbarFacility(mTimePeriod);
-        tabSwitcher.addInitialFacility(snackbar);
 
-        mHostStation.travelToSync(tabSwitcher, positiveButtonElement.getClickTrigger());
-
+        positiveButtonElement.clickTo().arriveAt(tabSwitcher, snackbar);
         return Pair.create(tabSwitcher, snackbar);
     }
 
@@ -117,9 +115,9 @@ public class QuickDeleteDialogFacility extends ModalDialogFacility {
 
     /** Click the "More options" button to open the in Settings. */
     public SettingsStation<ClearBrowsingDataFragment> clickMoreOptions() {
-        return mHostStation.travelToSync(
-                new SettingsStation<>(ClearBrowsingDataFragment.class),
-                moreOptionsElement.getClickTrigger());
+        return moreOptionsElement
+                .clickTo()
+                .arriveAt(new SettingsStation<>(ClearBrowsingDataFragment.class));
     }
 
     public void expectSearchHistoryDisambiguation(boolean shown) {

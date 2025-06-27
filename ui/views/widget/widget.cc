@@ -20,6 +20,7 @@
 #include "base/task/current_thread.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/platform/ax_platform.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/default_style.h"
@@ -43,6 +44,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/views/accessibility/tree/widget_ax_manager.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/drag_controller.h"
 #include "ui/views/event_monitor.h"
@@ -59,7 +61,6 @@
 #include "ui/views/widget/widget_deletion_observer.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/widget/widget_removals_observer.h"
-#include "ui/views/window/custom_frame_view.h"
 #include "ui/views/window/dialog_delegate.h"
 
 #if BUILDFLAG(IS_LINUX)
@@ -511,6 +512,16 @@ void Widget::Init(InitParams params) {
   native_widget_ = native_widget_raw_ptr->GetWeakPtr();
   if (params.ownership == InitParams::WIDGET_OWNS_NATIVE_WIDGET) {
     owned_native_widget_ = base::WrapUnique(native_widget_raw_ptr);
+  }
+
+  // The WidgetAXManager must be initialized *before* RootView is created,
+  // because RootView's constructor may access it (e.g., to fire events).
+  // However, the rest of InitAccessibility() depends on `root_view_`, so we
+  // defer calling it until after `root_view_` is initialized.
+  if (::features::IsAccessibilityTreeForViewsEnabled()) {
+    CHECK(!ax_manager_)
+        << "Widget::InitAccessibility() should only be called once";
+    ax_manager_ = std::make_unique<WidgetAXManager>(this);
   }
 
   root_view_.reset(CreateRootView());
@@ -1493,11 +1504,8 @@ std::unique_ptr<NonClientFrameView> Widget::CreateNonClientFrameView() {
     frame_view =
         ViewsDelegate::GetInstance()->CreateDefaultNonClientFrameView(this);
   }
-  if (frame_view) {
-    return frame_view;
-  }
-
-  return std::make_unique<CustomFrameView>(this);
+  CHECK(frame_view);
+  return frame_view;
 }
 
 bool Widget::ShouldUseNativeFrame() const {
@@ -1897,7 +1905,7 @@ void Widget::OnNativeBlur() {
 void Widget::OnNativeWidgetVisibilityChanged(bool visible) {
   View* root = GetRootView();
   if (root) {
-    root->PropagateVisibilityNotifications(root, visible);
+    root->PropagateVisibilityNotifications(nullptr, visible);
   }
   observers_.Notify(&WidgetObserver::OnWidgetVisibilityChanged, this, visible);
   if (GetCompositor() && root && root->layer()) {
@@ -2742,10 +2750,16 @@ void Widget::HandleWidgetDestroyed() {
 }
 
 void Widget::OnChildAdded(Widget* child_widget) {
+  if (ax_manager_) {
+    ax_manager_->OnChildAdded(child_widget->ax_manager_.get());
+  }
   observers_.Notify(&WidgetObserver::OnWidgetChildAdded, this, child_widget);
 }
 
 void Widget::OnChildRemoved(Widget* child_widget) {
+  if (ax_manager_) {
+    ax_manager_->OnChildRemoved(child_widget->ax_manager_.get());
+  }
   observers_.Notify(&WidgetObserver::OnWidgetChildRemoved, this, child_widget);
 }
 

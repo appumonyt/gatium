@@ -320,7 +320,7 @@ void SoftwareRenderer::DoDrawQuad(const DrawQuad* quad,
 
     SkPoint clip_points[4];
     QuadFToSkPoints(local_draw_region, clip_points);
-    draw_region_clip_path.addPoly(clip_points, 4, true);
+    draw_region_clip_path.addPoly(clip_points, true);
 
     current_canvas_->clipPath(draw_region_clip_path);
   }
@@ -749,9 +749,8 @@ void SoftwareRenderer::CopyDrawnRenderPass(
 
     request->SendResult(std::make_unique<CopyOutputTextureResult>(
         CopyOutputResult::Format::RGBA, geometry.result_selection,
-        CopyOutputResult::TextureResult(request->blit_request().mailbox(),
-                                        representation->color_space()),
-        CopyOutputResult::ReleaseCallbacks()));
+        request->blit_request().mailbox(), representation->color_space(),
+        "CopyDrawnRenderPass", CopyOutputResult::ReleaseCallbacks()));
 
     return;
   }

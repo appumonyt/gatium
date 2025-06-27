@@ -71,6 +71,7 @@ class VideoFrame;
 namespace blink {
 
 class CanvasResourceProvider;
+class CanvasElementHitTestRegion;
 class ComputedStyle;
 class Document;
 class Element;
@@ -100,6 +101,21 @@ class CORE_EXPORT CanvasRenderingContext
 
    private:
     CanvasRenderingContext& this_;
+  };
+
+  class CORE_EXPORT ElementHitTestRegion
+      : public GarbageCollected<ElementHitTestRegion> {
+   public:
+    ElementHitTestRegion(Element* element, const gfx::RectF& rect);
+
+    void Trace(Visitor*) const;
+
+    Element* element() const { return element_.Get(); }
+    gfx::RectF rect() const { return rect_; }
+
+   private:
+    WeakMember<Element> element_;
+    gfx::RectF rect_;
   };
 
   CanvasRenderingContext(const CanvasRenderingContext&) = delete;
@@ -165,6 +181,7 @@ class CORE_EXPORT CanvasRenderingContext
 
   virtual scoped_refptr<StaticBitmapImage> GetImage(FlushReason) = 0;
   virtual bool IsComposited() const = 0;
+  virtual bool IsAccelerated() const = 0;
 
   // Called when the entire tab is backgrounded or unbackgrounded.
   // The page's visibility status can be queried at any time via
@@ -174,6 +191,7 @@ class CORE_EXPORT CanvasRenderingContext
   // which are being rendered to, just not being displayed in the
   // page.
   virtual void PageVisibilityChanged() = 0;
+  virtual void SizeChanged() {}
   virtual bool isContextLost() const { return true; }
   bool IsContextBeingRestored() const { return is_context_being_restored_; }
   // TODO(fserb): remove AsV8RenderingContext and AsV8OffscreenRenderingContext.
@@ -190,14 +208,16 @@ class CORE_EXPORT CanvasRenderingContext
   }
   void DidDraw(const SkIRect& dirty_rect, CanvasPerformanceMonitor::DrawType);
 
+  virtual std::unique_ptr<CanvasResourceProvider>
+  CreateCanvasResourceProvider() {
+    NOTREACHED();
+  }
+
   // Returns a StaticBitmapImage containing the current content, or nullptr if
-  // it was not possible to obtain that content. For historical reasons, some
-  // clients need to know whether in the case of failure the
-  // CanvasResourceProvider being used internally was present; such clients can
-  // pass in `had_canvas_resource_provider`.
-  scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
+  // it was not possible to obtain that content.
+  virtual scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
       SourceDrawingBuffer source_buffer,
-      FlushReason reason);
+      FlushReason reason) = 0;
 
   // WebGL-specific methods
   virtual void ClearMarkedCanvasDirty() {}
@@ -283,11 +303,6 @@ class CORE_EXPORT CanvasRenderingContext
 
   virtual int AllocatedBufferCountPerPixel() { NOTREACHED(); }
 
-  bool DrawsViaGpu() {
-    return Host() && Host()->ResourceProvider() &&
-           Host()->ResourceProvider()->IsAccelerated();
-  }
-
   // OffscreenCanvas-specific methods.
   virtual bool PushFrame() { return false; }
   virtual ImageBitmap* TransferToImageBitmap(ScriptState* script_state,
@@ -332,22 +347,22 @@ class CORE_EXPORT CanvasRenderingContext
 
   bool did_print_in_current_task() const { return did_print_in_current_task_; }
 
-  // Returns a CanvasResourceProvider containing the current content, or nullptr
-  // if it was not possible to obtain that content. Default implementation
-  // returns the host's CanvasResourceProvider, which is suitable for contexts
-  // that write directly to that resource provider. Other contexts will need to
-  // override this method as suitable.
-  virtual CanvasResourceProvider* PaintRenderingResultsToCanvas(
-      SourceDrawingBuffer) {
-    return Host()->ResourceProvider();
-  }
-
  protected:
   CanvasRenderingContext(CanvasRenderingContextHost*,
                          const CanvasContextCreationAttributesCore&,
                          CanvasRenderingAPI);
 
   virtual void Dispose();
+
+  bool IsDrawElementEligible(Element* element,
+                             const String& func_name,
+                             ExceptionState& exception_state);
+
+  bool ConvertHitTestRegionsToHTMLCanvasRegions(
+      const HeapVector<Member<CanvasElementHitTestRegion>>& hit_test_regions,
+      VectorOf<ElementHitTestRegion>& result,
+      const String& func_name,
+      ExceptionState& exception_state);
 
  private:
   Member<CanvasRenderingContextHost> host_;

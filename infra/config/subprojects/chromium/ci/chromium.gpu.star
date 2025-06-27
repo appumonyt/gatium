@@ -23,10 +23,8 @@ ci.defaults.set(
     contact_team_email = "chrome-gpu-infra@google.com",
     execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
     health_spec = health_spec.DEFAULT,
-    reclient_enabled = False,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
     shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
-    siso_enabled = True,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
     thin_tester_cores = 2,
@@ -57,71 +55,6 @@ consoles.console_view(
             "Linux",
         ],
     },
-)
-
-ci.gpu.linux_builder(
-    name = "Android Release (Nexus 5X)",
-    description_html = "Runs a subset of release GPU tests on stable Nexus 5X configs",
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "android",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "download_xr_test_apks",
-                "mb",
-            ],
-            build_config = builder_config.build_config.RELEASE,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(
-            config = "base_config",
-        ),
-        build_gs_bucket = "chromium-gpu-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "gpu_tests",
-            "android_builder",
-            "release_builder",
-            "try_builder",
-            "remoteexec",
-            "arm64",
-            "static_angle",
-            "android_fastbuild",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            "gpu_common_android_telemetry_tests",
-        ],
-        mixins = [
-            "chromium_nexus_5x_oreo",
-        ],
-        per_test_modifications = {
-            "trace_test": targets.mixin(
-                swarming = targets.swarming(
-                    shards = 2,
-                ),
-            ),
-        },
-    ),
-    targets_settings = targets.settings(
-        browser_config = targets.browser_config.ANDROID_CHROMIUM,
-        os_type = targets.os_type.ANDROID,
-        use_android_merge_script_by_default = False,
-    ),
-    console_view_entry = consoles.console_view_entry(
-        category = "Android",
-        short_name = "N5X",
-    ),
-    cq_mirrors_console_view = "mirrors",
 )
 
 ci.gpu.linux_builder(
@@ -168,7 +101,7 @@ ci.gpu.linux_builder(
             "gpu_common_android_telemetry_tests",
         ],
         mixins = [
-            "chromium_pixel_2_pie_or_q",
+            "chromium_pixel_2_q",
         ],
     ),
     targets_settings = targets.settings(
@@ -337,7 +270,6 @@ ci.gpu.mac_builder(
     targets = targets.bundle(),
     cores = None,
     cpu = cpu.ARM64,
-    gardener_rotations = args.ignore_default(None),
     tree_closing = False,
     console_view_entry = consoles.console_view_entry(
         category = "Mac",
@@ -414,7 +346,6 @@ ci.gpu.windows_builder(
             "x64",
         ],
     ),
-    gardener_rotations = args.ignore_default(None),
     tree_closing = False,
     console_view_entry = consoles.console_view_entry(
         category = "Windows",
@@ -638,6 +569,13 @@ ci.thin_tester(
             "puppet_production",
         ],
         per_test_modifications = {
+            "pixel_skia_gold_metal_passthrough_graphite_test": targets.per_test_modification(
+                mixins = targets.mixin(
+                    swarming = targets.swarming(
+                        shards = 2,
+                    ),
+                ),
+            ),
             "tab_capture_end2end_tests": targets.remove(
                 reason = "Run these only on Release bots.",
             ),

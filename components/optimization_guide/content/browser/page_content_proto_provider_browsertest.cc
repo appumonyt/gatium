@@ -365,6 +365,30 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, ForLabel) {
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
+                       ClickabilityReason) {
+  LoadPage(https_server()->GetURL("/clickability_reason.html"),
+           ActionableAIPageContentOptions());
+  EXPECT_EQ(page_content().version(),
+            optimization_guide::proto::
+                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+
+  const auto& button_node = ActionableContentRootNode().children_nodes()[0];
+  ASSERT_TRUE(button_node.content_attributes().has_interaction_info());
+  EXPECT_THAT(
+      button_node.content_attributes()
+          .interaction_info()
+          .debug_clickability_reasons(),
+      testing::UnorderedElementsAre(
+          optimization_guide::proto::CLICKABILITY_REASON_CLICKABLE_CONTROL,
+          optimization_guide::proto::CLICKABILITY_REASON_CLICK_HANDLER,
+          optimization_guide::proto::CLICKABILITY_REASON_MOUSE_EVENTS,
+          optimization_guide::proto::CLICKABILITY_REASON_KEY_EVENTS,
+          optimization_guide::proto::CLICKABILITY_REASON_EDITABLE,
+          optimization_guide::proto::CLICKABILITY_REASON_CURSOR_POINTER,
+          optimization_guide::proto::CLICKABILITY_REASON_ARIA_ROLE));
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
                        LabelNotActionable) {
   LoadPage(https_server()->GetURL("/label_not_actionable.html"),
            ActionableAIPageContentOptions());
@@ -470,6 +494,19 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, Canvas) {
   ASSERT_TRUE(canvas.content_attributes().has_canvas_data());
   EXPECT_EQ(canvas.content_attributes().canvas_data().layout_width(), 200);
   EXPECT_EQ(canvas.content_attributes().canvas_data().layout_height(), 300);
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, Video) {
+  LoadPage(https_server()->GetURL("/video.html"));
+
+  EXPECT_EQ(page_content().root_node().children_nodes().size(), 1);
+
+  const auto& video_node = page_content().root_node().children_nodes().at(0);
+  ASSERT_TRUE(video_node.content_attributes().has_video_data());
+  EXPECT_EQ(video_node.content_attributes().attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_VIDEO);
+  EXPECT_EQ(video_node.content_attributes().video_data().url(),
+            https_server()->GetURL("/video.mp4").spec());
 }
 
 namespace {
@@ -606,7 +643,6 @@ IN_PROC_BROWSER_TEST_P(PageContentProtoProviderBrowserTestSiteIsolation,
   request->on_critical_path = false;
   LoadData(std::move(request));
   content::FetchHistogramsFromChildProcesses();
-
 
   ASSERT_EQ(page_content().root_node().children_nodes().size(), 1);
 
@@ -921,8 +957,15 @@ int TreeDepth(const optimization_guide::proto::ContentNode& node) {
   return depth + 1;
 }
 
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_DeepTree DISABLED_DeepTree
+#else
+#define MAYBE_DeepTree DeepTree
+#endif
+// TODO(crbug.com/425717554): This test is flaking on windows due to a renderer
+// crash.
 IN_PROC_BROWSER_TEST_P(PageContentProtoProviderBrowserTestMultiProcess,
-                       DeepTree) {
+                       MAYBE_DeepTree) {
   // Listen for ukm metrics.
   base::test::TestFuture<void> future;
   ukm::TestAutoSetUkmRecorder ukm_recorder;
@@ -1015,10 +1058,11 @@ bool ContainsRole(const optimization_guide::proto::ContentNode& node,
 class PageContentProtoProviderBrowserTestPaidContentDisabled
     : public PageContentProtoProviderBrowserTest {
  public:
- PageContentProtoProviderBrowserTestPaidContentDisabled() {
+  PageContentProtoProviderBrowserTestPaidContentDisabled() {
     features_.InitAndDisableFeature(
         blink::features::kAIPageContentPaidContentAnnotation);
   }
+
  private:
   base::test::ScopedFeatureList features_;
 };

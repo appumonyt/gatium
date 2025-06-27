@@ -4,7 +4,10 @@
 
 #include "chrome/browser/actor/tools/navigate_tool.h"
 
+#include "chrome/browser/actor/site_policy.h"
+#include "chrome/browser/actor/tools/observation_delay_controller.h"
 #include "chrome/browser/actor/tools/tool_callbacks.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/actor.mojom.h"
 #include "chrome/common/actor/action_result.h"
 #include "components/tabs/public/tab_interface.h"
@@ -19,8 +22,20 @@ using content::WebContents;
 
 namespace actor {
 
-NavigateTool::NavigateTool(WebContents& web_contents, const GURL& url)
-    : WebContentsObserver(&web_contents), url_(url) {}
+namespace {
+
+mojom::ActionResultPtr MayActOnUrlToResult(bool may_act) {
+  return may_act ? MakeOkResult()
+                 : MakeResult(mojom::ActionResultCode::kUrlBlocked);
+}
+
+}  // namespace
+
+NavigateTool::NavigateTool(TaskId task_id,
+                           AggregatedJournal& journal,
+                           WebContents& web_contents,
+                           const GURL& url)
+    : Tool(task_id, journal), WebContentsObserver(&web_contents), url_(url) {}
 
 NavigateTool::~NavigateTool() = default;
 
@@ -32,9 +47,10 @@ void NavigateTool::Validate(ValidateCallback callback) {
     return;
   }
 
-  // TODO(crbug.com/402731599): Validate URL and state here.
-
-  PostResponseTask(std::move(callback), MakeOkResult());
+  MayActOnUrl(url_,
+              Profile::FromBrowserContext(web_contents()->GetBrowserContext()),
+              journal(), task_id(),
+              base::BindOnce(&MayActOnUrlToResult).Then(std::move(callback)));
 }
 
 void NavigateTool::Invoke(InvokeCallback callback) {
@@ -60,6 +76,12 @@ std::string NavigateTool::DebugString() const {
 
 std::string NavigateTool::JournalEvent() const {
   return "Navigate";
+}
+
+std::unique_ptr<ObservationDelayController>
+NavigateTool::GetObservationDelayer() const {
+  return std::make_unique<ObservationDelayController>(
+      *web_contents()->GetPrimaryMainFrame());
 }
 
 void NavigateTool::DidFinishNavigation(NavigationHandle* navigation_handle) {

@@ -273,8 +273,7 @@ class MockConsumer : public mojom::FrameSinkVideoConsumer {
       ASSERT_LE(required_bytes_to_hold_planes, mapping.size());
       frame = media::VideoFrame::WrapExternalData(
           info->pixel_format, info->coded_size, info->visible_rect,
-          info->visible_rect.size(), mapping.GetMemoryAs<const uint8_t>(),
-          mapping.size(), info->timestamp);
+          info->visible_rect.size(), mapping, info->timestamp);
       ASSERT_TRUE(frame);
       frame->AddDestructionObserver(
           base::BindOnce([](base::ReadOnlySharedMemoryMapping mapping) {},
@@ -327,24 +326,6 @@ class MockConsumer : public mojom::FrameSinkVideoConsumer {
   std::vector<scoped_refptr<VideoFrame>> frames_;
   std::vector<base::OnceClosure> done_callbacks_;
   scoped_refptr<gpu::TestSharedImageInterface> test_sii_;
-};
-
-class FakeGpuCopyResult : public CopyOutputResult {
- public:
-  FakeGpuCopyResult(Format format, const gfx::Rect rect)
-      : CopyOutputResult(format,
-                         CopyOutputResult::Destination::kNativeTextures,
-                         rect,
-                         false),
-        result_(TextureResult(
-            gpu::Mailbox{},
-            GetColorSpaceForPixelFormat(
-                CopyOutputRequestFormatToVideoPixelFormat(format)))) {}
-
-  const TextureResult* GetTextureResult() const final { return &result_; }
-
- private:
-  TextureResult result_;
 };
 
 class SolidColorRGBAResult : public CopyOutputResult {
@@ -515,8 +496,10 @@ class FakeCapturableFrameSink : public CapturableFrameSink {
       }
       case CopyOutputResult::Destination::kNativeTextures: {
         // We don't need to provide a real GPU result.
-        result = std::make_unique<FakeGpuCopyResult>(
-            request->result_format(), request->result_selection());
+        result = std::make_unique<CopyOutputTextureResult>(
+            request->result_format(), request->result_selection(),
+            gpu::ClientSharedImage::CreateForTesting(),
+            CopyOutputResult::ReleaseCallbacks{});
         break;
       }
       default: {

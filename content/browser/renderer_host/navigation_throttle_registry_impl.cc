@@ -4,6 +4,8 @@
 
 #include "content/browser/renderer_host/navigation_throttle_registry_impl.h"
 
+#include <algorithm>
+
 #include "base/check_deref.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/trace_event/trace_event.h"
@@ -19,6 +21,7 @@
 #include "content/browser/renderer_host/isolated_web_app_throttle.h"
 #include "content/browser/renderer_host/mixed_content_navigation_throttle.h"
 #include "content/browser/renderer_host/navigation_request.h"
+#include "content/browser/renderer_host/navigation_throttle_runner.h"
 #include "content/browser/renderer_host/navigator_delegate.h"
 #include "content/browser/renderer_host/partitioned_popins/partitioned_popins_navigation_throttle.h"
 #include "content/browser/renderer_host/renderer_cancellation_throttle.h"
@@ -35,7 +38,11 @@ NavigationThrottleRegistryBase::~NavigationThrottleRegistryBase() = default;
 
 NavigationThrottleRegistryImpl::NavigationThrottleRegistryImpl(
     NavigationRequest* navigation_request)
-    : navigation_request_(CHECK_DEREF(navigation_request)) {}
+    : navigation_request_(CHECK_DEREF(navigation_request)),
+      navigation_throttle_runner_(std::make_unique<NavigationThrottleRunner>(
+          this,
+          navigation_request->GetNavigationId(),
+          navigation_request->IsInPrimaryMainFrame())) {}
 
 NavigationThrottleRegistryImpl::~NavigationThrottleRegistryImpl() = default;
 
@@ -55,7 +62,7 @@ void NavigationThrottleRegistryImpl::RegisterNavigationThrottles() {
   // NavigationThrottleRunner manages.
   navigation_request_->GetDelegate()->CreateThrottlesForNavigation(*this);
 
-  // Check for renderer-inititated main frame navigations to blocked URL schemes
+  // Check for renderer-initiated main frame navigations to blocked URL schemes
   // (data, filesystem). This is done early as it may block the main frame
   // navigation altogether.
   BlockedSchemeNavigationThrottle::MaybeCreateAndAdd(*this);
@@ -157,6 +164,34 @@ void NavigationThrottleRegistryImpl::
                     std::make_move_iterator(testing_throttles.end()));
 }
 
+void NavigationThrottleRegistryImpl::ProcessNavigationEvent(
+    NavigationThrottleEvent event) {
+  navigation_throttle_runner_->ProcessNavigationEvent(event);
+  // DO NOT ADD CODE AFTER THIS, as the NavigationHandle might have been deleted
+  // by the previous call.
+}
+
+void NavigationThrottleRegistryImpl::ResumeProcessingNavigationEvent(
+    NavigationThrottle* resuming_throttle) {
+  navigation_throttle_runner_->ResumeProcessingNavigationEvent(
+      resuming_throttle);
+  // DO NOT ADD CODE AFTER THIS, as the NavigationHandle might have been deleted
+  // by the previous call.
+}
+
+const std::set<NavigationThrottle*>&
+NavigationThrottleRegistryImpl::GetDeferringThrottles() {
+  deferring_throttles_in_v1_runner_.clear();
+  deferring_throttles_in_v1_runner_.insert(
+      navigation_throttle_runner_->GetDeferringThrottle());
+  return deferring_throttles_in_v1_runner_;
+}
+
+NavigationThrottleRunner&
+NavigationThrottleRegistryImpl::GetNavigationThrottleRunnerForTesting() {
+  return *navigation_throttle_runner_;
+}
+
 NavigationHandle& NavigationThrottleRegistryImpl::GetNavigationHandle() {
   return *navigation_request_;
 }
@@ -169,11 +204,17 @@ void NavigationThrottleRegistryImpl::AddThrottle(
   throttles_.push_back(std::move(navigation_throttle));
 }
 
-void NavigationThrottleRegistryImpl::MaybeAddThrottle(
-    std::unique_ptr<NavigationThrottle> navigation_throttle) {
-  if (navigation_throttle) {
-    AddThrottle(std::move(navigation_throttle));
-  }
+bool NavigationThrottleRegistryImpl::HasThrottle(const std::string& name) {
+  return std::ranges::find_if(throttles_, [name](const auto& throttle) {
+    return throttle->GetNameForLogging() == name;
+  }) != throttles_.end();
+}
+
+bool NavigationThrottleRegistryImpl::EraseThrottleForTesting(
+    const std::string& name) {
+  return std::erase_if(throttles_, [name](const auto& throttle) {
+    return throttle->GetNameForLogging() == name;
+  });
 }
 
 void NavigationThrottleRegistryImpl::OnEventProcessed(

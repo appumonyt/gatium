@@ -227,6 +227,12 @@ void LogProfileUpdateImportDecision(
   }
 }
 
+void LogHomeAndWorkSupersetImportDecision(
+    AutofillClient::AddressPromptUserDecision decision) {
+  base::UmaHistogramEnumeration(
+      "Autofill.ProfileImport.HomeAndWorkSupersetProfileDecision", decision);
+}
+
 // static
 void LogRemovedSettingInaccessibleFields(bool did_remove) {
   base::UmaHistogramBoolean(

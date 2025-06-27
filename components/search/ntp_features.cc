@@ -467,6 +467,11 @@ const base::FeatureParam<int>
         "NtpMicrosoftFilesModuleMaxNonInsightsFilesForCombinedParam",
         4);
 
+const base::FeatureParam<int> kNtpSearchboxComposeEntrypointMaxAnimationsParam(
+    &ntp_features::kNtpSearchboxComposeEntrypoint,
+    "NtpSearchboxComposeEntrypointMaxAnimationsParam",
+    3);
+
 base::TimeDelta GetModulesLoadTimeout() {
   std::string param_value = base::GetFieldTrialParamValueByFeature(
       kNtpModulesLoadTimeoutMilliseconds,
@@ -515,5 +520,9 @@ std::string GetMobilePromoTargetURL() {
       ntp_features::kNtpMobilePromo,
       ntp_features::kNtpMobilePromoTargetUrlParam);
   return (field_trial_url.empty()) ? kMobilePromoQRCodeURL : field_trial_url;
+}
+
+bool IsNtpComposeboxEnabled() {
+  return base::FeatureList::IsEnabled(ntp_features::kNtpSearchboxComposebox);
 }
 }  // namespace ntp_features

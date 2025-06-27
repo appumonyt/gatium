@@ -29,7 +29,6 @@ import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.DisableIf;
-import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.base.test.util.Restriction;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.browser.ChromeTabbedActivity2;
@@ -135,7 +134,8 @@ public class UndoTabModelTest {
                     model.addObserver(
                             new TabModelObserver() {
                                 @Override
-                                public void tabPendingClosure(Tab tab) {
+                                public void tabPendingClosure(
+                                        Tab tab, @TabClosingSource int closingSource) {
                                     didReceivePendingClosureHelper.notifyCalled();
                                 }
                             });
@@ -192,7 +192,7 @@ public class UndoTabModelTest {
         }
 
         @Override
-        public void onFinishingTabClosure(Tab tab) {
+        public void onFinishingTabClosure(Tab tab, @TabClosingSource int closingSource) {
             mTabClosedCallback.notifyCalled();
         }
     }
@@ -283,7 +283,7 @@ public class UndoTabModelTest {
      */
     @Test
     @MediumTest
-    @DisableIf.Device(DeviceFormFactor.TABLET) // https://crbug.com/338997949
+    @DisableIf.Device(DeviceFormFactor.ONLY_TABLET) // https://crbug.com/338997949
     @DisableIf.Build(sdk_is_greater_than = VERSION_CODES.R) // https://crbug.com/1297370
     @CommandLineFlags.Add(ChromeSwitches.DISABLE_TAB_MERGING_FOR_TESTING)
     public void testOpenRecentlyClosedTabMultiWindow() throws TimeoutException {
@@ -365,9 +365,8 @@ public class UndoTabModelTest {
      */
     @Test
     @MediumTest
-    @DisableIf.Device(DeviceFormFactor.TABLET) // https://crbug.com/338997949
+    @DisableIf.Device(DeviceFormFactor.ONLY_TABLET) // https://crbug.com/338997949
     @DisableIf.Build(sdk_is_greater_than = VERSION_CODES.R) // https://crbug.com/1297370
-    @MinAndroidSdkLevel(24)
     @CommandLineFlags.Add(ChromeSwitches.DISABLE_TAB_MERGING_FOR_TESTING)
     public void testOpenRecentlyClosedTabMultiWindowFallback() throws TimeoutException {
         final ChromeTabbedActivity2 secondActivity =

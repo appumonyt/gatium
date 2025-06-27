@@ -313,6 +313,11 @@ BASE_FEATURE(kPauseBackgroundTimer,
 BASE_FEATURE(kPictureInPictureOcclusionTracking,
              "PictureInPictureOcclusionTracking",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enables the animation of the Picture-in-Picture window creation.
+BASE_FEATURE(kPictureInPictureShowWindowAnimation,
+             "PictureInPictureShowWindowAnimation",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 // Enables user control over muting tab audio from the tab strip.
@@ -353,10 +358,16 @@ BASE_FEATURE(kResumeBackgroundVideo,
 );
 
 #if BUILDFLAG(IS_MAC)
-// Enables system audio sharing using ScreenCaptureKit when screen sharing on
-// macOS 13.0+.
-BASE_FEATURE(kMacLoopbackAudioForScreenShare,
-             "MacLoopbackAudioForScreenShare",
+// Enables system audio loopback capture using the macOS CoreAudio tap API for
+// Cast.
+BASE_FEATURE(kMacCatapLoopbackAudioForCast,
+             "MacCatapLoopbackAudioForCast",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Enables system audio loopback capture using the macOS CoreAudio tap API for
+// screen share.
+BASE_FEATURE(kMacCatapLoopbackAudioForScreenShare,
+             "MacCatapLoopbackAudioForScreenShare",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Use the built-in MacOS screen-sharing picker (SCContentSharingPicker). This
@@ -395,6 +406,18 @@ BASE_FEATURE(kMediaCapabilitiesWithParameters,
 BASE_FEATURE(kWebrtcMediaCapabilitiesParameters,
              "WebrtcMediaCapabilitiesParameters",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Controls the persistent license support for protected media that uses
+// widevine.
+BASE_FEATURE(kWidevinePersistentLicenseSupport,
+             "WidevinePersistentLicenseSupport",
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+             // TODO(crbug.com/423458074): This will rollout slowly as an
+             // experiment eventually becoming disabled by default.
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
 // Display the Cast overlay button on the media controls.
 BASE_FEATURE(kMediaCastOverlayButton,
@@ -454,13 +477,24 @@ BASE_FEATURE(kContextMenuSearchForVideoFrame,
 BASE_FEATURE(kChromeWideEchoCancellation,
              "ChromeWideEchoCancellation",
              base::FEATURE_ENABLED_BY_DEFAULT);
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+#endif
+
+#if BUILDFLAG(SYSTEM_LOOPBACK_AS_AEC_REFERENCE)
+// If echo cancellation for a mic signal is requested, use system loopback
+// audio as reference signal to be able to cancel echo from all audio processes
+// and not only audio from Chrome.
 BASE_FEATURE(kSystemLoopbackAsAecReference,
              "SystemLoopbackAsAecReference",
              base::FEATURE_DISABLED_BY_DEFAULT);
-const base::FeatureParam<int> kAddedProcessingDelay{
-    &kSystemLoopbackAsAecReference, "added_delay_ms", 100};
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+// If we are using system loopback as AEC reference, we delay the capture
+// signal with `added_delay_ms` so that the reference signal arrives before
+// the capture signal.
+const base::FeatureParam<int> kAddedProcessingDelayMs{
+    &kSystemLoopbackAsAecReference, "added_delay_ms", 170};
+// Modifies the number of matched filters used in the AEC delay estimation when
+// loopback system AEC is enabled.
+const base::FeatureParam<int> kAecDelayNumFilters{
+    &kSystemLoopbackAsAecReference, "num_filters", 6};
 #endif
 
 #if (BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN))
@@ -653,6 +687,15 @@ BASE_FEATURE(kFeatureManagementLiveTranslateCrOS,
 BASE_FEATURE(kFileDialogsBlockPictureInPicture,
              "FileDialogsBlockPictureInPicture",
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Tucks picture-in-picture windows while file dialogs are open.
+BASE_FEATURE(kFileDialogsTuckPictureInPicture,
+             "FileDialogsTuckPictureInPicture",
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 // Show toolbar button that opens dialog for controlling media sessions.
@@ -849,7 +892,7 @@ const base::FeatureParam<std::string> kMediaFoundationClearKeyCdmPathForTesting{
 // Enables the On-Device Web Speech feature on supported devices.
 BASE_FEATURE(kOnDeviceWebSpeech,
              "OnDeviceWebSpeech",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables the Live Caption feature on supported devices.
 BASE_FEATURE(kLiveCaption, "LiveCaption", base::FEATURE_ENABLED_BY_DEFAULT);
@@ -865,9 +908,12 @@ BASE_FEATURE(kLogSodaLoadFailures,
 // a Chromium prompt through which they choose which tab/window/screen
 // to share. If this flag is enabled, then when the user chooses to
 // share, transient activation is conferred on the capturing Web application.
+//
+// TODO(crbug.com/420406085): Remove after January 2028.
+// Keep this flag around at least until that date.
 BASE_FEATURE(kGetDisplayMediaConfersActivation,
              "GetDisplayMediaConfersActivation",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Controls whether a "Share this tab instead" button should be shown for
 // getDisplayMedia captures. Note: This flag does not control if the "Share this
@@ -1153,8 +1199,6 @@ BASE_FEATURE(kBuiltInHlsPlayer,
              base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 );
-
-BASE_FEATURE(kBuiltInHlsMP4, "BuiltInHlsMP4", base::FEATURE_ENABLED_BY_DEFAULT);
 
 #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 
@@ -1612,12 +1656,9 @@ BASE_FEATURE(kCastStreamingVp8,
 
 // Controls whether mirroring negotiations will include the VP9 codec for video
 // encoding.
-//
-// NOTE: currently only software VP9 encoding is supported.
-// TODO(https://crbug.com/1311770): hardware VP9 encoding should be added.
 BASE_FEATURE(kCastStreamingVp9,
              "CastStreamingVp9",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_MAC)
 // Controls whether hardware H264 is default enabled on macOS.
@@ -1706,10 +1747,10 @@ BASE_FEATURE(kMediaFoundationAcceleratedEncodeOnArm64,
 #if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kMediaFoundationD3DVideoProcessing,
              "MediaFoundationD3DVideoProcessing",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kMediaFoundationSharedImageEncode,
              "MediaFoundationSharedImageEncode",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 // Controls whether muted media stream audio should continue to render.
@@ -1732,23 +1773,24 @@ bool IsChromeWideEchoCancellationEnabled() {
 }
 
 bool IsSystemLoopbackAsAecReferenceEnabled() {
-#if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION) && \
-    (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
+#if BUILDFLAG(SYSTEM_LOOPBACK_AS_AEC_REFERENCE)
   return base::FeatureList::IsEnabled(kSystemLoopbackAsAecReference);
 #else
   return false;
 #endif
 }
 
-std::optional<base::TimeDelta> GetAecAddedDelay() {
-#if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION) && \
-    (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
-  if (IsSystemLoopbackAsAecReferenceEnabled()) {
-    return base::Milliseconds(kAddedProcessingDelay.Get());
-  }
-#endif
-  return std::nullopt;
+#if BUILDFLAG(SYSTEM_LOOPBACK_AS_AEC_REFERENCE)
+base::TimeDelta GetAecAddedDelay() {
+  CHECK(IsSystemLoopbackAsAecReferenceEnabled());
+  return base::Milliseconds(kAddedProcessingDelayMs.Get());
 }
+
+int GetAecDelayNumFilters() {
+  CHECK(IsSystemLoopbackAsAecReferenceEnabled());
+  return kAecDelayNumFilters.Get();
+}
+#endif  // BUILDFLAG(SYSTEM_LOOPBACK_AS_AEC_REFERENCE)
 
 bool IsSystemEchoCancellationEnforced() {
 #if (BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN))

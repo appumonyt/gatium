@@ -82,7 +82,6 @@
 #include "device/fido/fido_request_handler_base.h"
 #include "device/fido/fido_transport_protocol.h"
 #include "device/fido/fido_types.h"
-#include "google_apis/gaia/gaia_id.h"
 #include "net/http/http_status_code.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -113,11 +112,6 @@
 namespace {
 
 using trusted_vault::MockTrustedVaultThrottlingConnection;
-
-// This value is derived by the Sync testing code from `kSyncEmail` in test_util
-// but is needed directly in these tests in order to simulate the `StoreKeys`
-// calls to the `EnclaveManager`.
-constexpr GaiaId::Literal kSyncGaiaId("gaia_id_for_user1_gmail.com");
 
 static constexpr char kMakeCredentialUvDiscouraged[] = R"((() => {
   return navigator.credentials.create({ publicKey: {
@@ -606,17 +600,6 @@ class EnclaveAuthenticatorBrowserTest : public EnclaveAuthenticatorTestBase {
     void OnDestroy(ChromeAuthenticatorRequestDelegate* delegate) override {
       test_instance_->UpdateRequestDelegate(nullptr);
       destruction_run_loop_->QuitWhenIdle();
-    }
-
-    std::vector<std::unique_ptr<device::cablev2::Pairing>>
-    GetCablePairingsFromSyncedDevices() override {
-      std::vector<std::unique_ptr<device::cablev2::Pairing>> ret;
-      if (use_synced_device_cable_pairing_) {
-        ret.emplace_back(TestPhone("phone", /*public_key=*/0,
-                                   /*last_updated=*/base::Time::FromTimeT(1),
-                                   /*channel_priority=*/1));
-      }
-      return ret;
     }
 
     void OnTransportAvailabilityEnumerated(

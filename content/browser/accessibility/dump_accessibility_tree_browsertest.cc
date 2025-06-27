@@ -503,7 +503,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityCSSMarkerCrash) {
-  RunCSSTest(FILE_PATH_LITERAL("marker-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("marker-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
@@ -745,12 +745,12 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAreaAlone) {
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAreaCrash) {
-  RunHtmlTest(FILE_PATH_LITERAL("area-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("area-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityAreaSerializationCrash) {
-  RunHtmlTest(FILE_PATH_LITERAL("area-serialization-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("area-serialization-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
@@ -1619,11 +1619,11 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAriaOwns) {
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAriaOwnsCrash) {
-  RunAriaTest(FILE_PATH_LITERAL("aria-owns-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("aria-owns-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAriaOwnsCrash2) {
-  RunAriaTest(FILE_PATH_LITERAL("aria-owns-crash-2.html"));
+  RunCrashTest(FILE_PATH_LITERAL("aria-owns-crash-2.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
@@ -1633,8 +1633,9 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityAriaOwnsChildAndHiddenDescendantCrash) {
-  RunFormControlsTest(
-      FILE_PATH_LITERAL("aria-owns-child-and-hidden-descendant-crash.html"));
+  RunCrashTest(
+      FILE_PATH_LITERAL("aria-owns-child-and-hidden-descendant-crash.html"),
+      ui::kAXModeFormControls);
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
@@ -1658,7 +1659,7 @@ IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityAriaOwnsReparentAboveOtherChangeCrash) {
-  RunRegressionTest(
+  RunCrashTest(
       FILE_PATH_LITERAL("aria-owns-reparent-above-other-change-crash.html"));
 }
 
@@ -1969,17 +1970,13 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunAriaTest(FILE_PATH_LITERAL("aria-tree-discontinuous.html"));
 }
 
-// TODO(crbug.com/367650908): Flaky on Linux and sanitizer bots.
-#if BUILDFLAG(IS_LINUX) || defined(ADDRESS_SANITIZER) || \
-    defined(LEAK_SANITIZER) || defined(MEMORY_SANITIZER)
-#define MAYBE_AccessibilityAriaTreeitemNestedInLists \
-  DISABLED_AccessibilityAriaTreeitemNestedInLists
-#else
-#define MAYBE_AccessibilityAriaTreeitemNestedInLists \
-  AccessibilityAriaTreeitemNestedInLists
-#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       MAYBE_AccessibilityAriaTreeitemNestedInLists) {
+                       AccessibilityAriaTreeitemNestedInLists) {
+  RunAriaTest(FILE_PATH_LITERAL("aria-treeitem-nested-in-lists.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
+                       AccessibilityAriaTreeitemNestedInLists) {
   RunAriaTest(FILE_PATH_LITERAL("aria-treeitem-nested-in-lists.html"));
 }
 
@@ -2130,6 +2127,12 @@ IN_PROC_BROWSER_TEST_P(OnScreenModeDumpAccessibilityTreeTest,
                        ContentWith3ViewPortScrollsForOnScreenMode) {
   RunOnScreenTest(FILE_PATH_LITERAL(
       "content-with-3-view-port-scrolls-for-on-screen-mode.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(OnScreenModeDumpAccessibilityTreeTest,
+                       ActionableElementsInTree) {
+  RunOnScreenTest(
+      FILE_PATH_LITERAL("actionable-elements-in-tree-for-on-screen-mode.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
@@ -2707,7 +2710,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityHiddenNamedSlotNoSubtreeCrash) {
-  RunHtmlTest(FILE_PATH_LITERAL("hidden-named-slot-no-subtree-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("hidden-named-slot-no-subtree-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityHR) {
@@ -2895,8 +2898,8 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityImgMimeType) {
   RunHtmlTest(FILE_PATH_LITERAL("img-mime-type.png"));  // Open an image file.
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityInterestTarget) {
-  RunPopoverHintTest(FILE_PATH_LITERAL("interest-target.html"));
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityInterestFor) {
+  RunPopoverHintTest(FILE_PATH_LITERAL("interest-for.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityInPageLinks) {
@@ -3663,7 +3666,8 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityProgressMeterCrash) {
-  RunFormControlsTest(FILE_PATH_LITERAL("progress-meter-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("progress-meter-crash.html"),
+               ui::kAXModeFormControls);
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityQ) {
@@ -3675,7 +3679,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityRelevantSpace) {
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityReparentCrash) {
-  RunHtmlTest(FILE_PATH_LITERAL("reparent-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("reparent-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityReplaceData) {
@@ -4143,7 +4147,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityVideoTextOnly) {
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityNodeChangedCrashInEditableText) {
-  RunHtmlTest(FILE_PATH_LITERAL("node-changed-crash-in-editable-text.html"));
+  RunCrashTest(FILE_PATH_LITERAL("node-changed-crash-in-editable-text.html"));
 }
 
 // TODO(crbug.com/40866942): This test is failing on Android.
@@ -4238,12 +4242,12 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, DeleteSelectionCrash) {
-  RunHtmlTest(FILE_PATH_LITERAL("delete-selection-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("delete-selection-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
                        DeleteSelectionCrash) {
-  RunHtmlTest(FILE_PATH_LITERAL("delete-selection-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("delete-selection-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, NameImgLabelledbyInputsTree) {
@@ -4258,12 +4262,12 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, NameImgLabelledbyInputsTree) {
 #endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        MAYBE_ReloadSelectionCrash) {
-  RunRegressionTest(FILE_PATH_LITERAL("reload-selection-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("reload-selection-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
                        ReloadSelectionCrash) {
-  RunRegressionTest(FILE_PATH_LITERAL("reload-selection-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("reload-selection-crash.html"));
 }
 
 //
@@ -4410,17 +4414,17 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, LanguageChangedOnHtml) {
 #if !BUILDFLAG(IS_MAC)
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        SelectExpandManyOptionsCrash) {
-  RunRegressionTest(FILE_PATH_LITERAL("select-expand-many-options-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("select-expand-many-options-crash.html"));
 }
 #endif
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, XmlInIframeCrash) {
-  RunRegressionTest(FILE_PATH_LITERAL("xml-in-iframe-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("xml-in-iframe-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        RelationPointsToInvalidNodesCrash) {
-  RunRegressionTest(
+  RunCrashTest(
       FILE_PATH_LITERAL("relation-points-to-invalid-nodes-crash.html"));
 }
 
@@ -4464,7 +4468,7 @@ IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest, HiddenTable) {
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, IgnoredCrash) {
-  RunRegressionTest(FILE_PATH_LITERAL("ignored-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("ignored-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, MissingParent) {
@@ -4511,7 +4515,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, RootBecomesLeaf) {
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilitySlotCreationCrash) {
-  RunRegressionTest(FILE_PATH_LITERAL("slot-creation-crash.html"));
+  RunCrashTest(FILE_PATH_LITERAL("slot-creation-crash.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, TitleInShadow) {

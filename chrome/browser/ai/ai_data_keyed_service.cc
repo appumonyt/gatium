@@ -34,7 +34,6 @@
 #include "chrome/browser/history_embeddings/history_embeddings_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
@@ -68,6 +67,7 @@
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/actor/actor_keyed_service.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"  // nogncheck
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/tabs/public/tab_group.h"
@@ -780,7 +780,9 @@ bool AiDataKeyedService::IsExtensionAllowlistedForData(
                                        // https://issues.chromium.org/403366603
                                        "abdciamfdmknaeggbnmafmbdfdmhfgfa",
                                        // https://issues.chromium.org/414437025
-                                       "fiamdfnbelfkjlacoaeiclobkdmckaoa"});
+                                       "fiamdfnbelfkjlacoaeiclobkdmckaoa",
+                                       // Internal extension.
+                                       "mofldjifenhadohlkkngamgbifiofbnd"});
   if (base::Contains(*kHardcodedAllowlistedExtensions, extension_id)) {
     return true;
   }
@@ -830,6 +832,7 @@ bool AiDataKeyedService::IsExtensionAllowlistedForStable(
 
   // And the extension must be on this list.
   static const base::NoDestructor<std::vector<std::string>>
-      kStableChannelAllowlistedIds({});
+      kStableChannelAllowlistedIds({// Internal extension
+                                    "mofldjifenhadohlkkngamgbifiofbnd"});
   return base::Contains(*kStableChannelAllowlistedIds, extension_id);
 }

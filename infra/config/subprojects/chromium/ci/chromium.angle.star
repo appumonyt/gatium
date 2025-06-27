@@ -22,10 +22,8 @@ ci.defaults.set(
     properties = {
         "perf_dashboard_machine_group": "ChromiumANGLE",
     },
-    reclient_enabled = False,
     service_account = ci.gpu.SERVICE_ACCOUNT,
     shadow_service_account = ci.gpu.SHADOW_SERVICE_ACCOUNT,
-    siso_enabled = True,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
     thin_tester_cores = 2,
@@ -138,7 +136,7 @@ ci.thin_tester(
             "gpu_webgl_conformance_gles_passthrough_telemetry_tests",
         ],
         mixins = [
-            "chromium_pixel_2_pie",
+            "chromium_pixel_2_q",
             "has_native_resultdb_integration",
         ],
     ),

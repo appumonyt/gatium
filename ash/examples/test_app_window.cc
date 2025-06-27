@@ -9,6 +9,7 @@
 
 #include "ash/examples/client_controlled_state_util.h"
 #include "ash/shell.h"
+#include "ash/wm/window_pin_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
@@ -69,6 +70,11 @@ class AppTypeComboboxModel : public ui::ComboboxModel {
 
 class TestView : public views::View {
  public:
+  enum ViewElements : int {
+    kAppTypesCombobox = 1000,
+    kOpenClientControlledButton,
+  };
+
   explicit TestView(bool add_open_client_controlled) {
     SetBackground(
         views::CreateSolidBackground(ui::ColorVariant(SK_ColorWHITE)));
@@ -139,6 +145,25 @@ class TestView : public views::View {
                                            ? ui::ZOrderLevel::kFloatingWindow
                                            : ui::ZOrderLevel::kNormal);
                  }));
+    add_checkbox(this, u"Trusted Pinned After 5 seconds", u"trusted pinned",
+                 /*initial_state=*/false,
+                 base::BindRepeating(
+                     [](TestView* this_, const ui::Event& event) {
+                       views::Checkbox* cb =
+                           static_cast<views::Checkbox*>(event.target());
+                       auto* window = cb->GetWidget()->GetNativeWindow();
+                       bool pinned = cb->GetChecked();
+                       this_->RunAfterFiveSeconds(base::BindRepeating(
+                           [](aura::Window* window, bool pinned) {
+                             if (pinned) {
+                               PinWindow(window, /*trusted=*/true);
+                             } else {
+                               UnpinWindow(window);
+                             }
+                           },
+                           base::Unretained(window), pinned));
+                     },
+                     base::Unretained(this)));
 
     AddChildView(std::make_unique<views::LabelButton>(
         base::BindRepeating(
@@ -156,11 +181,21 @@ class TestView : public views::View {
                 base::Unretained(this))),
         u"Activate After 5 seconds"));
 
+    AddChildView(std::make_unique<views::LabelButton>(
+        base::BindRepeating(
+            &TestView::RunAfterFiveSeconds, base::Unretained(this),
+            base::BindRepeating(
+                [](views::View* view) { view->GetWidget()->Restore(); },
+                base::Unretained(this))),
+        u"Restore After 5 seconds"));
+
     if (add_open_client_controlled) {
-      AddChildView(std::make_unique<views::LabelButton>(
-          base::BindRepeating(&OpenTestAppWindow,
-                              /*use_client_controlled_state=*/true),
-          u"Open ClientControlled App Window"));
+      AddChildView(
+          std::make_unique<views::LabelButton>(
+              base::BindRepeating(&OpenTestAppWindow,
+                                  /*use_client_controlled_state=*/true),
+              u"Open ClientControlled App Window"))
+          ->SetID(kOpenClientControlledButton);
     }
 
     AddChildView(std::make_unique<views::LabelButton>(
@@ -184,10 +219,22 @@ class TestView : public views::View {
                               static_cast<chromeos::AppType>(selected));
         },
         base::Unretained(app_types)));
+    app_types->SetID(kAppTypesCombobox);
   }
 
   // views::View:
   gfx::Size GetMinimumSize() const override { return minimum_size_; }
+
+  void AddedToWidget() override {
+    // Initialize the app type values when the widget/window is ready.
+    auto* app_types =
+        static_cast<views::Combobox*>(GetViewByID(kAppTypesCombobox));
+    if (GetViewByID(kOpenClientControlledButton)) {
+      app_types->MenuSelectionAt(1);  // Browser
+    } else {
+      app_types->MenuSelectionAt(3);  // ARC
+    }
+  }
 
  private:
   void UpdateMinimumSize() {

@@ -314,6 +314,8 @@ void ExtensionService::Shutdown() {
   external_install_manager_ = nullptr;
   updater_ = nullptr;
   component_loader_ = nullptr;
+  host_observation_.RemoveAllObservations();
+  is_shut_down_executed_ = true;
 }
 
 void ExtensionService::Init() {
@@ -363,6 +365,8 @@ void ExtensionService::Init() {
   // rather than running immediately at startup.
   external_provider_manager_->CheckForExternalUpdates();
 
+  LogExtensionsOnChromeUrlsSwitchWarningIfNeeded();
+
   safe_browsing_verdict_handler_.Init();
 
   // Must be called after extensions are loaded.
@@ -391,9 +395,6 @@ void ExtensionService::LoadExtensionsFromCommandLineFlag(
   }
 
   // Check that --load-extension is allowed.
-  // TODO(crbug.com/419530940): Apply restrictions to
-  // --disable-extensions-except switch once the feature is approved and
-  // implemented.
   if (switch_name == switches::kLoadExtension) {
     if (base::FeatureList::IsEnabled(
             extensions_features::kDisableLoadExtensionCommandLineSwitch)) {
@@ -414,6 +415,13 @@ void ExtensionService::LoadExtensionsFromCommandLineFlag(
           << "ExtensionInstallTypeBlocklist::command_line, ignoring.";
       return;
     }
+  } else if (base::FeatureList::IsEnabled(
+                 extensions_features::
+                     kDisableDisableExtensionsExceptCommandLineSwitch)) {
+    DCHECK_EQ(switch_name, switches::kDisableExtensionsExcept);
+    LOG(WARNING) << "--disable-extensions-except is not allowed in Google "
+                    "Chrome, ignoring.";
+    return;
   }
 
   base::CommandLine::StringType path_list =
@@ -940,6 +948,20 @@ void ExtensionService::OnInstalledExtensionsLoaded() {
 
 void ExtensionService::OnDeveloperModePrefChanged() {
   CheckManagementPolicy();
+}
+
+void ExtensionService::LogExtensionsOnChromeUrlsSwitchWarningIfNeeded() {
+  bool allow_on_chrome_urls = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kExtensionsOnChromeURLs);
+
+  if (allow_on_chrome_urls &&
+      base::FeatureList::IsEnabled(
+          extensions_features::kDisableExtensionsOnChromeUrlsSwitch)) {
+    LOG(WARNING) << "--extensions-on-chrome-urls is not allowed in Google "
+                    "Chrome, ignoring. "
+                    "Use --extensions-on-extension-urls instead to allow for "
+                    "extensions to run on extension URLs.";
+  }
 }
 
 }  // namespace extensions

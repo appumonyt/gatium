@@ -449,15 +449,24 @@ chromium-metrics-reviews@google.com.
       summary="Only counting memory used by the shared-space of V8 heap"/>
   <variant name=".V8.Main.Heap.SharedSpace.AllocatedObjects"
       summary="Only counting objects allocated in the shared-space of V8 heap"/>
-  <variant name=".Vulkan"
-      summary="Total memory allocated by the Vulkan Memory Allocator. Only
-               reported when Vulkan is used for rendering."/>
-  <variant name=".Vulkan.AllocatedObjects"
+  <variant name=".Vulkan2"
+      summary="Total memory allocated by the Vulkan Memory Allocator except
+               memory that is lazily allocated. Only reported when Vulkan is
+               used for rendering."/>
+  <variant name=".Vulkan2.AllocatedObjects"
       summary="Total memory allocated by clients from the Vulkan Memory
-               Allocator. Only reported when Vulkan is used for rendering."/>
-  <variant name=".Vulkan.Fragmentation"
+               Allocator except memory that is lazily used. Only reported
+               when Vulkan is used for rendering."/>
+  <variant name=".Vulkan2.Fragmentation"
       summary="Total memory lost to fragmentation in the Vulkan Memory
                Allocator. Only reported when Vulkan is used for rendering."/>
+  <variant name=".Vulkan2.LazyAllocatedObjects"
+      summary="Total memory that is lazily allocated by the Vulkan Memory
+               Allocator. Only reported when Vulkan is used for rendering."/>
+  <variant name=".Vulkan2.LazyUsedObjects"
+      summary="Total memory that is lazily allocated by clients from the
+               Vulkan Memory Allocator. Only reported when Vulkan is used for
+               rendering."/>
 </variants>
 
 <variants name="ProcessMemoryAllocatorCustom2">
@@ -830,7 +839,7 @@ chromium-metrics-reviews@google.com.
 </variants>
 
 <histogram name="HeapProfiling.InProcess.Enabled{Process}"
-    enum="BooleanEnabled" expires_after="2025-10-19">
+    enum="BooleanEnabled" expires_after="2025-12-21">
   <owner>joenotcharles@google.com</owner>
   <owner>chrome-memory@google.com</owner>
   <summary>
@@ -906,8 +915,23 @@ chromium-metrics-reviews@google.com.
   <token key="Process" variants="ProfiledProcess"/>
 </histogram>
 
+<histogram
+    name="HeapProfiling.InProcess.SampledAddressCacheUniformity{Process}"
+    units="%" expires_after="2025-11-30">
+  <owner>joenotcharles@google.com</owner>
+  <owner>chrome-memory@google.com</owner>
+  <summary>
+    The uniformity of results of PoissonAllocationSampler's hash function in
+    {Process}. This is the result of a chi-squared test, multiplied by 100 to
+    get a percentage. A value from 95% to 105% is acceptably uniform. Emitted
+    for each bucket each time a snapshot is taken when the in-process heap
+    profiler is enabled.
+  </summary>
+  <token key="Process" variants="ProfiledProcess"/>
+</histogram>
+
 <histogram name="HeapProfiling.InProcess.SamplesPerSnapshot{Process}"
-    units="samples" expires_after="2025-10-19">
+    units="samples" expires_after="2025-12-21">
   <owner>joenotcharles@google.com</owner>
   <owner>chrome-memory@google.com</owner>
   <summary>
@@ -1952,7 +1976,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.Gpu.SharedMemoryFootprint" units="MB"
-    expires_after="2025-10-12">
+    expires_after="2025-12-14">
   <owner>erikchen@chromium.org</owner>
   <owner>ssid@chromium.org</owner>
   <summary>
@@ -2266,7 +2290,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.ParkableString.Compression.Latency"
-    units="microseconds" expires_after="2025-10-05">
+    units="microseconds" expires_after="2025-12-07">
   <owner>lizeb@chromium.org</owner>
   <owner>thiabaud@google.com</owner>
   <summary>
@@ -2278,7 +2302,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.ParkableString.Compression.SizeKb" units="KB"
-    expires_after="2025-10-05">
+    expires_after="2025-12-07">
   <owner>lizeb@chromium.org</owner>
   <owner>thiabaud@google.com</owner>
   <summary>
@@ -2287,7 +2311,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.ParkableString.Decompression.Latency"
-    units="microseconds" expires_after="2025-10-12">
+    units="microseconds" expires_after="2025-12-14">
   <owner>lizeb@chromium.org</owner>
   <owner>thiabaud@google.com</owner>
   <summary>
@@ -2351,7 +2375,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.ParkableString.Read.Latency" units="microseconds"
-    expires_after="2025-10-19">
+    expires_after="2025-12-21">
   <owner>lizeb@chromium.org</owner>
   <owner>pasko@chromium.org</owner>
   <summary>
@@ -2385,19 +2409,6 @@ chromium-metrics-reviews@google.com.
     a renderer lifetime. Starting time is from the first ParkableString being
     added. Note that unparking can happen on the main thread or on a background
     one, so this is not the sum of main thread time.
-  </summary>
-</histogram>
-
-<histogram name="Memory.PartitionAlloc.MemoryReclaim" units="microseconds"
-    expires_after="2025-11-16">
-  <owner>yukishiino@chromium.org</owner>
-  <owner>lizeb@chromium.org</owner>
-  <summary>
-    Time it takes for PartitionAlloc's MemoryReclaimer to reclaim once.
-    Collected at each reclaim, for all process types.
-
-    Note that clients without high-resolution clocks will report 0 for very
-    short times.
   </summary>
 </histogram>
 
@@ -2440,7 +2451,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.PreFreeze2{Process}.PrivateMemoryFootprint.{Timing}"
-    units="MiB" expires_after="2025-10-19">
+    units="MiB" expires_after="2025-12-21">
   <owner>thiabaud@google.com</owner>
   <owner>lizeb@google.com</owner>
   <summary>
@@ -2656,7 +2667,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.RenderProcessHost.Count2.All" units="processes"
-    expires_after="2025-10-12">
+    expires_after="2025-12-14">
   <owner>alexmos@chromium.org</owner>
   <owner>creis@chromium.org</owner>
   <owner>lukasza@chromium.org</owner>
@@ -2676,7 +2687,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.RenderProcessHost.Count2.InitializedAndNotDead"
-    units="processes" expires_after="2025-10-12">
+    units="processes" expires_after="2025-12-14">
   <owner>alexmos@chromium.org</owner>
   <owner>creis@chromium.org</owner>
   <owner>lukasza@chromium.org</owner>
@@ -2758,7 +2769,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.RunningOrSelfCompact.Renderer.Cancellation.Reason"
-    enum="SelfCompactionCancellationReason" expires_after="2025-10-06">
+    enum="SelfCompactionCancellationReason" expires_after="2025-12-07">
   <owner>thiabaud@google.com</owner>
   <owner>lizeb@google.com</owner>
   <summary>
@@ -2769,7 +2780,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.StackSamplingProfiler.StackSampleSize2" units="KB"
-    expires_after="2025-10-12">
+    expires_after="2025-12-14">
   <owner>iby@chromium.org</owner>
   <owner>chromeos-data-eng@google.com</owner>
   <summary>
@@ -3028,7 +3039,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.Total.SharedMemoryFootprint" units="MB"
-    expires_after="2025-10-12">
+    expires_after="2025-12-14">
   <owner>erikchen@chromium.org</owner>
   <owner>ssid@chromium.org</owner>
   <summary>
@@ -3297,7 +3308,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.{Type}.Renderer.AreAllPagesFrozen"
-    enum="BooleanAreAllPagesFrozen" expires_after="2025-10-06">
+    enum="BooleanAreAllPagesFrozen" expires_after="2025-12-07">
   <owner>thiabaud@google.com</owner>
   <owner>lizeb@google.com</owner>
   <summary>
@@ -3308,7 +3319,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.{Type}.Renderer.ReadProcMaps"
-    enum="PreFreezeReadProcMapsType" expires_after="2025-10-06">
+    enum="PreFreezeReadProcMapsType" expires_after="2025-12-07">
   <owner>thiabaud@google.com</owner>
   <owner>lizeb@google.com</owner>
   <summary>
@@ -3320,7 +3331,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.{Type}.Renderer.SelfCompactionTime" units="ms"
-    expires_after="2025-10-06">
+    expires_after="2025-12-07">
   <owner>thiabaud@google.com</owner>
   <owner>lizeb@google.com</owner>
   <summary>
@@ -3330,7 +3341,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.{Type}.Renderer.TimeSinceLastCancel" units="ms"
-    expires_after="2025-10-06">
+    expires_after="2025-12-07">
   <owner>thiabaud@google.com</owner>
   <owner>lizeb@google.com</owner>
   <summary>
@@ -3341,7 +3352,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.{Type}.Renderer.{Metric}.Diff.{Timing}.{Direction}"
-    units="MiB" expires_after="2025-10-06">
+    units="MiB" expires_after="2025-12-07">
   <owner>thiabaud@google.com</owner>
   <owner>lizeb@google.com</owner>
   <summary>
@@ -3358,7 +3369,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Memory.{Type}.Renderer.{Metric}.{Timing}" units="MiB"
-    expires_after="2025-10-06">
+    expires_after="2025-12-07">
   <owner>thiabaud@google.com</owner>
   <owner>lizeb@google.com</owner>
   <summary>

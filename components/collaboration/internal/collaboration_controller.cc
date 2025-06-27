@@ -155,7 +155,8 @@ class ControllerState {
 
   virtual void HandleErrorWithType(ErrorInfo::Type type) {
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-    controller_->TransitionTo(StateId::kError, ErrorInfo(type));
+    controller_->TransitionTo(StateId::kError,
+                              ErrorInfo(type, controller_->flow().type));
   }
 
   // Called when the state outcome processing is finished.
@@ -220,7 +221,7 @@ class PendingState : public ControllerState {
  public:
   PendingState(StateId id,
                CollaborationController* controller,
-               CollaborationController::FinishCallback exit_callback)
+               base::OnceClosure exit_callback)
       : ControllerState(id, controller),
         exit_callback_(std::move(exit_callback)) {}
 
@@ -246,9 +247,17 @@ class PendingState : public ControllerState {
       }
     }
 
-    // Handle disabled by policy.
     ServiceStatus status =
         controller_->collaboration_service()->GetServiceStatus();
+    // Handle disabled by versioning.
+    // TODO(haileywang@): Refactor error handling for share/join flows and
+    // record metrics.
+    if (status.collaboration_status ==
+        CollaborationStatus::kVersionOutOfDateShowUpdateChromeUi) {
+      HandleErrorWithType(ErrorInfo::Type::kUpdateChromeUiForVersionOutOfDate);
+      return;
+    }
+    // Handle disabled by policy.
     if (!status.IsAllowedToJoin()) {
       controller_->TransitionTo(StateId::kWaitingForPolicyUpdate);
       return;
@@ -265,7 +274,7 @@ class PendingState : public ControllerState {
 
  private:
   //  Will be invalid after OnEnter() is called.
-  CollaborationController::FinishCallback exit_callback_;
+  base::OnceClosure exit_callback_;
 };
 
 class WaitingForPolicyUpdateState : public ControllerState,
@@ -340,7 +349,12 @@ class WaitingForPolicyUpdateState : public ControllerState,
         break;
       case CollaborationStatus::kDisabled:
       case CollaborationStatus::kDisabledForPolicy:
+      case CollaborationStatus::kVersionOutOfDate:
         HandleError();
+        break;
+      case CollaborationStatus::kVersionOutOfDateShowUpdateChromeUi:
+        HandleErrorWithType(
+            ErrorInfo::Type::kUpdateChromeUiForVersionOutOfDate);
         break;
       case CollaborationStatus::kAllowedToJoin:
       case CollaborationStatus::kEnabledJoinOnly:
@@ -1383,7 +1397,12 @@ CollaborationController::CollaborationController(
       StateId::kPending, this,
       base::BindOnce(&CollaborationController::Exit,
                      weak_ptr_factory_.GetWeakPtr()));
-  current_state_->OnEnter(ErrorInfo(ErrorInfo::Type::kUnknown));
+
+  // Post task to start the flow. This is to make sure all the conflicting flows
+  // have exited and cleaned up.
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&CollaborationController::Start,
+                                weak_ptr_factory_.GetWeakPtr()));
 }
 
 CollaborationController::~CollaborationController() {
@@ -1423,7 +1442,7 @@ void CollaborationController::Exit() {
   delegate_->OnFlowFinished();
   is_deleting_ = true;
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE, base::BindOnce(std::move(finish_and_delete_)));
+      FROM_HERE, base::BindOnce(std::move(finish_and_delete_), this));
 }
 
 void CollaborationController::Cancel() {
@@ -1440,7 +1459,7 @@ void CollaborationController::Cancel() {
 void CollaborationController::SetStateForTesting(StateId state) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   current_state_ = CreateStateObject(state);
-  current_state_->OnEnter(ErrorInfo(ErrorInfo::Type::kUnknown));
+  current_state_->OnEnter(ErrorInfo());
 }
 
 CollaborationController::StateId CollaborationController::GetStateForTesting() {
@@ -1538,6 +1557,10 @@ std::unique_ptr<ControllerState> CollaborationController::CreateStateObject(
     case StateId::kError:
       return std::make_unique<ErrorState>(state, this);
   }
+}
+
+void CollaborationController::Start() {
+  current_state_->OnEnter(ErrorInfo());
 }
 
 }  // namespace collaboration

@@ -13,6 +13,7 @@ import type {CrInputElement} from '//resources/cr_elements/cr_input/cr_input.js'
 import {assert} from '//resources/js/assert.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
+import type {FilePath} from '//resources/mojo/mojo/public/mojom/base/file_path.mojom-webui.js';
 
 import {BrowserProxy} from './browser_proxy.js';
 import type {AudioData, Capabilities, InputPiece, ResponseChunk, ResponseSummary} from './on_device_model.mojom-webui.js';
@@ -81,6 +82,16 @@ function textToInputPieces(text: string): InputPiece[] {
     }
   }
   return input;
+}
+
+function filePathToString(filePath: FilePath): string {
+  if (typeof filePath.path === 'string') {
+    return filePath.path;
+  }
+
+  const decoder = new TextDecoder('utf-16');
+  const buffer = new Uint16Array(filePath.path);
+  return decoder.decode(buffer);
 }
 
 class OnDeviceInternalsToolsElement extends CrLitElement {
@@ -183,7 +194,24 @@ class OnDeviceInternalsToolsElement extends CrLitElement {
   }
 
   protected onLoadClick_() {
-    this.onModelSelected_();
+    const modelPathString = this.$.modelInput.value;
+    // <if expr="is_win">
+    // Windows file paths are std::wstring, so use Array<Number>.
+    const processedPath = Array.from(modelPathString, (c) => c.charCodeAt(0));
+    // </if>
+    // <if expr="not is_win">
+    const processedPath = modelPathString;
+    // </if>
+    this.onModelSelected_({path: processedPath});
+  }
+
+  protected async onLoadDefaultClick_() {
+    const defaultModelPath = await this.proxy_.handler.getDefaultModelPath();
+    if (defaultModelPath.modelPath === null) {
+      this.error_ = 'Unable to get default model path.';
+      return;
+    }
+    this.onModelSelected_(defaultModelPath.modelPath);
   }
 
   protected onAddImageClick_() {
@@ -240,7 +268,7 @@ class OnDeviceInternalsToolsElement extends CrLitElement {
   }
 
 
-  private async onModelSelected_() {
+  private async onModelSelected_(modelPath: FilePath) {
     this.error_ = '';
     if (this.model_) {
       this.model_.$.close();
@@ -255,18 +283,9 @@ class OnDeviceInternalsToolsElement extends CrLitElement {
     this.loadModelStart_ = new Date().getTime();
     const performanceHint = ModelPerformanceHint[(
         this.performanceHint_ as keyof typeof ModelPerformanceHint)];
-    const modelPath = this.$.modelInput.value;
-    // <if expr="is_win">
-    // Windows file paths are std::wstring, so use Array<Number>.
-    const processedPath = Array.from(modelPath, (c) => c.charCodeAt(0));
-    // </if>
-    // <if expr="not is_win">
-    const processedPath = modelPath;
-    // </if>
     const newModel = new OnDeviceModelRemote();
     const {result, capabilities} = await this.proxy_.handler.loadModel(
-        {path: processedPath}, performanceHint,
-        newModel.$.bindNewPipeAndPassReceiver());
+        modelPath, performanceHint, newModel.$.bindNewPipeAndPassReceiver());
     if (result !== LoadModelResult.kSuccess) {
       this.error_ =
           'Unable to load model. Specify a correct and absolute path.';
@@ -277,7 +296,7 @@ class OnDeviceInternalsToolsElement extends CrLitElement {
         this.onServiceCrashed_();
       });
       this.startNewSession_();
-      this.modelPath_ = modelPath;
+      this.modelPath_ = filePathToString(modelPath);
       this.loadedPerformanceHint_ = performanceHint;
     }
   }

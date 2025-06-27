@@ -1414,6 +1414,7 @@ class AppControllerNativeThemeObserver : public ui::NativeThemeObserver {
         // only be available while there is a Profile opened.
         case IDC_SHOW_FULL_URLS:
         case IDC_SHOW_GOOGLE_LENS_SHORTCUT:
+        case IDC_SHOW_SEARCH_TOOLS:
           enable = hasLoadedProfile;
           break;
         // Browser-level items that open in new tabs or perform an action in a
@@ -1474,8 +1475,10 @@ class AppControllerNativeThemeObserver : public ui::NativeThemeObserver {
 
 - (void)commandDispatch:(id)sender {
   // Drop commands received after shutdown was initiated.
-  if (g_browser_process->IsShuttingDown())
+  if (g_browser_process->IsShuttingDown() ||
+      browser_shutdown::IsTryingToQuit()) {
     return;
+  }
 
   // Handle the case where we're dispatching a command from a sender that's in a
   // browser window. This means that the command came from a background window

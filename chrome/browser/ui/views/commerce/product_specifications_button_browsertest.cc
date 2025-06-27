@@ -56,6 +56,8 @@ class ProductSpecificationsButtonBrowserTest : public InProcessBrowserTest {
   }
 
   void SetUpOnMainThread() override {
+    browser()->GetUnownedUserDataHost().MarkKeyForTesting(
+        commerce::ProductSpecificationsEntryPointController::kDataKey);
     controller_ =
         std::make_unique<MockProductSpecificationsEntryPointController>(
             browser());
@@ -63,6 +65,11 @@ class ProductSpecificationsButtonBrowserTest : public InProcessBrowserTest {
         controller_.get());
     ON_CALL(*controller(), ShouldExecuteEntryPointShow)
         .WillByDefault(testing::Return(true));
+  }
+
+  void TearDownOnMainThread() override {
+    controller_.reset();
+    InProcessBrowserTest::TearDownOnMainThread();
   }
 
   void SetTestingFactory(content::BrowserContext* context) {
@@ -191,8 +198,16 @@ IN_PROC_BROWSER_TEST_F(ProductSpecificationsButtonBrowserTest,
                    ->IsShowing());
 }
 
+// TODO(crbug.com/413297654): Test is flaky on Windows.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_ShowNotBlockedByCurrentPageEligibility \
+  DISABLED_ShowNotBlockedByCurrentPageEligibility
+#else
+#define MAYBE_ShowNotBlockedByCurrentPageEligibility \
+  ShowNotBlockedByCurrentPageEligibility
+#endif
 IN_PROC_BROWSER_TEST_F(ProductSpecificationsButtonBrowserTest,
-                       ShowNotBlockedByCurrentPageEligibility) {
+                       MAYBE_ShowNotBlockedByCurrentPageEligibility) {
   EXPECT_CALL(*controller(), ShouldExecuteEntryPointShow()).Times(0);
 
   ShowButton();
@@ -240,8 +255,16 @@ IN_PROC_BROWSER_TEST_F(ProductSpecificationsButtonBrowserTest,
                    "Commerce.Compare.ProactiveChipIgnored"));
 }
 
+// TODO(crbug.com/428096844): Re-enable this test
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_DoesntShowIfTabStripModalUIExists \
+  DISABLED_DoesntShowIfTabStripModalUIExists
+#else
+#define MAYBE_DoesntShowIfTabStripModalUIExists \
+  DoesntShowIfTabStripModalUIExists
+#endif
 IN_PROC_BROWSER_TEST_F(ProductSpecificationsButtonBrowserTest,
-                       DoesntShowIfTabStripModalUIExists) {
+                       MAYBE_DoesntShowIfTabStripModalUIExists) {
   ASSERT_FALSE(product_specifications_button()
                    ->expansion_animation_for_testing()
                    ->IsShowing());
@@ -298,8 +321,14 @@ IN_PROC_BROWSER_TEST_F(ProductSpecificationsButtonBrowserTest, ClickButton) {
                    "Commerce.Compare.ProactiveChipClicked"));
 }
 
+// TODO(crbug.com/413297654): Test is flaky on Windows.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_NotifyShowEntryPoint DISABLED_NotifyShowEntryPoint
+#else
+#define MAYBE_NotifyShowEntryPoint NotifyShowEntryPoint
+#endif
 IN_PROC_BROWSER_TEST_F(ProductSpecificationsButtonBrowserTest,
-                       NotifyShowEntryPoint) {
+                       MAYBE_NotifyShowEntryPoint) {
   product_specifications_button()->ShowEntryPointWithTitle(u"title");
 
   ASSERT_TRUE(product_specifications_button()
@@ -309,8 +338,14 @@ IN_PROC_BROWSER_TEST_F(ProductSpecificationsButtonBrowserTest,
   ASSERT_EQ(product_specifications_button()->GetTooltipText(), u"title");
 }
 
+// TODO(crbug.com/413297654): Test is flaky on Windows.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_NotifyHideEntryPoint DISABLED_NotifyHideEntryPoint
+#else
+#define MAYBE_NotifyHideEntryPoint NotifyHideEntryPoint
+#endif
 IN_PROC_BROWSER_TEST_F(ProductSpecificationsButtonBrowserTest,
-                       NotifyHideEntryPoint) {
+                       MAYBE_NotifyHideEntryPoint) {
   product_specifications_button()->ShowEntryPointWithTitle(u"title");
 
   ShowButton();

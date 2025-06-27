@@ -4,27 +4,38 @@
 
 package org.chromium.chrome.browser.composeplate;
 
+import androidx.annotation.VisibleForTesting;
+
+import org.jni_zero.JniType;
+import org.jni_zero.NativeMethods;
+
+import org.chromium.base.LocaleUtils;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
-import org.chromium.url.GURL;
+import org.chromium.chrome.browser.profiles.Profile;
 
 /** Utility class for the composeplate view. */
 @NullMarked
 public class ComposeplateUtils {
-    private static final String VALID_URL_PROTOCOL = "https://";
+    private static final String LOCALE_US = "US";
 
-    /** Returns the URL to open when clicking the composeplate view. */
-    public static GURL getComposeplateURL() {
-        String url = ChromeFeatureList.sAndroidComposeplateButtonUrl.getValue();
-        if (url == null || !url.startsWith(VALID_URL_PROTOCOL)) {
-            return new GURL(ChromeFeatureList.sAndroidComposeplateButtonUrl.getDefaultValue());
-        }
+    /**
+     * Returns whether the composeplate can be enabled.
+     *
+     * @param isTablet Whether the device is a tablet.
+     * @param profile The current profile.
+     */
+    public static boolean isComposeplateEnabled(boolean isTablet, Profile profile) {
+        return ChromeFeatureList.sAndroidComposeplate.isEnabled()
+                && !isTablet
+                && (ChromeFeatureList.sAndroidComposeplateSkipLocaleCheck.getValue()
+                        || LocaleUtils.getDefaultCountryCode().equals(LOCALE_US))
+                && ComposeplateUtilsJni.get().isEnabledByPolicy(profile);
+    }
 
-        GURL gurl = new GURL(url);
-        if (gurl.isValid()) {
-            return gurl;
-        }
-
-        return new GURL(ChromeFeatureList.sAndroidComposeplateButtonUrl.getDefaultValue());
+    @NativeMethods
+    @VisibleForTesting
+    public interface Natives {
+        boolean isEnabledByPolicy(@JniType("Profile*") Profile profile);
     }
 }

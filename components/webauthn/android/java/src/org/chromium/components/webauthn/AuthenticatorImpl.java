@@ -12,7 +12,6 @@ import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Pair;
 
@@ -232,12 +231,12 @@ public final class AuthenticatorImpl implements Authenticator, AuthenticationCon
         }
 
         mPendingFido2CredentialRequest = getFido2CredentialRequest();
-        mPendingFido2CredentialRequest.handleGetAssertionRequest(
+        mPendingFido2CredentialRequest.handleGetCredentialRequest(
                 options,
                 assertNonNull(mOrigin),
                 mTopOrigin,
                 mPayment,
-                this::onSignResponse,
+                this::onCredentialResponse,
                 this::onError,
                 this::recordOutcomeEvent);
     }
@@ -248,9 +247,7 @@ public final class AuthenticatorImpl implements Authenticator, AuthenticationCon
     }
 
     private boolean couldSupportConditionalMediation() {
-        return GmsCoreUtils.isWebauthnSupported()
-                && isChrome(mWebContents)
-                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P;
+        return GmsCoreUtils.isWebauthnSupported() && isChrome(mWebContents);
     }
 
     private boolean couldSupportUvpaa() {
@@ -409,7 +406,7 @@ public final class AuthenticatorImpl implements Authenticator, AuthenticationCon
         cleanupRequest();
     }
 
-    public void onSignResponse(
+    public void onCredentialResponse(
             @Nullable GetAssertionAuthenticatorResponse assertionResponse,
             @Nullable CredentialInfo passwordCredential) {
         assert assertionResponse == null ^ passwordCredential == null;

@@ -10847,7 +10847,8 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessNoSharingBrowserTest,
   EXPECT_FALSE(bar_instance->IsRelatedSiteInstance(new_instance));
   EXPECT_FALSE(foo_instance->IsRelatedSiteInstance(new_instance));
   EXPECT_NE(new_instance->GetProcess(), foo_instance->GetProcess());
-  EXPECT_NE(new_instance->GetProcess(), bar_instance->GetOrCreateProcess());
+  EXPECT_NE(new_instance->GetProcess(),
+            bar_instance->GetOrCreateProcessForTesting());
 }
 
 namespace {
@@ -13521,8 +13522,16 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
   }
 }
 
+// TODO(crbug.com/425866013): Fix and re-enable flaky test.
+#if BUILDFLAG(IS_FUCHSIA)
+#define MAYBE_AccessWindowProxyOfCrashedFrameAfterNavigation \
+  DISABLED_AccessWindowProxyOfCrashedFrameAfterNavigation
+#else
+#define MAYBE_AccessWindowProxyOfCrashedFrameAfterNavigation \
+  AccessWindowProxyOfCrashedFrameAfterNavigation
+#endif
 IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
-                       AccessWindowProxyOfCrashedFrameAfterNavigation) {
+                       MAYBE_AccessWindowProxyOfCrashedFrameAfterNavigation) {
   EXPECT_TRUE(NavigateToURL(
       shell(), embedded_test_server()->GetURL("a.com", "/title1.html")));
   const GURL cross_site_url =

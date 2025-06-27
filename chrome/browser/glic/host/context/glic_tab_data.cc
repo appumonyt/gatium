@@ -4,10 +4,13 @@
 
 #include "chrome/browser/glic/host/context/glic_tab_data.h"
 
+#include <cstdint>
 #include <optional>
 #include <utility>
+// #include <cstring>
 
-#include "base/functional/overloaded.h"
+#include "base/check_op.h"
+#include "base/containers/span.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/favicon/content/content_favicon_driver.h"
@@ -20,12 +23,18 @@
 
 namespace glic {
 
+namespace {
+
+bool IsForeground(content::Visibility visibility) {
+  return visibility != content::Visibility::HIDDEN;
+}
+
+}  // namespace
+
 TabDataObserver::TabDataObserver(
     content::WebContents* web_contents,
-    bool observe_current_page_only,
     base::RepeatingCallback<void(glic::mojom::TabDataPtr)> tab_data_changed)
     : content::WebContentsObserver(web_contents),
-      observe_current_page_only_(observe_current_page_only),
       tab_data_changed_(std::move(tab_data_changed)) {
   if (web_contents) {
     auto* favicon_driver =
@@ -33,6 +42,10 @@ TabDataObserver::TabDataObserver(
     if (favicon_driver) {
       favicon_driver->AddObserver(this);
     }
+    tab_detach_subscription_ =
+        tabs::TabInterface::GetFromContents(web_contents)
+            ->RegisterWillDetach(base::BindRepeating(
+                &TabDataObserver::OnTabWillDetach, base::Unretained(this)));
   }
 }
 
@@ -54,14 +67,11 @@ void TabDataObserver::ClearObservation() {
     }
   }
   Observe(nullptr);
+  tab_detach_subscription_ = {};
 }
 
 void TabDataObserver::PrimaryPageChanged(content::Page& page) {
-  if (observe_current_page_only_) {
-    ClearObservation();
-  } else {
-    SendUpdate();
-  }
+  SendUpdate();
 }
 
 void TabDataObserver::TitleWasSetForMainFrame(
@@ -80,6 +90,13 @@ void TabDataObserver::OnFaviconUpdated(
     bool icon_url_changed,
     const gfx::Image& image) {
   SendUpdate();
+}
+
+void TabDataObserver::OnTabWillDetach(tabs::TabInterface* tab,
+                                      tabs::TabInterface::DetachReason reason) {
+  if (reason == tabs::TabInterface::DetachReason::kDelete) {
+    ClearObservation();
+  }
 }
 
 int GetTabId(content::WebContents* web_contents) {
@@ -112,11 +129,16 @@ glic::mojom::TabDataPtr CreateTabData(content::WebContents* web_contents) {
                   ->GetRepresentation(2.0f)
                   .GetBitmap();
   }
+  // TODO(b/426644734): investigate triggering updates due to changes to
+  // observability for focused tab data.
+  bool is_audible = web_contents->IsCurrentlyAudible();
+  bool is_foreground = IsForeground(web_contents->GetVisibility());
+  bool is_observable = is_audible || is_foreground;
   return glic::mojom::TabData::New(
       GetTabId(web_contents),
       sessions::SessionTabHelper::IdForWindowContainingTab(web_contents).id(),
       GetTabUrl(web_contents), base::UTF16ToUTF8(web_contents->GetTitle()),
-      favicon, web_contents->GetContentsMimeType());
+      favicon, web_contents->GetContentsMimeType(), is_observable);
 }
 
 // CreateFocusedTabData Implementation:
@@ -146,6 +168,25 @@ base::expected<tabs::TabInterface*, std::string> FocusedTabData::GetFocus()
     return focus();
   }
   return base::unexpected(std::get<1>(data_));
+}
+
+bool FaviconEquals(const ::SkBitmap& a, const ::SkBitmap& b) {
+  if (&a == &b) {
+    return true;
+  }
+  // Compare image properties.
+  if (a.info() != b.info()) {
+    return false;
+  }
+  // Compare image pixels.
+  for (int y = 0; y < a.height(); ++y) {
+    for (int x = 0; x < a.width(); ++x) {
+      if (a.getColor(x, y) != b.getColor(x, y)) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 }  // namespace glic

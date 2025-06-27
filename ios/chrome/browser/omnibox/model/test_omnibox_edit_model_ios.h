@@ -14,34 +14,20 @@
 class TestOmniboxEditModelIOS : public OmniboxEditModelIOS {
  public:
   TestOmniboxEditModelIOS(OmniboxControllerIOS* omnibox_controller,
-                          OmniboxViewIOS* view,
+                          OmniboxClient* omnibox_client,
                           PrefService* pref_service,
-                          OmniboxTextModel* text_model);
+                          OmniboxTextModel* text_model,
+                          OmniboxMetricsRecorder* omnibox_metrics_recorder);
   ~TestOmniboxEditModelIOS() override;
   TestOmniboxEditModelIOS(const TestOmniboxEditModelIOS&) = delete;
   TestOmniboxEditModelIOS& operator=(const TestOmniboxEditModelIOS&) = delete;
 
-  // OmniboxEditModel:
-  bool PopupIsOpen() const override;
-  AutocompleteMatch CurrentMatch(GURL* alternate_nav_url) const override;
-
   void SetPopupIsOpen(bool open);
-
-  void SetCurrentMatchForTest(const AutocompleteMatch& match);
-
-  void OnPopupDataChanged(const std::u16string& inline_autocompletion,
-                          const std::u16string& additional_text,
-                          const AutocompleteMatch& match) override;
 
   const std::u16string& text() const { return text_; }
 
- protected:
-  PrefService* GetPrefService() override;
-  const PrefService* GetPrefService() const override;
-
  private:
   bool popup_is_open_;
-  std::unique_ptr<AutocompleteMatch> override_current_match_;
 
   // Contains the most recent text passed by the popup model to the edit model.
   std::u16string text_;

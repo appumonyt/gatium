@@ -399,7 +399,7 @@ TEST(CSSMathExpressionNode, TestSteppedValueFunctionsToCalculationExpression) {
         CSSMathExpressionNumericLiteral::Create(
             10, CSSPrimitiveValue::UnitType::kNumber)};
     const auto* operation = MakeGarbageCollected<CSSMathExpressionOperation>(
-        kCalcNumber, std::move(operands), test_case.op);
+        kCalcNumber, std::move(operands), test_case.op, CSSMathType());
     CSSToLengthConversionData resolver{/*element=*/nullptr};
     const CalculationExpressionNode* node =
         operation->ToCalculationExpression(resolver);
@@ -491,7 +491,7 @@ TEST(CSSMathExpressionNode, TestExponentialFunctionsToCalculationExpression) {
         CSSMathExpressionNumericLiteral::Create(
             4.0f, CSSPrimitiveValue::UnitType::kNumber)};
     const auto* operation = MakeGarbageCollected<CSSMathExpressionOperation>(
-        kCalcNumber, std::move(operands), test_case.op);
+        kCalcNumber, std::move(operands), test_case.op, CSSMathType());
     CSSToLengthConversionData resolver{/*element=*/nullptr};
     const CalculationExpressionNode* node =
         operation->ToCalculationExpression(resolver);
@@ -548,7 +548,7 @@ TEST(CSSMathExpressionNode, TestProgressNotation) {
   } test_cases[] = {
       {"progress(1px, 0px, 4px)", 0.25f},
       {"progress(10deg, 0deg, 10deg)", 1.0f},
-      {"progress(progress(10%, 0%, 40%) * 1px, 0.5px, 1px)", -0.5f},
+      {"progress(progress(10%, 0%, 40%) * 1px, 0.5px, 1px)", 0.f},
   };
 
   for (const auto& test_case : test_cases) {

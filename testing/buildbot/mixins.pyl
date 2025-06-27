@@ -108,30 +108,6 @@
       ],
     },
   },
-  'chromeos-generic-vm': {
-    'args': [
-      '--magic-vm-cache=magic_cros_vm_cache',
-    ],
-    'swarming': {
-      'dimensions': {
-        'cpu': 'x86-64',
-        'kvm': '1',
-        'os': 'Ubuntu-22.04',
-        'pool': 'chromium.tests',
-      },
-      'optional_dimensions': {
-        '60': {
-          'caches': 'cros_vm',
-        },
-      },
-      'named_caches': [
-        {
-          'name': 'cros_vm',
-          'path': 'magic_cros_vm_cache',
-        },
-      ],
-    },
-  },
   'chromium-tester-service-account': {
     'fail_if_unused': False,
     'swarming': {
@@ -265,6 +241,11 @@
   'gpu_force_skia_graphite': {
     'args': [
       '--extra-browser-args=--enable-features=SkiaGraphite',
+    ],
+  },
+  'gpu_gtest_common_args': {
+    'android_args': [
+      '$$MAGIC_SUBSTITUTION_AndroidDesktopForceMainUser',
     ],
   },
   'gpu_integration_test_common_args': {
@@ -444,9 +425,6 @@
         },
       ],
     },
-  },
-  'isolate_profile_data': {
-    'isolate_profile_data': True,
   },
   'limited_capacity_bot': {
     'fail_if_unused': False,
@@ -734,6 +712,16 @@
       '--gerrit-patchset=${patch_set}',
       '--buildbucket-id=${buildbucket_build_id}',
     ],
+  },
+  'skylab-20-tests-per-shard': {
+    'skylab': {
+      'cros_test_max_in_shard': 20
+    },
+  },
+  'skylab-50-tests-per-shard': {
+    'skylab': {
+      'cros_test_max_in_shard': 50
+    },
   },
   'skylab-shards-20': {
     'skylab': {

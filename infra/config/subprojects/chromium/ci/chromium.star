@@ -29,10 +29,8 @@ ci.defaults.set(
     main_console_view = "main",
     execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
     health_spec = health_spec.DEFAULT,
-    reclient_enabled = False,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
     shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
-    siso_enabled = True,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
 )
@@ -361,6 +359,7 @@ ci.builder(
         chromium_config = builder_config.chromium_config(
             config = "chromium",
             apply_configs = [
+                "clobber",
                 "mb",
             ],
             build_config = builder_config.build_config.RELEASE,
@@ -397,9 +396,7 @@ ci.builder(
             "ipc_tests",
             "media_unittests",
             "message_center_unittests",
-            "nacl_loader_unittests",
             "net_unittests",
-            "ppapi_unittests",
             "printing_unittests",
             "remoting_unittests",
             "sandbox_linux_unittests",
@@ -429,6 +426,8 @@ ci.builder(
     },
     siso_output_local_strategy = "greedy",
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
+    # crbug.com/427503493: It produces large amount of dwo files (>700GB).
+    # Enabling remote linking without bytes avoids downloading them to the bot.
     siso_remote_linking = True,
 )
 
@@ -523,6 +522,7 @@ ci.builder(
             ),
         ),
     }),
+    siso_remote_linking = True,
 )
 
 ci.builder(

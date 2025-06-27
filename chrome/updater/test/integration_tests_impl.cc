@@ -496,14 +496,21 @@ void RegisterAppByValue(UpdaterScope scope, const base::Value::Dict& value) {
 void EnterTestMode(const GURL& update_url,
                    const GURL& crash_upload_url,
                    const GURL& app_logo_url,
+                   const GURL& event_logging_url,
                    base::TimeDelta idle_timeout,
                    base::TimeDelta server_keep_alive_time,
-                   base::TimeDelta ceca_connection_timeout) {
+                   base::TimeDelta ceca_connection_timeout,
+                   std::optional<EventLoggingPermissionProvider>
+                       event_logging_permission_provider) {
   ASSERT_TRUE(
       ExternalConstantsBuilder()
           .SetUpdateURL(std::vector<std::string>{update_url.spec()})
           .SetCrashUploadURL(crash_upload_url.spec())
           .SetAppLogoURL(app_logo_url.spec())
+          .SetEventLoggingUrl(event_logging_url.spec())
+          .SetEventLoggingPermissionProvider(
+              std::move(event_logging_permission_provider))
+          .SetMinimumEventLoggingCooldown(base::Seconds(0))
           .SetUseCUP(false)
           .SetInitialDelay(base::Milliseconds(100))
           .SetServerKeepAliveTime(server_keep_alive_time)
@@ -1726,12 +1733,14 @@ void RunOfflineInstallOsNotSupported(UpdaterScope scope,
 void RunMockOfflineMetaInstall(UpdaterScope scope,
                                const std::string& app_id,
                                const base::Version& version,
+                               const std::string& tag,
                                const base::FilePath& installer_path,
                                const std::string& arguments,
                                bool is_silent_install,
                                const std::string& platform,
-                               int string_resource_id_to_find,
-                               const std::string& language,
+                               const std::string& installer_text,
+                               const bool always_launch_cmd,
+                               const int expected_exit_code,
                                bool expect_success) {
   ADD_FAILURE();
 }

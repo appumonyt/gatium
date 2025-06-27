@@ -12,10 +12,12 @@
 #include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
+#include "media/audio/android/aaudio_bluetooth_output.h"
 #include "media/audio/android/aaudio_input.h"
 #include "media/audio/android/audio_device.h"
 #include "media/audio/android/audio_device_id.h"
 #include "media/audio/audio_manager_base.h"
+#include "media/base/audio_parameters.h"
 
 namespace media {
 
@@ -56,9 +58,6 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
     virtual std::optional<std::vector<JniAudioDevice>>
     GetCommunicationDevices() = 0;
 
-    // Returns whether the currently connected device is an audio sink.
-    virtual bool IsAudioSinkConnected() = 0;
-
     virtual int GetMinInputFrameSize(int sample_rate, int channels) = 0;
 
     virtual bool AcousticEchoCancelerIsAvailable() = 0;
@@ -84,9 +83,9 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
 
     virtual int GetMinOutputFrameSize(int sample_rate, int channels) = 0;
 
-    // Returns a bit mask of AudioParameters::Format enum values sink device
-    // supports.
-    virtual int GetSinkAudioEncodingFormats() = 0;
+    // Returns a bitmask of audio encoding formats supported by all connected
+    // HDMI output devices.
+    virtual AudioParameters::Format GetHdmiOutputEncodingFormats() = 0;
 
     virtual int GetLayoutWithMaxChannels() = 0;
   };
@@ -148,6 +147,7 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
 
   // Sets a volume that applies to all this manager's output audio streams.
   // This overrides other SetVolume calls (e.g. through AudioHostMsg_SetVolume).
+  // TODO(https://crbug.com/422733084): this functionality is likely unused.
   void SetOutputVolumeOverride(double volume);
   bool HasOutputVolumeOverride(double* out_volume) const;
 
@@ -158,7 +158,9 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
   // otherwise accounting for.
   base::TimeDelta GetOutputLatency();
 
-  static int GetSinkAudioEncodingFormats();
+  // Returns a bitmask of audio encoding formats supported by all connected HDMI
+  // output devices.
+  static AudioParameters::Format GetHdmiOutputEncodingFormats();
 
   // Called by an `AAudioInputStream` when it is started, i.e. it begins
   // providing audio data.
@@ -183,6 +185,10 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
       base::flat_map<android::AudioDeviceId, android::AudioDevice>;
   using OutputStreams =
       base::flat_set<raw_ptr<MuteableAudioOutputStream, CtnExperimental>>;
+  REQUIRES_ANDROID_API(AAUDIO_MIN_API)
+  typedef base::flat_set<raw_ptr<AAudioBluetoothOutputStream, CtnExperimental>>
+      BluetoothOutputStreams;  // `REQUIRES_ANDROID_API` appears to be
+                               // incompatible with using-declarations.
   using InputStreams =
       base::flat_set<raw_ptr<AudioInputStream, CtnExperimental>>;
 
@@ -212,13 +218,7 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
       AudioDeviceDirection direction);
 
   int GetOptimalOutputFrameSize(int sample_rate, int channels);
-  AudioParameters GetAudioFormatsSupportedBySinkDevice(
-      const std::string& output_device_id,
-      const ChannelLayoutConfig& channel_layout_config,
-      int sample_rate,
-      int buffer_size);
-  ChannelLayoutConfig GetLayoutWithMaxChannels(
-      ChannelLayoutConfig layout_configuration);
+  ChannelLayoutConfig GetLayoutWithMaxChannels();
 
   void DoSetMuteOnAudioThread(bool muted);
   void DoSetVolumeOnAudioThread(double volume);
@@ -230,6 +230,8 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
   DeviceCache output_device_cache_;
 
   OutputStreams output_streams_;
+  REQUIRES_ANDROID_API(AAUDIO_MIN_API)
+  BluetoothOutputStreams bluetooth_output_streams_;
 
   InputStreams input_streams_requiring_sco_;
 

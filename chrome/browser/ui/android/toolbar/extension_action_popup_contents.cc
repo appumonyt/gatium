@@ -23,26 +23,56 @@ using base::android::JavaParamRef;
 using base::android::ScopedJavaLocalRef;
 using content::RenderFrameHost;
 using content::WebContents;
-using extensions::Extension;
-using extensions::ExtensionAction;
-using extensions::ExtensionActionManager;
-using extensions::ExtensionRegistry;
-using extensions::ExtensionViewHost;
-using extensions::ExtensionViewHostFactory;
+
+namespace extensions {
+
+namespace {
+
+// The minimum and maximum sizes for the extension popup.
+// https://developer.chrome.com/docs/extensions/reference/api/action#popup
+constexpr gfx::Size kMinSize = {25, 25};
+constexpr gfx::Size kMaxSize = {800, 600};
+
+}  // namespace
 
 ExtensionActionPopupContents::ExtensionActionPopupContents(
     std::unique_ptr<ExtensionViewHost> host)
     : host_(std::move(host)) {
   java_object_ = Java_ExtensionActionPopupContents_Constructor(
       AttachCurrentThread(), reinterpret_cast<jlong>(this),
-      host_->host_contents()->GetJavaWebContents());
+      host_->host_contents());
   host_->set_view(this);
+  WebContentsObserver::Observe(host_->host_contents());
+  auto* primary_main_frame = host_->host_contents()->GetPrimaryMainFrame();
+  if (primary_main_frame->IsRenderFrameLive()) {
+    SetUpNewMainFrame(primary_main_frame);
+  }
 }
 
 ExtensionActionPopupContents::~ExtensionActionPopupContents() = default;
 
 ScopedJavaLocalRef<jobject> ExtensionActionPopupContents::GetJavaObject() {
   return java_object_.AsLocalRef(AttachCurrentThread());
+}
+
+void ExtensionActionPopupContents::RenderFrameHostChanged(
+    RenderFrameHost* old_host,
+    RenderFrameHost* new_host) {
+  // Since we skipped speculative main frames in RenderFrameCreated, we must
+  // watch for them being swapped in by watching for RenderFrameHostChanged().
+  if (new_host != host_->host_contents()->GetPrimaryMainFrame()) {
+    return;
+  }
+
+  // Ignore the initial main frame host, as there's no renderer frame for it
+  // yet. If the DCHECK fires, then we would need to handle the initial main
+  // frame when it its renderer frame is created.
+  if (!old_host) {
+    DCHECK(!new_host->IsRenderFrameLive());
+    return;
+  }
+
+  SetUpNewMainFrame(new_host);
 }
 
 void ExtensionActionPopupContents::ResizeDueToAutoResize(
@@ -54,7 +84,12 @@ void ExtensionActionPopupContents::ResizeDueToAutoResize(
 
 void ExtensionActionPopupContents::RenderFrameCreated(
     RenderFrameHost* render_frame_host) {
-  NOTIMPLEMENTED();
+  // Only handle the initial main frame, not speculative ones.
+  if (render_frame_host != host_->host_contents()->GetPrimaryMainFrame()) {
+    return;
+  }
+
+  SetUpNewMainFrame(render_frame_host);
 }
 
 bool ExtensionActionPopupContents::HandleKeyboardEvent(
@@ -77,6 +112,11 @@ void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {
   host_->CreateRendererSoon();
 }
 
+void ExtensionActionPopupContents::SetUpNewMainFrame(
+    RenderFrameHost* render_frame_host) {
+  render_frame_host->GetView()->EnableAutoResize(kMinSize, kMaxSize);
+}
+
 // JNI method to create an ExtensionActionPopupContents instance.
 // This is called from the Java side to initiate the display of an extension
 // popup.
@@ -84,7 +124,7 @@ static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(
     JNIEnv* env,
     Profile* profile,
     std::string& action_id,
-    jint tab_id) {
+    int tab_id) {
   ExtensionRegistry* registry = ExtensionRegistry::Get(profile);
   DCHECK(registry);
 
@@ -115,3 +155,5 @@ static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(
       new ExtensionActionPopupContents(std::move(host));
   return popup->GetJavaObject();
 }
+
+}  // namespace extensions

@@ -12,6 +12,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/desktop_browser_window_capabilities.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "components/back_forward_cache/back_forward_cache_disable.h"
@@ -260,8 +261,7 @@ TabDialogManager::~TabDialogManager() = default;
 std::unique_ptr<views::Widget> TabDialogManager::CreateTabScopedDialog(
     views::DialogDelegate* delegate) {
   DCHECK_EQ(ui::mojom::ModalType::kChild, delegate->GetModalType());
-  views::Widget* host =
-      tab_interface_->GetBrowserWindowInterface()->TopContainer()->GetWidget();
+  views::Widget* host = GetHostWidget();
   CHECK(host);
   return base::WrapUnique(views::DialogDelegate::CreateDialogWidget(
       delegate, gfx::NativeWindow(), host->GetNativeView()));
@@ -282,8 +282,10 @@ void TabDialogManager::ShowDialog(views::Widget* widget,
   if (params_->disable_input) {
     scoped_ignore_input_events_ =
         tab_interface_->GetContents()->IgnoreInputEvents(std::nullopt);
-    tab_interface_->GetBrowserWindowInterface()->SetWebContentsBlocked(
-        tab_interface_->GetContents(), /*blocked=*/true);
+    tab_interface_->GetBrowserWindowInterface()
+        ->capabilities()
+        ->SetWebContentsBlocked(tab_interface_->GetContents(),
+                                /*blocked=*/true);
   }
   tab_dialog_widget_observer_ =
       std::make_unique<TabDialogWidgetObserver>(this, widget_.get());
@@ -326,8 +328,15 @@ void TabDialogManager::WidgetDestroyed(views::Widget* widget) {
   tab_dialog_widget_observer_.reset();
   scoped_ignore_input_events_.reset();
   browser_window_widget_observer_.reset();
-  tab_interface_->GetBrowserWindowInterface()->SetWebContentsBlocked(
-      tab_interface_->GetContents(), /*blocked=*/false);
+  tab_interface_->GetBrowserWindowInterface()
+      ->capabilities()
+      ->SetWebContentsBlocked(tab_interface_->GetContents(), /*blocked=*/false);
+}
+
+views::Widget* TabDialogManager::GetHostWidget() const {
+  return tab_interface_->GetBrowserWindowInterface()
+      ->TopContainer()
+      ->GetWidget();
 }
 
 void TabDialogManager::DidFinishNavigation(
@@ -372,8 +381,7 @@ void TabDialogManager::TabDidEnterForeground(TabInterface* tab_interface) {
                                                       widget_.get());
     // Check if the tab was detached and dragged to a new browser window. This
     // ensures the widget is properly reparented.
-    auto* parent_widget =
-        tab_interface->GetBrowserWindowInterface()->TopContainer()->GetWidget();
+    auto* parent_widget = GetHostWidget();
     if (parent_widget != widget_->parent()) {
       widget_->Reparent(parent_widget);
     }

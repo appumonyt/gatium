@@ -96,6 +96,7 @@
 #include "chrome/browser/ui/tabs/organization/tab_organization_service_factory.h"
 #include "chrome/browser/ui/tabs/organization/tab_organization_session.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
+#include "chrome/browser/ui/tabs/split_tab_metrics.h"
 #include "chrome/browser/ui/tabs/split_tab_util.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
@@ -1258,7 +1259,9 @@ void DuplicateSplit(Browser* browser, split_tabs::SplitTabId split) {
   CHECK(browser->CanSupportWindowFeature(Browser::FEATURE_TABSTRIP));
 
   TabStripModel* model = browser->tab_strip_model();
-  gfx::Range split_indices_range = model->GetIndexRangeOfSplit(split);
+  split_tabs::SplitTabData* split_data = model->GetSplitData(split);
+  gfx::Range split_indices_range = split_data->GetIndexRange();
+
   std::vector<int> duplicated_tab_indices;
   for (size_t split_index = split_indices_range.GetMin();
        split_index < split_indices_range.GetMax(); split_index++) {
@@ -1281,7 +1284,8 @@ void DuplicateSplit(Browser* browser, split_tabs::SplitTabId split) {
                                          active_index));
   model->AddToNewSplit(duplicated_tab_indices,
                        split_tabs::SplitTabVisualData(
-                           *(model->GetSplitData(split)->visual_data())));
+                           *(model->GetSplitData(split)->visual_data())),
+                       split_tabs::SplitTabCreatedSource::kDuplicateSplit);
 }
 
 bool CanDuplicateTabAt(const Browser* browser, int index) {
@@ -1347,14 +1351,14 @@ void GroupTab(Browser* browser) {
       TabStripModel::ContextMenuCommand::CommandToggleGrouped);
 }
 
-void NewSplitTab(Browser* browser) {
+void NewSplitTab(Browser* browser, split_tabs::SplitTabCreatedSource source) {
   TabStripModel* const tab_strip_model = browser->tab_strip_model();
   const int active_index = tab_strip_model->active_index();
   tab_strip_model->delegate()->AddTabAt(
       GURL(chrome::kChromeUISplitViewNewTabPageURL), active_index + 1, true,
       tab_strip_model->GetTabGroupForTab(active_index));
   tab_strip_model->AddToNewSplit({active_index},
-                                 split_tabs::SplitTabVisualData());
+                                 split_tabs::SplitTabVisualData(), source);
 }
 
 void AddNewTabToGroup(Browser* browser) {
@@ -2022,7 +2026,8 @@ void FindPrevious(Browser* browser) {
 }
 
 void FindInPage(Browser* browser, bool find_next, bool forward_direction) {
-  browser->GetFindBarController()->Show(find_next, forward_direction);
+  browser->GetFeatures().GetFindBarController()->Show(find_next,
+                                                      forward_direction);
 }
 
 void ShowTabSearch(Browser* browser) {
@@ -2053,7 +2058,7 @@ bool CanCloseFind(Browser* browser) {
 }
 
 void CloseFind(Browser* browser) {
-  browser->GetFindBarController()->EndFindSession(
+  browser->GetFeatures().GetFindBarController()->EndFindSession(
       find_in_page::SelectionAction::kKeep, find_in_page::ResultAction::kKeep);
 }
 
@@ -2165,6 +2170,13 @@ void ToggleShowGoogleLensShortcut(Browser* browser) {
                                              !pref_enabled);
 }
 
+void ToggleShowSearchTools(Browser* browser) {
+  bool pref_enabled =
+      browser->profile()->GetPrefs()->GetBoolean(omnibox::kShowSearchTools);
+  browser->profile()->GetPrefs()->SetBoolean(omnibox::kShowSearchTools,
+                                             !pref_enabled);
+}
+
 void ShowAppMenu(Browser* browser) {
   // We record the user metric for this event in AppMenu::RunMenu.
   browser->window()->ShowAppMenu();
@@ -2255,7 +2267,8 @@ void SetAndroidOsForTabletSite(content::WebContents* current_tab) {
 
 void ToggleFullscreenMode(Browser* browser, bool user_initiated) {
   DCHECK(browser);
-  browser->exclusive_access_manager()
+  browser->GetFeatures()
+      .exclusive_access_manager()
       ->fullscreen_controller()
       ->ToggleBrowserFullscreenMode(user_initiated);
 }

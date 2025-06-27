@@ -498,7 +498,7 @@ def register_builder_config(
         description_html: A string of html representing the description of the builder.
     """
     if not builder_spec and not mirrors:
-        if bc_settings and settings.project.startswith("chrome"):
+        if bc_settings:
             fail("bc_settings specified without builder_spec or mirrors")
 
         # TODO(gbeaty) Eventually make this a failure for the chromium
@@ -773,6 +773,14 @@ def _set_builder_config_property(ctx):
                 parent = bc_state.parent(node)
                 if parent:
                     entries.append(_entry(bc_state, parent))
+
+                    # Check that the parent builder has a gardener rotation
+                    # configured, if the current builder does.
+                    parent_builder_id = _builder_id(parent)
+                    rotations = get_gardener_rotations(bucket_name, builder_name)
+                    parent_rotations = get_gardener_rotations(parent_builder_id["bucket"], parent_builder_id["builder"])
+                    if rotations and not parent_rotations:
+                        fail("parent builder {}/{} does not have a gardener rotation but child builder {}/{} does".format(parent_builder_id["bucket"], parent_builder_id["builder"], bucket_name, builder_name))
                 entries.append(_entry(bc_state, node, parent))
                 targets_spec_nodes.append(node)
                 builder_ids.append(_builder_id(node))

@@ -8,17 +8,24 @@
 
 #include "base/no_destructor.h"
 #include "base/state_transitions.h"
-#include "chrome/browser/actor/actor_coordinator.h"
+#include "chrome/browser/actor/execution_engine.h"
+#include "components/tabs/public/tab_interface.h"
 
 namespace actor {
 
 ActorTask::ActorTask() = default;
-ActorTask::ActorTask(std::unique_ptr<ActorCoordinator> actor_coordinator)
-    : actor_coordinator_(std::move(actor_coordinator)) {}
+ActorTask::ActorTask(std::unique_ptr<ExecutionEngine> execution_engine)
+    : execution_engine_(std::move(execution_engine)) {
+  execution_engine_->SetOwner(this);
+}
 ActorTask::~ActorTask() = default;
 
-ActorCoordinator* ActorTask::GetActorCoordinator() const {
-  return actor_coordinator_.get();
+void ActorTask::SetId(base::PassKey<ActorKeyedService>, TaskId id) {
+  id_ = id;
+}
+
+ExecutionEngine* ActorTask::GetExecutionEngine() const {
+  return execution_engine_.get();
 }
 
 ActorTask::State ActorTask::GetState() const {
@@ -44,13 +51,32 @@ void ActorTask::SetState(State state) {
 #endif  // DCHECK_IS_ON()
 
   state_ = state;
+  task_state_change_callback_list_.Notify(id_, state_);
 }
 
 void ActorTask::Stop() {
-  if (actor_coordinator_) {
-    actor_coordinator_->StopTask();
+  if (execution_engine_) {
+    execution_engine_->CancelOngoingActions(
+        mojom::ActionResultCode::kTaskWentAway);
   }
   SetState(State::kFinished);
+}
+
+void ActorTask::Pause() {
+  if (GetState() == State::kFinished) {
+    return;
+  }
+  if (execution_engine_) {
+    execution_engine_->CancelOngoingActions(
+        mojom::ActionResultCode::kTaskPaused);
+  }
+  SetState(State::kPausedByClient);
+}
+
+void ActorTask::Resume() {
+  if (GetState() != State::kFinished) {
+    SetState(State::kReflecting);
+  }
 }
 
 bool ActorTask::IsPaused() const {
@@ -71,6 +97,11 @@ std::ostream& operator<<(std::ostream& os, const ActorTask::State& state) {
     case kFinished:
       return os << "Finished";
   }
+}
+
+base::CallbackListSubscription ActorTask::RegisterTaskStateChange(
+    TaskStateChangeCallback callback) {
+  return task_state_change_callback_list_.Add(std::move(callback));
 }
 
 }  // namespace actor

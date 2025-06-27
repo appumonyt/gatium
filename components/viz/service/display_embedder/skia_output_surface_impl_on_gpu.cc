@@ -19,6 +19,7 @@
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/common/task_annotator.h"
@@ -1131,9 +1132,8 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputRGBAInTexture(
   }
 
   request->SendResult(std::make_unique<CopyOutputTextureResult>(
-      CopyOutputResult::Format::RGBA, geometry.result_selection,
-      CopyOutputResult::TextureResult(mailbox, color_space),
-      std::move(release_callbacks)));
+      CopyOutputResult::Format::RGBA, geometry.result_selection, mailbox,
+      color_space, "CopyOutputRGBAInTexture", std::move(release_callbacks)));
 }
 
 void SkiaOutputSurfaceImplOnGpu::RenderSurface(
@@ -1548,8 +1548,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
       }
       request->SendResult(std::make_unique<CopyOutputTextureResult>(
           CopyOutputResult::Format::NV12, geometry.result_selection,
-          CopyOutputResult::TextureResult(mailbox_access_data.mailbox,
-                                          color_space),
+          mailbox_access_data.mailbox, color_space, "CopyOutputNV12",
           std::move(release_callbacks)));
       break;
     }

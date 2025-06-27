@@ -54,7 +54,8 @@ class MockTouchToFillPaymentMethodViewImpl : public TouchToFillPaymentMethodView
               ShowLoyaltyCards,
               (TouchToFillPaymentMethodViewController * controller,
                base::span<const LoyaltyCard> affiliated_loyalty_cards,
-               base::span<const LoyaltyCard> all_loyalty_cards));
+               base::span<const LoyaltyCard> all_loyalty_cards,
+               bool first_time_usage));
   MOCK_METHOD(void, Hide, ());
 };
 
@@ -64,7 +65,6 @@ class MockTouchToFillDelegateAndroidImpl
   explicit MockTouchToFillDelegateAndroidImpl(
       TestBrowserAutofillManager* autofill_manager)
       : TouchToFillDelegateAndroidImpl(autofill_manager) {
-    ON_CALL(*this, GetManager).WillByDefault(Return(autofill_manager));
     ON_CALL(*this, ShouldShowScanCreditCard).WillByDefault(Return(true));
   }
   ~MockTouchToFillDelegateAndroidImpl() override = default;
@@ -76,9 +76,8 @@ class MockTouchToFillDelegateAndroidImpl
   MOCK_METHOD(bool, IsShowingTouchToFill, (), (override));
   MOCK_METHOD(bool,
               IntendsToShowTouchToFill,
-              (FormGlobalId, FieldGlobalId, const FormData&),
+              (FormGlobalId, FieldGlobalId),
               (override));
-  MOCK_METHOD(TestBrowserAutofillManager*, GetManager, (), (override));
   MOCK_METHOD(bool, ShouldShowScanCreditCard, (), (override));
   MOCK_METHOD(void, ScanCreditCard, (), (override));
   MOCK_METHOD(void, OnCreditCardScanned, (const CreditCard& card), (override));
@@ -247,11 +246,12 @@ TEST_F(TouchToFillPaymentMethodControllerTest,
   EXPECT_CALL(*mock_view_,
               ShowLoyaltyCards(&payment_method_controller(),
                                ElementsAreArray(affiliated_loyalty_cards_),
-                               ElementsAreArray(all_loyalty_cards_)));
+                               ElementsAreArray(all_loyalty_cards_),
+                               /*first_time_usage*/ true));
   OnBeforeAskForValuesToFill();
   payment_method_controller().ShowLoyaltyCards(
       std::move(mock_view_), ttf_delegate().GetWeakPointer(),
-      affiliated_loyalty_cards_, all_loyalty_cards_);
+      affiliated_loyalty_cards_, all_loyalty_cards_, /*first_time_usage*/ true);
   OnAfterAskForValuesToFill();
 }
 

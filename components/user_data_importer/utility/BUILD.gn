@@ -2,12 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/zip.gni")
 import("//build/rust/rust_static_library.gni")
 
 source_set("safari_data_importer") {
   sources = [
-    "safari_data_import_manager.cc",
-    "safari_data_import_manager.h",
+    "bookmark_parser.cc",
+    "bookmark_parser.h",
+    "history_callback_from_rust.h",
     "safari_data_importer.cc",
     "safari_data_importer.h",
   ]
@@ -15,6 +17,7 @@ source_set("safari_data_importer") {
   deps = [
     ":zip_ffi_glue",
     "//base",
+    "//components/history/core/browser",
     "//components/password_manager/core/browser/import:importer",
     "//components/password_manager/core/browser/ui",
     "//components/user_data_importer/common",
@@ -29,8 +32,41 @@ rust_static_library("zip_ffi_glue") {
   visibility = [ ":safari_data_importer" ]
   deps = [
     "//third_party/rust/anyhow/v1:lib",
-    "//third_party/rust/zip/v3:lib",
+    "//third_party/rust/serde/v1:lib",
+    "//third_party/rust/serde_json_lenient/v0_2:lib",
+    "//third_party/rust/zip/v4:lib",
   ]
+}
+
+copy("test_archive_files") {
+  sources = [
+    "Bookmarks.html",
+    "History.json",
+    "Passwords.csv",
+    "PaymentCards.json",
+  ]
+  outputs = [ "$target_out_dir/{{source_file_part}}" ]
+}
+
+zip("test_archive") {
+  testonly = true
+  output = "$root_out_dir/test_archive.zip"
+  inputs = [
+    "$target_out_dir/Bookmarks.html",
+    "$target_out_dir/History.json",
+    "$target_out_dir/Passwords.csv",
+    "$target_out_dir/PaymentCards.json",
+  ]
+  deps = [ ":test_archive_files" ]
+}
+
+if (is_ios) {
+  bundle_data("test_archive_bundle_data") {
+    testonly = true
+    public_deps = [ ":test_archive" ]
+    sources = [ "$root_out_dir/test_archive.zip" ]
+    outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
+  }
 }
 
 source_set("unit_tests") {
@@ -41,6 +77,9 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//components/affiliations/core/browser:test_support",
+    "//components/autofill/core/browser:test_support",
+    "//components/history/core/browser",
+    "//components/history/core/test",
     "//components/password_manager/core/browser/import:csv",
     "//components/password_manager/core/browser/import:importer",
     "//components/password_manager/core/browser/password_store:test_support",
@@ -53,8 +92,16 @@ source_set("unit_tests") {
   ]
 
   if (is_ios) {
-    deps += [ "//components/password_manager/services/csv_password/ios:fake_password_parser_service" ]
+    deps += [
+      ":test_archive_bundle_data",
+      "//components/password_manager/services/csv_password/ios:fake_password_parser_service",
+      "//components/user_data_importer/ios",
+    ]
   } else {
-    deps += [ "//components/password_manager/services/csv_password:fake_password_parser_service" ]
+    data_deps = [ ":test_archive" ]
+    deps += [
+      "//components/password_manager/services/csv_password:fake_password_parser_service",
+      "//components/user_data_importer/content",
+    ]
   }
 }

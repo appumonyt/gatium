@@ -4,6 +4,7 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
+import static org.chromium.build.NullUtil.assumeNonNull;
 import static org.chromium.chrome.browser.hub.HubAnimationConstants.HUB_LAYOUT_FADE_DURATION_MS;
 import static org.chromium.chrome.browser.hub.HubAnimationConstants.HUB_LAYOUT_SHRINK_EXPAND_DURATION_MS;
 import static org.chromium.chrome.browser.hub.HubAnimationConstants.HUB_LAYOUT_TAB_LIST_FADE_DURATION_MS;
@@ -22,8 +23,6 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import androidx.annotation.ColorInt;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
@@ -44,6 +43,8 @@ import org.chromium.base.supplier.TransitiveObservableSupplier;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.task.TaskTraits;
 import org.chromium.build.BuildConfig;
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.compositor.CompositorViewHolder;
 import org.chromium.chrome.browser.hub.DisplayButtonData;
 import org.chromium.chrome.browser.hub.FadeHubLayoutAnimationFactory;
@@ -70,7 +71,6 @@ import org.chromium.components.browser_ui.styles.ChromeColors;
 import org.chromium.components.browser_ui.widget.MenuOrKeyboardActionController.MenuOrKeyboardActionHandler;
 import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.ui.base.DeviceFormFactor;
-import org.chromium.ui.xr.scenecore.XrSceneCoreUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -80,14 +80,15 @@ import java.util.function.DoubleConsumer;
  * An abstract {@link Pane} representing a tab switcher for shared logic between the normal and
  * incognito modes.
  */
+@NullMarked
 public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitcherResetHandler {
     private static final String TAG = "TabSwitcherPaneBase";
     private static final int ON_SHOWN_IPH_DELAY = 700;
 
     private static boolean sShowIphForTesting;
 
-    protected final ObservableSupplierImpl<DisplayButtonData> mReferenceButtonDataSupplier =
-            new ObservableSupplierImpl<>();
+    protected final ObservableSupplierImpl<@Nullable DisplayButtonData>
+            mReferenceButtonDataSupplier = new ObservableSupplierImpl<>();
     protected final ObservableSupplierImpl<FullButtonData> mNewTabButtonDataSupplier =
             new ObservableSupplierImpl<>();
     protected final ObservableSupplierImpl<Boolean> mHairlineVisibilitySupplier =
@@ -99,7 +100,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
             new ObservableSupplierImpl<>();
     private final ObservableSupplierImpl<Boolean> mIsAnimatingSupplier =
             new ObservableSupplierImpl<>();
-    private final ObservableSupplierImpl<View> mOverlayViewSupplier =
+    private final ObservableSupplierImpl<@Nullable View> mOverlayViewSupplier =
             new ObservableSupplierImpl<>();
     private final Callback<Boolean> mVisibilityObserver = this::onVisibilityChanged;
     private final Handler mHandler = new Handler();
@@ -133,13 +134,16 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
                     return false;
                 }
             };
-    private final ObservableSupplierImpl<TabSwitcherPaneCoordinator>
+    private final ObservableSupplierImpl<@Nullable TabSwitcherPaneCoordinator>
             mTabSwitcherPaneCoordinatorSupplier = new ObservableSupplierImpl<>();
-    private final TransitiveObservableSupplier<TabSwitcherPaneCoordinator, Boolean>
+
+    @SuppressWarnings("NullAway") // Generics are not null propagated nicely.
+    private final TransitiveObservableSupplier<@Nullable TabSwitcherPaneCoordinator, Boolean>
             mHandleBackPressChangedSupplier =
                     new TransitiveObservableSupplier<>(
                             mTabSwitcherPaneCoordinatorSupplier,
                             pc -> pc.getHandleBackPressChangedSupplier());
+
     private final FrameLayout mRootView;
     private final TabSwitcherPaneCoordinatorFactory mFactory;
     private final boolean mIsIncognito;
@@ -169,6 +173,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     private boolean mNativeInitialized;
     private @Nullable PaneHubController mPaneHubController;
     private @Nullable Long mWaitForTabStateInitializedStartTimeMs;
+    private final @Nullable ObservableSupplier<Boolean> mXrSpaceModeObservableSupplier;
 
     /**
      * @param context The activity context.
@@ -179,16 +184,19 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
      * @param edgeToEdgeSupplier Supplier to the {@link EdgeToEdgeController} instance.
      * @param compositorViewHolderSupplier Supplier to the {@link CompositorViewHolder} instance.
      * @param tabGroupCreationUiDelegate Orchestrates the tab group creation UI flow.
+     * @param xrSpaceModeObservableSupplier Supplies current XR space mode status. True for XR full
+     *     space mode, false otherwise.
      */
     TabSwitcherPaneBase(
-            @NonNull Context context,
-            @NonNull TabSwitcherPaneCoordinatorFactory factory,
+            Context context,
+            TabSwitcherPaneCoordinatorFactory factory,
             boolean isIncognito,
-            @NonNull DoubleConsumer onToolbarAlphaChange,
-            @NonNull UserEducationHelper userEducationHelper,
-            @NonNull ObservableSupplier<EdgeToEdgeController> edgeToEdgeSupplier,
-            @NonNull ObservableSupplier<CompositorViewHolder> compositorViewHolderSupplier,
-            @NonNull TabGroupCreationUiDelegate tabGroupCreationUiDelegate) {
+            DoubleConsumer onToolbarAlphaChange,
+            UserEducationHelper userEducationHelper,
+            ObservableSupplier<EdgeToEdgeController> edgeToEdgeSupplier,
+            ObservableSupplier<CompositorViewHolder> compositorViewHolderSupplier,
+            TabGroupCreationUiDelegate tabGroupCreationUiDelegate,
+            @Nullable ObservableSupplier<Boolean> xrSpaceModeObservableSupplier) {
         mFactory = factory;
         mIsIncognito = isIncognito;
 
@@ -201,6 +209,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
         mEdgeToEdgeSupplier = edgeToEdgeSupplier;
         mCompositorViewHolderSupplier = compositorViewHolderSupplier;
         mUiFlow = tabGroupCreationUiDelegate;
+        mXrSpaceModeObservableSupplier = xrSpaceModeObservableSupplier;
     }
 
     @Override
@@ -211,7 +220,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     }
 
     @Override
-    public @NonNull ViewGroup getRootView() {
+    public ViewGroup getRootView() {
         return mRootView;
     }
 
@@ -268,22 +277,22 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     }
 
     @Override
-    public @NonNull ObservableSupplier<FullButtonData> getActionButtonDataSupplier() {
+    public ObservableSupplier<FullButtonData> getActionButtonDataSupplier() {
         return mNewTabButtonDataSupplier;
     }
 
     @Override
-    public @NonNull ObservableSupplier<DisplayButtonData> getReferenceButtonDataSupplier() {
+    public ObservableSupplier<@Nullable DisplayButtonData> getReferenceButtonDataSupplier() {
         return mReferenceButtonDataSupplier;
     }
 
     @Override
-    public @NonNull ObservableSupplier<Boolean> getHairlineVisibilitySupplier() {
+    public ObservableSupplier<Boolean> getHairlineVisibilitySupplier() {
         return mHairlineVisibilitySupplier;
     }
 
     @Override
-    public ObservableSupplier<View> getHubOverlayViewSupplier() {
+    public ObservableSupplier<@Nullable View> getHubOverlayViewSupplier() {
         return mOverlayViewSupplier;
     }
 
@@ -293,12 +302,11 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     }
 
     @Override
-    public @NonNull HubLayoutAnimatorProvider createShowHubLayoutAnimatorProvider(
-            @NonNull HubContainerView hubContainerView) {
+    public HubLayoutAnimatorProvider createShowHubLayoutAnimatorProvider(
+            HubContainerView hubContainerView) {
         Context context = hubContainerView.getContext();
         final boolean isFullSpaceModeOnAndroidXr =
-                XrSceneCoreUtils.isSceneCoreSessionInFsm(
-                        XrSceneCoreUtils.getXrSceneCoreSessionManagerFromContext(context));
+                mXrSpaceModeObservableSupplier != null && mXrSpaceModeObservableSupplier.get();
 
         assert !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context)
                 || isFullSpaceModeOnAndroidXr;
@@ -329,8 +337,8 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     }
 
     @Override
-    public @NonNull HubLayoutAnimatorProvider createHideHubLayoutAnimatorProvider(
-            @NonNull HubContainerView hubContainerView) {
+    public HubLayoutAnimatorProvider createHideHubLayoutAnimatorProvider(
+            HubContainerView hubContainerView) {
         assert !DeviceFormFactor.isNonMultiDisplayContextOnTablet(hubContainerView.getContext());
         Tab tab = getCurrentTab();
         if (tab == null || SysUtils.isLowEndDevice()) {
@@ -360,7 +368,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     }
 
     private SyncOneshotSupplier<List<View>> requestTabListAnimationData(
-            @NonNull HubContainerView hubContainerView) {
+            HubContainerView hubContainerView) {
         assert getTabListMode() == TabListMode.GRID;
         SyncOneshotSupplierImpl<List<View>> animationDataSupplier = new SyncOneshotSupplierImpl<>();
         hubContainerView.runOnNextLayout(
@@ -371,6 +379,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
 
                     GridLayoutManager lm =
                             (GridLayoutManager) tab_list_recycler_view.getLayoutManager();
+                    assumeNonNull(lm);
                     int first = lm.findFirstVisibleItemPosition();
                     int last = lm.findLastVisibleItemPosition();
 
@@ -385,7 +394,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     }
 
     private SyncOneshotSupplier<ShrinkExpandAnimationData> requestAnimationData(
-            @NonNull HubContainerView hubContainerView, boolean isShrink, @NonNull Tab tab) {
+            HubContainerView hubContainerView, boolean isShrink, Tab tab) {
         SyncOneshotSupplierImpl<ShrinkExpandAnimationData> animationDataSupplier =
                 new SyncOneshotSupplierImpl<>();
         @Nullable TabSwitcherPaneCoordinator coordinator = getTabSwitcherPaneCoordinator();
@@ -499,7 +508,6 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
         if (mNativeInitialized) return;
 
         mNativeInitialized = true;
-        @Nullable
         TabSwitcherPaneCoordinator coordinator = mTabSwitcherPaneCoordinatorSupplier.get();
         if (coordinator != null) {
             coordinator.initWithNative();
@@ -509,7 +517,6 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     /** Returns a {@link Supplier} that provides dialog visibility information. */
     @Override
     public @Nullable Supplier<Boolean> getTabGridDialogVisibilitySupplier() {
-        @Nullable
         TabSwitcherPaneCoordinator coordinator = mTabSwitcherPaneCoordinatorSupplier.get();
         if (coordinator == null) return null;
         return coordinator.getTabGridDialogVisibilitySupplier();
@@ -576,7 +583,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     protected abstract boolean shouldEagerlyCreateCoordinator();
 
     /** A runnable that will be invoked when delegate UI creates a tab group. */
-    protected abstract Runnable getOnTabGroupCreationRunnable();
+    protected abstract @Nullable Runnable getOnTabGroupCreationRunnable();
 
     /** Called when the pane is shown to indicate IPH should maybe be shown. */
     protected abstract void tryToTriggerOnShownIphs();
@@ -606,7 +613,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
      * taken when reading this supplier as animations do not start synchronously with focus changes,
      * and a Pane may be shown before the enter animation actually starts.
      */
-    protected @NonNull ObservableSupplier<Boolean> getIsAnimatingSupplier() {
+    protected ObservableSupplier<Boolean> getIsAnimatingSupplier() {
         return mIsAnimatingSupplier;
     }
 
@@ -628,7 +635,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     }
 
     /** Returns an observable supplier that hold the current coordinator. */
-    protected @NonNull ObservableSupplier<TabSwitcherPaneCoordinator>
+    protected ObservableSupplier<@Nullable TabSwitcherPaneCoordinator>
             getTabSwitcherPaneCoordinatorSupplier() {
         return mTabSwitcherPaneCoordinatorSupplier;
     }
@@ -638,7 +645,6 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     void createTabSwitcherPaneCoordinator() {
         if (mTabSwitcherPaneCoordinatorSupplier.hasValue()) return;
 
-        @NonNull
         TabSwitcherPaneCoordinator coordinator =
                 mFactory.create(
                         mRootView,
@@ -650,7 +656,7 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
                         mIsIncognito,
                         getOnTabGroupCreationRunnable(),
                         mEdgeToEdgeSupplier,
-                        mOverlayViewSupplier::set);
+                        (view) -> mOverlayViewSupplier.set(assumeNonNull(view)));
         mTabSwitcherPaneCoordinatorSupplier.set(coordinator);
         mTabSwitcherCustomViewManager.setDelegate(
                 coordinator.getTabSwitcherCustomViewManagerDelegate());
@@ -667,7 +673,8 @@ public abstract class TabSwitcherPaneBase implements Pane, TabSwitcher, TabSwitc
     void destroyTabSwitcherPaneCoordinator() {
         if (!mTabSwitcherPaneCoordinatorSupplier.hasValue()) return;
 
-        @NonNull TabSwitcherPaneCoordinator coordinator = mTabSwitcherPaneCoordinatorSupplier.get();
+        TabSwitcherPaneCoordinator coordinator = mTabSwitcherPaneCoordinatorSupplier.get();
+        assumeNonNull(coordinator);
         mTabSwitcherPaneCoordinatorSupplier.set(null);
         mRootView.removeAllViews();
         mTabSwitcherCustomViewManager.setDelegate(null);

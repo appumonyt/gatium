@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_ENTERPRISE_CONNECTORS_ANALYSIS_CONTENT_ANALYSIS_DIALOG_DELEGATE_H_
 
 #include "base/functional/callback_forward.h"
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/enterprise/connectors/analysis/content_analysis_delegate_base.h"
 #include "chrome/browser/enterprise/connectors/analysis/content_analysis_views.h"
 #include "chrome/browser/safe_browsing/cloud_content_scanning/deep_scanning_utils.h"
@@ -15,6 +16,7 @@
 #include "ui/views/window/dialog_delegate.h"
 
 namespace views {
+class BoundsAnimator;
 class BoxLayoutView;
 class Link;
 class StyledLabel;
@@ -66,6 +68,7 @@ class ContentAnalysisDialogDelegate : public views::DialogDelegate,
   views::Widget* GetWidget() override;
   const views::Widget* GetWidget() const override;
   ui::mojom::ModalType GetModalType() const override;
+  views::View* GetContentsView() override;
 
   // ContentAnalysisBaseView::Delegate:
   int GetTopImageId() const override;
@@ -83,7 +86,13 @@ class ContentAnalysisDialogDelegate : public views::DialogDelegate,
   inline bool is_warning() const { return dialog_state_ == State::WARNING; }
   inline bool is_pending() const { return dialog_state_ == State::PENDING; }
 
+  // Updates `final_result_` and `dialog_state_`.
   void UpdateStateFromFinalResult(FinalContentAnalysisResult final_result);
+
+  // Update the appearance of the dialog. This will not do anything unless the
+  // dialog's state was changed by `UpdateStateFromFinalResult()` since the last
+  // `UpdateDialogAppearance()` call.
+  void UpdateDialogAppearance();
 
   bool has_learn_more_url() const;
   bool bypass_requires_justification() const;
@@ -111,6 +120,9 @@ class ContentAnalysisDialogDelegate : public views::DialogDelegate,
   // to use in the first GetContentsView() call, before the dialog is shown.
   void UpdateViews();
 
+  // Resizes the already shown dialog to accommodate changes in its content.
+  void Resize(int height_to_add);
+
   // Helper methods to get the admin message shown in dialog.
   void AddLinksToDialogMessage();
   void UpdateDialogMessage(std::u16string new_message);
@@ -123,6 +135,10 @@ class ContentAnalysisDialogDelegate : public views::DialogDelegate,
   void AddJustificationTextLengthToDialog();
 
   void LearnMoreLinkClickedCallback(const ui::Event& event);
+
+  // Returns a newly created side icon. The created views are set to
+  // `side_icon_image_` and `side_icon_spinner_`.
+  std::unique_ptr<views::View> CreateSideIcon();
 
   // Views above the buttons. `contents_view_` owns every other view.
   raw_ptr<views::BoxLayoutView> contents_view_ = nullptr;
@@ -140,6 +156,9 @@ class ContentAnalysisDialogDelegate : public views::DialogDelegate,
 
   // Table layout owned by `contents_view_`.
   raw_ptr<views::TableLayoutView> contents_layout_ = nullptr;
+
+  // Used to animate dialog height changes.
+  std::unique_ptr<views::BoundsAnimator> bounds_animator_;
 
   // Used to show the appropriate message.
   FinalContentAnalysisResult final_result_;

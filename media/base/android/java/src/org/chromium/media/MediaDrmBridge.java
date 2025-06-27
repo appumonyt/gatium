@@ -756,7 +756,11 @@ public class MediaDrmBridge {
         }
 
         if (mMediaDrm != null) {
-            mMediaDrm.release();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                mMediaDrm.close();
+            } else {
+                mMediaDrm.release();
+            }
             mMediaDrm = null;
         }
 
@@ -1544,8 +1548,8 @@ public class MediaDrmBridge {
         return false;
     }
 
-    /*
-     *  Provisioning complete. Continue to createMediaCrypto() if required.
+    /**
+     * Provisioning complete. Continue to createMediaCrypto() if required.
      *
      * @param success Whether provisioning has succeeded or not.
      */

@@ -7,8 +7,10 @@ package org.chromium.chrome.browser.customtabs.features.toolbar;
 import android.util.SparseArray;
 import android.view.View;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.Px;
 
+import org.chromium.base.Callback;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.chrome.browser.browserservices.intents.CustomButtonParams.ButtonType;
 import org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider.CustomTabsButtonState;
@@ -50,11 +52,17 @@ public class ButtonVisibilityRule {
     // device rotation or the window width adjustment in multi-window mode.
     private int mToolbarWidth;
 
+    // Adjust minimum Title/URL bar width to have the optional button hidden/visible.
+    // Used for Q/A testing, enabled only through feature flag.
+    private boolean mHidingOptionalButton;
+
     static class Button {
         private final View mView;
         // Type of the button. Valid for CUSTOM_1 or CUSTOM_2 only; the rest of the buttons always
         // have ButtonType.OTHER.
         private final @ButtonType int mCustomType;
+
+        private final @Nullable Callback<Boolean> mUpdateCallback;
 
         // Visibility of the button. It can be hidden either because there is no space (handled by
         // this class) or because of outside factors.
@@ -64,7 +72,12 @@ public class ButtonVisibilityRule {
         // Only the buttons suppressed get turned on later again.
         private boolean mSuppressed;
 
-        Button(View view, boolean visible, @ButtonType int customType) {
+        Button(
+                View view,
+                boolean visible,
+                @ButtonType int customType,
+                @Nullable Callback<Boolean> callback) {
+            mUpdateCallback = callback;
             mView = view;
             mVisible = visible;
             mCustomType = customType;
@@ -101,6 +114,7 @@ public class ButtonVisibilityRule {
      * @param width The updated width of the toolbar.
      */
     public void setToolbarWidth(int width) {
+        if (mHidingOptionalButton) return;
         int oldWidth = mToolbarWidth;
         mToolbarWidth = width;
         if (width == 0 || oldWidth == width) return;
@@ -136,7 +150,24 @@ public class ButtonVisibilityRule {
             int index, View view, boolean visible, @ButtonType int customType) {
         if (!mActivated) return;
 
-        mButtons.put(index, new Button(view, visible, customType));
+        mButtons.put(index, new Button(view, visible, customType, null));
+        if (mToolbarWidth > 0 && visible) refresh();
+    }
+
+    /**
+     * Add a button with a callback to be invoked when the visibility changes.
+     *
+     * @param index Index of the button.
+     * @param view {@link View} of the button to which the visibility is applied.
+     * @param visible {@code true} if the button is to be visible.
+     * @param callback {@link Callback} to be invoked when the visibility changes when the rule set
+     *     is applied.
+     */
+    public void addButtonWithCallback(
+            int index, View view, boolean visible, Callback<Boolean> callback) {
+        if (!mActivated) return;
+
+        mButtons.put(index, new Button(view, visible, ButtonType.OTHER, callback));
         if (mToolbarWidth > 0 && visible) refresh();
     }
 
@@ -160,6 +191,16 @@ public class ButtonVisibilityRule {
         }
     }
 
+    /**
+     * Return {@code true} if the given button was suppressed (hidden) by this rule checker.
+     *
+     * @param index Index of the button.
+     */
+    public boolean isSuppressed(int index) {
+        Button button = mButtons.get(index);
+        return button != null && !button.mVisible && button.mSuppressed;
+    }
+
     /** Refresh visibility of buttons with the state updated so far. */
     public void refresh() {
         if (!mActivated) return;
@@ -175,6 +216,7 @@ public class ButtonVisibilityRule {
             button.mVisible = false;
             button.mView.setVisibility(View.GONE);
             button.mSuppressed = true;
+            if (button.mUpdateCallback != null) button.mUpdateCallback.onResult(false);
             urlBarWidth = getUrlBarWidth();
         }
         adjustMinimizeButtonPriority();
@@ -194,6 +236,7 @@ public class ButtonVisibilityRule {
                 minimize.mVisible = true;
                 minimize.mSuppressed = false;
                 minimize.mView.setVisibility(View.VISIBLE);
+                if (minimize.mUpdateCallback != null) minimize.mUpdateCallback.onResult(true);
             }
         }
     }
@@ -213,6 +256,7 @@ public class ButtonVisibilityRule {
             button.mVisible = false;
             button.mSuppressed = true;
             button.mView.setVisibility(View.GONE);
+            if (button.mUpdateCallback != null) button.mUpdateCallback.onResult(false);
             return true;
         }
         return false;
@@ -241,6 +285,7 @@ public class ButtonVisibilityRule {
             } else {
                 button.mView.setVisibility(View.VISIBLE);
                 button.mSuppressed = false;
+                if (button.mUpdateCallback != null) button.mUpdateCallback.onResult(true);
             }
         }
         adjustMinimizeButtonPriority();
@@ -266,5 +311,15 @@ public class ButtonVisibilityRule {
             if (button != null && button.mVisible) return false;
         }
         return true;
+    }
+
+    public void setHidingOptionalButton() {
+        Button button = mButtons.get(ButtonId.MTB);
+        if (button == null || (!button.mVisible && button.mSuppressed)) return;
+
+        // Set the toolbar width smaller than url bar and all the button widths combined.
+        int buttonsWidth = mToolbarWidth - getUrlBarWidth();
+        setToolbarWidth(mMinUrlWidthPx + (buttonsWidth - button.mView.getLayoutParams().width / 2));
+        mHidingOptionalButton = true;
     }
 }

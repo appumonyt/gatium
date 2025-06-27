@@ -78,13 +78,16 @@ BASE_FEATURE(kPreloadTopChromeWebUI,
              "PreloadTopChromeWebUI",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// An experiment to reduce the number of navigations when preloading WebUIs.
+BASE_FEATURE(kPreloadTopChromeWebUILessNavigations,
+             "PreloadTopChromeWebUILessNavigations",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Enables exiting browser fullscreen (users putting the browser itself into the
 // fullscreen mode via the browser UI or shortcuts) with press-and-hold Esc.
-#if !BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kPressAndHoldEscToExitBrowserFullscreen,
              "PressAndHoldEscToExitBrowserFullscreen",
              base::FEATURE_ENABLED_BY_DEFAULT);
-#endif
 
 // When enabled, a scrim is shown behind window modal dialogs to cover the
 // entire browser window. This gives user a visual cue that the browser window
@@ -100,6 +103,46 @@ BASE_FEATURE(KScrimForTabModal,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kSideBySide, "SideBySide", base::FEATURE_DISABLED_BY_DEFAULT);
+
+// The delay before showing the drop target for the side-by-side drag-and-drop
+// entrypoint.
+BASE_FEATURE_PARAM(base::TimeDelta,
+                   kSideBySideShowDropTargetDelay,
+                   &kSideBySide,
+                   "drop_target_show_delay",
+                   base::Seconds(1));
+
+// The padding inside the drop target that determines the overall width.
+BASE_FEATURE_PARAM(int,
+                   kSideBySideDropTargetInnerPadding,
+                   &kSideBySide,
+                   "drop_target_inner_padding",
+                   37);
+
+constexpr base::FeatureParam<MiniToolbarActiveConfiguration>::Option
+    kMiniToolbarActiveConfigurationOptions[] = {
+        {MiniToolbarActiveConfiguration::Hide, "hide"},
+        {MiniToolbarActiveConfiguration::ShowMenuOnly, "showmenuonly"},
+        {MiniToolbarActiveConfiguration::ShowAll, "showall"}};
+
+// The active configuration for the mini toolbar on active view of a split.
+BASE_FEATURE_ENUM_PARAM(MiniToolbarActiveConfiguration,
+                        kSideBySideMiniToolbarActiveConfiguration,
+                        &kSideBySide,
+                        "mini_toolbar_active_config",
+                        MiniToolbarActiveConfiguration::Hide,
+                        &kMiniToolbarActiveConfigurationOptions);
+
+// When enabled along with SideBySide flag, split tabs will be restored on
+// startup.
+BASE_FEATURE(kSideBySideSessionRestore,
+             "SideBySideSessionRestore",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+bool IsRestoringSplitViewEnabled() {
+  return base::FeatureList::IsEnabled(features::kSideBySide) &&
+         base::FeatureList::IsEnabled(features::kSideBySideSessionRestore);
+}
 
 BASE_FEATURE(kSideBySideLinkMenuNewBadge,
              "SideBySideLinkMenuNewBadge",
@@ -204,7 +247,7 @@ BASE_FEATURE(kPinnedCastButton,
 // toolbar.
 BASE_FEATURE(kEnterpriseProfileBadgingForAvatar,
              "EnterpriseProfileBadgingForAvatar",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables enterprise profile badging for managed profiles on the toolbar avatar
 // and in the profile menu. On managed profiles, a building icon will be used as
@@ -294,7 +337,7 @@ BASE_FEATURE(kUsePortalAccentColor,
 
 BASE_FEATURE(kPageSpecificDataDialogRelatedInstalledAppsSection,
              "PageSpecificDataDialogRelatedInstalledAppsSection",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnableManagementPromotionBanner,
              "EnableManagementPromotionBanner",
