@@ -125,10 +125,13 @@ class CORE_EXPORT AnimationTrigger : public ScriptWrappable {
 
   void addAnimation(Animation* animation, ExceptionState& exception_state);
   void removeAnimation(Animation* animation);
+  void RemoveAnimations();
 
   void Update();
   void UpdateInternal(State old_state, State new_state);
   void UpdateAnimations(UpdateType update_type);
+
+  bool CanTrigger();
 
  private:
   // Handles playing an animation which is added to a trigger which has already

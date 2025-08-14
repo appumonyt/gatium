@@ -313,6 +313,40 @@
             "--bucket",
             "chromium-result-details",
             "--test-name",
+            "blink_unittests"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "name": "blink_unittests",
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "dimensions": {
+            "device_os": "QQ1A.191205.008",
+            "device_os_flavor": "google",
+            "device_os_type": "userdebug",
+            "device_type": "walleye",
+            "os": "Android",
+            "pool": "chromium.tests"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
+          "shards": 6
+        },
+        "test": "blink_unittests",
+        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
             "boringssl_crypto_tests"
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
@@ -1086,7 +1120,7 @@
       },
       {
         "args": [
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.pie_arm64.gin_unittests.filter",
+          "--test-launcher-filter-file=../../testing/buildbot/filters/android.device_10.proguard_rel.gin_unittests.filter",
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices"
         ],
@@ -2115,40 +2149,6 @@
       },
       {
         "args": [
-          "--gs-results-bucket=chromium-result-details",
-          "--recover-devices"
-        ],
-        "merge": {
-          "args": [
-            "--bucket",
-            "chromium-result-details",
-            "--test-name",
-            "webkit_unit_tests"
-          ],
-          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
-        },
-        "name": "webkit_unit_tests",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "dimensions": {
-            "device_os": "QQ1A.191205.008",
-            "device_os_flavor": "google",
-            "device_os_type": "userdebug",
-            "device_type": "walleye",
-            "os": "Android",
-            "pool": "chromium.tests"
-          },
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 6
-        },
-        "test": "blink_unittests",
-        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
-      },
-      {
-        "args": [
           "--webview-process-mode=multiple",
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices"
@@ -2578,27 +2578,6 @@
         },
         "test": "paint_preview_junit_tests",
         "test_id_prefix": "ninja://components/paint_preview/player/android:paint_preview_junit_tests/"
-      },
-      {
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "password_check_junit_tests",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "dimensions": {
-            "cores": "8",
-            "cpu": "x86-64",
-            "os": "Ubuntu-22.04",
-            "pool": "chromium.tests"
-          },
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "password_check_junit_tests",
-        "test_id_prefix": "ninja://chrome/browser/password_check/android:password_check_junit_tests/"
       },
       {
         "merge": {

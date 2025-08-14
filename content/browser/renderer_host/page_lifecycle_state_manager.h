@@ -98,7 +98,11 @@ class CONTENT_EXPORT PageLifecycleStateManager {
       blink::mojom::PageRestoreParamsPtr page_restore_params,
       base::OnceClosure done_cb);
 
-  void OnPageLifecycleChangedAck(
+  // Called when a new acknowledged state is available. This new state can come
+  // from several paths.
+  void OnPageLifecycleStateChanged(
+      blink::mojom::PageLifecycleStatePtr acknowledged_state);
+  void OnSetPageLifecycleStateResponse(
       blink::mojom::PageLifecycleStatePtr acknowledged_state,
       base::OnceClosure done_cb);
   void OnBackForwardCacheTimeout();
@@ -147,13 +151,6 @@ class CONTENT_EXPORT PageLifecycleStateManager {
   base::OneShotTimer back_forward_cache_timeout_monitor_;
 
   raw_ptr<TestDelegate> test_delegate_{nullptr};
-
-  // TODO(https://crbug.com/427316606): Remove this after debugging.
-  struct {
-    unsigned int no = 0;
-    unsigned int entering = 0;
-    unsigned int entered = 0;
-  } back_forward_cache_state_counts_;
 
   // NOTE: This must be the last member.
   base::WeakPtrFactory<PageLifecycleStateManager> weak_ptr_factory_{this};

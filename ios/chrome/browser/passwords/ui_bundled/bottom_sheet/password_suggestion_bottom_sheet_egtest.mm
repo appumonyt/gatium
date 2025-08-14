@@ -19,6 +19,7 @@
 #import "ios/chrome/browser/passwords/model/metrics/ios_password_manager_metrics.h"
 #import "ios/chrome/browser/passwords/model/password_manager_app_interface.h"
 #import "ios/chrome/browser/passwords/ui_bundled/bottom_sheet/password_suggestion_bottom_sheet_app_interface.h"
+#import "ios/chrome/browser/passwords/ui_bundled/password_constants.h"
 #import "ios/chrome/browser/settings/ui_bundled/password/password_details/password_details_table_view_constants.h"
 #import "ios/chrome/browser/settings/ui_bundled/password/password_manager_egtest_utils.h"
 #import "ios/chrome/browser/settings/ui_bundled/password/password_settings_app_interface.h"
@@ -96,7 +97,8 @@ id<GREYMatcher> PasswordManagerContextMenuItem() {
 // Returns the matcher for the backup password suggestion with the given
 // `suggestion_username`.
 id<GREYMatcher> BackupPasswordSuggestion(NSString* suggestion_username) {
-  id<GREYMatcher> backup_icon = grey_accessibilityID(kHistorySymbol);
+  id<GREYMatcher> backup_icon = grey_accessibilityID(
+      kRecoveryPasswordSuggestionIconAccessibilityIdentifier);
   id<GREYMatcher> backup_text = grey_accessibilityLabel(l10n_util::GetNSString(
       IDS_IOS_PASSWORD_BOTTOM_SHEET_RECOVERY_PASSWORD_LABEL));
   return grey_allOf(grey_accessibilityID(suggestion_username),
@@ -948,39 +950,35 @@ void LongPressElementOnceVisible(id<GREYMatcher> matcher) {
 // related field and that the buttons are still visible after we chang the trait
 // collection to larger content size.
 - (void)testOpenPasswordBottomSheetUsePasswordAfterTraitCollectionChange {
-  if (@available(iOS 17.0, *)) {
-    [self saveGenericPasswordAndLoadLoginPage];
+  [self saveGenericPasswordAndLoadLoginPage];
 
-    [[EarlGrey selectElementWithMatcher:WebViewMatcher()]
-        performAction:chrome_test_util::TapWebElementWithId(kFormPassword)];
+  [[EarlGrey selectElementWithMatcher:WebViewMatcher()]
+      performAction:chrome_test_util::TapWebElementWithId(kFormPassword)];
 
-    [ChromeEarlGrey
-        waitForUIElementToAppearWithMatcher:grey_accessibilityID(@"user")];
+  [ChromeEarlGrey
+      waitForUIElementToAppearWithMatcher:grey_accessibilityID(@"user")];
 
-    // Change trait collection to use accessibility large content size.
-    ScopedTraitOverrider overrider(TopPresentedViewController());
-    overrider.SetContentSizeCategory(UIContentSizeCategoryAccessibilityLarge);
+  // Change trait collection to use accessibility large content size.
+  ScopedTraitOverrider overrider(TopPresentedViewController());
+  overrider.SetContentSizeCategory(UIContentSizeCategoryAccessibilityLarge);
 
-    [ChromeEarlGreyUI waitForAppToIdle];
+  [ChromeEarlGreyUI waitForAppToIdle];
 
-    // Verify that the "Use Password" and "No Thanks" buttons are still visible.
-    [[EarlGrey selectElementWithMatcher:UsePasswordButton()]
-        assertWithMatcher:grey_notNil()];
+  // Verify that the "Use Password" and "No Thanks" buttons are still visible.
+  [[EarlGrey selectElementWithMatcher:UsePasswordButton()]
+      assertWithMatcher:grey_notNil()];
 
-    [[EarlGrey selectElementWithMatcher:OpenKeyboardButton()]
-        assertWithMatcher:grey_notNil()];
+  [[EarlGrey selectElementWithMatcher:OpenKeyboardButton()]
+      assertWithMatcher:grey_notNil()];
 
-    // Verify the credit card tablew view is still visible.
-    [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"user")]
-        assertWithMatcher:grey_notNil()];
+  // Verify the credit card tablew view is still visible.
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"user")]
+      assertWithMatcher:grey_notNil()];
 
-    [[EarlGrey selectElementWithMatcher:UsePasswordButton()]
-        performAction:grey_tap()];
+  [[EarlGrey selectElementWithMatcher:UsePasswordButton()]
+      performAction:grey_tap()];
 
-    [self verifyPasswordFieldsHaveBeenFilled:@"user"];
-  } else {
-    EARL_GREY_TEST_SKIPPED(@"Not available for under iOS 17.");
-  }
+  [self verifyPasswordFieldsHaveBeenFilled:@"user"];
 }
 
 // TODO(crbug.com/361518360): Unflake the test.

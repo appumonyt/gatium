@@ -5,11 +5,13 @@
 #ifndef CHROME_BROWSER_ACTOR_TOOLS_TOOL_REQUEST_VISITOR_FUNCTOR_H_
 #define CHROME_BROWSER_ACTOR_TOOLS_TOOL_REQUEST_VISITOR_FUNCTOR_H_
 
+#include "chrome/browser/actor/tools/attempt_login_tool_request.h"
 #include "chrome/browser/actor/tools/click_tool_request.h"
 #include "chrome/browser/actor/tools/drag_and_release_tool_request.h"
 #include "chrome/browser/actor/tools/history_tool_request.h"
 #include "chrome/browser/actor/tools/move_mouse_tool_request.h"
 #include "chrome/browser/actor/tools/navigate_tool_request.h"
+#include "chrome/browser/actor/tools/script_tool_request.h"
 #include "chrome/browser/actor/tools/scroll_tool_request.h"
 #include "chrome/browser/actor/tools/select_tool_request.h"
 #include "chrome/browser/actor/tools/tab_management_tool_request.h"
@@ -22,6 +24,7 @@ namespace actor {
 class ToolRequestVisitorFunctor {
  public:
   virtual void Apply(const ActivateTabToolRequest&) = 0;
+  virtual void Apply(const AttemptLoginToolRequest&) = 0;
   virtual void Apply(const ClickToolRequest&) = 0;
   virtual void Apply(const CloseTabToolRequest&) = 0;
   virtual void Apply(const CreateTabToolRequest&) = 0;
@@ -29,6 +32,7 @@ class ToolRequestVisitorFunctor {
   virtual void Apply(const HistoryToolRequest&) = 0;
   virtual void Apply(const MoveMouseToolRequest&) = 0;
   virtual void Apply(const NavigateToolRequest&) = 0;
+  virtual void Apply(const ScriptToolRequest&) = 0;
   virtual void Apply(const ScrollToolRequest&) = 0;
   virtual void Apply(const SelectToolRequest&) = 0;
   virtual void Apply(const TypeToolRequest&) = 0;

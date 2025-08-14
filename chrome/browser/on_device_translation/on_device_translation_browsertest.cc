@@ -4,6 +4,7 @@
 
 #include <iterator>
 #include <memory>
+#include <string>
 
 #include "base/command_line.h"
 #include "base/containers/fixed_flat_set.h"
@@ -51,6 +52,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/browsing_data_remover_test_util.h"
 #include "content/public/test/url_loader_interceptor.h"
+#include "net/base/filename_util.h"
 #include "net/dns/mock_host_resolver.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/public/common/features_generated.h"
@@ -890,11 +892,19 @@ class OnDeviceTranslationProgressMonitorBrowserTest
 
     // Setup a ComponentUpdateService to be used by the TranslationManager.
     EXPECT_CALL(*translation_manager_, GetComponentUpdateService())
-        .WillOnce(Invoke([&]() { return &component_update_service_; }));
+        .WillOnce([&]() { return &component_update_service_; });
 
-    // `GetComponentIDs` should be called by the
+    // `GetComponentDetails` should be called by the
     // `AIModelDownloadProgressManager` to filter out existing downloads.
-    EXPECT_CALL(component_update_service_, GetComponentIDs()).Times(1);
+    EXPECT_CALL(component_update_service_, GetComponentDetails(_, _))
+        .WillRepeatedly(
+            [&](const std::string& id, component_updater::CrxUpdateItem* item) {
+              // The `total_bytes` doesn't matter since
+              // `AIModelDownloadProgressManager` doesn't check it for now.
+              *item = GetComponentForTranslateKit(100).CreateUpdateItem(
+                  update_client::ComponentState::kNew, 0);
+              return true;
+            });
   }
 
   void TearDownOnMainThread() override {
@@ -909,17 +919,17 @@ class OnDeviceTranslationProgressMonitorBrowserTest
 
     base::RunLoop run_loop_translate_kit;
     EXPECT_CALL(component_manager_, RegisterTranslateKitComponentImpl())
-        .WillOnce(Invoke([&]() { run_loop_translate_kit.Quit(); }));
+        .WillOnce([&]() { run_loop_translate_kit.Quit(); });
 
     base::RunLoop run_loop_language_pack;
     EXPECT_CALL(component_manager_,
                 RegisterTranslateKitLanguagePackComponent(_))
-        .WillRepeatedly(Invoke([&](LanguagePackKey key) {
+        .WillRepeatedly([&](LanguagePackKey key) {
           EXPECT_EQ(language_pack_keys.erase(key), 1u);
           if (language_pack_keys.empty()) {
             run_loop_language_pack.Quit();
           }
-        }));
+        });
 
     EXPECT_EQ(EvalJsCatchingError(base::StringPrintf(R"(
                   self.progressEvents = [];
@@ -991,7 +1001,8 @@ class OnDeviceTranslationProgressMonitorBrowserTest
                             await self.createTranslatorPromise;
                             return self.progressEvents;
                           })())")
-                                           .ExtractList();
+                                           .TakeValue()
+                                           .TakeList();
 
     ASSERT_EQ(actual_updates.size(), expected_updates.size());
     for (size_t i = 0; i < actual_updates.size(); i++) {
@@ -2446,4 +2457,42 @@ IN_PROC_BROWSER_TEST_F(
   TestSimpleTranslationWorks(browser(), "en", "ja");
 }
 
+// Tests the behavior of the Translator API on a page with a file scheme URL.
+IN_PROC_BROWSER_TEST_F(OnDeviceTranslationBrowserTest, FileSchemeUrl) {
+  MockComponentManager mock_component_manager(GetTempDir());
+  mock_component_manager.ExpectCallRegisterTranslateKitComponentAndInstall();
+  mock_component_manager.ExpectCallRegisterLanguagePackComponentAndInstall(
+      {LanguagePackKey::kEn_Ja});
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  base::FilePath empty_html_path = temp_dir.GetPath().AppendASCII("empty.html");
+  ASSERT_TRUE(base::WriteFile(empty_html_path, "<html></html>"));
+  base::FilePath empty2_html_path =
+      temp_dir.GetPath().AppendASCII("empty2.html");
+  ASSERT_TRUE(base::WriteFile(empty2_html_path, "<html></html>"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), net::FilePathToFileURL(empty_html_path)));
+
+  // The language pack for Japanese needs to be downloaded.
+  TestTranslationAvailable(browser(), "en", "ja", "downloadable");
+
+  // Create a translator.
+  EXPECT_EQ(EvalJsCatchingError(R"(
+      window._translator = await Translator.create({
+        sourceLanguage: 'en',
+        targetLanguage: 'ja',
+      });
+      return await window._translator.translate('hello');
+    )"),
+            "en to ja: hello");
+
+  // After creating a translator, the language pair should be available.
+  TestTranslationAvailable(browser(), "en", "ja", "available");
+
+  // Navigate to another file URL. The availability should be reset.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), net::FilePathToFileURL(empty2_html_path)));
+  TestTranslationAvailable(browser(), "en", "ja", "downloadable");
+}
 }  // namespace on_device_translation

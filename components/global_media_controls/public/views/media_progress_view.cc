@@ -12,6 +12,7 @@
 #include "services/media_session/public/mojom/media_session.mojom.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/accessibility/ax_action_data.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/gfx/canvas.h"
@@ -284,6 +285,18 @@ void MediaProgressView::OnBlur() {
   SchedulePaint();
 }
 
+void MediaProgressView::OnMouseEntered(const ui::MouseEvent& event) {
+  straight_progress_stroke_width_ = kLargeStrokeWidth;
+  SchedulePaint();
+}
+
+void MediaProgressView::OnMouseExited(const ui::MouseEvent& event) {
+  if (!is_dragging_) {
+    straight_progress_stroke_width_ = kStrokeWidth;
+    SchedulePaint();
+  }
+}
+
 ui::Cursor MediaProgressView::GetCursor(const ui::MouseEvent& event) {
   return ui::mojom::CursorType::kHand;
 }
@@ -399,6 +412,12 @@ void MediaProgressView::UpdateProgress(
                        base::Unretained(this), is_paused_));
   }
 
+  // If the user is currently dragging the progress bar and the media is no
+  // longer paused, re-pause it for dragging.
+  if (is_dragging_ && !is_paused_) {
+    PauseForDragging();
+  }
+
   current_position_ = media_position.GetPosition();
   media_duration_ = media_position.duration();
   is_live_ = media_duration_.is_max();
@@ -450,13 +469,12 @@ void MediaProgressView::OnProgressDragStarted(double location) {
 }
 
 void MediaProgressView::DelayedProgressDragStarted(double location) {
+  is_dragging_ = true;
+
   // Pause the media only once if it is playing when the user starts dragging
   // the progress line.
   if (!is_paused_ && !paused_for_dragging_) {
-    playback_state_change_for_dragging_callback_.Run(
-        PlaybackStateChangeForDragging::kPauseForDraggingStarted);
-    paused_for_dragging_ = true;
-    UpdateProgressColors(paused_for_dragging_);
+    PauseForDragging();
   }
 
   // Enlarge the straight progress line stroke width when the user starts
@@ -470,6 +488,8 @@ void MediaProgressView::DelayedProgressDragStarted(double location) {
 }
 
 void MediaProgressView::OnProgressDragEnded() {
+  is_dragging_ = false;
+
   if (progress_drag_started_delay_timer_->IsRunning()) {
     // If the timer is still running, we consider the user event to be clicking
     // rather than dragging and do not need to un-pause the media.
@@ -483,10 +503,20 @@ void MediaProgressView::OnProgressDragEnded() {
       paused_for_dragging_ = false;
       UpdateProgressColors(paused_for_dragging_);
     }
-    // Reset the straight progress line stroke width.
-    straight_progress_stroke_width_ = kStrokeWidth;
+    // Reset the straight progress line stroke width if the mouse is not
+    // hovering over the view.
+    if (!IsMouseHovered()) {
+      straight_progress_stroke_width_ = kStrokeWidth;
+    }
     drag_state_change_callback_.Run(DragState::kDragEnded);
   }
+}
+
+void MediaProgressView::PauseForDragging() {
+  playback_state_change_for_dragging_callback_.Run(
+      PlaybackStateChangeForDragging::kPauseForDraggingStarted);
+  paused_for_dragging_ = true;
+  UpdateProgressColors(true);
 }
 
 void MediaProgressView::UpdateProgressColors(bool is_paused) {

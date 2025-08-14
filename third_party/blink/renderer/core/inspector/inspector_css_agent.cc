@@ -72,6 +72,7 @@
 #include "third_party/blink/renderer/core/css/css_unparsed_declaration_value.h"
 #include "third_party/blink/renderer/core/css/css_value.h"
 #include "third_party/blink/renderer/core/css/css_variable_data.h"
+#include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
 #include "third_party/blink/renderer/core/css/font_face.h"
 #include "third_party/blink/renderer/core/css/font_size_functions.h"
 #include "third_party/blink/renderer/core/css/media_list.h"
@@ -90,17 +91,21 @@
 #include "third_party/blink/renderer/core/css/properties/shorthand.h"
 #include "third_party/blink/renderer/core/css/property_registry.h"
 #include "third_party/blink/renderer/core/css/resolver/scoped_style_resolver.h"
+#include "third_party/blink/renderer/core/css/resolver/style_cascade.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/resolver/style_rule_usage_tracker.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
+#include "third_party/blink/renderer/core/css/style_environment_variables.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_rule_font_palette_values.h"
 #include "third_party/blink/renderer/core/css/style_rule_function_declarations.h"
 #include "third_party/blink/renderer/core/css/style_sheet.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/css/style_sheet_list.h"
+#include "third_party/blink/renderer/core/css/zoom_adjusted_pixel_value.h"
 #include "third_party/blink/renderer/core/display_lock/display_lock_utilities.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -118,6 +123,7 @@
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/inspector/identifiers_factory.h"
 #include "third_party/blink/renderer/core/inspector/inspected_frames.h"
+#include "third_party/blink/renderer/core/inspector/inspector_base_agent.h"
 #include "third_party/blink/renderer/core/inspector/inspector_contrast.h"
 #include "third_party/blink/renderer/core/inspector/inspector_ghost_rules.h"
 #include "third_party/blink/renderer/core/inspector/inspector_history.h"
@@ -1614,6 +1620,46 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
   return protocol::Response::Success();
 }
 
+protocol::Response InspectorCSSAgent::getEnvironmentVariables(
+    std::unique_ptr<protocol::DictionaryValue>* environment_variables) {
+  StyleEnvironmentVariables& vars =
+      StyleEnvironmentVariables::GetRootInstance();
+  *environment_variables = protocol::DictionaryValue::create();
+
+  // LINT.IfChange(EnvironmentVariables)
+  auto variables = {UADefinedVariable::kSafeAreaInsetTop,
+                    UADefinedVariable::kSafeAreaInsetLeft,
+                    UADefinedVariable::kSafeAreaInsetBottom,
+                    UADefinedVariable::kSafeAreaInsetRight,
+                    UADefinedVariable::kSafeAreaMaxInsetTop,
+                    UADefinedVariable::kSafeAreaMaxInsetLeft,
+                    UADefinedVariable::kSafeAreaMaxInsetBottom,
+                    UADefinedVariable::kSafeAreaMaxInsetRight,
+                    UADefinedVariable::kKeyboardInsetTop,
+                    UADefinedVariable::kKeyboardInsetLeft,
+                    UADefinedVariable::kKeyboardInsetBottom,
+                    UADefinedVariable::kKeyboardInsetRight,
+                    UADefinedVariable::kKeyboardInsetWidth,
+                    UADefinedVariable::kKeyboardInsetHeight,
+                    UADefinedVariable::kTitlebarAreaX,
+                    UADefinedVariable::kTitlebarAreaY,
+                    UADefinedVariable::kTitlebarAreaWidth,
+                    UADefinedVariable::kTitlebarAreaHeight,
+                    UADefinedVariable::kPreferredTextScale,
+                    UADefinedVariable::kSafePrintableInset};
+  // LINT.ThenChange(//third_party/blink/renderer/core/css/style_environment_variables.h:UADefinedVariable)
+
+  for (auto variable : variables) {
+    auto name = StyleEnvironmentVariables::GetVariableName(variable, nullptr);
+    auto* value = vars.ResolveVariable(name, {});
+    if (value) {
+      (*environment_variables)
+          ->setValue(name, protocol::StringValue::create(value->Serialize()));
+    }
+  }
+  return protocol::Response::Success();
+}
+
 template <class CSSRuleCollection>
 static CSSKeyframesRule* FindKeyframesRule(CSSRuleCollection* css_rules,
                                            StyleRuleKeyframes* keyframes_rule) {
@@ -1898,7 +1944,7 @@ InspectorCSSAgent::FindKeyframesRuleFromUAViewTransitionStylesheet(
     StyleRuleKeyframes* keyframes_style_rule) {
   // This function should only be called for transition pseudo-elements.
   CHECK(IsTransitionPseudoElement(element->GetPseudoId()));
-  auto* transition = ViewTransitionUtils::GetTransition(element->GetDocument());
+  auto* transition = ViewTransitionUtils::GetTransition(*element);
 
   // There must be a transition and an active UAStyleSheet for the
   // transition when the queried element is a transition pseudo-element.
@@ -2160,13 +2206,10 @@ String InspectorCSSAgent::ResolvePercentagesValues(
     if (percentage_resolution_value == kIndefiniteSize) {
       return original_value;
     }
-    LayoutUnit resolved_percentage_value =
-        MinimumValueForLength(length_value, percentage_resolution_value);
-
-    StringBuilder builder;
-    builder.AppendNumber(static_cast<double>(resolved_percentage_value));
-    builder.Append("px");
-    return builder.ToString();
+    CSSValue* resolved_percentage_value = ZoomAdjustedPixelValue(
+        MinimumValueForLength(length_value, percentage_resolution_value),
+        element->ComputedStyleRef());
+    return resolved_percentage_value->CssText();
   }
 
   return original_value;
@@ -2220,21 +2263,21 @@ protocol::Response InspectorCSSAgent::resolveValues(
         "Computed style of element is null.");
   }
 
-  const AtomicString custom_property_name(
+  const AtomicString temp_custom_property_name(
       ("--" + base::UnguessableToken::Create().ToString()).c_str());
   std::optional<AutoRegistration> auto_registration;
   CSSSyntaxDefinition syntax_definition = CreateCombinedSyntax();
   PropertyRegistration* property_registration =
       MakeGarbageCollected<PropertyRegistration>(
-          custom_property_name, syntax_definition, /* inherits */ false,
+          temp_custom_property_name, syntax_definition, /* inherits */ false,
           /* initial */ nullptr);
   // Temporary register property with combined syntax.
-  auto_registration.emplace(document, custom_property_name,
+  auto_registration.emplace(document, temp_custom_property_name,
                             *property_registration);
-  CustomProperty temporary_custom_property(custom_property_name, document);
+  CustomProperty temporary_custom_property(temp_custom_property_name, document);
 
   std::optional<CSSPropertyName> property_name =
-      CSSPropertyName(custom_property_name);
+      CSSPropertyName(temp_custom_property_name);
   if (property_name_str.has_value()) {
     property_name =
         CSSPropertyName::From(execution_context, *property_name_str);
@@ -2251,9 +2294,36 @@ protocol::Response InspectorCSSAgent::resolveValues(
 
   *results = std::make_unique<protocol::Array<String>>();
   for (auto value : *values) {
+    CSSVariableData* data =
+        CSSVariableData::Create(value, /* is_animation_tainted= */ false,
+                                /* is_attr_tainted= */ false,
+                                /*needs_variable_resolution=*/true);
+    if (!data) {
+      (*results)->emplace_back(value);
+      continue;
+    }
+
+    const CSSUnparsedDeclarationValue* unparsed =
+        MakeGarbageCollected<CSSUnparsedDeclarationValue>(data, parser_context);
+    if (!unparsed) {
+      (*results)->emplace_back(value);
+      continue;
+    }
+
+    StyleResolverState state(element->GetDocument(), *element);
+    state.EnsureParentStyle();
+    state.SetStyle(*element->GetComputedStyle());
+    const CSSUnparsedDeclarationValue* substituted =
+        StyleCascade::ResolveSubstitutions(state, *unparsed, &document);
+
+    if (!substituted) {
+      (*results)->emplace_back(value);
+      continue;
+    }
+
     const CSSValue* computed_value = nullptr;
-    const CSSValue* parsed_value =
-        CSSParser::ParseSingleValue(property_name->Id(), value, parser_context);
+    const CSSValue* parsed_value = CSSParser::ParseSingleValue(
+        property_name->Id(), substituted->CssText(), parser_context);
     if (parsed_value) {
       computed_value =
           StyleResolver::ComputeValue(element, *property_name, *parsed_value);
@@ -2264,14 +2334,14 @@ protocol::Response InspectorCSSAgent::resolveValues(
       }
     } else {
       auto local_context = CSSParserLocalContext();
-      parsed_value = temporary_custom_property.Parse(value, *parser_context,
-                                                     local_context);
+      parsed_value = temporary_custom_property.Parse(
+          substituted->CssText(), *parser_context, local_context);
       if (!parsed_value) {
         (*results)->emplace_back(value);
         continue;
       }
       computed_value = StyleResolver::ComputeValue(
-          element, CSSPropertyName(custom_property_name), *parsed_value);
+          element, CSSPropertyName(temp_custom_property_name), *parsed_value);
     }
 
     if (!computed_value) {
@@ -3301,6 +3371,9 @@ InspectorCSSAgent::BuildContainerQueryObject(CSSContainerRule* rule) {
   if (rule->Selector().SelectsScrollStateContainers()) {
     container_query_object->setQueriesScrollState(true);
   }
+  if (rule->Selector().SelectsAnchoredContainers()) {
+    container_query_object->setQueriesAnchored(true);
+  }
   return container_query_object;
 }
 
@@ -4097,7 +4170,7 @@ void InspectorCSSAgent::DidMutateStyleSheet(CSSStyleSheet* css_style_sheet) {
 void InspectorCSSAgent::GetTextPosition(wtf_size_t offset,
                                         const String* text,
                                         TextPosition* result) {
-  std::unique_ptr<Vector<wtf_size_t>> line_endings = WTF::GetLineEndings(*text);
+  std::unique_ptr<Vector<wtf_size_t>> line_endings = GetLineEndings(*text);
   *result = TextPosition::FromOffsetAndLineEndings(offset, *line_endings);
 }
 

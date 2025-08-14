@@ -51,7 +51,6 @@
 #include "components/safe_browsing/core/common/features.h"
 #include "components/services/on_device_translation/buildflags/buildflags.h"
 #include "device/vr/buildflags/buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "third_party/widevine/cdm/buildflags.h"
 #include "ui/accessibility/accessibility_features.h"
 
@@ -259,9 +258,7 @@ void RegisterComponentsForUpdate() {
 #endif  // BUIDLFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-  if (features::IsWasmTtsComponentUpdaterEnabled()) {
-    RegisterWasmTtsEngineComponent(cus);
-  }
+  RegisterWasmTtsEngineComponent(cus, g_browser_process->local_state());
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 
   RegisterProbabilisticRevealTokenComponent(cus);

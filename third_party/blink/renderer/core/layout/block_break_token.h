@@ -11,14 +11,12 @@
 #include "third_party/blink/renderer/core/layout/block_break_token_data.h"
 #include "third_party/blink/renderer/core/layout/break_token.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
 class BoxFragmentBuilder;
-class InlineBreakToken;
 
 // Represents a break token for a block node.
 class CORE_EXPORT BlockBreakToken final : public BreakToken {
@@ -78,23 +76,6 @@ class CORE_EXPORT BlockBreakToken final : public BreakToken {
   LayoutUnit ConsumedBlockSize() const {
     DCHECK(data_);
     return data_->consumed_block_size;
-  }
-
-  // The consumed block size when writing back to legacy layout. The only time
-  // this may be different than ConsumedBlockSize() is in the case of a
-  // fragmentainer. We clamp the fragmentainer block size from 0 to 1 for legacy
-  // write-back only in the case where there is content that overflows the
-  // zero-height fragmentainer. This can result in a different consumed block
-  // size when used for legacy. This difference is represented by
-  // |consumed_block_size_legacy_adjustment_|.
-  LayoutUnit ConsumedBlockSizeForLegacy() const {
-    DCHECK(!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
-#if DCHECK_IS_ON()
-    DCHECK(!is_repeated_actual_break_);
-#endif
-    DCHECK(data_);
-    return data_->consumed_block_size +
-           data_->consumed_block_size_legacy_adjustment;
   }
 
   // A unique identifier for a fragment that generates a break token. This is
@@ -213,10 +194,6 @@ class CORE_EXPORT BlockBreakToken final : public BreakToken {
     return ChildBreakTokensInternal();
   }
 
-  // Find the child InlineBreakToken for the specified node.
-  const InlineBreakToken* InlineBreakTokenFor(const LayoutInputNode&) const;
-  const InlineBreakToken* InlineBreakTokenFor(const LayoutBox&) const;
-
   // When merging out-of-flow children from a new placeholder fragmentainer into
   // an existing one, some new break token data may also have to be copied over.
   class MutableForOofFragmentation {
@@ -239,9 +216,7 @@ class CORE_EXPORT BlockBreakToken final : public BreakToken {
     return MutableForOofFragmentation(*this);
   }
 
-#if DCHECK_IS_ON()
-  String ToString() const;
-#endif
+  String ToString(bool skip_node_info = false) const;
 
   using PassKey = base::PassKey<BlockBreakToken>;
 

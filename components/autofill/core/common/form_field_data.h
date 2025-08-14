@@ -60,10 +60,16 @@ enum FieldPropertiesFlags : uint32_t {
   // Whether a change password filled was autofilled as part of change password
   // process. Filling happens on page-load although it's initiated by a user.
   kAutofilledChangePasswordFormOnPageLoad = 1u << 7,
+  // Whether a username or password field was autofilled as a result
+  // of a request to the actor login component.
+  kAutofilledActorLogin = 1u << 8,
   // A value was autofilled on any of the triggers.
   kAutofilled = kAutofilledOnUserTrigger | kAutofilledOnPageLoad |
                 kAutofilledPasswordFormFilledViaManualFallback |
-                kAutofilledChangePasswordFormOnPageLoad,
+                kAutofilledChangePasswordFormOnPageLoad | kAutofilledActorLogin
+
+  // IMPORTANT: Make sure to keep this enum in sync with the server-side enum
+  // with the same name in classification_utils.h.
 };
 
 // FieldPropertiesMask is used to contain combinations of FieldPropertiesFlags
@@ -87,83 +93,6 @@ struct SelectOption {
   // The option's "label" attribute, or, if not present, its text content.
   std::u16string text;
 };
-
-// Stores information about the section of the field.
-class Section {
- public:
-  struct Autocomplete {
-    friend auto operator<=>(const Autocomplete& lhs,
-                            const Autocomplete& rhs) = default;
-    friend bool operator==(const Autocomplete& lhs,
-                           const Autocomplete& rhs) = default;
-
-    std::string section;
-    HtmlFieldMode mode = HtmlFieldMode::kNone;
-  };
-
-  using Default = std::monostate;
-
-  struct FieldIdentifier {
-    FieldIdentifier() = default;
-    FieldIdentifier(std::string field_name,
-                    size_t local_frame_id,
-                    FieldRendererId field_renderer_id)
-        : field_name(std::move(field_name)),
-          local_frame_id(local_frame_id),
-          field_renderer_id(field_renderer_id) {}
-
-    friend auto operator<=>(const FieldIdentifier& lhs,
-                            const FieldIdentifier& rhs) = default;
-    friend bool operator==(const FieldIdentifier& lhs,
-                           const FieldIdentifier& rhs) = default;
-
-    std::string field_name;
-    size_t local_frame_id;
-    FieldRendererId field_renderer_id;
-  };
-
-  static Section FromAutocomplete(Autocomplete autocomplete);
-  static Section FromFieldIdentifier(
-      const FormFieldData& field,
-      base::flat_map<LocalFrameToken, size_t>& frame_token_ids);
-
-  Section();
-  Section(const Section& section);
-  ~Section();
-
-  friend auto operator<=>(const Section& lhs, const Section& rhs) = default;
-  friend bool operator==(const Section& lhs, const Section& rhs) = default;
-  explicit operator bool() const;
-
-  bool is_from_autocomplete() const;
-  bool is_from_fieldidentifier() const;
-  bool is_default() const;
-
-  // Reconstructs `this` to a string. The string representation of the section
-  // is used in the renderer.
-  // TODO(crbug.com/40200532): Remove when fixed.
-  std::string ToString() const;
-
- private:
-  // Represents the section's origin:
-  //  - `Default` is the empty, initial value before running any sectioning
-  //     algorithm,
-  //  - `Autocomplete` represents a section derived from the autocomplete
-  //     attribute,
-  //  - `FieldIdentifier` represents a section generated based on the first
-  //     field in the section.
-  using SectionValue = std::variant<Default, Autocomplete, FieldIdentifier>;
-
-  friend struct mojo::StructTraits<autofill::mojom::SectionDataView,
-                                   autofill::Section>;
-  friend struct mojo::UnionTraits<autofill::mojom::SectionValueDataView,
-                                  autofill::Section::SectionValue>;
-
-  SectionValue value_;
-};
-
-LogBuffer& operator<<(LogBuffer& buffer, const Section& section);
-std::ostream& operator<<(std::ostream& os, const Section& section);
 
 using FormControlType = mojom::FormControlType;
 
@@ -419,11 +348,6 @@ class FormFieldData {
     form_control_ax_id_ = form_control_ax_id;
   }
 
-  // The unique identifier of the section (e.g. billing vs. shipping address)
-  // of this field.
-  const Section& section() const { return section_; }
-  void set_section(Section section) { section_ = std::move(section); }
-
   // The default value for text fields that have no maxlength attribute
   // specified. We choose the maximum 32 bit, rather than 64 bit, number because
   // so we don't need to worry about integer overflows when doing arithmetic
@@ -580,7 +504,6 @@ class FormFieldData {
   url::Origin origin_;
   int32_t form_control_ax_id_ = 0;
   uint64_t max_length_ = std::numeric_limits<uint32_t>::max();
-  Section section_;
   bool is_autofilled_ = false;
   bool is_user_edited_ = false;
   CheckStatus check_status_ = CheckStatus::kNotCheckable;
@@ -623,11 +546,6 @@ struct FormFieldData::FillData {
   // elements in the same document (or the collection of unowned fields of the
   // DOM in case this ID is null).
   FormRendererId host_form_id;
-
-  // The unique identifier of the section (e.g. billing vs. shipping address)
-  // of this field. This is only used on iOS.
-  // TODO(crbug.com/40266549): Remove when Undo Autofill launches on iOS.
-  Section section;
 
   // Whether the renderer should mark the field as autofilled or not. In most
   // filling cases this will be true. However for the case of UndoAutofill we

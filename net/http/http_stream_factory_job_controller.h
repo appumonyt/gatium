@@ -42,7 +42,7 @@ class HttpStreamFactory::JobController
                 const HttpRequestInfo& http_request_info,
                 bool is_preconnect,
                 bool is_websocket,
-                bool enable_ip_based_pooling,
+                bool enable_ip_based_pooling_for_h2,
                 bool enable_alternative_services,
                 bool delay_main_job_with_available_spdy_session,
                 const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs);
@@ -53,14 +53,6 @@ class HttpStreamFactory::JobController
   const Job* main_job() const { return main_job_.get(); }
   const Job* alternative_job() const { return alternative_job_.get(); }
   const Job* dns_alpn_h3_job() const { return dns_alpn_h3_job_.get(); }
-
-  // Modifies `url` in-place, applying any applicable HostMappingRules of
-  // `session_` to it.
-  void RewriteUrlWithHostMappingRules(GURL& url) const;
-
-  // Same as RewriteUrlWithHostMappingRules(), but duplicates `url` instead of
-  // modifying it.
-  GURL DuplicateUrlWithHostMappingRules(const GURL& url) const;
 
   // Methods below are called by HttpStreamFactory only.
   // Creates request and hands out to HttpStreamFactory, this will also create
@@ -245,13 +237,11 @@ class HttpStreamFactory::JobController
   void ResetErrorStatusForJobs();
 
   AlternativeServiceInfo GetAlternativeServiceInfoFor(
-      const GURL& http_request_info_url,
       const StreamRequestInfo& request_info,
       HttpStreamRequest::Delegate* delegate,
       HttpStreamRequest::StreamType stream_type);
 
   AlternativeServiceInfo GetAlternativeServiceInfoInternal(
-      const GURL& http_request_info_url,
       const StreamRequestInfo& request_info,
       HttpStreamRequest::Delegate* delegate,
       HttpStreamRequest::StreamType stream_type);
@@ -301,6 +291,8 @@ class HttpStreamFactory::JobController
   // the preconnect completed. Used to notify the factory of completion.
   void OnPoolPreconnectsComplete(int rv);
 
+  bool disable_cert_verification_network_fetches() const;
+
   const raw_ptr<HttpStreamFactory> factory_;
   const raw_ptr<HttpNetworkSession> session_;
   const raw_ptr<JobFactory> job_factory_;
@@ -321,7 +313,8 @@ class HttpStreamFactory::JobController
 
   // Enable pooling to a SpdySession with matching IP and certificate even if
   // the SpdySessionKey is different.
-  const bool enable_ip_based_pooling_;
+  // Note that this does nothing with QUIC.
+  const bool enable_ip_based_pooling_for_h2_;
 
   // Enable using alternative services for the request. If false, the
   // JobController will only create a |main_job_|.
@@ -388,14 +381,6 @@ class HttpStreamFactory::JobController
 
   State next_state_ = STATE_RESOLVE_PROXY;
   std::unique_ptr<ProxyResolutionRequest> proxy_resolve_request_;
-  // The URL from the input `http_request_info`.
-  // TODO(https://crbug.com/332724851): Remove this, and update code to use
-  // `origin_url_`.
-  const GURL http_request_info_url_;
-  // The same as `request_info_url_`, but with any applicable rules in
-  // HostMappingRules applied to it.
-  // TODO: Make this use SchemeHostPort instead, and rename it.
-  const GURL origin_url_;
   const StreamRequestInfo request_info_;
   ProxyInfo proxy_info_;
   const std::vector<SSLConfig::CertAndStatus> allowed_bad_certs_;

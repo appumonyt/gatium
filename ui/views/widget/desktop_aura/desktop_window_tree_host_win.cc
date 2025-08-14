@@ -15,6 +15,7 @@
 #include "base/containers/flat_set.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/trace_event/trace_event.h"
@@ -150,15 +151,18 @@ aura::Window* DesktopWindowTreeHostWin::GetContentWindowForHWND(HWND hwnd) {
 void DesktopWindowTreeHostWin::StartTouchDrag(gfx::Point screen_point) {
   // Send a mouse down and mouse move before do drag drop runs its own event
   // loop. This is required for ::DoDragDrop to start the drag.
-  ui::SendMouseEvent(screen_point, MOUSEEVENTF_LEFTDOWN);
-  ui::SendMouseEvent(screen_point, MOUSEEVENTF_MOVE);
+  ui::SendMouseEvent(screen_point,
+                     (MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_VIRTUALDESK));
+  ui::SendMouseEvent(screen_point,
+                     (MOUSEEVENTF_MOVE | MOUSEEVENTF_VIRTUALDESK));
   in_touch_drag_ = true;
 }
 
 void DesktopWindowTreeHostWin::FinishTouchDrag(gfx::Point screen_point) {
   if (in_touch_drag_) {
     in_touch_drag_ = false;
-    ui::SendMouseEvent(screen_point, MOUSEEVENTF_LEFTUP);
+    ui::SendMouseEvent(screen_point,
+                       (MOUSEEVENTF_LEFTUP | MOUSEEVENTF_VIRTUALDESK));
   }
 }
 
@@ -193,10 +197,18 @@ void DesktopWindowTreeHostWin::Init(const Widget::InitParams& params) {
   message_handler_->Init(parent_hwnd, pixel_bounds);
 
   if (ShouldAddDWMBackdrop()) {
-    DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_TRANSIENTWINDOW;
+    DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW;
     HRESULT hr = DwmSetWindowAttribute(GetHWND(), DWMWA_SYSTEMBACKDROP_TYPE,
                                        &backdrop, sizeof(backdrop));
-    CHECK_EQ(hr, S_OK);
+    if (FAILED(hr)) {
+      // If DwmSetWindowAttribute fails, it indicates that there was a problem
+      // setting the system backdrop type. In this state, the backdrop is not
+      // applied, and the worst that can happen is a transparent window appears
+      // while the GPU process is being started.
+      LOG(ERROR) << "Failed to set DWM system backdrop type: "
+                 << logging::SystemErrorCodeToString(
+                        static_cast<logging::SystemErrorCode>(hr));
+    }
   }
 
   UpdateBackdropColorMode();
@@ -283,6 +295,19 @@ void DesktopWindowTreeHostWin::CloseNow() {
 
 aura::WindowTreeHost* DesktopWindowTreeHostWin::AsWindowTreeHost() {
   return this;
+}
+
+DesktopWindowTreeHost::WindowTreeHosts
+DesktopWindowTreeHostWin::GetOwnedWindowTreeHosts() {
+  WindowTreeHosts window_tree_hosts;
+  std::vector<HWND> owned_hwns = message_handler_->GetOwnedWindows();
+  for (HWND hwnd : owned_hwns) {
+    if (aura::WindowTreeHost* host =
+            aura::WindowTreeHost::GetForAcceleratedWidget(hwnd)) {
+      window_tree_hosts.insert(host);
+    }
+  }
+  return window_tree_hosts;
 }
 
 void DesktopWindowTreeHostWin::Show(ui::mojom::WindowShowState show_state,
@@ -1191,7 +1216,8 @@ void DesktopWindowTreeHostWin::HandleTouchEvent(ui::TouchEvent* event) {
     // to mouse pointer events. The drag controller (`DesktopDragDropClientWin`)
     // will manage gesture states until a drop happens.
     if (event->type() == ui::EventType::kTouchMoved) {
-      ui::SendMouseEvent(screen_point, MOUSEEVENTF_MOVE);
+      ui::SendMouseEvent(screen_point,
+                         (MOUSEEVENTF_MOVE | MOUSEEVENTF_VIRTUALDESK));
     } else if (event->type() == ui::EventType::kTouchReleased) {
       FinishTouchDrag(screen_point);
     }
@@ -1490,12 +1516,13 @@ void DesktopWindowTreeHostWin::UpdateBackdropColorMode() {
       GetWidget()->GetColorMode() == ui::ColorProviderKey::ColorMode::kDark;
   HRESULT hr = DwmSetWindowAttribute(GetHWND(), DWMWA_USE_IMMERSIVE_DARK_MODE,
                                      &use_dark_mode, sizeof(use_dark_mode));
-  if FAILED (hr) {
-    // TODO(crbug.com/415385215) DwmSetWindowAttribute can fail in certain
-    // scenarios. Create a dump so that these scenarios can be studied and
-    // prevented.
-    base::debug::Alias(&hr);
-    base::debug::DumpWithoutCrashing();
+  if (FAILED(hr)) {
+    // If DwmSetWindowAttribute fails, it indicates that there was a problem
+    // setting dark mode for the window. In this state, the mode change is not
+    // applied and the backdrop will remain in its previous state.
+    LOG(ERROR) << "Failed to set DWM immersive dark mode: "
+               << logging::SystemErrorCodeToString(
+                      static_cast<logging::SystemErrorCode>(hr));
   }
 }
 

@@ -132,10 +132,17 @@ class BLINK_EXPORT WebView {
   // TODO(yuzus): Remove |is_hidden| and start using |PageVisibilityState|.
   // |color_provider_colors| is used to create color providers that live in the
   // Page. Passing in nullptr indicates the default color maps should be used.
-  // `partitioned_popin_params` are set if this window was opened as a
+  // |partitioned_popin_params| are set if this window was opened as a
   // partitioned popin. The entire frame tree of a partitioned popin is
   // partitioned as though it was an iframe in the opener.
   // See https://explainers-by-googlers.github.io/partitioned-popins/
+  // |history_index| and |history_length| are information about the frame tree's
+  // history list at the point when this view was created. These values are
+  // updated again at navigation commit time.
+  // |canvas_noise_token| is the seed token used for canvas noising on canvas
+  // elements in each frame, which should be constant per page. If the
+  // canvas_noise_token value is nullopt, this indicates the page should not
+  // enable canvas noising.
   static WebView* Create(
       WebViewClient*,
       bool is_hidden,
@@ -152,7 +159,10 @@ class BLINK_EXPORT WebView {
       std::optional<SkColor> page_base_background_color,
       const base::UnguessableToken& browsing_context_group_token,
       const ColorProviderColorMaps* color_provider_colors,
-      blink::mojom::PartitionedPopinParamsPtr partitioned_popin_params);
+      blink::mojom::PartitionedPopinParamsPtr partitioned_popin_params,
+      int32_t history_index,
+      int32_t history_length,
+      const std::optional<uint64_t>& canvas_noise_token);
 
   // Destroys the WebView synchronously.
   virtual void Close() = 0;
@@ -469,6 +479,10 @@ class BLINK_EXPORT WebView {
   // https://github.com/WICG/attribution-reporting-api/blob/main/app_to_web.md
   virtual void SetPageAttributionSupport(
       network::mojom::AttributionSupport support) = 0;
+
+  // Returns the canvas noise token assigned in the WebView's blink::Page, used
+  // for testing.
+  virtual std::optional<uint64_t> CanvasNoiseTokenForTesting() = 0;
 
  protected:
   ~WebView() = default;

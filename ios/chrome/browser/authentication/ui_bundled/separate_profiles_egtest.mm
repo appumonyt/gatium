@@ -80,6 +80,8 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
 
 - (void)tearDownHelper {
   ClearHistorySyncPrefs();
+  // Make sure any pending prefs changes are written to disk.
+  [ChromeEarlGrey commitPendingUserPrefsWrite];
   [super tearDownHelper];
 }
 
@@ -115,7 +117,8 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
 // Tests that signing in from a signed out state with a managed account
 // shows the enterprise onboarding only the first time and that by default
 // existing browsing data is kept separate from the managed profile.
-- (void)testSigninWithManagedAccountFromUnsignedStateSeparateData {
+// TODO(crbug.com/433320893): Re-enable this test.
+- (void)DISABLED_testSigninWithManagedAccountFromUnsignedStateSeparateData {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -215,7 +218,9 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
 // shows the enterprise onboarding only the first time. And if the user
 // decides to keep their existing data into the managed profile, the existing
 // profile is converted.
-- (void)testSigninWithManagedAccountFromUnsignedStateConvertsProfile {
+// TODO(crbug.com/411035267): The test fails flakily on simulator.
+// TODO(crbug.com/433320893): And on device.
+- (void)DISABLED_testSigninWithManagedAccountFromUnsignedStateConvertsProfile {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -317,7 +322,9 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
 // Tests that signing in from a signed out state with a managed account shows
 // the enterprise onboarding only the first time. And the user cannot merge
 // existing browsing data because it is disabled by policy.
-- (void)testSigninWithManagedAccountFromUnsignedStateWithDataMigrationDisabled {
+// TODO(crbug.com/433320893): Re-enable this test.
+- (void)
+    DISABLED_testSigninWithManagedAccountFromUnsignedStateWithDataMigrationDisabled {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -444,13 +451,6 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
       performAction:grey_tap()];
 
   // Note: The profile switch happens here.
-
-  // History sync screen: Decline the promo (irrelevant here).
-  [ChromeEarlGrey waitForMatcher:HistoryScreenMatcher()];
-  [[EarlGrey selectElementWithMatcher:chrome_test_util::
-                                          PromoScreenSecondaryButtonMatcher()]
-      performAction:grey_tap()];
-
   [SigninEarlGrey verifySignedInWithFakeIdentity:managedIdentity];
 }
 
@@ -458,15 +458,9 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
 // shows the enterprise onboarding only the first time and merging browsing data
 // is suggested by policy.
 // TODO(crbug.com/411035267): The test fails flakily on simulator.
-#if TARGET_OS_SIMULATOR
-#define MAYBE_testSigninWithManagedAccountFromUnsignedStateWithDataMergingSuggested \
-  DISABLED_testSigninWithManagedAccountFromUnsignedStateWithDataMergingSuggested
-#else
-#define MAYBE_testSigninWithManagedAccountFromUnsignedStateWithDataMergingSuggested \
-  testSigninWithManagedAccountFromUnsignedStateWithDataMergingSuggested
-#endif
+// TODO(crbug.com/433320893): And on device.
 - (void)
-    MAYBE_testSigninWithManagedAccountFromUnsignedStateWithDataMergingSuggested {
+    DISABLED_testSigninWithManagedAccountFromUnsignedStateWithDataMergingSuggested {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -628,19 +622,20 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
       performAction:grey_tap()];
 
   // Note: The profile switch happens here.
-
-  // History sync screen: Decline the promo (irrelevant here).
-  [ChromeEarlGrey waitForMatcher:HistoryScreenMatcher()];
-  [[EarlGrey selectElementWithMatcher:chrome_test_util::
-                                          PromoScreenSecondaryButtonMatcher()]
-      performAction:grey_tap()];
-
   [SigninEarlGrey verifySignedInWithFakeIdentity:managedIdentity];
 }
 
 // Tests switching to a managed account (and thus managed profile) and back via
 // the account menu.
-- (void)testSwitchFromPersonalToManagedAndBack {
+// TODO(crbug.com/433320893): Re-enable this test on device.
+#if !TARGET_OS_SIMULATOR
+#define MAYBE_testSwitchFromPersonalToManagedAndBack \
+  DISABLED_testSwitchFromPersonalToManagedAndBack
+#else
+#define MAYBE_testSwitchFromPersonalToManagedAndBack \
+  testSwitchFromPersonalToManagedAndBack
+#endif
+- (void)MAYBE_testSwitchFromPersonalToManagedAndBack {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -718,7 +713,16 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
 
 // Tests switching to a managed account (and thus managed profile) and the
 // managed account is removed while the enterprise onboarding is shown.
-- (void)testSwitchFromPersonalToManagedAndManagedAccountRemovedFromDevice {
+// TODO(crbug.com/433320893): Re-enable this test on device.
+#if !TARGET_OS_SIMULATOR
+#define MAYBE_testSwitchFromPersonalToManagedAndManagedAccountRemovedFromDevice \
+  DISABLED_testSwitchFromPersonalToManagedAndManagedAccountRemovedFromDevice
+#else
+#define MAYBE_testSwitchFromPersonalToManagedAndManagedAccountRemovedFromDevice \
+  testSwitchFromPersonalToManagedAndManagedAccountRemovedFromDevice
+#endif
+- (void)
+    MAYBE_testSwitchFromPersonalToManagedAndManagedAccountRemovedFromDevice {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -765,7 +769,15 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
 
 // Tests switching to a managed account but refusing the enterprise onboarding
 // screen.
-- (void)testRefuseToSwitchToManageAccount {
+// TODO(crbug.com/433320893): Re-enable this test on device.
+#if !TARGET_OS_SIMULATOR
+#define MAYBE_testRefuseToSwitchToManageAccount \
+  DISABLED_testRefuseToSwitchToManageAccount
+#else
+#define MAYBE_testRefuseToSwitchToManageAccount \
+  testRefuseToSwitchToManageAccount
+#endif
+- (void)MAYBE_testRefuseToSwitchToManageAccount {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -849,7 +861,15 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
       @"Profile should be personal");
 }
 
-- (void)testProfileDeletedOnRemoveManagedAccount {
+// TODO(crbug.com/433320893): Re-enable this test on device.
+#if !TARGET_OS_SIMULATOR
+#define MAYBE_testProfileDeletedOnRemoveManagedAccount \
+  DISABLED_testProfileDeletedOnRemoveManagedAccount
+#else
+#define MAYBE_testProfileDeletedOnRemoveManagedAccount \
+  testProfileDeletedOnRemoveManagedAccount
+#endif
+- (void)MAYBE_testProfileDeletedOnRemoveManagedAccount {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -958,13 +978,6 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
       performAction:grey_tap()];
 
   // Note: The profile switch happens here.
-
-  // History sync screen: Decline the promo (irrelevant here).
-  [ChromeEarlGrey waitForMatcher:HistoryScreenMatcher()];
-  [[EarlGrey selectElementWithMatcher:chrome_test_util::
-                                          PromoScreenSecondaryButtonMatcher()]
-      performAction:grey_tap()];
-
   // Confirm profile switched.
   GREYAssert(![[ChromeEarlGrey currentProfileName]
                  isEqualToString:personalProfileName],
@@ -979,7 +992,15 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
       @"Profile should have been switched back to personal");
 }
 
-- (void)testProfileDeletedOnManagedAccountGone {
+// TODO(crbug.com/433320893): Re-enable this test on device.
+#if !TARGET_OS_SIMULATOR
+#define MAYBE_testProfileDeletedOnManagedAccountGone \
+  DISABLED_testProfileDeletedOnManagedAccountGone
+#else
+#define MAYBE_testProfileDeletedOnManagedAccountGone \
+  testProfileDeletedOnManagedAccountGone
+#endif
+- (void)MAYBE_testProfileDeletedOnManagedAccountGone {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;
@@ -1108,7 +1129,13 @@ id<GREYMatcher> ManagedProfileCreationDataMigrationDisabledSubtitleMatcher() {
 
 // Tests signing in with a managed account during the FRE. This should convert
 // the existing profile to a managed profile.
-- (void)testSignInWithManagedAccount {
+// TODO(crbug.com/433320893): Re-enable this test on device.
+#if !TARGET_OS_SIMULATOR
+#define MAYBE_testSignInWithManagedAccount DISABLED_testSignInWithManagedAccount
+#else
+#define MAYBE_testSignInWithManagedAccount testSignInWithManagedAccount
+#endif
+- (void)MAYBE_testSignInWithManagedAccount {
   // Separate profiles are only available in iOS 17+.
   if (!@available(iOS 17, *)) {
     return;

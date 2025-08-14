@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #import <memory>
 #import <string_view>
 
@@ -31,6 +36,7 @@
 #import "ios/chrome/grit/ios_strings.h"
 #import "ios/chrome/test/earl_grey/chrome_actions.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
+#import "ios/chrome/test/earl_grey/chrome_earl_grey_ui.h"
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/chrome_test_case.h"
 #import "ios/testing/earl_grey/earl_grey_test.h"
@@ -123,17 +129,9 @@ id<GREYMatcher> CountryEntry(NSString* label) {
 
 // Matcher for the search bar.
 id<GREYMatcher> SearchBar() {
-  return grey_allOf(grey_accessibilityID(kAutofillCountrySelectionTableViewId),
+  // Match using the accessibility trait for a search field.
+  return grey_allOf(grey_accessibilityTrait(UIAccessibilityTraitSearchField),
                     grey_sufficientlyVisible(), nil);
-}
-
-// Matcher for the search bar's cancel button.
-id<GREYMatcher> SearchBarCancelButton() {
-  return grey_allOf(
-      chrome_test_util::ButtonWithAccessibilityLabelId(IDS_APP_CANCEL),
-      grey_kindOfClass([UIButton class]),
-      grey_ancestor(grey_kindOfClass([UISearchBar class])),
-      grey_sufficientlyVisible(), nil);
 }
 
 // Matcher for the search bar's scrim.
@@ -237,29 +235,12 @@ void TypeTextInXframeField(NSString* fieldID, NSString* text) {
     config.features_enabled.push_back(kAutofillFixXhrForXframe);
   }
 
-  if ([self isRunningTest:@selector
-            (testSubmissionDetection_defaultPrevented_whenAllowed)]) {
-    config.features_enabled.push_back(kAutofillAllowDefaultPreventedSubmission);
-  }
-
-  if ([self isRunningTest:@selector
-            (testSubmissionDetection_defaultPrevented_whenNotAllowed)]) {
-    config.features_disabled.push_back(
-        kAutofillAllowDefaultPreventedSubmission);
-  }
-
   if ([self isRunningTest:@selector(testSubmissionDetectionWithDeduping)]) {
     config.features_enabled.push_back(kAutofillDedupeFormSubmission);
-    // Default must be prevented to allow triggering multiple submissions from
-    // the same form.
-    config.features_enabled.push_back(kAutofillAllowDefaultPreventedSubmission);
   }
 
   if ([self isRunningTest:@selector(testSubmissionDetectionWithoutDeduping)]) {
     config.features_disabled.push_back(kAutofillDedupeFormSubmission);
-    // Default must be prevented to allow triggering multiple submissions from
-    // the same form.
-    config.features_enabled.push_back(kAutofillAllowDefaultPreventedSubmission);
   }
 
   if ([self isRunningTest:@selector(testSubmissionDetection_inCaptureMode)]) {
@@ -283,15 +264,21 @@ void TypeTextInXframeField(NSString* fieldID, NSString* text) {
     config.features_disabled.push_back(kAutofillReportFormSubmissionErrors);
   }
 
+  // TODO(crbug.com/428189566): Re-enable after the test is fixed for
+  // ios-fieldtrial-rel.
   if ([self isRunningTest:@selector
-            (testSubmissionCountReporting_ScheduledTask)] ||
-      [self isRunningTest:@selector(testSubmissionCountReporting_UnloadPage)]) {
+            (DISABLED_testSubmissionCountReporting_ScheduledTask)] ||
+      [self isRunningTest:@selector
+            (DISABLED_testSubmissionCountReporting_UnloadPage)]) {
     config.features_enabled.push_back(kAutofillIsolatedWorldForJavascriptIos);
     config.features_enabled.push_back(kAutofillCountFormSubmissionInRenderer);
   }
 
-  if ([self isRunningTest:@selector
-            (testSubmissionCountReporting_ScheduledTask_NotIsolated)]) {
+  // TODO(crbug.com/428189566): Re-enable after the test is fixed for
+  // ios-fieldtrial-rel.
+  if ([self
+          isRunningTest:@selector
+          (DISABLED_testSubmissionCountReporting_ScheduledTask_NotIsolated)]) {
     config.features_disabled.push_back(kAutofillIsolatedWorldForJavascriptIos);
     config.features_enabled.push_back(kAutofillCountFormSubmissionInRenderer);
   }
@@ -689,10 +676,10 @@ void TypeTextInXframeField(NSString* fieldID, NSString* text) {
       assertWithMatcher:grey_notNil()];
 
   // Verify the cancel button is visible and unfocuses search bar when tapped.
-  [[EarlGrey selectElementWithMatcher:SearchBarCancelButton()]
-      performAction:grey_tap()];
+  [ChromeEarlGreyUI clearAndDismissSearchBar];
 
-  // Verify countries are searchable using their name in the current locale.
+  // Verify countries are searchable using their name in the current
+  // locale.
   [[EarlGrey selectElementWithMatcher:SearchBar()] performAction:grey_tap()];
 
   [[EarlGrey selectElementWithMatcher:SearchBar()]
@@ -917,22 +904,8 @@ void TypeTextInXframeField(NSString* fieldID, NSString* text) {
   [SigninEarlGrey signOut];
 }
 
-// Tests that submission isn't detected hence the infobar isn't displayed when
-// the "form" event behind the submission is `defaultPrevented` while the
-// corresponding feature doesn't allows it.
-- (void)testSubmissionDetection_defaultPrevented_whenNotAllowed {
-  // Sign-in so the profile would be saved into the account.
-  [SigninEarlGrey signinWithFakeIdentity:[FakeSystemIdentity fakeIdentity1]];
 
-  // Submit the form with `defaultPrevented` considered.
-  FullAddressFormPageParams params{.default_prevented = true, .redirect = true};
-  [self loadAndSubmitFullAddressFormWithParams:params];
 
-  // Make sure the infobar isn't displayed.
-  [InfobarEarlGreyUI waitUntilInfobarBannerVisibleOrTimeout:NO];
-
-  [SigninEarlGrey signOut];
-}
 
 // Tests that multiple submissions on the same form are not deduped when
 // deduping is disabled where all submissions are sent over to the browser.
@@ -1136,7 +1109,9 @@ void TypeTextInXframeField(NSString* fieldID, NSString* text) {
 
 // Tests submission count reporting with the scheduled task for the 2 types of
 // form submission, regular and programmatic.
-- (void)testSubmissionCountReporting_ScheduledTask {
+// TODO(crbug.com/428189566): Re-enable after the test is fixed for
+// ios-fieldtrial-rel.
+- (void)DISABLED_testSubmissionCountReporting_ScheduledTask {
   // Load the page without submitting the form.
   [self loadFullAddressFormWithParams:{.default_prevented = true,
                                        .multiple_submissions = true}];
@@ -1223,7 +1198,9 @@ void TypeTextInXframeField(NSString* fieldID, NSString* text) {
 // Tests submission count reporting with the scheduled task for the 2 types of
 // form submission, regular and programmatic - when autofill isn't in the
 // isolated world.
-- (void)testSubmissionCountReporting_ScheduledTask_NotIsolated {
+// TODO(crbug.com/428189566): Re-enable after the test is fixed for
+// ios-fieldtrial-rel.
+- (void)DISABLED_testSubmissionCountReporting_ScheduledTask_NotIsolated {
   // Load page without submitting the form.
   [self loadFullAddressFormWithParams:{.default_prevented = true,
                                        .multiple_submissions = true}];
@@ -1302,7 +1279,9 @@ void TypeTextInXframeField(NSString* fieldID, NSString* text) {
 }
 
 // Tests submission count reporting when unloading a page.
-- (void)testSubmissionCountReporting_UnloadPage {
+// TODO(crbug.com/428189566): Re-enable after the test is fixed for
+// ios-fieldtrial-rel.
+- (void)DISABLED_testSubmissionCountReporting_UnloadPage {
   // Load page without submitting the form.
   [self loadFullAddressFormWithParams:{.default_prevented = true,
                                        .multiple_submissions_skip_programmatic =

@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/browser/browser_process_impl.h"
 
 #include <stddef.h>
@@ -20,6 +15,7 @@
 
 #include "base/atomic_ref_count.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/debug/leak_annotations.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
@@ -147,12 +143,12 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/content_switches.h"
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
@@ -195,11 +191,12 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/usb/usb_system_tray_icon.h"
-#include "chrome/browser/web_applications/isolated_web_apps/iwa_identity_validator.h"
+#include "chrome/browser/web_applications/isolated_web_apps/chrome_iwa_client.h"
 #include "chrome/browser/webapps/webapps_client_desktop.h"
 #include "components/gcm_driver/gcm_client_factory.h"
 #include "components/gcm_driver/gcm_desktop_utils.h"
 #include "components/keep_alive_registry/keep_alive_registry.h"
+#include "components/webapps/isolated_web_apps/identity/iwa_identity_validator.h"
 #endif
 
 #if BUILDFLAG(ENABLE_BACKGROUND_MODE)
@@ -400,6 +397,7 @@ void BrowserProcessImpl::Init() {
 
 #if !BUILDFLAG(IS_ANDROID)
   web_app::IwaIdentityValidator::CreateSingleton();
+  web_app::ChromeIwaClient::CreateSingleton();
 #endif
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -948,15 +946,16 @@ void BrowserProcessImpl::CreateDevToolsProtocolHandler() {
     case RemoteDebuggingServer::NotStartedReason::kNotRequested:
       break;
     case RemoteDebuggingServer::NotStartedReason::kDisabledByPolicy:
-      fputs("\nDevTools remote debugging is disallowed by the system admin.\n",
-            stderr);
+      UNSAFE_TODO(fputs(
+          "\nDevTools remote debugging is disallowed by the system admin.\n",
+          stderr));
       fflush(stderr);
       break;
     case RemoteDebuggingServer::NotStartedReason::kDisabledByDefaultUserDataDir:
-      fputs(
+      UNSAFE_TODO(fputs(
           "\nDevTools remote debugging requires a non-default data directory. "
           "Specify this using --user-data-dir.\n",
-          stderr);
+          stderr));
       fflush(stderr);
       break;
   }

@@ -221,6 +221,11 @@ class AppMenuHandlerImpl
         }
     }
 
+    @Override
+    public void setContentDescription(@Nullable String desc) {
+        if (mAppMenu != null) mAppMenu.setContentDescription(desc);
+    }
+
     /**
      * Show the app menu.
      *
@@ -270,7 +275,7 @@ class AppMenuHandlerImpl
         mModelList = mDelegate.getMenuItems();
         mModelList.addObserver(mListObserver);
         ContextThemeWrapper wrapper =
-                new ContextThemeWrapper(mContext, R.style.OverflowMenuThemeOverlay);
+                new ContextThemeWrapper(mContext, R.style.AppMenuThemeOverlay);
 
         TypedArray a =
                 wrapper.obtainStyledAttributes(
@@ -470,18 +475,9 @@ class AppMenuHandlerImpl
         }
     }
 
-    @Override
-    public void onHeaderViewInflated(View view) {
-        if (mDelegate != null) mDelegate.onHeaderViewInflated(this, view);
-    }
-
-    @Override
-    public void onFooterViewInflated(View view) {
-        if (mDelegate != null) mDelegate.onFooterViewInflated(this, view);
-    }
-
     /**
      * Registers an {@link AppMenuBlocker} used to help determine whether the app menu can be shown.
+     *
      * @param blocker An {@link AppMenuBlocker} to check before attempting to show the app menu.
      */
     void registerAppMenuBlocker(AppMenuBlocker blocker) {
@@ -512,7 +508,7 @@ class AppMenuHandlerImpl
         return mDelegate;
     }
 
-    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    @VisibleForTesting
     public static void registerDefaultViewBinders(
             ModelListAdapter adapter, boolean iconBeforeItem) {
         @LayoutRes
@@ -639,23 +635,14 @@ class AppMenuHandlerImpl
             appRect.bottom = mDecorView.getHeight();
         }
 
-        int footerResourceId = 0;
-        if (mDelegate.shouldShowFooter(appRect.height())) {
-            footerResourceId = mDelegate.getFooterResourceId();
-        }
-        int headerResourceId = 0;
-        if (mDelegate.shouldShowHeader(appRect.height())) {
-            headerResourceId = mDelegate.getHeaderResourceId();
-        }
-
         mAppMenu.show(
                 wrapper,
                 anchorView,
                 isByPermanentButton,
                 rotation,
                 appRect,
-                footerResourceId,
-                headerResourceId,
+                mDelegate.buildFooterView(this),
+                mDelegate.buildHeaderView(),
                 mHighlightMenuId,
                 mDelegate.isMenuIconAtStart(),
                 mBrowserControlsStateProvider.getControlsPosition(),

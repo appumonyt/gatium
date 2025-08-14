@@ -16,6 +16,7 @@
 #include "components/optimization_guide/core/optimization_guide_switches.h"
 #include "components/optimization_guide/core/optimization_guide_util.h"
 #include "components/optimization_guide/proto/features/summarize.pb.h"
+#include "components/optimization_guide/proto/string_value.pb.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -247,6 +248,21 @@ TEST_F(AISummarizerTest, CanCreateUnIsLanguagesSupported) {
                                 kUnavailableUnsupportedLanguage));
   GetAIManagerInterface()->CanCreateSummarizer(std::move(options),
                                                callback.Get());
+}
+
+TEST_F(AISummarizerTest, ToProtoOptionsLanguagesSupported) {
+  // Summarizer proto expects a limited set of BCP 47 base language codes.
+  std::vector<std::pair<std::string, std::string>> languages = {
+      {"en", "en"}, {"en-us", "en"}, {"en-uk", "en"},
+      {"es", "es"}, {"es-sp", "es"}, {"es-mx", "es"},
+      {"ja", "ja"}, {"ja-jp", "ja"}, {"ja-foo", "ja"},
+  };
+  blink::mojom::AISummarizerCreateOptionsPtr options = GetDefaultOptions();
+  for (const auto& language : languages) {
+    options->output_language = AILanguageCode::New(language.first);
+    const auto proto_options = AISummarizer::ToProtoOptions(options);
+    EXPECT_EQ(proto_options->output_language(), language.second);
+  }
 }
 
 TEST_F(AISummarizerTest, CreateSummarizerNoService) {

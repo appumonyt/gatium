@@ -180,6 +180,7 @@ builder.
   * [`//components/cast_receiver/.+`](https://cs.chromium.org/chromium/src/components/cast_receiver/)
   * [`//components/cast_streaming/.+`](https://cs.chromium.org/chromium/src/components/cast_streaming/)
   * [`//third_party/cast_core/.+`](https://cs.chromium.org/chromium/src/third_party/cast_core/)
+  * [`//third_party/jni_zero/.+`](https://cs.chromium.org/chromium/src/third_party/jni_zero/)
   * [`//third_party/openscreen/.+`](https://cs.chromium.org/chromium/src/third_party/openscreen/)
 
 * [android-cast-arm64-rel](https://ci.chromium.org/p/chromium/builders/try/android-cast-arm64-rel) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""android-cast-arm64-rel""))
@@ -193,6 +194,7 @@ builder.
   * [`//components/cast_receiver/.+`](https://cs.chromium.org/chromium/src/components/cast_receiver/)
   * [`//components/cast_streaming/.+`](https://cs.chromium.org/chromium/src/components/cast_streaming/)
   * [`//third_party/cast_core/.+`](https://cs.chromium.org/chromium/src/third_party/cast_core/)
+  * [`//third_party/jni_zero/.+`](https://cs.chromium.org/chromium/src/third_party/jni_zero/)
   * [`//third_party/openscreen/.+`](https://cs.chromium.org/chromium/src/third_party/openscreen/)
 
 * [android-cronet-arm-dbg](https://ci.chromium.org/p/chromium/builders/try/android-cronet-arm-dbg) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""android-cronet-arm-dbg""))
@@ -202,6 +204,7 @@ builder.
   * [`//components/grpc_support/.+`](https://cs.chromium.org/chromium/src/components/grpc_support/)
   * [`//build/android/.+`](https://cs.chromium.org/chromium/src/build/android/)
   * [`//build/config/android/.+`](https://cs.chromium.org/chromium/src/build/config/android/)
+  * [`//third_party/jni_zero/.+`](https://cs.chromium.org/chromium/src/third_party/jni_zero/)
 
 * [android-cronet-x64-dbg-16-tests](https://ci.chromium.org/p/chromium/builders/try/android-cronet-x64-dbg-16-tests) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""android-cronet-x64-dbg-16-tests""))
 
@@ -218,6 +221,7 @@ builder.
   * [`//components/grpc_support/.+`](https://cs.chromium.org/chromium/src/components/grpc_support/)
   * [`//build/android/.+`](https://cs.chromium.org/chromium/src/build/android/)
   * [`//build/config/android/.+`](https://cs.chromium.org/chromium/src/build/config/android/)
+  * [`//third_party/jni_zero/.+`](https://cs.chromium.org/chromium/src/third_party/jni_zero/)
 
 * [android-cronet-x86-dbg-marshmallow-tests](https://ci.chromium.org/p/chromium/builders/try/android-cronet-x86-dbg-marshmallow-tests) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""android-cronet-x86-dbg-marshmallow-tests""))
 
@@ -315,6 +319,7 @@ builder.
   * [`//gpu/.+`](https://cs.chromium.org/chromium/src/gpu/)
   * [`//testing/buildbot/chromium.dawn.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/chromium.dawn.json)
   * [`//third_party/blink/renderer/modules/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/webgpu/)
+  * [`//third_party/blink/renderer/platform/graphics/gpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/gpu/)
   * [`//third_party/blink/web_tests/external/wpt/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/external/wpt/webgpu/)
   * [`//third_party/blink/web_tests/wpt_internal/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/wpt_internal/webgpu/)
   * [`//third_party/blink/web_tests/WebGPUExpectations`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/WebGPUExpectations)
@@ -330,6 +335,7 @@ builder.
   * [`//gpu/.+`](https://cs.chromium.org/chromium/src/gpu/)
   * [`//testing/buildbot/chromium.dawn.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/chromium.dawn.json)
   * [`//third_party/blink/renderer/modules/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/webgpu/)
+  * [`//third_party/blink/renderer/platform/graphics/gpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/gpu/)
   * [`//third_party/blink/web_tests/external/wpt/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/external/wpt/webgpu/)
   * [`//third_party/blink/web_tests/wpt_internal/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/wpt_internal/webgpu/)
   * [`//third_party/blink/web_tests/WebGPUExpectations`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/WebGPUExpectations)
@@ -345,6 +351,7 @@ builder.
   * [`//gpu/.+`](https://cs.chromium.org/chromium/src/gpu/)
   * [`//testing/buildbot/chromium.dawn.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/chromium.dawn.json)
   * [`//third_party/blink/renderer/modules/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/webgpu/)
+  * [`//third_party/blink/renderer/platform/graphics/gpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/gpu/)
   * [`//third_party/blink/web_tests/external/wpt/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/external/wpt/webgpu/)
   * [`//third_party/blink/web_tests/wpt_internal/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/wpt_internal/webgpu/)
   * [`//third_party/blink/web_tests/WebGPUExpectations`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/WebGPUExpectations)
@@ -360,6 +367,7 @@ builder.
   * [`//gpu/.+`](https://cs.chromium.org/chromium/src/gpu/)
   * [`//testing/buildbot/chromium.dawn.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/chromium.dawn.json)
   * [`//third_party/blink/renderer/modules/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/webgpu/)
+  * [`//third_party/blink/renderer/platform/graphics/gpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/gpu/)
   * [`//third_party/blink/web_tests/external/wpt/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/external/wpt/webgpu/)
   * [`//third_party/blink/web_tests/wpt_internal/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/wpt_internal/webgpu/)
   * [`//third_party/blink/web_tests/WebGPUExpectations`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/WebGPUExpectations)
@@ -375,6 +383,7 @@ builder.
   * [`//gpu/.+`](https://cs.chromium.org/chromium/src/gpu/)
   * [`//testing/buildbot/chromium.dawn.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/chromium.dawn.json)
   * [`//third_party/blink/renderer/modules/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/webgpu/)
+  * [`//third_party/blink/renderer/platform/graphics/gpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/gpu/)
   * [`//third_party/blink/web_tests/external/wpt/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/external/wpt/webgpu/)
   * [`//third_party/blink/web_tests/wpt_internal/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/wpt_internal/webgpu/)
   * [`//third_party/blink/web_tests/WebGPUExpectations`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/WebGPUExpectations)
@@ -390,6 +399,7 @@ builder.
   * [`//gpu/.+`](https://cs.chromium.org/chromium/src/gpu/)
   * [`//testing/buildbot/chromium.dawn.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/chromium.dawn.json)
   * [`//third_party/blink/renderer/modules/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/webgpu/)
+  * [`//third_party/blink/renderer/platform/graphics/gpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/gpu/)
   * [`//third_party/blink/web_tests/external/wpt/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/external/wpt/webgpu/)
   * [`//third_party/blink/web_tests/wpt_internal/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/wpt_internal/webgpu/)
   * [`//third_party/blink/web_tests/WebGPUExpectations`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/WebGPUExpectations)
@@ -405,6 +415,7 @@ builder.
   * [`//gpu/.+`](https://cs.chromium.org/chromium/src/gpu/)
   * [`//testing/buildbot/chromium.dawn.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/chromium.dawn.json)
   * [`//third_party/blink/renderer/modules/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/webgpu/)
+  * [`//third_party/blink/renderer/platform/graphics/gpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/gpu/)
   * [`//third_party/blink/web_tests/external/wpt/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/external/wpt/webgpu/)
   * [`//third_party/blink/web_tests/wpt_internal/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/wpt_internal/webgpu/)
   * [`//third_party/blink/web_tests/WebGPUExpectations`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/WebGPUExpectations)
@@ -805,6 +816,7 @@ builder.
   * [`//media/mojo/.+`](https://cs.chromium.org/chromium/src/media/mojo/)
   * [`//media/renderers/.+`](https://cs.chromium.org/chromium/src/media/renderers/)
   * [`//media/video/.+`](https://cs.chromium.org/chromium/src/media/video/)
+  * [`//services/on_device_model/.+`](https://cs.chromium.org/chromium/src/services/on_device_model/)
   * [`//services/webnn/.+`](https://cs.chromium.org/chromium/src/services/webnn/)
   * [`//testing/buildbot/tryserver.chromium.win.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/tryserver.chromium.win.json)
   * [`//testing/trigger_scripts/.+`](https://cs.chromium.org/chromium/src/testing/trigger_scripts/)
@@ -825,6 +837,10 @@ These builders are run on some percentage of builds. Their results are ignored
 by CQ. These are often used to test new configurations before they are added
 as required builders.
 
+### chrome
+* [linux-perf-trigger](https://ci.chromium.org/p/chrome/builders/try/linux-perf-trigger) ([definition](https://source.corp.google.com/search?q=+file:/try/.*\.star$+""linux-perf-trigger""))
+  * Experiment percentage: 100.0
+
 ### chromium
 * [chromeos-js-coverage-rel](https://ci.chromium.org/p/chromium/builders/try/chromeos-js-coverage-rel) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""chromeos-js-coverage-rel""))
   * Experiment percentage: 50.0
@@ -840,6 +856,7 @@ as required builders.
   * [`//gpu/.+`](https://cs.chromium.org/chromium/src/gpu/)
   * [`//testing/buildbot/chromium.dawn.json`](https://cs.chromium.org/search?q=+file:testing/buildbot/chromium.dawn.json)
   * [`//third_party/blink/renderer/modules/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/webgpu/)
+  * [`//third_party/blink/renderer/platform/graphics/gpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/gpu/)
   * [`//third_party/blink/web_tests/external/wpt/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/external/wpt/webgpu/)
   * [`//third_party/blink/web_tests/wpt_internal/webgpu/.+`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/wpt_internal/webgpu/)
   * [`//third_party/blink/web_tests/WebGPUExpectations`](https://cs.chromium.org/chromium/src/third_party/blink/web_tests/WebGPUExpectations)
@@ -858,7 +875,7 @@ as required builders.
   * Experiment percentage: 10.0
 
 * [mac15-arm64-rel](https://ci.chromium.org/p/chromium/builders/try/mac15-arm64-rel) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""mac15-arm64-rel""))
-  * Experiment percentage: 1.0
+  * Experiment percentage: 30.0
 
 * [tricium-clang-tidy](https://ci.chromium.org/p/chromium/builders/try/tricium-clang-tidy) ([definition](https://cs.chromium.org/search?q=+file:/try/.*\.star$+""tricium-clang-tidy""))
   * Experiment percentage: 100.0

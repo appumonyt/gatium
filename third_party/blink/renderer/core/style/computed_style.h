@@ -57,6 +57,7 @@
 #include "third_party/blink/renderer/core/style/filter_operations.h"
 #include "third_party/blink/renderer/core/style/font_size_style.h"
 #include "third_party/blink/renderer/core/style/gap_data_list.h"
+#include "third_party/blink/renderer/core/style/scroll_marker_group.h"
 #include "third_party/blink/renderer/core/style/style_cached_data.h"
 #include "third_party/blink/renderer/core/style/style_highlight_data.h"
 #include "third_party/blink/renderer/core/style/style_scrollbar_color.h"
@@ -155,6 +156,12 @@ class WebkitTextFillColor;
 class WebkitTextStrokeColor;
 
 }  // namespace css_longhand
+
+namespace css_shorthand {
+
+class TextDecoration;
+
+}  // namespace css_shorthand
 
 // ComputedStyle stores the computed value [1] for every CSS property on an
 // element and provides the interface between the style engine and the rest of
@@ -273,6 +280,7 @@ class ComputedStyle final : public ComputedStyleBase {
   friend class css_longhand::WebkitTapHighlightColor;
   friend class css_longhand::WebkitTextFillColor;
   friend class css_longhand::WebkitTextStrokeColor;
+  friend class css_shorthand::TextDecoration;
   // Access to private Appearance() and HasAppearance().
   friend class LayoutTheme;
   friend class StyleAdjuster;
@@ -498,6 +506,8 @@ class ComputedStyle final : public ComputedStyleBase {
   }
   bool HasBackdropFilter() const { return HasBackdropFilter(BackdropFilter()); }
 
+  bool HasReferenceFilter() const { return Filter().HasReferenceFilter(); }
+
   // filter (aka -webkit-filter)
   // For containing blocks, use |HasNonInitialFilter()| which includes
   // will-change: filter.
@@ -617,19 +627,37 @@ class ComputedStyle final : public ComputedStyleBase {
   // `display: -webkit-box`). To get the raw value of the properties, use
   // `StandardLineClamp()` or `WebkitLineClamp()`.
   int LineClamp() const {
-    if (HasAutoStandardLineClamp() || StandardLineClamp() != 0) {
-      DCHECK(RuntimeEnabledFeatures::CSSLineClampEnabled());
-      return StandardLineClamp();
-    }
-    if (IsSpecifiedDisplayWebkitBox()) {
-      DCHECK_EQ(BoxOrient(), EBoxOrient::kVertical);
-      return WebkitLineClamp();
+    if (!RuntimeEnabledFeatures::CSSLineClampEnabled()) {
+      DCHECK_EQ(Continue(), EContinue::kAuto);
+      if (IsSpecifiedDisplayWebkitBox()) {
+        return WebkitLineClamp();
+      }
+    } else if (IsEffectiveContinueCollapse()) {
+      return MaxLines();
     }
     return 0;
   }
+  bool HasAutoLineClamp() const {
+    return RuntimeEnabledFeatures::CSSLineClampEnabled() &&
+           IsEffectiveContinueCollapse() && !MaxLines();
+  }
+  bool IsEffectiveContinueCollapse() const {
+    DCHECK(RuntimeEnabledFeatures::CSSLineClampEnabled());
+    switch (Continue()) {
+      case EContinue::kAuto:
+        return false;
+      case EContinue::kCollapse:
+        return true;
+      case EContinue::kWebkitLegacy:
+        return IsSpecifiedDisplayWebkitBox();
+    }
+  }
   // Returns whether `line-clamp` or `-webkit-line-clamp` are set and apply.
   bool HasLineClamp() const {
-    return HasAutoStandardLineClamp() || LineClamp() != 0;
+    if (!RuntimeEnabledFeatures::CSSLineClampEnabled()) {
+      return IsSpecifiedDisplayWebkitBox() && WebkitLineClamp();
+    }
+    return IsEffectiveContinueCollapse();
   }
 
   // Outline properties.
@@ -891,12 +919,15 @@ class ComputedStyle final : public ComputedStyleBase {
 
   // letter-spacing
   float LetterSpacing() const { return GetFontDescription().LetterSpacing(); }
-  const Length& SpecifiedLetterSpacing() const {
-    return GetFontDescription().SpecifiedLetterSpacing();
+  const Length& ComputedLetterSpacing() const {
+    return GetFontDescription().ComputedLetterSpacing();
   }
 
   // word-spacing
   float WordSpacing() const { return GetFontDescription().WordSpacing(); }
+  const Length& ComputedWordSpacing() const {
+    return GetFontDescription().ComputedWordSpacing();
+  }
 
   // fill helpers
   bool HasFill() const { return !FillPaint().IsNone(); }
@@ -919,7 +950,6 @@ class ComputedStyle final : public ComputedStyleBase {
     return StrokePaint().HasCurrentColor() ||
            InternalVisitedStrokePaint().HasCurrentColor();
   }
-  bool HasDashArray() const { return !StrokeDashArray()->data.empty(); }
 
   bool IsCaretColorAuto() const { return CaretColor().IsAutoColor(); }
 
@@ -980,16 +1010,6 @@ class ComputedStyle final : public ComputedStyleBase {
   const CSSValue* GetVariableValue(const AtomicString&) const;
   const CSSValue* GetVariableValue(const AtomicString&,
                                    bool is_inherited_property) const;
-
-  // Animations.
-  const CSSAnimationData* Animations() const {
-    return AnimationsInternal().get();
-  }
-
-  // Transitions.
-  const CSSTransitionData* Transitions() const {
-    return TransitionsInternal().get();
-  }
 
   // Column utility functions.
   bool SpecifiesColumns() const {
@@ -1111,6 +1131,20 @@ class ComputedStyle final : public ComputedStyleBase {
     return (GridAutoFlowInternal() &
             static_cast<int>(kInternalAutoFlowAlgorithmDense)) ==
            kInternalAutoFlowAlgorithmDense;
+  }
+
+  // grid-template-*
+  const ComputedGridTrackList& GridTemplateColumns() const {
+    return ComputedGridTemplate(
+        SpecifiedGridTemplateColumns(),
+        /*use_masonry_default=*/IsDisplayMasonryBox() &&
+            MasonryTrackSizingDirection() == kForColumns);
+  }
+
+  const ComputedGridTrackList& GridTemplateRows() const {
+    return ComputedGridTemplate(SpecifiedGridTemplateRows(),
+                                /*use_masonry_default=*/IsDisplayMasonryBox() &&
+                                    MasonryTrackSizingDirection() == kForRows);
   }
 
   // Masonry utility functions.
@@ -1945,6 +1979,12 @@ class ComputedStyle final : public ComputedStyleBase {
            UsedPointerEvents() != EPointerEvents::kNone;
   }
 
+  // returns `true` is the element has a non-identity transform, `false`
+  // otherwise.
+  bool HasNonIdentityTransformOperation() const {
+    return HasTransformOperations() && !Transform().IsIdentityOrTranslation();
+  }
+
   // Animation utility functions.
   bool HasCurrentTransformRelatedAnimation() const {
     return HasCurrentTransformAnimation() || HasCurrentScaleAnimation() ||
@@ -2413,12 +2453,10 @@ class ComputedStyle final : public ComputedStyleBase {
       return false;
     }
     if (pseudo == kPseudoIdScrollMarkerGroupBefore) {
-      return ScrollMarkerGroup() == EScrollMarkerGroup::kBefore &&
-             IsScrollContainer();
+      return HasScrollMarkerGroupBefore() && IsScrollContainer();
     }
     if (pseudo == kPseudoIdScrollMarkerGroupAfter) {
-      return ScrollMarkerGroup() == EScrollMarkerGroup::kAfter &&
-             IsScrollContainer();
+      return HasScrollMarkerGroupAfter() && IsScrollContainer();
     }
     if (pseudo == kPseudoIdScrollButtonBlockStart ||
         pseudo == kPseudoIdScrollButtonInlineStart ||
@@ -2436,23 +2474,32 @@ class ComputedStyle final : public ComputedStyleBase {
     // ::after, but the rest of the pseudo-elements should only be used for
     // elements with an actual layout object.
     return pseudo == kPseudoIdCheckMark || pseudo == kPseudoIdBefore ||
-           pseudo == kPseudoIdAfter || pseudo == kPseudoIdPickerIcon;
+           pseudo == kPseudoIdAfter || pseudo == kPseudoIdPickerIcon ||
+           pseudo == kPseudoIdInterestHint;
   }
 
   bool HasScrollMarkerGroupBefore() const {
-    return ScrollMarkerGroup() == EScrollMarkerGroup::kBefore;
+    return GetScrollMarkerGroup() && GetScrollMarkerGroup()->PositionBefore();
   }
 
   bool HasScrollMarkerGroupAfter() const {
-    return ScrollMarkerGroup() == EScrollMarkerGroup::kAfter;
+    return GetScrollMarkerGroup() && GetScrollMarkerGroup()->PositionAfter();
   }
 
-  bool ScrollMarkerGroupNone() const {
-    return ScrollMarkerGroup() == EScrollMarkerGroup::kNone;
+  // Empty value means scroll-marker-group: none.
+  std::optional<ScrollMarkerGroup::ScrollMarkerMode> ScrollMarkerGroupMode()
+      const {
+    if (!GetScrollMarkerGroup()) {
+      return std::nullopt;
+    }
+    return GetScrollMarkerGroup()->Mode();
   }
+
+  bool ScrollMarkerGroupNone() const { return !GetScrollMarkerGroup(); }
 
   bool ScrollMarkerGroupEqual(const ComputedStyle& other) const {
-    return ScrollMarkerGroup() == other.ScrollMarkerGroup();
+    return base::ValuesEquivalent(GetScrollMarkerGroup(),
+                                  other.GetScrollMarkerGroup());
   }
 
   bool ScrollTargetGroupNone() const {
@@ -2611,6 +2658,23 @@ class ComputedStyle final : public ComputedStyleBase {
            display == EDisplay::kTableCaption;
   }
 
+  static GridTrackSizingDirection MasonryTrackSizingDirection(
+      EMasonryDirection direction) {
+    switch (direction) {
+      case EMasonryDirection::kColumn:
+      case EMasonryDirection::kColumnReverse:
+        return kForColumns;
+      case EMasonryDirection::kRow:
+      case EMasonryDirection::kRowReverse:
+        return kForRows;
+    }
+    NOTREACHED();
+  }
+
+  static CORE_EXPORT const ComputedGridTrackList& ComputedGridTemplate(
+      const Member<ComputedGridTrackList>& track_list,
+      const bool use_masonry_default);
+
   [[nodiscard]] bool HasPropertyDependingOnCurrentColor() const;
 
   bool BorderOutlineVisitedColorChanged(const ComputedStyle& other) const {
@@ -2658,6 +2722,7 @@ class ComputedStyle final : public ComputedStyleBase {
       const gfx::SizeF& reference_box_size) const;
   PointAndTangent CalculatePointAndTangentOnPath(const Path& path) const;
 
+  bool DiffNeedsReshape(const ComputedStyle& other, uint64_t field_diff) const;
   bool DiffNeedsFullLayoutAndPaintInvalidation(const ComputedStyle& other,
                                                uint64_t field_diff) const;
   bool DiffNeedsFullLayout(const Document&,
@@ -2855,14 +2920,14 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
   }
 
   // animations
-  const CSSAnimationData* Animations() const {
-    return AnimationsInternal().get();
-  }
   CORE_EXPORT CSSAnimationData& AccessAnimations() {
-    std::unique_ptr<CSSAnimationData>& animations = MutableAnimationsInternal();
-    if (!animations) {
-      animations = std::make_unique<CSSAnimationData>();
+    Member<CSSAnimationData>& animations = MutableAnimationsInternal();
+    if (!has_own_animations_) {
+      animations = animations
+                       ? MakeGarbageCollected<CSSAnimationData>(*animations)
+                       : MakeGarbageCollected<CSSAnimationData>();
     }
+    has_own_animations_ = true;
     return *animations;
   }
 
@@ -3120,6 +3185,9 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
            Display() == EDisplay::kTableColumn ||
            Display() == EDisplay::kTableColumnGroup;
   }
+  bool IsDisplayMasonryBox() const {
+    return ComputedStyle::IsDisplayMasonryBox(Display());
+  }
   DisplayStyle GetDisplayStyle() const {
     return DisplayStyle(Display(), StyleType(), GetContentData());
   }
@@ -3155,22 +3223,26 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
     return FontSizeStyle(GetFont(), LineHeightInternal(), EffectiveZoom());
   }
 
+  // grid-template-*
+  const ComputedGridTrackList& GridTemplateColumns() const {
+    return ComputedStyle::ComputedGridTemplate(
+        SpecifiedGridTemplateColumns(),
+        /*use_masonry_default=*/IsDisplayMasonryBox() &&
+            MasonryTrackSizingDirection() == kForColumns);
+  }
+
+  const ComputedGridTrackList& GridTemplateRows() const {
+    return ComputedStyle::ComputedGridTemplate(
+        SpecifiedGridTemplateRows(),
+        /*use_masonry_default=*/IsDisplayMasonryBox() &&
+            MasonryTrackSizingDirection() == kForRows);
+  }
+
   // letter-spacing
   void SetLetterSpacing(const Length& letter_spacing) {
     FontDescription description(GetFontDescription());
     description.SetLetterSpacing(letter_spacing);
     SetFontDescription(description);
-  }
-
-  // line-clamp
-  void SetHasAutoStandardLineClamp() {
-    SetHasAutoStandardLineClampInternal(true);
-    SetStandardLineClampInternal(0);
-  }
-
-  void SetStandardLineClamp(int v) {
-    SetHasAutoStandardLineClampInternal(false);
-    SetStandardLineClampInternal(v);
   }
 
   // line-height
@@ -3243,6 +3315,11 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
   }
   StyleImage* MaskBoxImageSource() const {
     return MaskBoxImageInternal().GetImage();
+  }
+
+  // masonry
+  GridTrackSizingDirection MasonryTrackSizingDirection() const {
+    return ComputedStyle::MasonryTrackSizingDirection(MasonryDirection());
   }
 
   // opacity
@@ -3348,15 +3425,14 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
   }
 
   // transitions
-  const CSSTransitionData* Transitions() const {
-    return TransitionsInternal().get();
-  }
   CORE_EXPORT CSSTransitionData& AccessTransitions() {
-    std::unique_ptr<CSSTransitionData>& transitions =
-        MutableTransitionsInternal();
-    if (!transitions) {
-      transitions = std::make_unique<CSSTransitionData>();
+    Member<CSSTransitionData>& transitions = MutableTransitionsInternal();
+    if (!has_own_transitions_) {
+      transitions = transitions
+                        ? MakeGarbageCollected<CSSTransitionData>(*transitions)
+                        : MakeGarbageCollected<CSSTransitionData>();
     }
+    has_own_transitions_ = true;
     return *transitions;
   }
 
@@ -3379,7 +3455,7 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
   void SetWidows(int16_t w) { SetWidowsInternal(ClampTo<int16_t>(w, 1)); }
 
   // word-spacing
-  void SetWordSpacing(float word_spacing) {
+  void SetWordSpacing(const Length& word_spacing) {
     FontDescription description(GetFontDescription());
     description.SetWordSpacing(word_spacing);
     SetFontDescription(description);
@@ -3544,6 +3620,8 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
  private:
   mutable bool has_own_inherited_variables_ = false;
   mutable bool has_own_non_inherited_variables_ = false;
+  mutable bool has_own_animations_ = false;
+  mutable bool has_own_transitions_ = false;
 };
 
 }  // namespace blink

@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/files/file_util.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/bind.h"
@@ -228,7 +229,8 @@ class ServiceWorkerIdTrackingBrowserTest
     // completely shutting down the render process (which is another way that
     // eventually removes the worker from `WorkerIdSet`).
     SCOPED_TRACE("Loading extension tab for test extension");
-    NavigateInNewTab(extension_->GetResourceURL("extension_page_tab.html"));
+    NavigateToURLInNewTab(
+        extension_->GetResourceURL("extension_page_tab.html"));
   }
 
   void LoadServiceWorkerExtensionAndOpenExtensionTab() {
@@ -249,16 +251,6 @@ class ServiceWorkerIdTrackingBrowserTest
     return service_workers_for_extension.empty()
                ? std::nullopt
                : std::optional<WorkerId>(service_workers_for_extension[0]);
-  }
-
-  // Navigates the browser to a new tab at `url` and waits for it to load.
-  void NavigateInNewTab(const GURL& url) {
-    ui_test_utils::NavigateToURLWithDisposition(
-        browser(), url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
-        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
-    content::WebContents* web_contents =
-        browser()->tab_strip_model()->GetActiveWebContents();
-    content::WaitForLoadStop(web_contents);
   }
 
   // Starts the worker and waits for the worker to initialize.
@@ -296,7 +288,7 @@ class ServiceWorkerIdTrackingBrowserTest
 // ServiceWorkerVersionTest.StallInStopping_DetachThenStart to more closely
 // simulate a worker thread delayed in stopping. This will also allow testing
 // when the delay causes ProcessManager::RenderProcessExited() to be called
-// before ServiceWorkerState::OnStopped().
+// before ServiceWorkerState::OnStoppedSync().
 
 // Tests that when:
 //   1) something, other than a worker, keeps the extension renderer process
@@ -333,8 +325,8 @@ IN_PROC_BROWSER_TEST_F(
   // notification from occurring which prevents the previous worker instance
   // from being removed from `WorkerIdSet`. Combined with the open extension tab
   // above the worker is simulated as being stalled/blocked in terminating.
-  browsertest_util::StopServiceWorkerForExtensionGlobalScope(
-      browser()->profile(), extension()->id());
+  browsertest_util::StopServiceWorkerForExtensionGlobalScope(profile(),
+                                                             extension()->id());
   ASSERT_TRUE(content::CheckServiceWorkerIsStopped(
       GetServiceWorkerContext(), previous_service_worker_id->version_id));
 
@@ -392,8 +384,8 @@ IN_PROC_BROWSER_TEST_F(
   TestServiceWorkerTaskQueueObserver worker_id_removed_observer;
 
   // Stop the service worker.
-  browsertest_util::StopServiceWorkerForExtensionGlobalScope(
-      browser()->profile(), extension()->id());
+  browsertest_util::StopServiceWorkerForExtensionGlobalScope(profile(),
+                                                             extension()->id());
   ASSERT_TRUE(content::CheckServiceWorkerIsStopped(
       sw_context, previous_service_worker_id->version_id));
 
@@ -407,7 +399,8 @@ IN_PROC_BROWSER_TEST_F(
 
   // Run the browser stop notification after the renderer stop notification, and
   // it should do nothing.
-  worker_state->OnStopped(previous_service_worker_id->version_id, sw_info);
+  worker_state->OnStoppedSync(previous_service_worker_id->version_id,
+                              sw_info.scope);
 
   // Confirm after the browser stop notification that we are still no longer
   // tracking the worker.
@@ -450,7 +443,7 @@ IN_PROC_BROWSER_TEST_F(
   // from being removed from `WorkerIdSet`. Combined with the open extension tab
   // above the worker is simulated as being stalled/blocked in terminating.
   browsertest_util::StopServiceWorkerForExtensionGlobalScope(
-      browser()->profile(), previous_service_worker_id->extension_id);
+      profile(), previous_service_worker_id->extension_id);
   ASSERT_TRUE(content::CheckServiceWorkerIsStopped(
       GetServiceWorkerContext(), previous_service_worker_id->version_id));
 
@@ -465,7 +458,7 @@ IN_PROC_BROWSER_TEST_F(
   // precisely. As-is these tests actually stop the render which destroys
   // `ServiceWorkerHost`.
   // "Send" the render stop notification second
-  task_queue->DidStopServiceWorkerContext(
+  task_queue->RendererDidStopServiceWorkerContext(
       previous_service_worker_id->render_process_id,
       previous_service_worker_id->extension_id, activation_token.value(),
       /*service_worker_scope=*/extension()->url(),
@@ -528,7 +521,7 @@ IN_PROC_BROWSER_TEST_P(
   // the test, `stop_interceptor` has intercepted and prevented the render stop
   // notification from occurring.
   browsertest_util::StopServiceWorkerForExtensionGlobalScope(
-      browser()->profile(), stopped_service_worker_id->extension_id);
+      profile(), stopped_service_worker_id->extension_id);
   ASSERT_TRUE(content::CheckServiceWorkerIsStopped(
       GetServiceWorkerContext(), stopped_service_worker_id->version_id));
 
@@ -546,7 +539,7 @@ IN_PROC_BROWSER_TEST_P(
   EXPECT_EQ(workers_for_extension.size(), 0ul);
 
   // Simulate the render stop notification arriving afterwards.
-  task_queue->DidStopServiceWorkerContext(
+  task_queue->RendererDidStopServiceWorkerContext(
       stopped_service_worker_id->render_process_id,
       stopped_service_worker_id->extension_id, activation_token.value(),
       /*service_worker_scope=*/extension()->url(),
@@ -597,8 +590,8 @@ IN_PROC_BROWSER_TEST_P(
   worker_state->StopObservingContextForTest();
 
   // Stop the service worker.
-  browsertest_util::StopServiceWorkerForExtensionGlobalScope(
-      browser()->profile(), extension()->id());
+  browsertest_util::StopServiceWorkerForExtensionGlobalScope(profile(),
+                                                             extension()->id());
   ASSERT_TRUE(content::CheckServiceWorkerIsStopped(
       sw_context, stopped_service_worker_id->version_id));
 
@@ -610,7 +603,8 @@ IN_PROC_BROWSER_TEST_P(
             ServiceWorkerState::RendererState::kNotActive);
 
   // Simulate browser stop notification after the render stop notification.
-  worker_state->OnStopped(stopped_service_worker_id->version_id, sw_info);
+  worker_state->OnStoppedSync(stopped_service_worker_id->version_id,
+                              sw_info.scope);
 
   // Confirm the worker state still exists, and browser and renderer state
   // remain not ready.
@@ -654,9 +648,8 @@ IN_PROC_BROWSER_TEST_P(
   ASSERT_EQ(worker_state->browser_state(), kExpectedBrowserState);
 
   // Deactivate extension.
-  extensions::ExtensionRegistrar::Get(browser()->profile())
-      ->DisableExtension(extension()->id(),
-                         {disable_reason::DISABLE_USER_ACTION});
+  extensions::ExtensionRegistrar::Get(profile())->DisableExtension(
+      extension()->id(), {disable_reason::DISABLE_USER_ACTION});
 
   // Confirm the worker state does not exist.
   worker_state = GetWorkerState();
@@ -830,8 +823,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerRendererTrackingBrowserTest,
   ASSERT_EQ("0.2", new_extension_version->version().GetString());
 
   // Double-confirm that after our wait the renderer hasn't crashed.
-  content::WebContents* web_contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
+  content::WebContents* web_contents = GetActiveWebContents();
   ASSERT_TRUE(web_contents);
   EXPECT_FALSE(web_contents->IsCrashed());
 }

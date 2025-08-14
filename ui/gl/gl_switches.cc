@@ -4,6 +4,8 @@
 
 #include "ui/gl/gl_switches.h"
 
+#include <array>
+
 #include "base/trace_event/trace_event.h"
 #include "build/android_buildflags.h"
 #include "build/build_config.h"
@@ -11,7 +13,7 @@
 #include "ui/gl/gl_display_manager.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/android_info.h"
 #endif
 
 #if BUILDFLAG(ENABLE_VULKAN) && \
@@ -159,10 +161,21 @@ const char kEnableUnsafeSwiftShader[] = "enable-unsafe-swiftshader";
 const char kDirectCompositionVideoSwapChainFormat[] =
     "direct-composition-video-swap-chain-format";
 
+// Tint `SwapChainPresenter` with the following colors:
+//
+// - Decode swap chain: blue
+// - VP blit: magenta
+// - VP blit w/ staging texture: orange
+// - MF proxy surface: green
+//
+// This is similar to `HKLM\Software\Microsoft\Windows\DWM` `OverlayTestMode=1`
+// in DWM, but to help understand `SwapChainPresenter` state.
+const char kTintDcLayer[] = "tint-dc-layer";
+
 // This is the list of switches passed from this file that are passed from the
 // GpuProcessHost to the GPU Process. Add your switch to this list if you need
 // to read it in the GPU process, else don't add it.
-const char* const kGLSwitchesCopiedFromGpuProcessHost[] = {
+const auto kGLSwitchesCopiedFromGpuProcessHostArray = std::to_array({
     kDisableGpuDriverBugWorkarounds,
     kDisableGpuVsync,
     kEnableGPUServiceLogging,
@@ -176,10 +189,13 @@ const char* const kGLSwitchesCopiedFromGpuProcessHost[] = {
     kDisableDirectComposition,
     kEnableDirectCompositionVideoOverlays,
     kDirectCompositionVideoSwapChainFormat,
+    kTintDcLayer,
     kEnableUnsafeSwiftShader,
-};
-const size_t kGLSwitchesCopiedFromGpuProcessHostNumSwitches =
-    std::size(kGLSwitchesCopiedFromGpuProcessHost);
+});
+// An external span to the array above, so that it can be exposed from the
+// header file without specifying the size of the array manually.
+const base::span<const char* const> kGLSwitchesCopiedFromGpuProcessHost =
+    kGLSwitchesCopiedFromGpuProcessHostArray;
 
 #if BUILDFLAG(IS_ANDROID)
 // On some Android emulators with software GL, ANGLE
@@ -205,11 +221,6 @@ BASE_FEATURE(kDCompDebugVisualization,
              "DCompDebugVisualization",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Use BufferCount of 3 for the direct composition root swap chain.
-BASE_FEATURE(kDCompTripleBufferRootSwapChain,
-             "DCompTripleBufferRootSwapChain",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // Use BufferCount of 3 for direct composition video swap chains.
 BASE_FEATURE(kDCompTripleBufferVideoSwapChain,
              "DCompTripleBufferVideoSwapChain",
@@ -221,11 +232,24 @@ BASE_FEATURE(kDirectCompositionSoftwareOverlays,
              "DirectCompositionSoftwareOverlays",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Detect and mark a single full screen video during overlay processing.
+BASE_FEATURE(kEarlyFullScreenVideoOptimization,
+             "EarlyFullScreenVideoOptimization",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Adjust the letterbox video size and position to the center of the screen so
 // that DWM power optimization can be turned on.
 BASE_FEATURE(kDirectCompositionLetterboxVideoOptimization,
              "DirectCompositionLetterboxVideoOptimization",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Remove the topmost desktop plane for Media Foundation full screen
+// letterboxing. This is a kill switch for the desktop plane removal
+// optimization for Media Foundation Renderer, which should be enabled by
+// default when crbug.com/406175378 is resolved.
+BASE_FEATURE(kDesktopPlaneRemovalForMFFullScreenLetterbox,
+             "DesktopPlaneRemovalForMFFullScreenLetterbox",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Do not consider hardware YUV overlay count when promoting quads to DComp
 // visuals. If there are more videos than hardware overlay planes, there may be
@@ -249,21 +273,6 @@ BASE_FEATURE(kEGLDualGPURendering,
 // Allow overlay swapchain to use Intel video processor for super resolution.
 BASE_FEATURE(kIntelVpSuperResolution,
              "IntelVpSuperResolution",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-// Allow overlay swapchain to use NVIDIA video processor for super resolution.
-BASE_FEATURE(kNvidiaVpSuperResolution,
-             "NvidiaVpSuperResolution",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Allow overlay swapchain to use NVIDIA video processor for trueHDR.
-BASE_FEATURE(kNvidiaVpTrueHDR,
-             "NvidiaVpTrueHDR",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Default to using ANGLE's OpenGL backend
-BASE_FEATURE(kDefaultANGLEOpenGL,
-             "DefaultANGLEOpenGL",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Default to using ANGLE's Metal backend.
@@ -311,14 +320,15 @@ bool IsDefaultANGLEVulkan() {
 #if BUILDFLAG(IS_ANDROID)
   // No support for devices before Q -- exit before checking feature flags
   // so that devices are not counted in finch trials.
-  if (base::android::BuildInfo::GetInstance()->sdk_int() <
-      base::android::SDK_VERSION_Q)
+  if (base::android::android_info::sdk_int() <
+      base::android::android_info::SDK_VERSION_Q) {
     return false;
+  }
 
   // For the sake of finch trials, limit to newer devices (Android T+); this
   // condition can be relaxed over time.
-  if (base::android::BuildInfo::GetInstance()->sdk_int() <
-      base::android::SDK_VERSION_T) {
+  if (base::android::android_info::sdk_int() <
+      base::android::android_info::SDK_VERSION_T) {
     return false;
   }
 #endif  // BUILDFLAG(IS_ANDROID)

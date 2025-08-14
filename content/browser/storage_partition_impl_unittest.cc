@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "content/browser/storage_partition_impl.h"
 
 #include <stddef.h>
@@ -20,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
@@ -91,7 +87,6 @@
 #include "net/cookies/cookie_access_result.h"
 #include "net/cookies/cookie_inclusion_status.h"
 #include "net/net_buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "services/network/cookie_manager.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/test/mock_device_bound_session_manager.h"
@@ -101,6 +96,7 @@
 #include "storage/browser/test/mock_quota_client.h"
 #include "storage/browser/test/mock_quota_manager.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
+#include "storage/common/database/db_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
@@ -363,7 +359,7 @@ class RemoveLocalStorageTester {
         storage_partition_->GetPath().Append(storage::kLocalStoragePath),
         storage::kLocalStorageLeveldbName, std::nullopt,
         base::SingleThreadTaskRunner::GetCurrentDefault(),
-        base::BindLambdaForTesting([&](leveldb::Status status) {
+        base::BindLambdaForTesting([&](storage::DbStatus status) {
           ASSERT_TRUE(status.ok());
           open_loop.Quit();
         }));
@@ -371,7 +367,7 @@ class RemoveLocalStorageTester {
 
     base::RunLoop populate_loop;
     database->database().PostTaskWithThisObject(
-        base::BindLambdaForTesting([&](const storage::DomStorageDatabase& db) {
+        base::BindLambdaForTesting([&](storage::DomStorageDatabase* db) {
           PopulateDatabase(db, origin1, origin2, origin3);
           populate_loop.Quit();
         }));
@@ -386,7 +382,7 @@ class RemoveLocalStorageTester {
     EXPECT_TRUE(DOMStorageExistsForOrigin(origin3));
   }
 
-  static void PopulateDatabase(const storage::DomStorageDatabase& db,
+  static void PopulateDatabase(storage::DomStorageDatabase* db,
                                const url::Origin& origin1,
                                const url::Origin& origin2,
                                const url::Origin& origin3) {
@@ -398,35 +394,35 @@ class RemoveLocalStorageTester {
     access_data.set_last_accessed(now.ToInternalValue());
     write_data.set_last_modified(now.ToInternalValue());
     write_data.set_size_bytes(16);
-    ASSERT_TRUE(db.Put(CreateAccessMetaDataKey(origin1),
-                       base::as_byte_span(access_data.SerializeAsString()))
+    ASSERT_TRUE(db->Put(CreateAccessMetaDataKey(origin1),
+                        base::as_byte_span(access_data.SerializeAsString()))
                     .ok());
-    ASSERT_TRUE(db.Put(CreateWriteMetaDataKey(origin1),
-                       base::as_byte_span(write_data.SerializeAsString()))
+    ASSERT_TRUE(db->Put(CreateWriteMetaDataKey(origin1),
+                        base::as_byte_span(write_data.SerializeAsString()))
                     .ok());
-    ASSERT_TRUE(db.Put(CreateDataKey(origin1), {}).ok());
+    ASSERT_TRUE(db->Put(CreateDataKey(origin1), {}).ok());
 
     base::Time one_day_ago = now - base::Days(1);
     access_data.set_last_accessed(one_day_ago.ToInternalValue());
     write_data.set_last_modified(one_day_ago.ToInternalValue());
-    ASSERT_TRUE(db.Put(CreateAccessMetaDataKey(origin2),
-                       base::as_byte_span(access_data.SerializeAsString()))
+    ASSERT_TRUE(db->Put(CreateAccessMetaDataKey(origin2),
+                        base::as_byte_span(access_data.SerializeAsString()))
                     .ok());
-    ASSERT_TRUE(db.Put(CreateWriteMetaDataKey(origin2),
-                       base::as_byte_span((write_data.SerializeAsString())))
+    ASSERT_TRUE(db->Put(CreateWriteMetaDataKey(origin2),
+                        base::as_byte_span((write_data.SerializeAsString())))
                     .ok());
-    ASSERT_TRUE(db.Put(CreateDataKey(origin2), {}).ok());
+    ASSERT_TRUE(db->Put(CreateDataKey(origin2), {}).ok());
 
     base::Time sixty_days_ago = now - base::Days(60);
     access_data.set_last_accessed(sixty_days_ago.ToInternalValue());
     write_data.set_last_modified(sixty_days_ago.ToInternalValue());
-    ASSERT_TRUE(db.Put(CreateAccessMetaDataKey(origin3),
-                       base::as_byte_span(access_data.SerializeAsString()))
+    ASSERT_TRUE(db->Put(CreateAccessMetaDataKey(origin3),
+                        base::as_byte_span(access_data.SerializeAsString()))
                     .ok());
-    ASSERT_TRUE(db.Put(CreateWriteMetaDataKey(origin3),
-                       base::as_byte_span(write_data.SerializeAsString()))
+    ASSERT_TRUE(db->Put(CreateWriteMetaDataKey(origin3),
+                        base::as_byte_span(write_data.SerializeAsString()))
                     .ok());
-    ASSERT_TRUE(db.Put(CreateDataKey(origin3), {}).ok());
+    ASSERT_TRUE(db->Put(CreateDataKey(origin3), {}).ok());
   }
 
  private:
@@ -603,7 +599,8 @@ class RemoveCodeCacheTester {
                           mojo_base::BigBuffer data) {
     if (!response_time.is_null()) {
       entry_exists_ = true;
-      received_data_ = std::string(data.data(), data.data() + data.size());
+      received_data_ =
+          std::string(data.data(), UNSAFE_TODO(data.data() + data.size()));
     } else {
       entry_exists_ = false;
     }
@@ -2572,25 +2569,6 @@ TEST_F(StoragePartitionImplSharedStorageTest, RemoveSharedStorageRecent) {
   EXPECT_FALSE(SharedStorageExistsForOrigin(kOrigin3));
 }
 
-TEST_F(StoragePartitionImplTest, PrivateNetworkAccessPermission) {
-  base::test::ScopedFeatureList features;
-  features.InitAndEnableFeature(
-      network::features::kPrivateNetworkAccessPermissionPrompt);
-
-  StoragePartitionImpl* partition = static_cast<StoragePartitionImpl*>(
-      browser_context()->GetDefaultStoragePartition());
-
-  mojo::Remote<network::mojom::URLLoaderNetworkServiceObserver> observer(
-      partition->CreateURLLoaderNetworkObserverForServiceWorker(
-          network::mojom::kBrowserProcessId, url::Origin()));
-
-  base::test::TestFuture<bool> grant_permission;
-  observer->OnPrivateNetworkAccessPermissionRequired(
-      GURL(), net::IPAddress(192, 163, 1, 1), "test-id", "test-name",
-      base::BindOnce(grant_permission.GetCallback()));
-  EXPECT_FALSE(grant_permission.Get());
-}
-
 // Local network access tests require there to be a (minimal) frame setup.
 using StoragePartitionImplLocalNetworkAccessTest = RenderViewHostTestHarness;
 
@@ -2706,4 +2684,102 @@ TEST_F(StoragePartitionImplTest, ClearDataStorageKeyDeletesPartitionedCookies) {
   EXPECT_TRUE(tester.ContainsCookie(kOrigin, kOtherPartitionKey));
 }
 
+
+class MockGpuDiskCacheFactory : public gpu::GpuDiskCacheFactory {
+ public:
+  MockGpuDiskCacheFactory() = default;
+  ~MockGpuDiskCacheFactory() override = default;
+
+  MOCK_METHOD(void,
+              ClearByPath,
+              (const base::FilePath&, base::Time, base::Time, base::OnceClosure),
+              (override));
+};
+
+class StoragePartitionImplShaderCacheTest : public StoragePartitionImplTest {
+ public:
+  StoragePartitionImplShaderCacheTest() {
+    InitGpuDiskCacheFactorySingleton();
+    SetGpuDiskCacheFactorySingletonForTesting(&mock_gpu_disk_cache_factory_);
+  }
+
+  ~StoragePartitionImplShaderCacheTest() override {
+    SetGpuDiskCacheFactorySingletonForTesting(nullptr);
+    DestroyGpuDiskCacheFactorySingletonForTesting();
+  }
+
+ protected:
+  StoragePartition* storage_partition() {
+    return browser_context()->GetDefaultStoragePartition();
+  }
+
+  base::test::ScopedFeatureList feature_list_;
+  MockGpuDiskCacheFactory mock_gpu_disk_cache_factory_;
+};
+
+TEST_F(StoragePartitionImplShaderCacheTest,
+       ClearData_PartialCleanupDisabled_NoStorageCleanup) {
+  feature_list_.InitAndEnableFeature(
+      features::kDisablePartialStorageCleanupForGPUDiskCache);
+
+  EXPECT_CALL(mock_gpu_disk_cache_factory_, ClearByPath(_, _, _, _)).Times(0);
+
+  base::RunLoop run_loop;
+  storage_partition()->ClearData(
+      StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE,
+      StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
+      /*filter_builder=*/nullptr,
+      /*storage_key_policy_matcher=*/{},
+      /*cookie_deletion_filter=*/nullptr,
+      /*perform_storage_cleanup=*/false, base::Time(), base::Time::Max(),
+      run_loop.QuitClosure());
+  run_loop.Run();
+}
+
+TEST_F(StoragePartitionImplShaderCacheTest,
+       ClearData_PartialCleanupEnabled_WithStorageCleanup) {
+  feature_list_.InitAndDisableFeature(
+      features::kDisablePartialStorageCleanupForGPUDiskCache);
+
+  EXPECT_CALL(mock_gpu_disk_cache_factory_, ClearByPath(_, _, _, _))
+      .Times(gpu::kGpuDiskCacheTypes.size())
+      .WillRepeatedly(testing::Invoke(
+          [](const base::FilePath&, base::Time, base::Time,
+             base::OnceClosure callback) { std::move(callback).Run(); }));
+
+  base::RunLoop run_loop;
+  storage_partition()->ClearData(
+      StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE,
+      StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
+      /*filter_builder=*/nullptr,
+      /*storage_key_policy_matcher=*/{},
+      /*cookie_deletion_filter=*/nullptr,
+      /*perform_storage_cleanup=*/true, base::Time(), base::Time::Max(),
+      run_loop.QuitClosure());
+  run_loop.Run();
+}
+
+TEST_F(StoragePartitionImplShaderCacheTest,
+       ClearData_PartialCleanupDisabled_WithStorageCleanup) {
+  feature_list_.InitAndEnableFeature(
+      features::kDisablePartialStorageCleanupForGPUDiskCache);
+
+  EXPECT_CALL(mock_gpu_disk_cache_factory_, ClearByPath(_, _, _, _))
+      .Times(gpu::kGpuDiskCacheTypes.size())
+      .WillRepeatedly(testing::Invoke(
+          [](const base::FilePath&, base::Time, base::Time,
+             base::OnceClosure callback) { std::move(callback).Run(); }));
+
+  base::RunLoop run_loop;
+  storage_partition()->ClearData(
+      StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE,
+      StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
+      /*filter_builder=*/nullptr,
+      /*storage_key_policy_matcher=*/{},
+      /*cookie_deletion_filter=*/nullptr,
+      /*perform_storage_cleanup=*/true, base::Time(), base::Time::Max(),
+      run_loop.QuitClosure());
+  run_loop.Run();
+}
 }  // namespace content
+

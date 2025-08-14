@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
@@ -15,6 +16,7 @@
 #include "base/strings/string_split.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/actor/actor_features.h"
+#include "chrome/browser/actor/actor_switches.h"
 #include "chrome/browser/actor/aggregated_journal.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lookalikes/lookalike_url_service.h"
@@ -43,6 +45,11 @@ namespace actor {
 
 namespace {
 
+bool DisableSafetyChecks() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableActorSafetyChecks);
+}
+
 class DecisionWrapper {
  public:
   DecisionWrapper(AggregatedJournal& journal,
@@ -52,7 +59,11 @@ class DecisionWrapper {
                   DecisionCallback callback)
       : callback_(std::move(callback)),
         journal_entry_(
-            journal.CreatePendingAsyncEntry(url, task_id, event_name, "")) {}
+            journal.CreatePendingAsyncEntry(url,
+                                            task_id,
+                                            mojom::JournalTrack::kActor,
+                                            event_name,
+                                            "")) {}
 
   void Reject(std::string_view reason) {
     journal_entry_->EndEntry(reason);
@@ -111,6 +122,7 @@ void OnOptimizationGuideDecision(
 }
 
 void MayActOnUrl(const GURL& url,
+                 bool allow_insecure_http,
                  Profile* profile,
                  std::unique_ptr<DecisionWrapper> decision_wrapper) {
   if (net::IsLocalhost(url) || url.IsAboutBlank()) {
@@ -118,8 +130,19 @@ void MayActOnUrl(const GURL& url,
     return;
   }
 
-  if (!url.SchemeIs(url::kHttpsScheme) || url.HostIsIPAddress()) {
+  if (!(url.SchemeIs(url::kHttpsScheme) ||
+        (allow_insecure_http && url.SchemeIs(url::kHttpScheme)))) {
     decision_wrapper->Reject("Wrong scheme");
+    return;
+  }
+
+  if (url.HostIsIPAddress()) {
+    decision_wrapper->Reject("IP address");
+    return;
+  }
+
+  if (DisableSafetyChecks()) {
+    decision_wrapper->Accept();
     return;
   }
 
@@ -245,18 +268,20 @@ void MayActOnTab(const tabs::TabInterface& tab,
   // it'll have a user interaction observer attached.
   // Do not act on such a page.
   if (safe_browsing::SafeBrowsingUserInteractionObserver::FromWebContents(
-          &web_contents)) {
+          &web_contents) &&
+      !DisableSafetyChecks()) {
     decision_wrapper->Reject("Blocked by safebrowsing");
     return;
   }
 #endif
 
-  MayActOnUrl(url,
+  MayActOnUrl(url, /*allow_insecure_http=*/false,
               Profile::FromBrowserContext(web_contents.GetBrowserContext()),
               std::move(decision_wrapper));
 }
 
 void MayActOnUrl(const GURL& url,
+                 bool allow_insecure_http,
                  Profile* profile,
                  AggregatedJournal& journal,
                  TaskId task_id,
@@ -264,7 +289,7 @@ void MayActOnUrl(const GURL& url,
   std::unique_ptr<DecisionWrapper> decision_wrapper =
       std::make_unique<DecisionWrapper>(journal, url, task_id, "MayActOnUrl",
                                         std::move(callback));
-  MayActOnUrl(url, profile, std::move(decision_wrapper));
+  MayActOnUrl(url, allow_insecure_http, profile, std::move(decision_wrapper));
 }
 
 }  // namespace actor

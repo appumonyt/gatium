@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/values.h"
 #include "components/dom_distiller/core/distilled_page_prefs.h"
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
@@ -55,6 +56,10 @@ const std::string GetSetTextDirectionJs(const std::string& direction);
 // contents.
 const std::string GetErrorPageJs();
 
+// Returns a JavaScript blob with unsafe content converted to a JavaScript
+// string that adds it to the page.
+const std::string GetAddToPageJs(const std::string& unsafe_content);
+
 // Returns a JavaScript blob for controlling the "in-progress" indicator when
 // viewing a partially-distilled page. |is_last_page| indicates whether this is
 // the last page of the article (i.e. loading indicator should be removed).
@@ -85,6 +90,9 @@ const std::string GetDistilledPageThemeJs(mojom::Theme theme);
 
 // Returns JavaScript corresponding to setting the font scaling.
 const std::string GetDistilledPageFontScalingJs(float scaling);
+
+// Returns JavaScript corresponding to setting the base font size.
+const std::string SetDistilledPageBaseFontSize(float baseFontSize);
 
 }  // namespace viewer
 }  // namespace dom_distiller

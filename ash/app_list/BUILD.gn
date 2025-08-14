@@ -94,16 +94,6 @@ source_set("app_list") {
     "views/apps_grid_view.cc",
     "views/apps_grid_view.h",
     "views/apps_grid_view_folder_delegate.h",
-    "views/assistant/app_list_bubble_assistant_page.cc",
-    "views/assistant/app_list_bubble_assistant_page.h",
-    "views/assistant/assistant_dialog_plate.cc",
-    "views/assistant/assistant_dialog_plate.h",
-    "views/assistant/assistant_main_stage.cc",
-    "views/assistant/assistant_main_stage.h",
-    "views/assistant/assistant_main_view.cc",
-    "views/assistant/assistant_main_view.h",
-    "views/assistant/assistant_page_view.cc",
-    "views/assistant/assistant_page_view.h",
     "views/button_focus_skipper.cc",
     "views/button_focus_skipper.h",
     "views/contents_view.cc",
@@ -173,9 +163,6 @@ source_set("app_list") {
   deps = [
     "//ash/app_menu",
     "//ash/assistant/model",
-    "//ash/assistant/ui",
-    "//ash/assistant/ui:constants",
-    "//ash/assistant/ui/colors:assistant_colors_views",
     "//ash/assistant/util",
     "//ash/keyboard/ui",
     "//ash/public/cpp/app_list/vector_icons",
@@ -242,6 +229,10 @@ source_set("app_list") {
     "//ui/wm",
     "//ui/wm/public",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("test_support") {
@@ -310,9 +301,6 @@ source_set("unit_tests") {
     "views/apps_collection_section_view_unittest.cc",
     "views/apps_container_view_unittest.cc",
     "views/apps_grid_view_unittest.cc",
-    "views/assistant/assistant_dialog_plate_unittest.cc",
-    "views/assistant/assistant_main_stage_unittest.cc",
-    "views/assistant/assistant_page_view_unittest.cc",
     "views/continue_section_view_unittest.cc",
     "views/folder_header_view_unittest.cc",
     "views/paged_apps_grid_view_unittest.cc",
@@ -330,9 +318,6 @@ source_set("unit_tests") {
     "//ash:test_support",
     "//ash/app_menu",
     "//ash/assistant/model",
-    "//ash/assistant/ui",
-    "//ash/assistant/ui:constants",
-    "//ash/assistant/ui/colors:assistant_colors_views",
     "//ash/constants",
     "//ash/keyboard/ui",
     "//ash/keyboard/ui:test_support",
@@ -374,4 +359,8 @@ source_set("unit_tests") {
   ]
 
   data_deps = [ "//ui/resources:ui_test_pak_data" ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

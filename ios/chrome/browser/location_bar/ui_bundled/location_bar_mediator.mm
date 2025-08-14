@@ -8,6 +8,9 @@
 #import "components/google/core/common/google_util.h"
 #import "components/lens/lens_url_utils.h"
 #import "components/omnibox/common/omnibox_features.h"
+#import "ios/chrome/browser/intelligence/bwg/metrics/bwg_metrics.h"
+#import "ios/chrome/browser/intelligence/bwg/model/bwg_service.h"
+#import "ios/chrome/browser/intelligence/bwg/model/bwg_service_factory.h"
 #import "ios/chrome/browser/intelligence/features/features.h"
 #import "ios/chrome/browser/lens_overlay/coordinator/lens_overlay_availability.h"
 #import "ios/chrome/browser/location_bar/ui_bundled/location_bar_consumer.h"
@@ -73,7 +76,8 @@ const CGFloat kIconPointSize = 16.0;
   }
   _webStateListObserver = nullptr;
   _searchEngineObserver = nullptr;
-  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate)) {
+  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate) ||
+      base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2)) {
     self.placeholderService = nullptr;
   }
 }
@@ -123,7 +127,8 @@ const CGFloat kIconPointSize = 16.0;
 }
 
 - (void)setPlaceholderService:(PlaceholderService*)placeholderService {
-  CHECK(base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate));
+  CHECK((base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate) ||
+         base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2)));
   _placeholderService = placeholderService;
 
   if (!placeholderService) {
@@ -185,7 +190,9 @@ const CGFloat kIconPointSize = 16.0;
 #pragma mark - PlaceholderServiceObserving
 
 - (void)placeholderImageUpdated {
-  CHECK(base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate));
+  if (!base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2)) {
+    return;
+  }
 
   __weak __typeof(self) weakSelf = self;
   if (self.placeholderService) {
@@ -198,7 +205,8 @@ const CGFloat kIconPointSize = 16.0;
 
 #pragma mark - Private
 
-- (bool)isLensOverlayAvailable {
+/// Returns whether the Lens overlay is currently available for the web state.
+- (BOOL)isLensOverlayAvailable {
   if (_webStateList) {
     web::WebState* webState = _webStateList->GetActiveWebState();
     if (webState) {
@@ -207,12 +215,31 @@ const CGFloat kIconPointSize = 16.0;
       return IsLensOverlayAvailable(profile->GetPrefs());
     }
   }
-  return false;
+  return NO;
+}
+
+/// Returns whether the AI Hub is currently available for the web state.
+- (BOOL)isAIHubAvailable {
+  if (!IsPageActionMenuEnabled()) {
+    return NO;
+  }
+  if (_webStateList) {
+    web::WebState* webState = _webStateList->GetActiveWebState();
+    if (webState) {
+      ProfileIOS* profile =
+          ProfileIOS::FromBrowserState(webState->GetBrowserState());
+      BwgService* BWGService = BwgServiceFactory::GetForProfile(profile);
+      if (BWGService) {
+        return BWGService->IsProfileEligibleForBwg();
+      }
+    }
+  }
+  return NO;
 }
 
 /// Updates the placeholder.
 - (void)updatePlaceholderType {
-  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate) &&
+  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2) &&
       [self isCurrentPageNTP]) {
     [self.consumer setPlaceholderType:LocationBarPlaceholderType::
                                           kDefaultSearchEngineIcon];
@@ -223,7 +250,9 @@ const CGFloat kIconPointSize = 16.0;
     // necessary.
   }
 
-  if (IsPageActionMenuEnabled()) {
+  if ([self isAIHubAvailable]) {
+    // Record Gemini entry point impression when AI Hub is available and shown.
+    RecordGeminiEntryPointImpression();
     [self.consumer
         setPlaceholderType:LocationBarPlaceholderType::kPageActionMenu];
     return;

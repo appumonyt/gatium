@@ -495,7 +495,7 @@ String LayoutText::PlainText() const {
 
     String text =
         text_.Substring(text_box.dom_start_offset, text_box.dom_length)
-            .SimplifyWhiteSpace(WTF::kDoNotStripWhiteSpace);
+            .SimplifyWhiteSpace(kDoNotStripWhiteSpace);
     plain_text_builder.Append(text);
   }
   return plain_text_builder.ToString();
@@ -655,11 +655,7 @@ void LayoutText::AbsoluteQuadsForRange(Vector<gfx::QuadF>& quads,
         quad.Scale(1 / scaling_factor, 1 / scaling_factor);
         quad = LocalToAbsoluteQuad(quad);
       } else {
-        if (RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled()) {
-          rect.Move(cursor.CurrentOffsetInFirstContainerFragment());
-        } else {
-          rect.Move(cursor.CurrentOffsetInBlockFlow());
-        }
+        rect.Move(cursor.CurrentOffsetInFirstContainerFragment());
         quad = LocalRectToAbsoluteQuad(rect);
       }
       if (!is_collapsed) {
@@ -689,8 +685,8 @@ PositionWithAffinity LayoutText::PositionForPoint(
   NOT_DESTROYED();
   // NG codepath requires |kPrePaintClean|.
   // |SelectionModifier| calls this only in legacy codepath.
-  DCHECK(!IsLayoutNGObject() || GetDocument().Lifecycle().GetState() >=
-                                    DocumentLifecycle::kPrePaintClean);
+  DCHECK(GetDocument().Lifecycle().GetState() >=
+         DocumentLifecycle::kPrePaintClean);
 
   if (IsInLayoutNGInlineFormattingContext()) {
     // Because of Texts in "position:relative" can be outside of line box, we
@@ -750,7 +746,7 @@ bool LayoutText::IsAllCollapsibleWhitespace() const {
   }
 
   const ComputedStyle& style = StyleRef();
-  return WTF::VisitCharacters(text_, [&style](auto chars) {
+  return VisitCharacters(text_, [&style](auto chars) {
     return std::ranges::all_of(
         chars, [&style](auto ch) { return style.IsCollapsibleWhiteSpace(ch); });
   });
@@ -1063,7 +1059,7 @@ void LayoutText::TextDidChangeWithoutInvalidation() {
       GetDocument().GetSettings()->GetPasswordEchoEnabled();
   String original_text =
       (RuntimeEnabledFeatures::UseOriginalDomOffsetsForOffsetMapEnabled() &&
-       OriginalText() && is_password_echo_enabled)
+       !OriginalText().empty() && is_password_echo_enabled)
           ? OriginalText()
           : text_;
   wtf_size_t original_length = original_text.length();

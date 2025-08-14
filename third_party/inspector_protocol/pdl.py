@@ -83,7 +83,20 @@ def parse(data, file_name, map_binary_to_string=False):
     if match:
       domain = createItem({'domain' : match.group(3)}, match.group(1),
                           match.group(2))
+      domain['source'] = file_name
       protocol['domains'].append(domain)
+      continue
+
+    match = re.compile(
+        r'^include (.*)').match(line)
+    if match:
+      included_filename = match.group(1)
+      if os.path.isabs(included_filename):
+        raise Exception("Only relative paths are supported in includes")
+      resolved_path = os.path.normpath(os.path.join(os.path.dirname(file_name), included_filename))
+      with open(resolved_path, 'r') as file:
+        included_data = parse(file.read(), resolved_path, map_binary_to_string)
+        protocol['domains'].extend(included_data['domains'])
       continue
 
     match = re.compile(r'^  depends on ([^\s]+)').match(line)

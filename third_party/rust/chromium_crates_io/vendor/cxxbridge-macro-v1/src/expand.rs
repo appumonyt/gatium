@@ -7,8 +7,8 @@ use crate::syntax::qualified::QualifiedName;
 use crate::syntax::report::Errors;
 use crate::syntax::symbol::Symbol;
 use crate::syntax::{
-    self, check, mangle, Api, Doc, Enum, ExternFn, ExternType, Impl, Lifetimes, Pair, Signature,
-    Struct, Trait, Type, TypeAlias, Types,
+    self, check, mangle, Api, Doc, Enum, ExternFn, ExternType, FnKind, Impl, Lang, Lifetimes, Pair,
+    Signature, Struct, Trait, Type, TypeAlias, Types,
 };
 use crate::type_id::Crate;
 use crate::{derive, generics};
@@ -36,8 +36,6 @@ pub(crate) fn bridge(mut ffi: Module) -> Result<TokenStream> {
     let trusted = ffi.unsafety.is_some();
     let namespace = &ffi.namespace;
     let ref mut apis = syntax::parse_items(errors, content, trusted, namespace);
-    #[cfg(feature = "experimental-enum-variants-from-header")]
-    crate::load::load(errors, apis);
     let ref types = Types::collect(errors, apis);
     errors.propagate()?;
 
@@ -92,7 +90,7 @@ fn expand(ffi: Module, doc: Doc, attrs: OtherAttrs, apis: &[Api], types: &Types)
     }
 
     for (impl_key, &explicit_impl) in &types.impls {
-        match *impl_key {
+        match impl_key {
             ImplKey::RustBox(ident) => {
                 hidden.extend(expand_rust_box(ident, types, explicit_impl));
             }
@@ -180,11 +178,13 @@ fn expand_struct(strct: &Struct) -> TokenStream {
         }
     };
 
+    let align = strct.align.as_ref().map(|align| quote!(, align(#align)));
+
     quote! {
         #doc
         #derives
         #attrs
-        #[repr(C)]
+        #[repr(C #align)]
         #struct_def
 
         #[automatically_derived]
@@ -360,7 +360,6 @@ fn expand_enum(enm: &Enum) -> TokenStream {
         #[repr(transparent)]
         #enum_def
 
-        #[automatically_derived]
         #[allow(non_upper_case_globals)]
         impl #ident {
             #(#variants)*
@@ -459,7 +458,7 @@ fn expand_cxx_type_assert_pinned(ety: &ExternType, types: &Types) -> TokenStream
 
 fn expand_cxx_function_decl(efn: &ExternFn, types: &Types) -> TokenStream {
     let generics = &efn.generics;
-    let receiver = efn.receiver.iter().map(|receiver| {
+    let receiver = efn.receiver().into_iter().map(|receiver| {
         let receiver_type = receiver.ty();
         quote!(_: #receiver_type)
     });
@@ -502,7 +501,7 @@ fn expand_cxx_function_shim(efn: &ExternFn, types: &Types) -> TokenStream {
     let doc = &efn.doc;
     let attrs = &efn.attrs;
     let decl = expand_cxx_function_decl(efn, types);
-    let receiver = efn.receiver.iter().map(|receiver| {
+    let receiver = efn.receiver().into_iter().map(|receiver| {
         let var = receiver.var;
         if receiver.pinned {
             let colon = receiver.colon_token;
@@ -528,8 +527,8 @@ fn expand_cxx_function_shim(efn: &ExternFn, types: &Types) -> TokenStream {
     };
     let indirect_return = indirect_return(efn, types);
     let receiver_var = efn
-        .receiver
-        .iter()
+        .receiver()
+        .into_iter()
         .map(|receiver| receiver.var.to_token_stream());
     let arg_vars = efn.args.iter().map(|arg| {
         let var = &arg.name.rust;
@@ -733,14 +732,19 @@ fn expand_cxx_function_shim(efn: &ExternFn, types: &Types) -> TokenStream {
     let ident = &efn.name.rust;
     let generics = &efn.generics;
     let arg_list = quote_spanned!(efn.paren_token.span=> (#(#all_args,)*));
+    let calling_conv = match efn.lang {
+        Lang::Cxx => quote_spanned!(span=> "C"),
+        Lang::CxxUnwind => quote_spanned!(span=> "C-unwind"),
+        Lang::Rust => unreachable!(),
+    };
     let fn_body = quote_spanned!(span=> {
-        #UnsafeExtern extern "C" {
+        #UnsafeExtern extern #calling_conv {
             #decl
         }
         #trampolines
         #dispatch
     });
-    match &efn.receiver {
+    match efn.self_type() {
         None => {
             quote! {
                 #doc
@@ -748,32 +752,33 @@ fn expand_cxx_function_shim(efn: &ExternFn, types: &Types) -> TokenStream {
                 #visibility #unsafety #fn_token #ident #generics #arg_list #ret #fn_body
             }
         }
-        Some(receiver) => {
+        Some(self_type) => {
             let elided_generics;
-            let receiver_ident = &receiver.ty.rust;
-            let resolve = types.resolve(&receiver.ty);
-            let receiver_generics = if receiver.ty.generics.lt_token.is_some() {
-                &receiver.ty.generics
-            } else {
-                elided_generics = Lifetimes {
-                    lt_token: resolve.generics.lt_token,
-                    lifetimes: resolve
-                        .generics
-                        .lifetimes
-                        .pairs()
-                        .map(|pair| {
-                            let lifetime = Lifetime::new("'_", pair.value().apostrophe);
-                            let punct = pair.punct().map(|&&comma| comma);
-                            punctuated::Pair::new(lifetime, punct)
-                        })
-                        .collect(),
-                    gt_token: resolve.generics.gt_token,
-                };
-                &elided_generics
+            let resolve = types.resolve(self_type);
+            let self_type_generics = match &efn.kind {
+                FnKind::Method(receiver) if receiver.ty.generics.lt_token.is_some() => {
+                    &receiver.ty.generics
+                }
+                _ => {
+                    elided_generics = Lifetimes {
+                        lt_token: resolve.generics.lt_token,
+                        lifetimes: resolve
+                            .generics
+                            .lifetimes
+                            .pairs()
+                            .map(|pair| {
+                                let lifetime = Lifetime::new("'_", pair.value().apostrophe);
+                                let punct = pair.punct().map(|&&comma| comma);
+                                punctuated::Pair::new(lifetime, punct)
+                            })
+                            .collect(),
+                        gt_token: resolve.generics.gt_token,
+                    };
+                    &elided_generics
+                }
             };
             quote_spanned! {ident.span()=>
-                #[automatically_derived]
-                impl #generics #receiver_ident #receiver_generics {
+                impl #generics #self_type #self_type_generics {
                     #doc
                     #attrs
                     #visibility #unsafety #fn_token #ident #arg_list #ret #fn_body
@@ -805,12 +810,17 @@ fn expand_function_pointer_trampoline(
         &efn.attrs,
         body_span,
     );
+    let calling_conv = match efn.lang {
+        Lang::Cxx => "C",
+        Lang::CxxUnwind => "C-unwind",
+        Lang::Rust => unreachable!(),
+    };
     let var = &var.rust;
 
     quote! {
         let #var = ::cxx::private::FatFunction {
             trampoline: {
-                #UnsafeExtern extern "C" {
+                #UnsafeExtern extern #calling_conv {
                     #[link_name = #c_trampoline]
                     fn trampoline();
                 }
@@ -939,13 +949,13 @@ fn expand_forbid(impls: TokenStream) -> TokenStream {
 
 fn expand_rust_function_shim(efn: &ExternFn, types: &Types) -> TokenStream {
     let link_name = mangle::extern_fn(efn, types);
-    let local_name = match &efn.receiver {
+    let local_name = match efn.self_type() {
         None => format_ident!("__{}", efn.name.rust),
-        Some(receiver) => format_ident!("__{}__{}", receiver.ty.rust, efn.name.rust),
+        Some(self_type) => format_ident!("__{}__{}", self_type, efn.name.rust),
     };
-    let prevent_unwind_label = match &efn.receiver {
+    let prevent_unwind_label = match efn.self_type() {
         None => format!("::{}", efn.name.rust),
-        Some(receiver) => format!("::{}::{}", receiver.ty.rust, efn.name.rust),
+        Some(self_type) => format!("::{}::{}", self_type, efn.name.rust),
     };
     let invoke = Some(&efn.name.rust);
     let body_span = efn.semi_token.span;
@@ -975,10 +985,9 @@ fn expand_rust_function_shim_impl(
 ) -> TokenStream {
     let generics = outer_generics.unwrap_or(&sig.generics);
     let receiver_var = sig
-        .receiver
-        .as_ref()
+        .receiver()
         .map(|receiver| quote_spanned!(receiver.var.span=> __self));
-    let receiver = sig.receiver.as_ref().map(|receiver| {
+    let receiver = sig.receiver().map(|receiver| {
         let colon = receiver.colon_token;
         let receiver_type = receiver.ty();
         quote!(#receiver_var #colon #receiver_type)
@@ -1188,10 +1197,9 @@ fn expand_rust_function_shim_super(
     let generics = &sig.generics;
 
     let receiver_var = sig
-        .receiver
-        .as_ref()
+        .receiver()
         .map(|receiver| Ident::new("__self", receiver.var.span));
-    let receiver = sig.receiver.iter().map(|receiver| {
+    let receiver = sig.receiver().into_iter().map(|receiver| {
         let receiver_type = receiver.ty();
         quote!(#receiver_var: #receiver_type)
     });
@@ -1221,12 +1229,9 @@ fn expand_rust_function_shim_super(
     let vars = receiver_var.iter().chain(arg_vars);
 
     let span = invoke.span();
-    let call = match &sig.receiver {
+    let call = match sig.self_type() {
         None => quote_spanned!(span=> super::#invoke),
-        Some(receiver) => {
-            let receiver_type = &receiver.ty.rust;
-            quote_spanned!(span=> #receiver_type::#invoke)
-        }
+        Some(self_type) => quote_spanned!(span=> #self_type::#invoke),
     };
 
     let mut body = quote_spanned!(span=> #call(#(#vars,)*));
@@ -1296,7 +1301,7 @@ fn type_id(name: &Pair) -> TokenStream {
     crate::type_id::expand(Crate::Cxx, qualified)
 }
 
-fn expand_rust_box(key: NamedImplKey, types: &Types, explicit_impl: Option<&Impl>) -> TokenStream {
+fn expand_rust_box(key: &NamedImplKey, types: &Types, explicit_impl: Option<&Impl>) -> TokenStream {
     let ident = key.rust;
     let resolve = types.resolve(ident);
     let link_prefix = format!("cxxbridge1$box${}$", resolve.name.to_symbol());
@@ -1345,7 +1350,7 @@ fn expand_rust_box(key: NamedImplKey, types: &Types, explicit_impl: Option<&Impl
     }
 }
 
-fn expand_rust_vec(key: NamedImplKey, types: &Types, explicit_impl: Option<&Impl>) -> TokenStream {
+fn expand_rust_vec(key: &NamedImplKey, types: &Types, explicit_impl: Option<&Impl>) -> TokenStream {
     let elem = key.rust;
     let resolve = types.resolve(elem);
     let link_prefix = format!("cxxbridge1$rust_vec${}$", resolve.name.to_symbol());
@@ -1443,7 +1448,7 @@ fn expand_rust_vec(key: NamedImplKey, types: &Types, explicit_impl: Option<&Impl
 }
 
 fn expand_unique_ptr(
-    key: NamedImplKey,
+    key: &NamedImplKey,
     types: &Types,
     explicit_impl: Option<&Impl>,
 ) -> TokenStream {
@@ -1555,7 +1560,7 @@ fn expand_unique_ptr(
 }
 
 fn expand_shared_ptr(
-    key: NamedImplKey,
+    key: &NamedImplKey,
     types: &Types,
     explicit_impl: Option<&Impl>,
 ) -> TokenStream {
@@ -1565,6 +1570,7 @@ fn expand_shared_ptr(
     let prefix = format!("cxxbridge1$shared_ptr${}$", resolve.name.to_symbol());
     let link_null = format!("{}null", prefix);
     let link_uninit = format!("{}uninit", prefix);
+    let link_raw = format!("{}raw", prefix);
     let link_clone = format!("{}clone", prefix);
     let link_get = format!("{}get", prefix);
     let link_drop = format!("{}drop", prefix);
@@ -1608,6 +1614,15 @@ fn expand_shared_ptr(
                 }
             }
             #new_method
+            unsafe fn __raw(new: *mut ::cxx::core::ffi::c_void, raw: *mut Self) {
+                #UnsafeExtern extern "C" {
+                    #[link_name = #link_raw]
+                    fn __raw(new: *const ::cxx::core::ffi::c_void, raw: *mut ::cxx::core::ffi::c_void);
+                }
+                unsafe {
+                    __raw(new, raw as *mut ::cxx::core::ffi::c_void);
+                }
+            }
             unsafe fn __clone(this: *const ::cxx::core::ffi::c_void, new: *mut ::cxx::core::ffi::c_void) {
                 #UnsafeExtern extern "C" {
                     #[link_name = #link_clone]
@@ -1637,7 +1652,7 @@ fn expand_shared_ptr(
     }
 }
 
-fn expand_weak_ptr(key: NamedImplKey, types: &Types, explicit_impl: Option<&Impl>) -> TokenStream {
+fn expand_weak_ptr(key: &NamedImplKey, types: &Types, explicit_impl: Option<&Impl>) -> TokenStream {
     let ident = key.rust;
     let name = ident.to_string();
     let resolve = types.resolve(ident);
@@ -1710,7 +1725,7 @@ fn expand_weak_ptr(key: NamedImplKey, types: &Types, explicit_impl: Option<&Impl
 }
 
 fn expand_cxx_vector(
-    key: NamedImplKey,
+    key: &NamedImplKey,
     explicit_impl: Option<&Impl>,
     types: &Types,
 ) -> TokenStream {
@@ -1720,7 +1735,9 @@ fn expand_cxx_vector(
     let prefix = format!("cxxbridge1$std$vector${}$", resolve.name.to_symbol());
     let link_new = format!("{}new", prefix);
     let link_size = format!("{}size", prefix);
+    let link_capacity = format!("{}capacity", prefix);
     let link_get_unchecked = format!("{}get_unchecked", prefix);
+    let link_reserve = format!("{}reserve", prefix);
     let link_push_back = format!("{}push_back", prefix);
     let link_pop_back = format!("{}pop_back", prefix);
     let unique_ptr_prefix = format!(
@@ -1814,6 +1831,13 @@ fn expand_cxx_vector(
                 }
                 unsafe { __vector_size(v) }
             }
+            fn __vector_capacity(v: &::cxx::CxxVector<Self>) -> usize {
+                #UnsafeExtern extern "C" {
+                    #[link_name = #link_capacity]
+                    fn __vector_capacity #impl_generics(_: &::cxx::CxxVector<#elem #ty_generics>) -> usize;
+                }
+                unsafe { __vector_capacity(v) }
+            }
             unsafe fn __get_unchecked(v: *mut ::cxx::CxxVector<Self>, pos: usize) -> *mut Self {
                 #UnsafeExtern extern "C" {
                     #[link_name = #link_get_unchecked]
@@ -1823,6 +1847,16 @@ fn expand_cxx_vector(
                     ) -> *mut ::cxx::core::ffi::c_void;
                 }
                 unsafe { __get_unchecked(v, pos) as *mut Self }
+            }
+            unsafe fn __reserve(v: ::cxx::core::pin::Pin<&mut ::cxx::CxxVector<Self>>, new_cap: usize) {
+                #UnsafeExtern extern "C" {
+                    #[link_name = #link_reserve]
+                    fn __reserve #impl_generics(
+                        v: ::cxx::core::pin::Pin<&mut ::cxx::CxxVector<#elem #ty_generics>>,
+                        new_cap: usize,
+                    );
+                }
+                unsafe { __reserve(v, new_cap) }
             }
             #by_value_methods
             fn __unique_ptr_null() -> ::cxx::core::mem::MaybeUninit<*mut ::cxx::core::ffi::c_void> {

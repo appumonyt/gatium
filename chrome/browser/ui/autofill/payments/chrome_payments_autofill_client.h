@@ -72,6 +72,7 @@ class VirtualCardEnrollmentManager;
 namespace payments {
 
 struct BnplIssuerContext;
+class BnplStrategy;
 class MandatoryReauthManager;
 class MultipleRequestPaymentsNetworkInterface;
 class PaymentsWindowManager;
@@ -211,7 +212,12 @@ class ChromePaymentsAutofillClient : public PaymentsAutofillClient,
   payments::MandatoryReauthManager* GetOrCreatePaymentsMandatoryReauthManager()
       override;
   PaymentsDataManager& GetPaymentsDataManager() final;
-  void ShowCreditCardSaveAndFillDialog() override;
+  void ShowCreditCardLocalSaveAndFillDialog(
+      CardSaveAndFillDialogCallback callback) override;
+  void ShowCreditCardUploadSaveAndFillDialog(
+      const LegalMessageLines& legal_message_lines,
+      CardSaveAndFillDialogCallback callback) override;
+  void ShowCreditCardSaveAndFillPendingDialog() override;
   payments::SaveAndFillManager* GetSaveAndFillManager() override;
   void ShowSelectBnplIssuerDialog(
       std::vector<BnplIssuerContext> bnpl_issuer_context,
@@ -221,6 +227,7 @@ class ChromePaymentsAutofillClient : public PaymentsAutofillClient,
   void DismissSelectBnplIssuerDialog() override;
   bool IsTabModalPopupDeprecated() const override;
   bool IsRiskBasedAuthEffectivelyAvailable() const override;
+  BnplStrategy* GetBnplStrategy() override;
 
 #if BUILDFLAG(IS_ANDROID)
   // The AutofillMessageController is used to show a message notification
@@ -350,6 +357,11 @@ class ChromePaymentsAutofillClient : public PaymentsAutofillClient,
 
   std::unique_ptr<SelectBnplIssuerDialogControllerImpl>
       select_bnpl_issuer_dialog_controller_;
+
+  // The BnplStrategy used to determine the next step in a BNPL flow depending
+  // on the platform.
+  // Lazily initialized: access only through GetBnplStrategy().
+  std::unique_ptr<BnplStrategy> bnpl_strategy_;
 
   // Used to cache client side risk data. The cache is invalidated when the
   // chrome browser tab is closed.

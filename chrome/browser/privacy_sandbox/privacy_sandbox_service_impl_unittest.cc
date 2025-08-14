@@ -38,7 +38,6 @@
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/test/base/fake_profile_manager.h"
-#include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
@@ -53,6 +52,7 @@
 #include "components/metrics/metrics_pref_names.h"
 #include "components/policy/core/common/mock_policy_service.h"
 #include "components/policy/policy_constants.h"
+#include "components/prefs/pref_service.h"
 #include "components/privacy_sandbox/mock_privacy_sandbox_settings.h"
 #include "components/privacy_sandbox/privacy_sandbox_attestations/privacy_sandbox_attestations.h"
 #include "components/privacy_sandbox/privacy_sandbox_attestations/scoped_privacy_sandbox_attestations.h"
@@ -103,6 +103,7 @@ using ::privacy_sandbox::CanonicalTopic;
 using PromptAction = ::PrivacySandboxService::PromptAction;
 using PromptSuppressedReason = ::PrivacySandboxService::PromptSuppressedReason;
 using PromptType = ::PrivacySandboxService::PromptType;
+using EligibilityLevel = ::privacy_sandbox::EligibilityLevel;
 using SurfaceType = ::PrivacySandboxService::SurfaceType;
 using NoticeSurfaceType = ::privacy_sandbox::SurfaceType;
 using ::testing::Combine;
@@ -485,7 +486,9 @@ class PrivacySandboxServiceTest : public testing::Test {
         managed_provider_raw, TestCase(test_state, test_input, test_output));
   }
 
-  PrefService* local_state() { return local_state_.Get(); }
+  PrefService* local_state() {
+    return TestingBrowserProcess::GetGlobal()->local_state();
+  }
   TestingProfile* profile() { return default_profile_; }
   PrivacySandboxServiceImpl* privacy_sandbox_service() {
     return privacy_sandbox_service_.get();
@@ -545,10 +548,7 @@ class PrivacySandboxServiceTest : public testing::Test {
   content::BrowserTaskEnvironment browser_task_environment_;
 
   // In production, ProfileManager is created much earlier than Profile
-  // creation. Some of the tests using this fixture needs local_state,
-  // so instead of let TestingProfileManager generate it, we instantiate
-  // it independently.
-  ScopedTestingLocalState local_state_{TestingBrowserProcess::GetGlobal()};
+  // creation.
   std::unique_ptr<TestingProfileManager> default_profile_manager_;
   raw_ptr<TestingProfile> default_profile_;
   std::unique_ptr<IdentityTestEnvironmentProfileAdaptor>
@@ -589,6 +589,9 @@ TEST_P(PrivacySandboxPrivacyGuideShouldShowAdTopicsTest,
   feature_list()->Reset();
   if (is_feature_on) {
     feature_list()->InitAndEnableFeature(
+        privacy_sandbox::kPrivacySandboxAdTopicsContentParity);
+  } else {
+    feature_list()->InitAndDisableFeature(
         privacy_sandbox::kPrivacySandboxAdTopicsContentParity);
   }
 
@@ -2611,7 +2614,7 @@ TEST_F(PrivacySandboxServiceM1PromptTest, DeviceLocalAccountUser) {
       PromptType::kM1Consent);
 
   // No prompt should be shown for a web kiosk account.
-  chromeos::SetUpFakeKioskSession();
+  chromeos::SetUpFakeChromeAppKioskSession();
   EXPECT_EQ(
       privacy_sandbox_service()->GetRequiredPromptType(SurfaceType::kDesktop),
       PromptType::kNone);
@@ -3538,3 +3541,17 @@ TEST_P(PrivacySandboxNoticeFrameworkResultCallbackUnitTest,
 INSTANTIATE_TEST_SUITE_P(PrivacySandboxNoticeFrameworkResultCallbackUnitTest,
                          PrivacySandboxNoticeFrameworkResultCallbackUnitTest,
                          testing::Bool());
+
+class PrivacySandboxNoticeFrameworkEligibilityTest
+    : public PrivacySandboxServiceTest {};
+
+TEST_F(PrivacySandboxNoticeFrameworkEligibilityTest, EligibilityCallbacks) {
+  // TODO(crbug.com/408017260): These are currently placeholders. Update tests
+  // when real eligibility logic is implemented.
+  EXPECT_EQ(privacy_sandbox_service()->GetTopicsApiEligibility(),
+            EligibilityLevel::kNotEligible);
+  EXPECT_EQ(privacy_sandbox_service()->GetProtectedAudienceApiEligibility(),
+            EligibilityLevel::kNotEligible);
+  EXPECT_EQ(privacy_sandbox_service()->GetAdMeasurementApiEligibility(),
+            EligibilityLevel::kNotEligible);
+}

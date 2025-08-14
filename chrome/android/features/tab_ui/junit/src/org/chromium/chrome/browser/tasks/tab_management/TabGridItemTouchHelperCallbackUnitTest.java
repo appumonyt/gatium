@@ -42,7 +42,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.Mockito;
+import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 import org.robolectric.annotation.Config;
@@ -61,12 +61,13 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabUngrouper;
-import org.chromium.chrome.browser.tasks.tab_management.MessageService.MessageType;
 import org.chromium.chrome.browser.tasks.tab_management.TabGridItemLongPressOrchestrator.OnLongPressTabItemEventListener;
 import org.chromium.chrome.browser.tasks.tab_management.TabListCoordinator.TabListMode;
 import org.chromium.chrome.browser.tasks.tab_management.TabListModel.AnimationStatus;
 import org.chromium.chrome.browser.tasks.tab_management.TabListModel.CardProperties;
 import org.chromium.chrome.browser.tasks.tab_management.TabListModel.CardProperties.ModelType;
+import org.chromium.chrome.browser.tasks.tab_management.TabProperties.UiType;
+import org.chromium.chrome.browser.tasks.tab_management.TabSwitcherMessageManager.MessageType;
 import org.chromium.components.feature_engagement.EventConstants;
 import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.ui.modelutil.MVCListAdapter;
@@ -109,7 +110,7 @@ public class TabGridItemTouchHelperCallbackUnitTest {
     @Mock private Canvas mCanvas;
     @Mock private RecyclerView mRecyclerView;
     @Mock private RecyclerView.Adapter mAdapter;
-    @Mock private TabModel mTabModel;
+    @Spy private TabModel mTabModel;
     @Mock private TabListMediator.TabActionListener mTabClosedListener;
     @Mock private TabGroupModelFilter mTabGroupModelFilter;
     @Mock private TabUngrouper mTabUngrouper;
@@ -764,19 +765,18 @@ public class TabGridItemTouchHelperCallbackUnitTest {
 
     @Test
     public void messageItemNotDraggable() {
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.IPH_MESSAGE);
         setupItemTouchHelperCallback(false);
         assertFalse(
                 mItemTouchHelperCallback.hasDragFlagForTesting(mRecyclerView, mMockViewHolder1));
 
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.LARGE_MESSAGE);
-
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.INCOGNITO_REAUTH_PROMO_MESSAGE);
         setupItemTouchHelperCallback(false);
         assertFalse(
                 mItemTouchHelperCallback.hasDragFlagForTesting(mRecyclerView, mMockViewHolder1));
 
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.CUSTOM_MESSAGE);
-        mMockViewHolder1.model = Mockito.mock(PropertyModel.class);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.TAB_GROUP_SUGGESTION_MESSAGE);
+        mMockViewHolder1.model = mock(PropertyModel.class);
         setupItemTouchHelperCallback(false);
         assertFalse(
                 mItemTouchHelperCallback.hasDragFlagForTesting(mRecyclerView, mMockViewHolder1));
@@ -784,16 +784,16 @@ public class TabGridItemTouchHelperCallbackUnitTest {
 
     @Test
     public void messageItemSwipeable() {
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.IPH_MESSAGE);
         setupItemTouchHelperCallback(false);
         assertTrue(mItemTouchHelperCallback.hasSwipeFlag(mRecyclerView, mMockViewHolder1));
     }
 
     @Test
     public void messageItemSwipeable_archivedTabsMessageNotSwipable() {
-        PropertyModel model = Mockito.mock(PropertyModel.class);
+        PropertyModel model = mock(PropertyModel.class);
         when(model.get(MESSAGE_TYPE)).thenReturn(MessageType.ARCHIVED_TABS_MESSAGE);
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.CUSTOM_MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.ARCHIVED_TABS_MESSAGE);
         mMockViewHolder1.model = model;
 
         setupItemTouchHelperCallback(false);
@@ -802,7 +802,7 @@ public class TabGridItemTouchHelperCallbackUnitTest {
 
     @Test
     public void messageItemNotDropable() {
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.IPH_MESSAGE);
         setupItemTouchHelperCallback(false);
         assertFalse(
                 mItemTouchHelperCallback.canDropOver(
@@ -814,7 +814,7 @@ public class TabGridItemTouchHelperCallbackUnitTest {
         PropertyModel model =
                 new PropertyModel.Builder(MessageCardViewProperties.ALL_KEYS)
                         .with(MESSAGE_TYPE, MessageType.ARCHIVED_TABS_MESSAGE)
-                        .with(CARD_TYPE, TabProperties.UiType.MESSAGE)
+                        .with(CARD_TYPE, UiType.ARCHIVED_TABS_IPH_MESSAGE)
                         .build();
 
         ViewHolder mockViewHolder = prepareMockViewHolder(model, mItemView2, POSITION2);
@@ -834,14 +834,14 @@ public class TabGridItemTouchHelperCallbackUnitTest {
 
     @Test(expected = AssertionError.class)
     public void messageItemOnMoveFail() {
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.IPH_MESSAGE);
         setupItemTouchHelperCallback(false);
         mItemTouchHelperCallback.onMove(mRecyclerView, mMockViewHolder1, mMockViewHolder2);
     }
 
     @Test
     public void largeMessageItemNotDraggable() {
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.LARGE_MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.INCOGNITO_REAUTH_PROMO_MESSAGE);
         setupItemTouchHelperCallback(false);
         assertFalse(
                 mItemTouchHelperCallback.hasDragFlagForTesting(mRecyclerView, mMockViewHolder1));
@@ -849,14 +849,14 @@ public class TabGridItemTouchHelperCallbackUnitTest {
 
     @Test
     public void largeMessageItemSwipeable() {
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.LARGE_MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.INCOGNITO_REAUTH_PROMO_MESSAGE);
         setupItemTouchHelperCallback(false);
         assertTrue(mItemTouchHelperCallback.hasSwipeFlag(mRecyclerView, mMockViewHolder1));
     }
 
     @Test
     public void largeMessageItemNotDropable() {
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.LARGE_MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.INCOGNITO_REAUTH_PROMO_MESSAGE);
         setupItemTouchHelperCallback(false);
         assertFalse(
                 mItemTouchHelperCallback.canDropOver(
@@ -865,7 +865,7 @@ public class TabGridItemTouchHelperCallbackUnitTest {
 
     @Test(expected = AssertionError.class)
     public void largeMessageItemOnMoveFail() {
-        when(mMockViewHolder1.getItemViewType()).thenReturn(TabProperties.UiType.LARGE_MESSAGE);
+        when(mMockViewHolder1.getItemViewType()).thenReturn(UiType.INCOGNITO_REAUTH_PROMO_MESSAGE);
         setupItemTouchHelperCallback(false);
         mItemTouchHelperCallback.onMove(mRecyclerView, mMockViewHolder1, mMockViewHolder2);
     }
@@ -1166,12 +1166,166 @@ public class TabGridItemTouchHelperCallbackUnitTest {
     public void orchestratorCancelledOnClearView() {
         mItemTouchHelperCallback.setTabGridItemLongPressOrchestrator(
                 mTabGridItemLongPressOrchestrator);
-        mItemTouchHelperCallback.onSelectedChanged(
-                mMockViewHolder1, ItemTouchHelper.ACTION_STATE_IDLE);
-        verify(mTabGridItemLongPressOrchestrator)
-                .onSelectedChanged(
-                        mMockViewHolder1.getBindingAdapterPosition(),
-                        ItemTouchHelper.ACTION_STATE_IDLE);
+        mItemTouchHelperCallback.setCurrentActionStateForTesting(ItemTouchHelper.ACTION_STATE_DRAG);
+        mItemTouchHelperCallback.clearView(mRecyclerView, mMockViewHolder1);
+        verify(mTabGridItemLongPressOrchestrator).cancel();
+    }
+
+    @Test
+    public void getMovementFlags_mouseInput_disablesSwipe() {
+        mItemTouchHelperCallback.setIsMouseInputSource(true);
+        assertFalse(mItemTouchHelperCallback.hasSwipeFlag(mRecyclerView, mMockViewHolder1));
+        assertTrue(mItemTouchHelperCallback.hasDragFlagForTesting(mRecyclerView, mMockViewHolder1));
+    }
+
+    @Test
+    public void interpolateOutOfBoundsScroll_mouseInput_returnsZero() {
+        mItemTouchHelperCallback.setIsMouseInputSource(true);
+        assertEquals(
+                0,
+                mItemTouchHelperCallback.interpolateOutOfBoundsScroll(
+                        mRecyclerView, 100, 10, 1000, 100));
+    }
+
+    @Test
+    public void testOnMove_PinnedTab_WithinPinnedTabs() {
+        // Setup: 2 pinned tabs and 2 unpinned tabs.
+        when(mTab1.getIsPinned()).thenReturn(true);
+        when(mTab2.getIsPinned()).thenReturn(true);
+        when(mTab3.getIsPinned()).thenReturn(false);
+        when(mTab4.getIsPinned()).thenReturn(false);
+        when(mTabGroupModelFilter.getRelatedTabList(TAB1_ID)).thenReturn(List.of(mTab1));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB2_ID)).thenReturn(List.of(mTab2));
+        when(mTabModel.indexOf(mTab1)).thenReturn(0);
+        when(mTabModel.indexOf(mTab2)).thenReturn(1);
+        when(mTabModel.findFirstNonPinnedTabIndex()).thenReturn(2);
+
+        // Drag pinned tab1 to pinned tab2's position.
+        mItemTouchHelperCallback.onMove(mRecyclerView, mMockViewHolder1, mMockViewHolder2);
+        // Verify that tab1 is moved to index 1.
+        verify(mTabGroupModelFilter).moveRelatedTabs(TAB1_ID, 1);
+    }
+
+    @Test
+    public void testOnMove_UnpinnedTab_WithinUnpinnedTabs() {
+        // Setup: 2 pinned tabs and 2 unpinned tabs.
+        when(mTab1.getIsPinned()).thenReturn(true);
+        when(mTab2.getIsPinned()).thenReturn(true);
+        when(mTab3.getIsPinned()).thenReturn(false);
+        when(mTab4.getIsPinned()).thenReturn(false);
+        when(mTabGroupModelFilter.getRelatedTabList(TAB3_ID)).thenReturn(List.of(mTab3));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB4_ID)).thenReturn(List.of(mTab4));
+        when(mTabModel.indexOf(mTab1)).thenReturn(0);
+        when(mTabModel.indexOf(mTab2)).thenReturn(1);
+        when(mTabModel.indexOf(mTab3)).thenReturn(2);
+        when(mTabModel.indexOf(mTab4)).thenReturn(3);
+        when(mTabModel.findFirstNonPinnedTabIndex()).thenReturn(2);
+
+        // Drag unpinned tab3 to unpinned tab4's position.
+        mItemTouchHelperCallback.onMove(mRecyclerView, mMockViewHolder3, mMockViewHolder4);
+
+        // Verify that tab3 is moved to index 3.
+        verify(mTabGroupModelFilter).moveRelatedTabs(TAB3_ID, 3);
+    }
+
+    @Test
+    public void testOnMove_GroupedTab_pinnedTabTriedToMoveBeyondLimit() {
+        // Setup: 2 pinned tabs, 2 grouped tabs.
+        when(mTab1.getIsPinned()).thenReturn(true);
+        when(mTab2.getIsPinned()).thenReturn(true);
+        when(mTab3.getIsPinned()).thenReturn(false);
+        when(mTab4.getIsPinned()).thenReturn(false);
+        Token groupId = Token.createRandom();
+        when(mTab3.getTabGroupId()).thenReturn(groupId);
+        when(mTab4.getTabGroupId()).thenReturn(groupId);
+
+        when(mTabGroupModelFilter.getRelatedTabList(TAB1_ID)).thenReturn(List.of(mTab1));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB2_ID)).thenReturn(List.of(mTab2));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB3_ID)).thenReturn(List.of(mTab3, mTab4));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB4_ID)).thenReturn(List.of(mTab3, mTab4));
+
+        when(mTabModel.indexOf(mTab1)).thenReturn(0);
+        when(mTabModel.indexOf(mTab2)).thenReturn(1);
+        when(mTabModel.indexOf(mTab3)).thenReturn(2);
+        when(mTabModel.indexOf(mTab4)).thenReturn(3);
+        when(mTabModel.findFirstNonPinnedTabIndex()).thenReturn(2);
+
+        // Try drag a pinned tab to an unpinned tab's position.
+        mItemTouchHelperCallback.onMove(mRecyclerView, mMockViewHolder1, mMockViewHolder4);
+
+        // Verify that the tab is moved to index 1, the last possible position for a pinned tab.
+        verify(mTabGroupModelFilter).moveRelatedTabs(TAB1_ID, 1);
+    }
+
+    @Test
+    public void testOnMove_GroupedTab_unpinnedTabTriedToMoveIntoPinnedArea() {
+        // Setup: 2 pinned tabs, 2 grouped tabs.
+        when(mTab1.getIsPinned()).thenReturn(true);
+        when(mTab2.getIsPinned()).thenReturn(true);
+        when(mTab3.getIsPinned()).thenReturn(false);
+        when(mTab4.getIsPinned()).thenReturn(false);
+        Token groupId = Token.createRandom();
+        when(mTab3.getTabGroupId()).thenReturn(groupId);
+        when(mTab4.getTabGroupId()).thenReturn(groupId);
+
+        when(mTabGroupModelFilter.getRelatedTabList(TAB1_ID)).thenReturn(List.of(mTab1));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB2_ID)).thenReturn(List.of(mTab2));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB3_ID)).thenReturn(List.of(mTab3, mTab4));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB4_ID)).thenReturn(List.of(mTab3, mTab4));
+
+        when(mTabModel.indexOf(mTab1)).thenReturn(0);
+        when(mTabModel.indexOf(mTab2)).thenReturn(1);
+        when(mTabModel.indexOf(mTab3)).thenReturn(2);
+        when(mTabModel.indexOf(mTab4)).thenReturn(3);
+        when(mTabModel.findFirstNonPinnedTabIndex()).thenReturn(2);
+
+        // Try drag an unpinned tab to a pinned tab's position.
+        mItemTouchHelperCallback.onMove(mRecyclerView, mMockViewHolder3, mMockViewHolder1);
+
+        // Verify that the tab is moved to index 2, the first possible position for an unpinned
+        // tab.
+        verify(mTabGroupModelFilter).moveRelatedTabs(TAB3_ID, 2);
+    }
+
+    @Test
+    public void testOnMove_AllUnpinnedTabs_MovedAround() {
+        // Setup: all tabs are unpinned.
+        when(mTab1.getIsPinned()).thenReturn(false);
+        when(mTab2.getIsPinned()).thenReturn(false);
+        when(mTab3.getIsPinned()).thenReturn(false);
+        when(mTab4.getIsPinned()).thenReturn(false);
+        when(mTabGroupModelFilter.getRelatedTabList(TAB1_ID)).thenReturn(List.of(mTab1));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB4_ID)).thenReturn(List.of(mTab4));
+        when(mTabModel.indexOf(mTab1)).thenReturn(0);
+        when(mTabModel.indexOf(mTab4)).thenReturn(3);
+        when(mTabModel.findFirstNonPinnedTabIndex()).thenReturn(0);
+
+        // Drag tab1 to tab4's position.
+        mItemTouchHelperCallback.onMove(mRecyclerView, mMockViewHolder1, mMockViewHolder4);
+
+        // Verify that tab1 is moved to index 3.
+        verify(mTabGroupModelFilter).moveRelatedTabs(TAB1_ID, 3);
+    }
+
+    @Test
+    public void testOnMove_AllPinnedTabs_MovedAround() {
+        // Setup: all tabs are pinned.
+        when(mTab1.getIsPinned()).thenReturn(true);
+        when(mTab2.getIsPinned()).thenReturn(true);
+        when(mTab3.getIsPinned()).thenReturn(true);
+        when(mTab4.getIsPinned()).thenReturn(true);
+        when(mTabGroupModelFilter.getRelatedTabList(TAB1_ID)).thenReturn(List.of(mTab1));
+        when(mTabGroupModelFilter.getRelatedTabList(TAB4_ID)).thenReturn(List.of(mTab4));
+        when(mTabModel.indexOf(mTab1)).thenReturn(0);
+        when(mTabModel.indexOf(mTab4)).thenReturn(3);
+        // All tabs are pinned, so the first non-pinned tab is at the end of the list.
+        when(mTabModel.findFirstNonPinnedTabIndex()).thenReturn(4);
+
+        // Drag tab1 to tab4's position.
+        mItemTouchHelperCallback.onMove(mRecyclerView, mMockViewHolder1, mMockViewHolder4);
+
+        // Verify that tab1 is moved to index 3.
+        verify(mTabGroupModelFilter).moveRelatedTabs(TAB1_ID, 3);
     }
 
     private void verifyDrag(
@@ -1243,7 +1397,7 @@ public class TabGridItemTouchHelperCallbackUnitTest {
 
     private void addArchivedMessageCard() {
         PropertyModel model =
-                new PropertyModel.Builder(CustomMessageCardViewProperties.ALL_KEYS)
+                new PropertyModel.Builder(ArchivedTabsCardViewProperties.ALL_KEYS)
                         .with(MESSAGE_TYPE, MessageType.ARCHIVED_TABS_MESSAGE)
                         .with(CARD_TYPE, ModelType.MESSAGE)
                         .build();
@@ -1257,7 +1411,7 @@ public class TabGridItemTouchHelperCallbackUnitTest {
                 spy(
                         new SimpleRecyclerViewAdapter.ViewHolder(
                                 mArchivedMsgItemView, /* binder= */ null));
-        when(mMockArchivedMsgViewHolder.getItemViewType()).thenReturn(TabProperties.UiType.MESSAGE);
+        when(mMockArchivedMsgViewHolder.getItemViewType()).thenReturn(UiType.ARCHIVED_TABS_MESSAGE);
         when(mMockArchivedMsgViewHolder.getAdapterPosition())
                 .thenReturn(ARCHIVED_MSG_CARD_POSITION);
         when(mMockArchivedMsgViewHolder.getBindingAdapterPosition())
@@ -1286,7 +1440,7 @@ public class TabGridItemTouchHelperCallbackUnitTest {
 
     private ViewHolder prepareMockViewHolder(PropertyModel model, View itemView, int position) {
         ViewHolder viewHolder = spy(new ViewHolder(itemView, /* binder= */ null));
-        when(viewHolder.getItemViewType()).thenReturn(TabProperties.UiType.TAB);
+        when(viewHolder.getItemViewType()).thenReturn(UiType.TAB);
         when(viewHolder.getAdapterPosition()).thenReturn(position);
         when(viewHolder.getBindingAdapterPosition()).thenReturn(position);
         viewHolder.model = model;

@@ -52,7 +52,7 @@ void WebUIBundledCodeCacheFetcher::Start() {
   if (RuntimeEnabledFeatures::WebUIBundledCodeCacheAsyncFetchEnabled()) {
     worker_pool::PostTask(
         FROM_HERE,
-        WTF::CrossThreadBindOnce(
+        CrossThreadBindOnce(
             [](int code_cache_resource_id,
                scoped_refptr<base::SequencedTaskRunner> host_task_runner,
                base::WeakPtr<WebUIBundledCodeCacheFetcher> weak_this) {
@@ -61,7 +61,7 @@ void WebUIBundledCodeCacheFetcher::Start() {
                       code_cache_resource_id);
               PostCrossThreadTask(
                   *host_task_runner, FROM_HERE,
-                  WTF::CrossThreadBindOnce(
+                  CrossThreadBindOnce(
                       &WebUIBundledCodeCacheFetcher::DidReceiveCachedCode,
                       std::move(weak_this),
                       buffer_data ? mojo_base::BigBuffer(*buffer_data)
@@ -75,10 +75,10 @@ void WebUIBundledCodeCacheFetcher::Start() {
       Platform::Current()->GetDataResourceBytes(resource_id_);
   host_task_runner_->PostTask(
       FROM_HERE,
-      WTF::BindOnce(&WebUIBundledCodeCacheFetcher::DidReceiveCachedCode,
-                    weak_factory_.GetWeakPtr(),
-                    buffer_data ? mojo_base::BigBuffer(*buffer_data)
-                                : mojo_base::BigBuffer()));
+      blink::BindOnce(&WebUIBundledCodeCacheFetcher::DidReceiveCachedCode,
+                      weak_factory_.GetWeakPtr(),
+                      buffer_data ? mojo_base::BigBuffer(*buffer_data)
+                                  : mojo_base::BigBuffer()));
 }
 
 void WebUIBundledCodeCacheFetcher::DidReceiveCachedCode(

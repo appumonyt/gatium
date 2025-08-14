@@ -35,7 +35,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/android_info.h"
 #include "device/bluetooth/test/bluetooth_test_android.h"
 #elif BUILDFLAG(IS_APPLE)
 #include "device/bluetooth/test/bluetooth_test_mac.h"
@@ -150,6 +150,9 @@ class TestBluetoothAdapter final : public BluetoothAdapter {
   void SetServiceAllowList(const UUIDList& uuids,
                            base::OnceClosure callback,
                            ErrorCallback error_callback) override {}
+  void SetSimpleSecurePairingEnabled(bool enabled,
+                                     base::OnceClosure callback,
+                                     ErrorCallback error_callback) override {}
 
   LowEnergyScanSessionHardwareOffloadingStatus
   GetLowEnergyScanSessionHardwareOffloadingStatus() override {
@@ -941,8 +944,8 @@ TEST_F(BluetoothTest, NoLocationServices) {
   if (!PlatformSupportsLowEnergy()) {
     GTEST_SKIP() << "Low Energy Bluetooth unavailable, skipping unit test.";
   }
-  if (base::android::BuildInfo::GetInstance()->sdk_int() >=
-      base::android::SDK_VERSION_S) {
+  if (base::android::android_info::sdk_int() >=
+      base::android::android_info::SDK_VERSION_S) {
     GTEST_SKIP() << "Android S+ doesn't require location services perform "
                     "Bluetooth scanning, skipping unit test.";
   }

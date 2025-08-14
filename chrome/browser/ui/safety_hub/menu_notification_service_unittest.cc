@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/safety_hub/safety_hub_constants.h"
 #include "chrome/browser/ui/safety_hub/safety_hub_prefs.h"
 #include "chrome/browser/ui/safety_hub/safety_hub_test_util.h"
+#include "chrome/browser/ui/safety_hub/unused_site_permissions_manager.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
@@ -58,7 +59,6 @@ class SafetyHubMenuNotificationServiceTest
     ChromeRenderViewHostTestHarness::SetUp();
     feature_list_.InitWithFeatures(
         {
-            features::kSafetyHub,
 #if BUILDFLAG(IS_ANDROID)
             features::kSafetyHubFollowup,
 #endif  // BUILDFLAG(IS_ANDROID)
@@ -103,7 +103,7 @@ class SafetyHubMenuNotificationServiceTest
     auto dict = base::Value::Dict().Set(
         permissions::kRevokedKey,
         base::Value::List().Append(
-            RevokedPermissionsService::ConvertContentSettingsTypeToKey(
+            UnusedSitePermissionsManager::ConvertContentSettingsTypeToKey(
                 ContentSettingsType::GEOLOCATION)));
     hcsm()->SetWebsiteSettingDefaultScope(
         GURL(url), GURL(url),

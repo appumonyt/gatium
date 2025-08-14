@@ -31,6 +31,8 @@ permission:granted {
 }
 
 permission::-internal-permission-text {
+  text-emphasis: initial !important;
+  text-shadow: initial !important;
   align-items: center;
   display: flex;
   font-family: Arial, Helvetica, sans-serif;
@@ -60,11 +62,13 @@ permission::-internal-permission-container {
   min-height: inherit;
   max-height: inherit;
   margin: auto;
+  text-indent: 0px;
 }
 
 ::permission-icon {
-  width: 1.3em;
+  fill: currentcolor;
   height: 1.3em;
+  width: auto;
   margin-inline-end: 5px;
   margin-block-start: 0px !important;
   margin-block-end: 0px !important;

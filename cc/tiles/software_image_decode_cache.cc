@@ -117,7 +117,7 @@ class SoftwareImageDecodeTaskImpl : public TileTask {
   ~SoftwareImageDecodeTaskImpl() override = default;
 
  private:
-  raw_ptr<SoftwareImageDecodeCache, AcrossTasksDanglingUntriaged> cache_;
+  raw_ptr<SoftwareImageDecodeCache> cache_;
   SoftwareImageDecodeCache::CacheKey image_key_;
   PaintImage paint_image_;
   ImageDecodeCache::TaskType task_type_;
@@ -604,10 +604,10 @@ DecodedDrawImage SoftwareImageDecodeCache::GetDecodedImageForDrawInternal(
   if (!decoded_image)
     return DecodedDrawImage();
 
-  auto decoded_draw_image =
-      DecodedDrawImage(std::move(decoded_image), nullptr,
-                       cache_entry->src_rect_offset(), GetScaleAdjustment(key),
-                       GetDecodedFilterQuality(key), cache_entry->is_budgeted);
+  auto decoded_draw_image = DecodedDrawImage(
+      std::move(decoded_image), cache_entry->gainmap_image(), nullptr,
+      cache_entry->src_rect_offset(), GetScaleAdjustment(key),
+      GetDecodedFilterQuality(key), cache_entry->is_budgeted);
   return decoded_draw_image;
 }
 

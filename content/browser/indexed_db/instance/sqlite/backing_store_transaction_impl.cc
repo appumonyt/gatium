@@ -5,7 +5,6 @@
 #include "content/browser/indexed_db/instance/sqlite/backing_store_transaction_impl.h"
 
 #include "base/check.h"
-#include "base/notimplemented.h"
 #include "base/types/expected_macros.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
 #include "content/browser/indexed_db/instance/sqlite/database_connection.h"
@@ -19,15 +18,23 @@ BackingStoreTransactionImpl::BackingStoreTransactionImpl(
     blink::mojom::IDBTransactionMode mode)
     : db_(std::move(db)), durability_(durability), mode_(mode) {}
 
-BackingStoreTransactionImpl::~BackingStoreTransactionImpl() = default;
+BackingStoreTransactionImpl::~BackingStoreTransactionImpl() {
+  // If locks are non-empty then the transaction was begun.
+  if (!locks_.empty()) {
+    db_->EndTransaction(PassKey(), *this);
+  }
+}
 
 void BackingStoreTransactionImpl::Begin(std::vector<PartitionedLock> locks) {
   locks_ = std::move(locks);
   db_->BeginTransaction(PassKey(), *this);
 }
 
-Status BackingStoreTransactionImpl::CommitPhaseOne(BlobWriteCallback callback) {
-  return db_->CommitTransactionPhaseOne(PassKey(), *this, std::move(callback));
+Status BackingStoreTransactionImpl::CommitPhaseOne(
+    BlobWriteCallback callback,
+    SerializeFsaCallback serialize_fsa) {
+  return db_->CommitTransactionPhaseOne(PassKey(), *this, std::move(callback),
+                                        std::move(serialize_fsa));
 }
 
 Status BackingStoreTransactionImpl::CommitPhaseTwo() {
@@ -58,13 +65,11 @@ Status BackingStoreTransactionImpl::DeleteObjectStore(int64_t object_store_id) {
 Status BackingStoreTransactionImpl::RenameObjectStore(
     int64_t object_store_id,
     const std::u16string& new_name) {
-  NOTIMPLEMENTED();
-  return Status::InvalidArgument("Not implemented");
+  return db_->RenameObjectStore(PassKey(), object_store_id, new_name);
 }
 
 Status BackingStoreTransactionImpl::ClearObjectStore(int64_t object_store_id) {
-  NOTIMPLEMENTED();
-  return Status::InvalidArgument("Not implemented");
+  return db_->ClearObjectStore(PassKey(), object_store_id);
 }
 
 Status BackingStoreTransactionImpl::CreateIndex(
@@ -75,16 +80,14 @@ Status BackingStoreTransactionImpl::CreateIndex(
 
 Status BackingStoreTransactionImpl::DeleteIndex(int64_t object_store_id,
                                                 int64_t index_id) {
-  NOTIMPLEMENTED();
-  return Status::InvalidArgument("Not implemented");
+  return db_->DeleteIndex(PassKey(), object_store_id, index_id);
 }
 
 Status BackingStoreTransactionImpl::RenameIndex(
     int64_t object_store_id,
     int64_t index_id,
     const std::u16string& new_name) {
-  NOTIMPLEMENTED();
-  return Status::InvalidArgument("Not implemented");
+  return db_->RenameIndex(PassKey(), object_store_id, index_id, new_name);
 }
 
 StatusOr<IndexedDBValue> BackingStoreTransactionImpl::GetRecord(
@@ -103,7 +106,7 @@ StatusOr<BackingStore::RecordIdentifier> BackingStoreTransactionImpl::PutRecord(
 Status BackingStoreTransactionImpl::DeleteRange(
     int64_t object_store_id,
     const blink::IndexedDBKeyRange& range) {
-  return db_->DeleteRange(object_store_id, range);
+  return db_->DeleteRange(PassKey(), object_store_id, range);
 }
 
 StatusOr<int64_t> BackingStoreTransactionImpl::GetKeyGeneratorCurrentNumber(
@@ -200,14 +203,15 @@ BackingStoreTransactionImpl::OpenIndexCursor(
 }
 
 blink::mojom::IDBValuePtr BackingStoreTransactionImpl::BuildMojoValue(
-    IndexedDBValue value) {
+    IndexedDBValue value,
+    DeserializeFsaCallback deserialize_handle) {
   auto mojo_value = blink::mojom::IDBValue::New();
   if (!value.empty()) {
     mojo_value->bits = std::move(value.bits);
   }
   if (!value.external_objects.empty()) {
-    mojo_value->external_objects =
-        db_->CreateAllExternalObjects(PassKey(), value.external_objects);
+    mojo_value->external_objects = db_->CreateAllExternalObjects(
+        PassKey(), value.external_objects, deserialize_handle);
   }
   return mojo_value;
 }

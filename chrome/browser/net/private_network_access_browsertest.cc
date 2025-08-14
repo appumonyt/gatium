@@ -32,7 +32,6 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test_utils.h"
-#include "content/public/test/private_network_access_util.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/url_loader_interceptor.h"
 #include "extensions/common/constants.h"
@@ -56,13 +55,13 @@ using testing::IsEmpty;
 // automatic request to /favicon.ico. This is because the automatic request
 // messes with our tests, in which we want to trigger a single request from the
 // web page to a resource of our choice and observe the side-effect in metrics.
-constexpr char kNoFaviconPath[] = "/private_network_access/no-favicon.html";
+constexpr char kNoFaviconPath[] = "/local_network_access/no-favicon.html";
 
 // Same as kNoFaviconPath, except it carries a header that makes the browser
 // consider it came from the `public` address space, irrespective of the fact
 // that we loaded the web page from localhost.
 constexpr char kTreatAsPublicAddressPath[] =
-    "/private_network_access/no-favicon-treat-as-public-address.html";
+    "/local_network_access/no-favicon-treat-as-public-address.html";
 
 GURL SecureURL(const net::EmbeddedTestServer& server, const std::string& path) {
   // Test HTTPS servers cannot lie about their hostname, so they yield URLs
@@ -577,9 +576,8 @@ IN_PROC_BROWSER_TEST_F(PrivateNetworkAccessWithFeatureDisabledBrowserTest,
 
   EXPECT_TRUE(content::NavigateToURL(
       web_contents(),
-      NonSecureURL(
-          *server,
-          "/private_network_access/remote-initiator-navigation.html")));
+      NonSecureURL(*server,
+                   "/local_network_access/remote-initiator-navigation.html")));
   EXPECT_THAT(
       feature_histogram_tester.GetNonZeroCounts(AllAddressSpaceFeatures()),
       IsEmpty());
@@ -610,9 +608,8 @@ IN_PROC_BROWSER_TEST_F(
 
   EXPECT_TRUE(content::NavigateToURL(
       web_contents(),
-      NonSecureURL(
-          *server,
-          "/private_network_access/remote-initiator-navigation.html")));
+      NonSecureURL(*server,
+                   "/local_network_access/remote-initiator-navigation.html")));
 
   EXPECT_EQ(true, content::EvalJs(web_contents(), R"(
     runTest({
@@ -637,9 +634,8 @@ IN_PROC_BROWSER_TEST_F(
 
   EXPECT_TRUE(content::NavigateToURL(
       web_contents(),
-      NonSecureURL(
-          *server,
-          "/private_network_access/remote-initiator-navigation.html")));
+      NonSecureURL(*server,
+                   "/local_network_access/remote-initiator-navigation.html")));
 
   EXPECT_EQ(true, content::EvalJs(web_contents(), R"(
     runTest({
@@ -680,20 +676,6 @@ IN_PROC_BROWSER_TEST_F(PrivateNetworkAccessWithFeatureEnabledBrowserTest,
   EXPECT_THAT(
       feature_histogram_tester.GetNonZeroCounts(AllAddressSpaceFeatures()),
       IsEmpty());
-}
-
-IN_PROC_BROWSER_TEST_F(PrivateNetworkAccessWithFeatureEnabledBrowserTest,
-                       RecordsAddressSpaceFeatureForDeprecationTrial) {
-  WebFeatureHistogramTester feature_histogram_tester;
-  content::DeprecationTrialURLLoaderInterceptor interceptor;
-
-  EXPECT_TRUE(content::NavigateToURL(web_contents(), interceptor.EnabledUrl()));
-
-  EXPECT_EQ(
-      feature_histogram_tester.GetCount(
-          WebFeature::
-              kPrivateNetworkAccessNonSecureContextsAllowedDeprecationTrial),
-      1);
 }
 
 // This test verifies that resources proxied through a proxy on localhost can

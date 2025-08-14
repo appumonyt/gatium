@@ -13,6 +13,7 @@
 #include "components/page_load_metrics/browser/observers/core/uma_page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/page_load_metrics_test_waiter.h"
 #include "content/public/browser/preloading_trigger_type.h"
+#include "content/public/browser/prerender_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -776,8 +777,16 @@ IN_PROC_BROWSER_TEST_F(PrerenderPageLoadMetricsObserverBrowserTest,
             shifting_duration.InMilliseconds());
 }
 
+// TODO(crbug.com/438364202): Re-enable this test
+#if BUILDFLAG(IS_LINUX) && defined(ADDRESS_SANITIZER)
+#define MAYBE_ResponseBodyReceivedAfterActivation \
+  DISABLED_ResponseBodyReceivedAfterActivation
+#else
+#define MAYBE_ResponseBodyReceivedAfterActivation \
+  ResponseBodyReceivedAfterActivation
+#endif
 IN_PROC_BROWSER_TEST_F(PrerenderPageLoadMetricsObserverBrowserTest,
-                       ResponseBodyReceivedAfterActivation) {
+                       MAYBE_ResponseBodyReceivedAfterActivation) {
   net::test_server::ControllableHttpResponse response(embedded_test_server(),
                                                       "/title2.html");
   ASSERT_TRUE(embedded_test_server()->Start());

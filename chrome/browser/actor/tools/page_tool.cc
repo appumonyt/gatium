@@ -4,8 +4,11 @@
 
 #include "chrome/browser/actor/tools/page_tool.h"
 
+#include <variant>
+
 #include "base/functional/bind.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/actor/actor_task.h"
 #include "chrome/browser/actor/aggregated_journal.h"
 #include "chrome/browser/actor/execution_engine.h"
 #include "chrome/browser/actor/tools/observation_delay_controller.h"
@@ -20,6 +23,8 @@
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
@@ -99,7 +104,7 @@ RenderFrameHost* GetRootFrameForWidget(content::WebContents& web_contents,
 }
 
 RenderFrameHost* FindTargetLocalRootFrame(TabHandle tab_handle,
-                                          PageToolRequest::Target target) {
+                                          PageTarget target) {
   TabInterface* tab = tab_handle.Get();
   if (!tab) {
     return nullptr;
@@ -107,19 +112,19 @@ RenderFrameHost* FindTargetLocalRootFrame(TabHandle tab_handle,
 
   WebContents& contents = *tab->GetContents();
 
-  if (target.is_coordinate()) {
+  if (std::holds_alternative<gfx::Point>(target)) {
     RenderWidgetHost* target_rwh =
-        contents.FindWidgetAtPoint(gfx::PointF(target.coordinate()));
+        contents.FindWidgetAtPoint(gfx::PointF(std::get<gfx::Point>(target)));
     if (!target_rwh) {
       return nullptr;
     }
     return GetRootFrameForWidget(contents, target_rwh);
   }
 
-  CHECK(target.is_node());
+  CHECK(std::holds_alternative<DomNode>(target));
 
   RenderFrameHost* target_frame = GetRenderFrameForDocumentIdentifier(
-      *tab->GetContents(), target.node().document_identifier);
+      *tab->GetContents(), std::get<DomNode>(target).document_identifier);
 
   // After finding the target frame, walk up to its local root.
   return GetLocalRoot(target_frame);
@@ -129,22 +134,24 @@ RenderFrameHost* FindTargetLocalRootFrame(TabHandle tab_handle,
 // std::nullopt if Target does not hit any node.
 std::optional<TargetNodeInfo> FindLastObservedNodeForActionTarget(
     const AnnotatedPageContent* apc,
-    const PageToolRequest::Target& target) {
+    const PageTarget& target) {
   if (!apc) {
     return std::nullopt;
   }
   // TODO(rodneyding): Refactor FindNode* API to include optional target frame
   // document identifier to reduce search space.
-  if (target.is_coordinate()) {
-    return optimization_guide::FindNodeAtPoint(*apc, target.coordinate());
+  if (std::holds_alternative<gfx::Point>(target)) {
+    return optimization_guide::FindNodeAtPoint(*apc,
+                                               std::get<gfx::Point>(target));
   }
-  CHECK(target.is_node());
+  CHECK(std::holds_alternative<DomNode>(target));
   std::optional<TargetNodeInfo> result = optimization_guide::FindNodeWithID(
-      *apc, target.node().document_identifier, target.node().dom_node_id);
+      *apc, std::get<DomNode>(target).document_identifier,
+      std::get<DomNode>(target).node_id);
   // If such a node isn't found or the node is found under a different
   // document it's an error.
   if (!result || result->document_identifier.serialized_token() !=
-                     target.node().document_identifier) {
+                     std::get<DomNode>(target).document_identifier) {
     return std::nullopt;
   }
   return result;
@@ -154,12 +161,12 @@ std::optional<TargetNodeInfo> FindLastObservedNodeForActionTarget(
 // compare the candidate frame with the target frame identified in last
 // observation.
 bool ValidateTargetFrameCandidate(
-    const PageToolRequest::Target& target,
+    const PageTarget& target,
     RenderFrameHost* candidate_frame,
     WebContents& web_contents,
     const std::optional<TargetNodeInfo> target_node_info) {
   // Frame validation is performed only when targeting using coordinates.
-  CHECK(target.is_coordinate());
+  CHECK(std::holds_alternative<gfx::Point>(target));
 
   if (!target_node_info) {
     return false;
@@ -215,32 +222,6 @@ mojom::ObservedToolTargetPtr ToMojoObservedToolTarget(
   return observed_target;
 }
 
-// Set ObservedToolTarget mojom field on ToolAction.
-void SetObservedToolTarget(const mojom::ToolActionPtr& action,
-                           mojom::ObservedToolTargetPtr observed_target) {
-  switch (action->which()) {
-    case mojom::ToolAction::Tag::kClick:
-      action->get_click()->observed_target = std::move(observed_target);
-      break;
-    case mojom::ToolAction::Tag::kDragAndRelease:
-      action->get_drag_and_release()->observed_from_target =
-          std::move(observed_target);
-      break;
-    case mojom::ToolAction::Tag::kMouseMove:
-      action->get_mouse_move()->observed_target = std::move(observed_target);
-      break;
-    case mojom::ToolAction::Tag::kScroll:
-      action->get_scroll()->observed_target = std::move(observed_target);
-      break;
-    case mojom::ToolAction::Tag::kSelect:
-      action->get_select()->observed_target = std::move(observed_target);
-      break;
-    case mojom::ToolAction::Tag::kType:
-      action->get_type()->observed_target = std::move(observed_target);
-      break;
-  }
-}
-
 }  // namespace
 
 // Observer to track if the a given RenderFrameHost is changed.
@@ -269,9 +250,9 @@ class RenderFrameChangeObserver : public WebContentsObserver {
 };
 
 PageTool::PageTool(TaskId task_id,
-                   AggregatedJournal& journal,
+                   ToolDelegate& tool_delegate,
                    const PageToolRequest& request)
-    : Tool(task_id, journal), request_(request.Clone()) {}
+    : Tool(task_id, tool_delegate), request_(request.Clone()) {}
 
 PageTool::~PageTool() = default;
 
@@ -288,6 +269,10 @@ mojom::ActionResultPtr PageTool::TimeOfUseValidation(
     return MakeResult(mojom::ActionResultCode::kTabWentAway);
   }
 
+  journal().Log(JournalURL(), task_id(), mojom::JournalTrack::kActor,
+                "TimeOfUseValidation",
+                "TabHandle:" + base::ToString(tab->GetHandle()));
+
   RenderFrameHost* frame =
       FindTargetLocalRootFrame(request_->GetTabHandle(), request_->GetTarget());
   if (!frame) {
@@ -296,21 +281,29 @@ mojom::ActionResultPtr PageTool::TimeOfUseValidation(
   // TODO(crbug.com/426021822): FindNodeAtPoint does not handle corner cases
   // like clip paths. Need more checks to ensure we don't drop actions
   // unnecessarily.
-  observed_target_node_info_ = FindLastObservedNodeForActionTarget(
-      last_observation, request_->GetTarget());
+  std::optional<TargetNodeInfo> observed_target_node_info =
+      FindLastObservedNodeForActionTarget(last_observation,
+                                          request_->GetTarget());
+
+  if (!observed_target_node_info) {
+    journal().Log(JournalURL(), task_id(), mojom::JournalTrack::kActor,
+                  "TimeOfUseValidation", "No observed target found in APC.");
+  }
 
   // Perform validation for coordinate based target only.
   // TODO(bokan): We can't perform a TOCTOU check If there's no last
   // observation. Consider what to do in this case.
-  if (request_->GetTarget().is_coordinate() && last_observation) {
+  if (std::holds_alternative<gfx::Point>(request_->GetTarget()) &&
+      last_observation) {
     if (!ValidateTargetFrameCandidate(request_->GetTarget(), frame,
                                       *tab->GetContents(),
-                                      observed_target_node_info_)) {
+                                      observed_target_node_info)) {
       return MakeResult(
           mojom::ActionResultCode::kFrameLocationChangedSinceObservation);
     }
   }
 
+  observed_target_ = ToMojoObservedToolTarget(observed_target_node_info);
   has_completed_time_of_use_ = true;
   target_document_ = frame->GetWeakDocumentPtr();
 
@@ -326,13 +319,19 @@ void PageTool::Invoke(InvokeCallback callback) {
 
   invoke_callback_ = std::move(callback);
 
-  auto request = actor::mojom::ToolInvocation::New();
-  request->action = request_->ToMojoToolAction();
-  SetObservedToolTarget(request->action,
-                        ToMojoObservedToolTarget(observed_target_node_info_));
+  auto invocation = actor::mojom::ToolInvocation::New();
+  invocation->action = request_->ToMojoToolAction();
+  invocation->target = ToMojo(request_->GetTarget());
+  invocation->observed_target = std::move(observed_target_);
+
+  invocation->task_id = task_id().value();
 
   // ToolRequest params are checked for validity at creation.
-  CHECK(request->action);
+  CHECK(invocation->action);
+
+  // Ensure the renderer believes it has focus. This ensures a realistic state
+  // needed for e.g. firing 'focus' events.
+  frame.GetRenderWidgetHost()->Focus();
 
   frame.GetRemoteAssociatedInterfaces()->GetInterface(&chrome_render_frame_);
 
@@ -365,7 +364,7 @@ void PageTool::Invoke(InvokeCallback callback) {
   chrome_render_frame_.set_disconnect_handler(base::BindOnce(
       &PageTool::FinishInvoke, base::Unretained(this), MakeOkResult()));
   chrome_render_frame_->InvokeTool(
-      std::move(request),
+      std::move(invocation),
       base::BindOnce(&PageTool::FinishInvoke, base::Unretained(this)));
 }
 
@@ -402,9 +401,20 @@ std::unique_ptr<ObservationDelayController> PageTool::GetObservationDelayer()
   return std::make_unique<ObservationDelayController>(*frame);
 }
 
+void PageTool::UpdateTaskBeforeInvoke(ActorTask& task,
+                                      InvokeCallback callback) const {
+  task.AddTab(request_->GetTabHandle(), std::move(callback));
+}
+
 void PageTool::FinishInvoke(mojom::ActionResultPtr result) {
   if (!invoke_callback_) {
     return;
+  }
+
+  // Blink state was set to focused as part of invocation. Reset Blink focus
+  // back to match the Views focus state.
+  if (GetFrame() && !GetFrame()->GetRenderWidgetHost()->GetView()->HasFocus()) {
+    GetFrame()->GetRenderWidgetHost()->Blur();
   }
 
   frame_change_observer_.reset();

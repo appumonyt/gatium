@@ -427,6 +427,7 @@ scrollPaddingTop
 scrollSnapAlign
 scrollSnapStop
 scrollSnapType
+scrollTargetGroup
 scrollTimeline
 scrollTimelineAxis
 scrollTimelineName
@@ -462,6 +463,7 @@ tableLayout
 textAlign
 textAlignLast
 textAnchor
+textAutospace
 textBox
 textBoxEdge
 textBoxTrim
@@ -514,6 +516,7 @@ viewTimelineAxis
 viewTimelineInset
 viewTimelineName
 viewTransitionClass
+viewTransitionGroup
 viewTransitionName
 visibility
 webkitAlignContent

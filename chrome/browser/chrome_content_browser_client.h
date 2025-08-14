@@ -51,6 +51,7 @@
 #include "services/video_effects/public/cpp/buildflags.h"
 #include "third_party/blink/public/mojom/on_device_translation/translation_manager.mojom-forward.h"
 #include "third_party/blink/public/mojom/worker/shared_worker_info.mojom.h"
+#include "ui/base/clipboard/clipboard_metadata.h"
 
 #if BUILDFLAG(ENABLE_VIDEO_EFFECTS)
 #include "media/capture/mojom/video_effects_manager.mojom-forward.h"
@@ -126,7 +127,6 @@ enum class Channel;
 
 class ChromeDirectSocketsDelegate;
 class ChromeHidDelegate;
-class ChromePrivateNetworkDeviceDelegate;
 class ChromeSerialDelegate;
 class ChromeBluetoothDelegate;
 class ChromeUsbDelegate;
@@ -282,6 +282,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   void WillComputeSiteForNavigation(content::BrowserContext* browser_context,
                                     const GURL& url) override;
   bool ShouldEnableStrictSiteIsolation() override;
+  std::optional<bool> GetOverrideValueForOriginKeyedProcesses() override;
   bool ShouldDisableSiteIsolation(
       content::SiteIsolationMode site_isolation_mode) override;
   bool ShouldDisableOriginIsolation() override;
@@ -446,6 +447,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       net::CookieSettingOverrides overrides) override;
   bool IsPrefetchWithServiceWorkerAllowed(
       content::BrowserContext* browser_context) override;
+  bool IsServiceWorkerAutoPreloadAllowed(
+      content::BrowserContext* browser_context) override;
   bool IsServiceWorkerSyntheticResponseAllowed(
       content::BrowserContext* browser_context,
       const GURL& url) override;
@@ -544,8 +547,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   base::FilePath GetNetLogDefaultDirectory() override;
   base::FilePath GetFirstPartySetsDirectory() override;
   std::optional<base::FilePath> GetLocalTracesDirectory() override;
-  std::unique_ptr<content::VpnServiceProxy> GetVpnServiceProxy(
-      content::BrowserContext* browser_context) override;
   std::unique_ptr<ui::SelectFilePolicy> CreateSelectFilePolicy(
       content::WebContents* web_contents) override;
   void GetAdditionalAllowedSchemesForFileSystem(
@@ -571,12 +572,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const GURL& site_url) override;
   std::unique_ptr<content::TracingDelegate> CreateTracingDelegate() override;
   bool IsSystemWideTracingEnabled() override;
-  bool IsPluginAllowedToCallRequestOSFileHandle(
-      content::BrowserContext* browser_context,
-      const GURL& url) override;
-  bool IsPluginAllowedToUseDevChannelAPIs(
-      content::BrowserContext* browser_context,
-      const GURL& url) override;
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_MAC)
   void GetAdditionalMappedFilesForChildProcess(
       const base::CommandLine& command_line,
@@ -596,6 +591,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   bool IsRendererCodeIntegrityEnabled() override;
   void SessionEnding(std::optional<DWORD> control_type) override;
   bool ShouldEnableAudioProcessHighPriority() override;
+  bool ShouldRestrictCoreSharingOnRenderer() override;
 #endif
   void ExposeInterfacesToRenderer(
       service_manager::BinderRegistry* registry,
@@ -767,8 +763,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   content::BluetoothDelegate* GetBluetoothDelegate() override;
   content::UsbDelegate* GetUsbDelegate() override;
   content::SerialDelegate* GetSerialDelegate() override;
-  content::PrivateNetworkDeviceDelegate* GetPrivateNetworkDeviceDelegate()
-      override;
   bool IsSecurityLevelAcceptableForWebAuthn(
       content::RenderFrameHost* rfh,
       const url::Origin& caller_origin) override;
@@ -924,13 +918,13 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   void IsClipboardPasteAllowedByPolicy(
       const content::ClipboardEndpoint& source,
       const content::ClipboardEndpoint& destination,
-      const content::ClipboardMetadata& metadata,
+      const ui::ClipboardMetadata& metadata,
       ClipboardPasteData clipboard_paste_data,
       IsClipboardPasteAllowedCallback callback) override;
 
   void IsClipboardCopyAllowedByPolicy(
       const content::ClipboardEndpoint& source,
-      const content::ClipboardMetadata& metadata,
+      const ui::ClipboardMetadata& metadata,
       const ClipboardPasteData& data,
       IsClipboardCopyAllowedCallback callback) override;
 
@@ -1206,6 +1200,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   std::optional<std::vector<std::u16string>> GetClipboardTypesIfPolicyApplied(
       const ui::ClipboardSequenceNumberToken& seqno) override;
 
+  bool ShouldEnableCanvasNoise(content::BrowserContext* browser_context,
+                               const GURL& origin) override;
+
  protected:
   static bool HandleWebUI(GURL* url, content::BrowserContext* browser_context);
   static bool HandleWebUIReverse(GURL* url,
@@ -1363,8 +1360,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   std::unique_ptr<ChromeBluetoothDelegate> bluetooth_delegate_;
   std::unique_ptr<ChromeUsbDelegate> usb_delegate_;
   std::unique_ptr<ChromeSerialDelegate> serial_delegate_;
-  std::unique_ptr<ChromePrivateNetworkDeviceDelegate>
-      private_network_device_delegate_;
 
 #if BUILDFLAG(IS_CHROMEOS)
   std::unique_ptr<content::SmartCardDelegate> smart_card_delegate_;

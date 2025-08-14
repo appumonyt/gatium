@@ -38,6 +38,8 @@
 #include "content/test/content_browser_test_utils_internal.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/http_request.h"
+#include "net/test/embedded_test_server/http_response.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
 #include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_node.h"
@@ -263,6 +265,39 @@ DumpAccessibilityTestBase::DumpUnfilteredAccessibilityTreeAsString() {
   formatter->SetPropertyFilters({{"*", AXPropertyFilter::ALLOW}});
   formatter->set_show_ids(true);
   return FormatWebContentsTree(*formatter);
+}
+
+std::vector<ui::AXPropertyFilter> DumpAccessibilityTestBase::DefaultFilters()
+    const {
+  std::vector<ui::AXPropertyFilter> property_filters;
+  if (GetParam() == ui::AXApiType::kMac) {
+    return property_filters;
+  }
+
+  property_filters.emplace_back("value='*'", ui::AXPropertyFilter::ALLOW);
+  // The value attribute on the document object contains the URL of the
+  // current page which will not be the same every time the test is run.
+  property_filters.emplace_back("value='http*'", ui::AXPropertyFilter::DENY);
+  // Object attributes.value
+  property_filters.emplace_back("layout-guess:*", ui::AXPropertyFilter::ALLOW);
+  property_filters.emplace_back("details-from:*", ui::AXPropertyFilter::ALLOW);
+
+  property_filters.emplace_back("select*", ui::AXPropertyFilter::ALLOW);
+  property_filters.emplace_back("selectedFromFocus=*",
+                                ui::AXPropertyFilter::DENY);
+  property_filters.emplace_back("descript*", ui::AXPropertyFilter::ALLOW);
+  property_filters.emplace_back("check*", ui::AXPropertyFilter::ALLOW);
+  property_filters.emplace_back("horizontal", ui::AXPropertyFilter::ALLOW);
+  property_filters.emplace_back("multiselectable", ui::AXPropertyFilter::ALLOW);
+  property_filters.emplace_back("placeholder=*", ui::AXPropertyFilter::ALLOW);
+  property_filters.emplace_back("ispopup*", ui::AXPropertyFilter::ALLOW);
+
+  // Deny most empty values.
+  property_filters.emplace_back("*=''", ui::AXPropertyFilter::DENY);
+  // After denying empty values, we need to add the following filter because we
+  // want to allow name=''.
+  property_filters.emplace_back("name=*", ui::AXPropertyFilter::ALLOW_EMPTY);
+  return property_filters;
 }
 
 std::string DumpAccessibilityTestBase::FormatWebContentsTree(
@@ -654,7 +689,7 @@ std::unique_ptr<AXTreeFormatter> DumpAccessibilityTestBase::CreateFormatter()
   return AXInspectFactory::CreateFormatter(GetParam());
 }
 
-std::pair<EvalJsResult, std::vector<std::string>>
+std::pair<base::Value, std::vector<std::string>>
 DumpAccessibilityTestBase::CaptureEvents(InvokeAction invoke_action) {
   // Create a new Event Recorder for the run.
   ui::BrowserAccessibilityManager* manager = GetManager();
@@ -684,7 +719,7 @@ DumpAccessibilityTestBase::CaptureEvents(InvokeAction invoke_action) {
   // If an action was performed, we already waited for the kClicked event in
   // PerformAndWaitForDefaultActions(), which means the action is already
   // completed.
-  EvalJsResult action_result = std::move(invoke_action).Run();
+  base::Value action_result = std::move(invoke_action).Run();
 
   // If we didn't already wait for a default action to complete, then
   // wait for at least one event. This may unblock either when |waiter|
@@ -779,6 +814,58 @@ void DumpAccessibilityTestBase::UseHttpsTestServer() {
   https_test_server_.get()->AddDefaultHandlers(GetTestDataFilePath());
   https_test_server_.get()->SetSSLConfig(
       net::EmbeddedTestServer::CERT_TEST_NAMES);
+}
+
+void DumpAccessibilityTestBase::SetUpMaterialDesignRequestHandler() {
+  base::FilePath src_root;
+  base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &src_root);
+  node_modules_dir_ = src_root.AppendASCII("third_party")
+                          .AppendASCII("material_web_components")
+                          .AppendASCII("components-chromium")
+                          .AppendASCII("node_modules");
+  embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
+      &DumpAccessibilityTestBase::HandleMaterialDesignRequest,
+      base::Unretained(this)));
+}
+
+std::unique_ptr<net::test_server::HttpResponse>
+DumpAccessibilityTestBase::HandleMaterialDesignRequest(
+    const net::test_server::HttpRequest& request) {
+  std::string path = request.relative_url;
+  if (path.empty() || path[0] != '/') {
+    return nullptr;
+  }
+
+  // Only handle Material Design component requests.
+  if (!base::StartsWith(path, "/@material/") &&
+      !base::StartsWith(path, "/lit") && !base::StartsWith(path, "/@lit/") &&
+      !base::StartsWith(path, "/tslib/")) {
+    return nullptr;
+  }
+
+  base::FilePath full_path = node_modules_dir_.AppendASCII(path.substr(1));
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  if (!base::PathExists(full_path)) {
+    return nullptr;
+  }
+
+  std::string content;
+  if (!base::ReadFileToString(full_path, &content)) {
+    return nullptr;
+  }
+
+  auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+  response->set_code(net::HTTP_OK);
+  response->set_content(content);
+
+  if (base::EndsWith(path, ".js", base::CompareCase::INSENSITIVE_ASCII)) {
+    response->set_content_type("application/javascript");
+  } else if (base::EndsWith(path, ".css",
+                            base::CompareCase::INSENSITIVE_ASCII)) {
+    response->set_content_type("text/css");
+  }
+
+  return response;
 }
 
 }  // namespace content

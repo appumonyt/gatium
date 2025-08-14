@@ -8,12 +8,16 @@
 #include <optional>
 #include <vector>
 
+#include "base/callback_list.h"
 #include "base/containers/lru_cache.h"
 #include "base/functional/callback_forward.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/ml_model/field_classification_model_encoder.h"
+#include "components/autofill/core/browser/ml_model/logging/autofill_ml_internals.mojom.h"
+#include "components/autofill/core/browser/ml_model/logging/ml_log_router.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/optimization_guide/core/delivery/optimization_guide_model_provider.h"
 #include "components/optimization_guide/core/inference/model_handler.h"
@@ -25,12 +29,17 @@ namespace autofill {
 // `FieldClassificationModelExecutor`. It retrieves the model from the server,
 // load it into memory, execute it with FormStructure as input and associate the
 // model FieldType predictions with the FormStructure.
+//
+// Users of this class should register to asynchronous model change events via
+// RegisterModelChangeCallback().
 class FieldClassificationModelHandler
     : public optimization_guide::ModelHandler<
           FieldClassificationModelEncoder::ModelOutput,
           const FieldClassificationModelEncoder::ModelInput&>,
       public KeyedService {
  public:
+  using ModelChangeCallbackList = base::RepeatingCallbackList<void()>;
+
   using ModelInputHash = size_t;
 
   // The version of the input, based on which the relevant model
@@ -39,7 +48,8 @@ class FieldClassificationModelHandler
 
   FieldClassificationModelHandler(
       optimization_guide::OptimizationGuideModelProvider* model_provider,
-      optimization_guide::proto::OptimizationTarget optimization_target);
+      optimization_guide::proto::OptimizationTarget optimization_target,
+      autofill::MLLogRouter* log_router = nullptr);
   ~FieldClassificationModelHandler() override;
 
   // This function asynchronously queries predictions for the `form_structure`
@@ -71,6 +81,10 @@ class FieldClassificationModelHandler
       override;
 
   bool ShouldApplySmallFormRules() const;
+
+  // Registers a callback that is invoked when a new model is loaded.
+  [[nodiscard]] base::CallbackListSubscription RegisterModelChangeCallback(
+      ModelChangeCallbackList::CallbackType callback);
 
 #if defined(UNIT_TEST)
   const FieldTypeSet& get_supported_types() const { return supported_types_; }
@@ -114,6 +128,9 @@ class FieldClassificationModelHandler
   ModelInputHash CalculateModelInputHash(
       const FieldClassificationModelEncoder::ModelInput& input);
 
+  autofill_ml_internals::mojom::MLPredictionLogPtr CreateMLPredictionLog(
+      const FormStructure& form_structure) const;
+
   struct ModelState {
     optimization_guide::proto::AutofillFieldClassificationModelMetadata
         metadata;
@@ -131,6 +148,10 @@ class FieldClassificationModelHandler
 
   // Cached model classifications.
   base::LRUCache<ModelInputHash, std::vector<FieldType>> predictions_cache_;
+
+  ModelChangeCallbackList model_change_callback_list_;
+
+  raw_ptr<autofill::MLLogRouter> log_router_ = nullptr;
 
   base::WeakPtrFactory<FieldClassificationModelHandler> weak_ptr_factory_{this};
 };

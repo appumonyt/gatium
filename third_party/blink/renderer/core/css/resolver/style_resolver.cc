@@ -54,6 +54,7 @@
 #include "third_party/blink/renderer/core/css/css_initial_color_value.h"
 #include "third_party/blink/renderer/core/css/css_keyframe_rule.h"
 #include "third_party/blink/renderer/core/css/css_keyframes_rule.h"
+#include "third_party/blink/renderer/core/css/css_math_function_value.h"
 #include "third_party/blink/renderer/core/css/css_position_try_rule.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_rule_list.h"
@@ -823,7 +824,7 @@ void MatchVTTRules(const Element& element,
     RuleSetGroup rule_set_group{rule_set_group_index++};
 
     for (CSSStyleSheet* style : styles) {
-      RuleSet* rule_set = style_engine.RuleSetForSheet(*style);
+      RuleSet* rule_set = style_engine.RuleSetForSheet(*style, /*mixins=*/{});
       if (!rule_set) {
         continue;
       }
@@ -1400,6 +1401,7 @@ const ComputedStyle* StyleResolver::ResolveStyle(
 
   ApplyAnchorData(state);
   ApplyInertness(state);
+  ApplyTriggerData(state);
 
   IncrementResolvedStyleCounters(style_request, GetDocument());
   if (InvalidationTracingFlag::IsEnabled()) [[unlikely]] {
@@ -1498,7 +1500,7 @@ void StyleResolver::InitStyle(Element& element,
                               const ComputedStyle& source_for_noninherited,
                               const ComputedStyle* parent_style,
                               StyleResolverState& state) {
-  if (state.UsesHighlightPseudoInheritance()) {
+  if (state.IsForHighlight()) {
     // When resolving highlight styles for children, we need to default all
     // properties (whether or not defined as inherited) to parent values.
 
@@ -1534,7 +1536,7 @@ void StyleResolver::InitStyle(Element& element,
   // status, the font and the line height from the originating element. The
   // font and line height are necessary to correctly resolve font relative
   // units.
-  if (state.UsesHighlightPseudoInheritance()) {
+  if (state.IsForHighlight()) {
     state.StyleBuilder().SetInForcedColorsMode(
         style_request.originating_element_style->InForcedColorsMode());
     state.StyleBuilder().SetForcedColorAdjust(
@@ -1689,6 +1691,15 @@ bool CanApplyInlineStyleIncrementally(Element* element,
           property.Value().IsPendingSubstitutionValue() ||
           property.Value().IsRevertValue() ||
           property.Value().IsRevertLayerValue()) {
+        return false;
+      }
+      // Even though they are not substitution functions (and therefore not
+      // covered by the unparsed/pending-substitution value check above),
+      // anchor() and anchor-size() functions can still become IACVT,
+      // which must be handled by the StyleCascade.
+      if (auto* math_function =
+              DynamicTo<CSSMathFunctionValue>(property.Value());
+          math_function && math_function->HasAnchorFunctions()) {
         return false;
       }
     }
@@ -2487,7 +2498,8 @@ void StyleResolver::CollectPseudoRulesForElement(
     style_request.search_text_request = StyleRequest::kNotCurrent;
   }
 
-  if (IsTransitionPseudoElement(pseudo_id) && pseudo_id != kPseudoIdViewTransition) {
+  if (IsTransitionPseudoElement(pseudo_id) &&
+      pseudo_id != kPseudoIdViewTransition) {
     // Check view transition classes in addition to view transition names.
     auto* view_transition_element =
         element.GetPseudoElement(kPseudoIdViewTransition);
@@ -2585,11 +2597,7 @@ bool StyleResolver::ApplyAnimatedStyle(
       filter = filter.Add(CSSProperty::kValidForMarker);
     }
     if (IsHighlightPseudoElement(state.StyleBuilder().StyleType())) {
-      if (UsesHighlightPseudoInheritance(state.StyleBuilder().StyleType())) {
-        filter = filter.Add(CSSProperty::kValidForHighlight);
-      } else {
-        filter = filter.Add(CSSProperty::kValidForHighlightLegacy);
-      }
+      filter = filter.Add(CSSProperty::kValidForHighlight);
     }
     filter = filter.Add(CSSProperty::kNotAnimation);
 
@@ -2707,7 +2715,7 @@ StyleResolver::CacheSuccess StyleResolver::ApplyMatchedCache(
   // NOTE: Do not add anything here without also adding it to
   // MatchedPropertiesCache::IsCacheable(); you would be inserting
   // elements that can never be fetched.
-  if (state.UsesHighlightPseudoInheritance()) {
+  if (state.IsForHighlight()) {
     // Some pseudo-elements, like ::highlight, are special in that
     // they inherit _non-inherited_ properties from their parent.
     // This is different from what the MPC expects; it checks that
@@ -3656,6 +3664,11 @@ StyleRulePositionTry* StyleResolver::ResolvePositionTryRule(
   }
 
   return position_try_rule;
+}
+
+void StyleResolver::ApplyTriggerData(StyleResolverState& state) {
+  CSSAnimations::UpdateNamedTriggers(
+      state.StyleBuilder(), state.AnimationUpdate(), state.GetElement());
 }
 
 }  // namespace blink

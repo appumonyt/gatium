@@ -4,14 +4,22 @@
 
 #import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_mediator.h"
 
+#import <Foundation/Foundation.h>
+
 #import <memory>
 
 #import "base/apple/foundation_util.h"
 #import "base/memory/raw_ptr.h"
+#import "base/metrics/histogram_functions.h"
 #import "base/metrics/user_metrics.h"
 #import "base/metrics/user_metrics_action.h"
+#import "base/strings/sys_string_conversions.h"
+#import "base/time/time.h"
+#import "components/feature_engagement/public/event_constants.h"
+#import "components/feature_engagement/public/tracker.h"
 #import "components/image_fetcher/core/image_fetcher.h"
 #import "components/image_fetcher/core/image_fetcher_service.h"
+#import "components/omnibox/browser/omnibox_prefs.h"
 #import "components/omnibox/common/omnibox_features.h"
 #import "components/prefs/ios/pref_observer_bridge.h"
 #import "components/prefs/pref_change_registrar.h"
@@ -20,6 +28,7 @@
 #import "components/signin/public/base/signin_switches.h"
 #import "components/signin/public/identity_manager/objc/identity_manager_observer_bridge.h"
 #import "components/strings/grit/components_strings.h"
+#import "ios/chrome/browser/aim/model/aim_availability.h"
 #import "ios/chrome/browser/browser_view/model/browser_view_visibility_notifier_browser_agent.h"
 #import "ios/chrome/browser/browser_view/model/browser_view_visibility_observer_bridge.h"
 #import "ios/chrome/browser/content_suggestions/ui_bundled/content_suggestions_mediator.h"
@@ -27,28 +36,39 @@
 #import "ios/chrome/browser/discover_feed/model/discover_feed_service.h"
 #import "ios/chrome/browser/discover_feed/model/discover_feed_service_factory.h"
 #import "ios/chrome/browser/discover_feed/model/discover_feed_visibility_browser_agent.h"
+#import "ios/chrome/browser/home_customization/model/framing_coordinates.h"
 #import "ios/chrome/browser/home_customization/model/home_background_customization_service.h"
 #import "ios/chrome/browser/home_customization/model/home_background_customization_service_observer_bridge.h"
+#import "ios/chrome/browser/home_customization/model/user_uploaded_image_manager.h"
 #import "ios/chrome/browser/metrics/model/new_tab_page_uma.h"
 #import "ios/chrome/browser/ntp/model/new_tab_page_state.h"
 #import "ios/chrome/browser/ntp/model/new_tab_page_tab_helper.h"
+#import "ios/chrome/browser/ntp/search_engine_logo/ui/search_engine_logo_state.h"
 #import "ios/chrome/browser/ntp/shared/metrics/feed_metrics_constants.h"
 #import "ios/chrome/browser/ntp/shared/metrics/feed_metrics_recorder.h"
+#import "ios/chrome/browser/ntp/shared/metrics/new_tab_page_metrics_constants.h"
 #import "ios/chrome/browser/ntp/ui_bundled/feed_control_delegate.h"
 #import "ios/chrome/browser/ntp/ui_bundled/feed_wrapper_view_controller.h"
+#import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_color_palette.h"
+#import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_color_palette_util.h"
 #import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_consumer.h"
 #import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_content_delegate.h"
 #import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_feature.h"
 #import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_header_constants.h"
 #import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_header_consumer.h"
+#import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_image_background_trait.h"
+#import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_trait.h"
 #import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_view_controller.h"
+#import "ios/chrome/browser/ntp/ui_bundled/theme_utils.h"
 #import "ios/chrome/browser/omnibox/model/placeholder_service/placeholder_service.h"
 #import "ios/chrome/browser/omnibox/model/placeholder_service/placeholder_service_observer_bridge.h"
 #import "ios/chrome/browser/policy/model/policy_util.h"
 #import "ios/chrome/browser/search_engines/model/search_engine_observer_bridge.h"
 #import "ios/chrome/browser/shared/model/prefs/pref_names.h"
 #import "ios/chrome/browser/shared/model/url/chrome_url_constants.h"
+#import "ios/chrome/browser/shared/model/utils/first_run_util.h"
 #import "ios/chrome/browser/shared/public/features/features.h"
+#import "ios/chrome/browser/shared/ui/util/custom_ui_trait_accessor.h"
 #import "ios/chrome/browser/shared/ui/util/uikit_ui_util.h"
 #import "ios/chrome/browser/signin/model/authentication_service.h"
 #import "ios/chrome/browser/signin/model/chrome_account_manager_service.h"
@@ -63,13 +83,40 @@
 #import "ios/web/public/navigation/navigation_manager.h"
 #import "ios/web/public/navigation/referrer.h"
 #import "ios/web/public/web_state.h"
+#import "skia/ext/skia_utils_ios.h"
 #import "ui/base/l10n/l10n_util.h"
 #import "url/gurl.h"
 
 namespace {
 
+// Histogram name for logging when the 'new' badge on the Lens button is shown
+// on the homepage.
+constexpr char kNTPLensButtonNewBadgeShownHistogram[] =
+    "IOS.NTP.LensButtonNewBadgeShown";
+
+// These values are persisted to `IOS.NTP.LensButtonNewBadgeShown` histograms.
+// Entries should not be renumbered and numeric values should never be reused.
+enum class IOSNTPNewBadgeShownResult {
+  kShown = 0,
+  // kNotShownLimitReached = 1,  // Obsolete in M140
+  // kNotShownButtonPressed = 2,  // Obsolete in M140
+  kMaxValue = kShown,
+};
+
 // The point size of the entry point's symbol.
 const CGFloat kIconPointSize = 18.0;
+
+// The holdback period to wait after FRE completion before showing new badges
+// on the homepage.
+constexpr base::TimeDelta kFREBadgeHoldbackPeriod = base::Hours(1);
+
+// Logs when the 'new' badge on the homepage Lens button is shown.
+//
+// TODO(crbug.com/428691449): Remove once the FET migration for 'new' badges is
+// fully validated.
+void LogLensButtonNewBadgeShownHistogram(IOSNTPNewBadgeShownResult result) {
+  base::UmaHistogramEnumeration(kNTPLensButtonNewBadgeShownHistogram, result);
+}
 
 }  // namespace
 
@@ -128,11 +175,14 @@ const CGFloat kIconPointSize = 18.0;
       _backgroundCustomizationServiceObserverBridge;
   // Used to fetch and cache images for the background.
   raw_ptr<image_fetcher::ImageFetcherService> _imageFetcherService;
+  raw_ptr<UserUploadedImageManager> _userUploadedImageManager;
   // Observer to keep track of the syncing status.
   std::unique_ptr<SyncObserverBridge> _syncObserver;
   raw_ptr<signin::IdentityManager> _identityManager;
   id<SystemIdentity> _signedInIdentity;
   std::unique_ptr<PlaceholderServiceObserverBridge> _placeholderServiceObserver;
+  // Feature engagement tracker for handling "new" badge IPH.
+  raw_ptr<feature_engagement::Tracker> _tracker;
 }
 
 // Synthesized from NewTabPageMutator.
@@ -157,15 +207,19 @@ const CGFloat kIconPointSize = 18.0;
             (HomeBackgroundCustomizationService*)backgroundCustomizationService
                    imageFetcherService:
                        (image_fetcher::ImageFetcherService*)imageFetcherService
+              userUploadedImageManager:
+                  (UserUploadedImageManager*)userUploadedImageManager
          browserViewVisibilityNotifier:
              (BrowserViewVisibilityNotifierBrowserAgent*)
                  browserViewVisibilityNotifierBrowserAgent
-    discoverFeedVisibilityBrowserAgent:(DiscoverFeedVisibilityBrowserAgent*)
-                                           discoverFeedVisibilityBrowserAgent {
+    discoverFeedVisibilityBrowserAgent:
+        (DiscoverFeedVisibilityBrowserAgent*)discoverFeedVisibilityBrowserAgent
+              featureEngagementTracker:(feature_engagement::Tracker*)tracker {
   self = [super init];
   if (self) {
     CHECK(identityManager);
     CHECK(accountManagerService);
+    CHECK(tracker);
     _templateURLService = templateURLService;
     _defaultSearchEngine = templateURLService->GetDefaultSearchProvider();
     _URLLoader = URLLoader;
@@ -191,10 +245,38 @@ const CGFloat kIconPointSize = 18.0;
     _regionalCapabilitiesService = regionalCapabilitiesService;
     _backgroundCustomizationService = backgroundCustomizationService;
     _imageFetcherService = imageFetcherService;
+    _userUploadedImageManager = userUploadedImageManager;
     _signedInIdentity =
         _authService->GetPrimaryIdentity(signin::ConsentLevel::kSignin);
+    _tracker = tracker;
   }
   return self;
+}
+
+#pragma mark - NewTabPageMutator
+
+- (void)checkNewBadgeEligibility {
+  // Notify the badge holdback period has been satisfied if this is not the
+  // First Run, or the First Run happened longer than the holdback period.
+  if (!IsFirstRun() || !IsFirstRunRecent(kFREBadgeHoldbackPeriod)) {
+    _tracker->NotifyEvent(
+        feature_engagement::events::kIOSFREBadgeHoldbackPeriodElapsed);
+  }
+}
+
+- (void)notifyLensBadgeDisplayed {
+  LogLensButtonNewBadgeShownHistogram(IOSNTPNewBadgeShownResult::kShown);
+
+  _tracker->Dismissed(feature_engagement::kIPHiOSHomepageLensNewBadge);
+}
+
+- (void)notifyCustomizationBadgeDisplayed {
+  // TODO(crbug.com/428691449): Remove once the FET migration for 'new' badges
+  // is fully validated.
+  base::RecordAction(
+      base::UserMetricsAction(kNTPCustomizationNewBadgeShownAction));
+
+  _tracker->Dismissed(feature_engagement::kIPHiOSHomepageCustomizationNewBadge);
 }
 
 - (BOOL)isFeedHeaderVisible {
@@ -204,8 +286,11 @@ const CGFloat kIconPointSize = 18.0;
 - (void)setUp {
   self.templateURLService->Load();
   [self updateModuleVisibilityForConsumer];
-  [self.headerConsumer setLogoIsShowing:search::DefaultSearchProviderIsGoogle(
-                                            self.templateURLService)];
+  SearchEngineLogoState logoState =
+      search::DefaultSearchProviderIsGoogle(self.templateURLService)
+          ? SearchEngineLogoState::kLogo
+          : SearchEngineLogoState::kNone;
+  [self.headerConsumer setSearchEngineLogoState:logoState];
   [self.headerConsumer
       setVoiceSearchIsEnabled:ios::provider::IsVoiceSearchEnabled()];
 
@@ -219,6 +304,17 @@ const CGFloat kIconPointSize = 18.0;
           : @"";
   [self.headerConsumer setDefaultSearchEngineName:dseName];
 
+  if (self.placeholderService) {
+    // The DSE icon might have already been fetched. In this case, no updated
+    // will be delivered. Therefore we should query the cache, as the icon store
+    // might have already been updated.
+    UIImage* fetchedIcon =
+        self.placeholderService->GetDefaultSearchEngineIcon(kIconPointSize);
+    if (fetchedIcon) {
+      [self.headerConsumer setDefaultSearchEngineImage:fetchedIcon];
+    }
+  }
+
   [self updateAccountImage];
   [self updateAccountErrorBadge];
   [self startObservingPrefs];
@@ -229,9 +325,8 @@ const CGFloat kIconPointSize = 18.0;
     _backgroundCustomizationServiceObserverBridge =
         std::make_unique<HomeBackgroundCustomizationServiceObserverBridge>(
             _backgroundCustomizationService, self);
-    // Make sure the intial background is set.
-    [self updateBackground];
   }
+  [self updateAIMAvailability];
 }
 
 - (void)shutdown {
@@ -255,7 +350,8 @@ const CGFloat kIconPointSize = 18.0;
   _backgroundCustomizationServiceObserverBridge = nullptr;
   _backgroundCustomizationService = nullptr;
   _imageFetcherService = nullptr;
-  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate)) {
+  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate) ||
+      base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2)) {
     self.placeholderService = nullptr;
   }
 }
@@ -288,7 +384,8 @@ const CGFloat kIconPointSize = 18.0;
 }
 
 - (void)setPlaceholderService:(PlaceholderService*)placeholderService {
-  CHECK(base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate));
+  CHECK(base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate) ||
+        base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2));
 
   _placeholderService = placeholderService;
 
@@ -300,6 +397,68 @@ const CGFloat kIconPointSize = 18.0;
   _placeholderServiceObserver =
       std::make_unique<PlaceholderServiceObserverBridge>(self,
                                                          placeholderService);
+}
+
+- (void)updateBackground {
+  std::optional<std::pair<std::string, FramingCoordinates>> userUploaded =
+      _backgroundCustomizationService->GetCurrentUserUploadedBackground();
+  if (userUploaded) {
+    [self handleUserUploadedBackground:userUploaded->first
+                    framingCoordinates:userUploaded->second];
+    return;
+  }
+
+  std::optional<sync_pb::NtpCustomBackground> background =
+      _backgroundCustomizationService->GetCurrentCustomBackground();
+
+  std::optional<sync_pb::UserColorTheme> colorTheme =
+      _backgroundCustomizationService->GetCurrentColorTheme();
+
+  CustomUITraitAccessor* traitAccessor = [[CustomUITraitAccessor alloc]
+      initWithMutableTraits:self.consumer.traitOverrides];
+
+  if (colorTheme && colorTheme->color()) {
+    // Sets the New Tab Page trait to a color palette generated from the current
+    // theme.
+    NewTabPageColorPalette* colorPalette = CreateColorPaletteFromSeedColor(
+        skia::UIColorFromSkColor(colorTheme->color()),
+        ProtoEnumToSchemeVariant(colorTheme->browser_color_variant()));
+
+    [traitAccessor setObjectForNewTabPageTrait:colorPalette];
+    [self.consumer setBackgroundImage:nil];
+    [traitAccessor setBoolForNewTabPageImageBackgroundTrait:NO];
+    return;
+  }
+
+  // Clears the color palette associated with the New Tab Page trait,
+  // reverting to the default colors defined by the trait.
+  [traitAccessor setObjectForNewTabPageTrait:[NewTabPageTrait defaultValue]];
+
+  [traitAccessor
+      setBoolForNewTabPageImageBackgroundTrait:background.has_value()];
+
+  if (!background) {
+    [self.consumer setBackgroundImage:nil];
+    return;
+  }
+
+  GURL imageURL = GURL(background->url());
+
+  image_fetcher::ImageFetcher* imageFetcher =
+      _imageFetcherService->GetImageFetcher(
+          image_fetcher::ImageFetcherConfig::kDiskCacheOnly);
+
+  __weak __typeof(self) weakSelf = self;
+  imageFetcher->FetchImage(
+      imageURL,
+      base::BindOnce(^(const gfx::Image& image,
+                       const image_fetcher::RequestMetadata& metadata) {
+        if (!image.IsEmpty()) {
+          [weakSelf handleBackgroundImageFetch:image];
+        }
+      }),
+      // TODO (crbug.com/417234848): Add annotation.
+      image_fetcher::ImageFetcherParams(NO_TRAFFIC_ANNOTATION_YET, "Test"));
 }
 
 #pragma mark - BrowserViewVisibilityObserving
@@ -324,8 +483,13 @@ const CGFloat kIconPointSize = 18.0;
     return;
   }
   _defaultSearchEngine = updatedDefaultSearchEngine;
-  [self.headerConsumer setLogoIsShowing:search::DefaultSearchProviderIsGoogle(
-                                            self.templateURLService)];
+  // AIM availability must be updated before default search engine.
+  [self updateAIMAvailability];
+  SearchEngineLogoState logoState =
+      search::DefaultSearchProviderIsGoogle(self.templateURLService)
+          ? SearchEngineLogoState::kLogo
+          : SearchEngineLogoState::kNone;
+  [self.headerConsumer setSearchEngineLogoState:logoState];
   [self.feedControlDelegate updateFeedForDefaultSearchEngineChanged];
 
   NSString* dseName =
@@ -357,6 +521,10 @@ const CGFloat kIconPointSize = 18.0;
 #pragma mark - PlaceholderServiceObserving
 
 - (void)placeholderImageUpdated {
+  if (!base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2)) {
+    return;
+  }
+
   // Show Default Search Engine favicon.
   // Remember what is the Default Search Engine provider that the icon is
   // for, in case the user changes Default Search Engine while this is being
@@ -399,6 +567,12 @@ const CGFloat kIconPointSize = 18.0;
 }
 
 #pragma mark - Private
+
+- (void)updateAIMAvailability {
+  BOOL aimAllowed = IsAIMAvailable(_prefService, self.templateURLService);
+  [self.consumer setAIMAllowed:aimAllowed];
+  [self.headerConsumer setAIMAllowed:aimAllowed];
+}
 
 // Fetches and update user's avatar on NTP, or use default avatar if user is
 // not signed in.
@@ -461,36 +635,67 @@ const CGFloat kIconPointSize = 18.0;
                              email:_signedInIdentity.userEmail];
 }
 
-- (void)updateBackground {
-  std::optional<sync_pb::NtpCustomBackground> background =
-      _backgroundCustomizationService->GetCurrentCustomBackground();
-
-  if (!background) {
-    [self.consumer setBackgroundImage:nil];
-    return;
-  }
-
-  GURL imageURL = GURL(background->url());
-
-  image_fetcher::ImageFetcher* imageFetcher =
-      _imageFetcherService->GetImageFetcher(
-          image_fetcher::ImageFetcherConfig::kDiskCacheOnly);
-
-  __weak __typeof(self) weakSelf = self;
-  imageFetcher->FetchImage(
-      imageURL,
-      base::BindOnce(^(const gfx::Image& image,
-                       const image_fetcher::RequestMetadata& metadata) {
-        [weakSelf handleBackgroundImageFetch:image];
-      }),
-      // TODO (crbug.com/417234848): Add annotation.
-      image_fetcher::ImageFetcherParams(NO_TRAFFIC_ANNOTATION_YET, "Test"));
-}
-
 // Helper method to handle the image response after fetching the background
 // image for the new tab page.
 - (void)handleBackgroundImageFetch:(const gfx::Image&)image {
   [self.consumer setBackgroundImage:image.ToUIImage()];
+}
+
+// Helper method to handle displaying a user-uploaded background image
+// with the specified framing coordinates.
+- (void)handleUserUploadedBackground:(const std::string&)imagePath
+                  framingCoordinates:(const FramingCoordinates&)coordinates {
+  UIImage* image = _userUploadedImageManager->LoadUserUploadedImage(
+      base::FilePath(imagePath));
+  if (!image) {
+    // Clear the corrupted data.
+    _backgroundCustomizationService->ClearCurrentUserUploadedBackground();
+    [self.consumer setBackgroundImage:nil];
+    return;
+  }
+
+  // Apply framing coordinates to frame the image.
+  UIImage* framedImage = [self applyFramingCoordinates:coordinates
+                                               toImage:image];
+
+  [self.consumer setBackgroundImage:framedImage];
+}
+
+// Helper method to apply framing coordinates to position
+// the user-uploaded background image.
+- (UIImage*)applyFramingCoordinates:(const FramingCoordinates&)coordinates
+                            toImage:(UIImage*)originalImage {
+  // Create a canvas the size of the view.
+  CGSize canvasSize = [UIScreen mainScreen].bounds.size;
+
+  // Calculate scale to fill the view.
+  CGFloat widthScale = canvasSize.width / originalImage.size.width;
+  CGFloat heightScale = canvasSize.height / originalImage.size.height;
+  CGFloat scale = MAX(widthScale, heightScale);
+
+  CGFloat scaledWidth = originalImage.size.width * scale;
+  CGFloat scaledHeight = originalImage.size.height * scale;
+
+  // Use negative offset to position the image so the framed area is visible.
+  CGFloat offsetX = -(coordinates.x * scale);
+  CGFloat offsetY = -(coordinates.y * scale);
+
+  UIGraphicsImageRendererFormat* format =
+      [[UIGraphicsImageRendererFormat alloc] init];
+  format.opaque = NO;
+  format.scale = 0.0;
+
+  UIGraphicsImageRenderer* renderer =
+      [[UIGraphicsImageRenderer alloc] initWithSize:canvasSize format:format];
+
+  UIImage* framedImage =
+      [renderer imageWithActions:^(UIGraphicsImageRendererContext* context) {
+        // Draw the positioned image.
+        [originalImage
+            drawInRect:CGRectMake(offsetX, offsetY, scaledWidth, scaledHeight)];
+      }];
+
+  return framedImage;
 }
 
 @end

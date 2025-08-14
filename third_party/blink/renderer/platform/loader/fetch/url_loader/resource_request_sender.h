@@ -29,7 +29,6 @@
 #include "third_party/blink/public/common/loader/url_loader_throttle.h"
 #include "third_party/blink/public/mojom/blob/blob_registry.mojom-blink.h"
 #include "third_party/blink/public/mojom/loader/code_cache.mojom-blink-forward.h"
-#include "third_party/blink/public/mojom/loader/resource_load_info.mojom-shared.h"
 #include "third_party/blink/public/mojom/loader/resource_load_info.mojom.h"
 #include "third_party/blink/public/mojom/navigation/renderer_eviction_reason.mojom-blink-forward.h"
 #include "third_party/blink/public/platform/web_common.h"
@@ -256,7 +255,7 @@ class BLINK_PLATFORM_EXPORT ResourceRequestSender {
   // such deferring logic. However, it is difficult because the current code for
   // ScriptCachedMetadataHandler is written with the assumption that metadata
   // comes first.
-  WTF::Vector<base::OnceClosure> pending_tasks_;
+  Vector<base::OnceClosure> pending_tasks_;
 
   scoped_refptr<CodeCacheFetcher> code_cache_fetcher_;
 

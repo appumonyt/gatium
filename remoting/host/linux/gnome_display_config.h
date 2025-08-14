@@ -9,9 +9,11 @@
 
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "remoting/host/linux/scoped_glib.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_capture_types.h"
 
 namespace remoting {
 
@@ -54,6 +56,10 @@ struct GnomeDisplayConfig {
     bool is_primary = false;
   };
 
+  // Computes the screen ID for the given monitor name. The monitor name should
+  // be the key of `monitors`.
+  static webrtc::ScreenId GetScreenId(std::string_view monitor_name);
+
   GnomeDisplayConfig();
   GnomeDisplayConfig(const GnomeDisplayConfig&);
   GnomeDisplayConfig& operator=(const GnomeDisplayConfig&);
@@ -72,6 +78,9 @@ struct GnomeDisplayConfig {
   // This converts the C++ data into a GVariant `logical_monitors` parameter
   // to pass to D-Bus ApplyMonitorsConfig().
   ScopedGVariant BuildMonitorsConfigParameters() const;
+
+  std::map<std::string, MonitorInfo>::iterator FindMonitor(
+      webrtc::ScreenId screen_id);
 
   // The serial number returned by GNOME. When applying a new monitor config,
   // GNOME will check that the serial number matches, to avoid race-conditions

@@ -27,7 +27,7 @@
           "expiration": 18000,
           "hard_timeout": 14400,
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 10
+          "shards": 20
         },
         "test": "browser_tests",
         "test_id_prefix": "ninja://chrome/test:browser_tests/"
@@ -290,6 +290,26 @@
         },
         "test": "blink_platform_unittests",
         "test_id_prefix": "ninja://third_party/blink/renderer/platform:blink_platform_unittests/"
+      },
+      {
+        "args": [
+          "--no-xvfb",
+          "--use-weston",
+          "--ozone-platform=wayland"
+        ],
+        "isolate_profile_data": true,
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
+        "name": "blink_unittests",
+        "swarming": {
+          "dimensions": {
+            "os": "Ubuntu-22.04"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "blink_unittests",
+        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
       },
       {
         "args": [
@@ -964,7 +984,8 @@
           "--no-xvfb",
           "--use-weston",
           "--ozone-platform=wayland",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/ozone-linux.interactive_ui_tests_weston.filter"
+          "--test-launcher-filter-file=../../testing/buildbot/filters/ozone-linux.interactive_ui_tests_weston.filter",
+          "--disable-accelerated-subwindows-for-testing"
         ],
         "isolate_profile_data": true,
         "merge": {
@@ -1666,26 +1687,6 @@
         },
         "test": "vr_common_unittests",
         "test_id_prefix": "ninja://chrome/browser/vr:vr_common_unittests/"
-      },
-      {
-        "args": [
-          "--no-xvfb",
-          "--use-weston",
-          "--ozone-platform=wayland"
-        ],
-        "isolate_profile_data": true,
-        "merge": {
-          "script": "//testing/merge_scripts/standard_gtest_merge.py"
-        },
-        "name": "webkit_unit_tests",
-        "swarming": {
-          "dimensions": {
-            "os": "Ubuntu-22.04"
-          },
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "blink_unittests",
-        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
       },
       {
         "args": [

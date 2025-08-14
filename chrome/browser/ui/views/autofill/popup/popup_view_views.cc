@@ -448,7 +448,8 @@ bool PopupViewViews::HandleKeyPressEvent(
       // We do not want to handle Mod+TAB for other modifiers because this may
       // have other purposes (e.g., change the tab).
       if (!kHasNonShiftModifier) {
-        AcceptSelectedContentOrCreditCardCell();
+        AcceptSelectedContentOrCreditCardCell(
+            AutofillMetrics::SuggestionAcceptedMethod::kKeyboard);
       }
       return false;
     default:
@@ -640,7 +641,8 @@ bool PopupViewViews::SelectPreviousHorizontalCell() {
   return false;
 }
 
-bool PopupViewViews::AcceptSelectedContentOrCreditCardCell() {
+bool PopupViewViews::AcceptSelectedContentOrCreditCardCell(
+    AutofillMetrics::SuggestionAcceptedMethod accept_method) {
   std::optional<CellIndex> index = GetSelectedCell();
   if (!controller_ || !index) {
     return false;
@@ -655,7 +657,7 @@ bool PopupViewViews::AcceptSelectedContentOrCreditCardCell() {
     return false;
   }
 
-  controller_->AcceptSuggestion(index->first);
+  controller_->AcceptSuggestion(index->first, accept_method);
   return true;
 }
 
@@ -899,7 +901,8 @@ void PopupViewViews::ShowIPHFeaturePromos() {
         params.body_params = iph_metadata.iph_params;
         params.screen_reader_params = iph_metadata.iph_params;
       }
-      browser->window()->MaybeShowFeaturePromo(std::move(params));
+      BrowserUserEducationInterface::From(browser)->MaybeShowFeaturePromo(
+          std::move(params));
     }
   }
 }

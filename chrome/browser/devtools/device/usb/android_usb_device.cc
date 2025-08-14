@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "chrome/browser/devtools/device/usb/android_usb_device.h"
 
 #include <algorithm>
@@ -16,16 +11,16 @@
 
 #include "base/barrier_closure.h"
 #include "base/base64.h"
+#include "base/compiler_specific.h"
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
-#include "base/lazy_instance.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/no_destructor.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/devtools/device/usb/android_rsa.h"
 #include "chrome/browser/devtools/device/usb/android_usb_socket.h"
-#include "crypto/rsa_private_key.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/socket/stream_socket.h"
@@ -44,20 +39,24 @@ const uint32_t kVersion = 0x01000000;
 static const char kHostConnectMessage[] = "host::";
 
 // Stores android wrappers around claimed usb devices on caller thread.
-base::LazyInstance<std::vector<AndroidUsbDevice*>>::Leaky g_devices =
-    LAZY_INSTANCE_INITIALIZER;
+std::vector<AndroidUsbDevice*>& GetDevices() {
+  static base::NoDestructor<std::vector<AndroidUsbDevice*>> devices;
+  return *devices;
+}
 
 // Stores the GUIDs of devices that are currently opened so that they are not
 // re-probed.
-base::LazyInstance<std::vector<std::string>>::Leaky g_open_devices =
-    LAZY_INSTANCE_INITIALIZER;
+std::vector<std::string>& GetOpenDevices() {
+  static base::NoDestructor<std::vector<std::string>> open_devices;
+  return *open_devices;
+}
 
 uint32_t Checksum(const std::string& data) {
   unsigned char* x = (unsigned char*)data.data();
   int count = data.length();
   uint32_t sum = 0;
   while (count-- > 0)
-    sum += *x++;
+    sum += *UNSAFE_TODO(x++);
   return sum;
 }
 
@@ -95,29 +94,29 @@ void OnProbeFinished(AndroidUsbDevicesCallback callback,
 
   // Add raw pointers to the newly claimed devices.
   for (const scoped_refptr<AndroidUsbDevice>& device : *devices) {
-    g_devices.Get().push_back(device.get());
+    GetDevices().push_back(device.get());
   }
 
   // Return all claimed devices.
-  AndroidUsbDevices result(g_devices.Get().begin(), g_devices.Get().end());
+  AndroidUsbDevices result(GetDevices().begin(), GetDevices().end());
   std::move(callback).Run(result);
 }
 
 void OnDeviceClosed(const std::string& guid,
                     mojo::Remote<device::mojom::UsbDevice> device) {
-  std::erase(g_open_devices.Get(), guid);
+  std::erase(GetOpenDevices(), guid);
 }
 
 void OnDeviceClosedWithBarrier(const std::string& guid,
                                mojo::Remote<device::mojom::UsbDevice> device,
                                const base::RepeatingClosure& barrier) {
-  std::erase(g_open_devices.Get(), guid);
+  std::erase(GetOpenDevices(), guid);
   barrier.Run();
 }
 
 void CreateDeviceOnInterfaceClaimed(
     AndroidUsbDevices* devices,
-    crypto::RSAPrivateKey* rsa_key,
+    crypto::keypair::PrivateKey rsa_key,
     AndroidDeviceInfo android_device_info,
     mojo::Remote<device::mojom::UsbDevice> device,
     const base::RepeatingClosure& barrier,
@@ -142,7 +141,7 @@ void OnInterfaceReleased(mojo::Remote<device::mojom::UsbDevice> device,
 }
 
 void OnDeviceOpened(AndroidUsbDevices* devices,
-                    crypto::RSAPrivateKey* rsa_key,
+                    crypto::keypair::PrivateKey rsa_key,
                     AndroidDeviceInfo android_device_info,
                     mojo::Remote<device::mojom::UsbDevice> device,
                     const base::RepeatingClosure& barrier,
@@ -159,12 +158,12 @@ void OnDeviceOpened(AndroidUsbDevices* devices,
         base::BindOnce(&CreateDeviceOnInterfaceClaimed, devices, rsa_key,
                        android_device_info, std::move(device), barrier));
   } else {
-    std::erase(g_open_devices.Get(), android_device_info.guid);
+    std::erase(GetOpenDevices(), android_device_info.guid);
     barrier.Run();
   }
 }
 
-void OpenAndroidDevices(crypto::RSAPrivateKey* rsa_key,
+void OpenAndroidDevices(crypto::keypair::PrivateKey rsa_key,
                         AndroidUsbDevicesCallback callback,
                         std::vector<AndroidDeviceInfo> device_info_list) {
   // Add new devices.
@@ -174,13 +173,13 @@ void OpenAndroidDevices(crypto::RSAPrivateKey* rsa_key,
       base::BindOnce(&OnProbeFinished, std::move(callback), devices));
 
   for (const auto& device_info : device_info_list) {
-    if (base::Contains(g_open_devices.Get(), device_info.guid)) {
+    if (base::Contains(GetOpenDevices(), device_info.guid)) {
       // This device is already open, do not make parallel attempts to connect
       // to it.
       barrier.Run();
       continue;
     }
-    g_open_devices.Get().push_back(device_info.guid);
+    GetOpenDevices().push_back(device_info.guid);
 
     mojo::Remote<device::mojom::UsbDevice> device;
     UsbDeviceManagerHelper::GetInstance()->GetDevice(
@@ -202,17 +201,17 @@ AdbMessage::AdbMessage(uint32_t command,
 AdbMessage::~AdbMessage() = default;
 
 // static
-void AndroidUsbDevice::Enumerate(crypto::RSAPrivateKey* rsa_key,
+void AndroidUsbDevice::Enumerate(crypto::keypair::PrivateKey rsa_key,
                                  AndroidUsbDevicesCallback callback) {
   UsbDeviceManagerHelper::GetInstance()->GetAndroidDevices(
       base::BindOnce(&OpenAndroidDevices, rsa_key, std::move(callback)));
 }
 
 AndroidUsbDevice::AndroidUsbDevice(
-    crypto::RSAPrivateKey* rsa_key,
+    crypto::keypair::PrivateKey rsa_key,
     const AndroidDeviceInfo& android_device_info,
     mojo::Remote<device::mojom::UsbDevice> device)
-    : rsa_key_(rsa_key->Copy()),
+    : rsa_key_(rsa_key),
       device_(std::move(device)),
       android_device_info_(android_device_info),
       is_connected_(false),
@@ -295,7 +294,8 @@ void AndroidUsbDevice::Queue(std::unique_ptr<AdbMessage> message) {
     auto body_buffer = base::MakeRefCounted<base::RefCountedBytes>(body_length);
     {
       auto& v = body_buffer->as_vector();
-      memcpy(v.data(), message->body.data(), message->body.length());
+      UNSAFE_TODO(
+          memcpy(v.data(), message->body.data(), message->body.length()));
       if (append_zero) {
         v[body_length - 1] = 0;
       }
@@ -362,11 +362,11 @@ void AndroidUsbDevice::ParseHeader(UsbTransferStatus status,
 
   DumpMessage(false, buffer.data(), buffer.size());
   const auto* header = reinterpret_cast<const uint32_t*>(buffer.data());
-  std::unique_ptr<AdbMessage> message(
-      new AdbMessage(header[0], header[1], header[2], ""));
-  uint32_t data_length = header[3];
-  uint32_t data_check = header[4];
-  uint32_t magic = header[5];
+  std::unique_ptr<AdbMessage> message(new AdbMessage(
+      header[0], UNSAFE_TODO(header[1]), UNSAFE_TODO(header[2]), ""));
+  uint32_t data_length = UNSAFE_TODO(header[3]);
+  uint32_t data_check = UNSAFE_TODO(header[4]);
+  uint32_t magic = UNSAFE_TODO(header[5]);
   if ((message->command ^ 0xffffffff) != magic) {
     TransferError(UsbTransferStatus::TRANSFER_ERROR);
     return;
@@ -436,23 +436,32 @@ void AndroidUsbDevice::HandleIncoming(std::unique_ptr<AdbMessage> message) {
 
   switch (message->command) {
     case AdbMessage::kCommandAUTH: {
-      DCHECK_EQ(message->arg0, static_cast<uint32_t>(AdbMessage::kAuthToken));
+      if (message->arg0 != static_cast<uint32_t>(AdbMessage::kAuthToken)) {
+        TransferError(UsbTransferStatus::TRANSFER_ERROR);
+        return;
+      }
       if (signature_sent_) {
+        std::optional<std::string> pub = AndroidRSAPublicKey(rsa_key_);
+        if (!pub) {
+          TransferError(UsbTransferStatus::TRANSFER_ERROR);
+          return;
+        }
         Queue(std::make_unique<AdbMessage>(
-            AdbMessage::kCommandAUTH, AdbMessage::kAuthRSAPublicKey, 0,
-            AndroidRSAPublicKey(rsa_key_.get())));
+            AdbMessage::kCommandAUTH, AdbMessage::kAuthRSAPublicKey, 0, *pub));
       } else {
         signature_sent_ = true;
-        std::string signature = AndroidRSASign(rsa_key_.get(), message->body);
-        if (!signature.empty()) {
-          Queue(std::make_unique<AdbMessage>(AdbMessage::kCommandAUTH,
-                                             AdbMessage::kAuthSignature, 0,
-                                             signature));
-        } else {
-          Queue(std::make_unique<AdbMessage>(
-              AdbMessage::kCommandAUTH, AdbMessage::kAuthRSAPublicKey, 0,
-              AndroidRSAPublicKey(rsa_key_.get())));
+        std::string signature = AndroidRSASign(rsa_key_, message->body);
+        if (signature.empty()) {
+          // This may fail if the device requests to sign a token that is not
+          // the same size as a SHA-1 hash. ADB does not use a standard
+          // signature scheme and instead treats an arbitrary peer-supplied
+          // token as the SHA-1 hash.
+          TransferError(UsbTransferStatus::TRANSFER_ERROR);
+          return;
         }
+        Queue(std::make_unique<AdbMessage>(AdbMessage::kCommandAUTH,
+                                           AdbMessage::kAuthSignature, 0,
+                                           signature));
       }
     } break;
     case AdbMessage::kCommandCNXN:
@@ -488,15 +497,16 @@ void AndroidUsbDevice::TransferError(UsbTransferStatus status) {
 void AndroidUsbDevice::Terminate() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  // Remove this AndroidUsbDevice from |g_devices|.
-  auto it = std::ranges::find(g_devices.Get(), this);
-  if (it != g_devices.Get().end())
-    g_devices.Get().erase(it);
+  // Remove this AndroidUsbDevice from GetDevices().
+  auto it = std::ranges::find(GetDevices(), this);
+  if (it != GetDevices().end()) {
+    GetDevices().erase(it);
+  }
 
   // For connection error, remove the guid from recored opening/opened list.
   // For transfer errors, we'll do this after releasing the interface.
   if (!device_) {
-    std::erase(g_open_devices.Get(), android_device_info_.guid);
+    std::erase(GetOpenDevices(), android_device_info_.guid);
     return;
   }
 

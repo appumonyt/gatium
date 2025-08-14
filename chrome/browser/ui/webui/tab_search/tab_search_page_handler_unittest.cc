@@ -32,7 +32,6 @@
 #include "chrome/browser/ui/tabs/split_tab_metrics.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
-#include "chrome/browser/ui/tabs/test_util.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/webui/metrics_reporter/metrics_reporter.h"
 #include "chrome/browser/ui/webui/metrics_reporter/mock_metrics_reporter.h"
@@ -299,14 +298,8 @@ class TabSearchPageHandlerTest : public BrowserWithTestWindowTest {
 
  private:
   std::unique_ptr<Browser> CreateTestBrowser(Profile* profile, bool popup) {
-    auto window = std::make_unique<TestBrowserWindow>();
     Browser::Type type = popup ? Browser::TYPE_POPUP : Browser::TYPE_NORMAL;
-
-    std::unique_ptr<Browser> browser =
-        CreateBrowser(profile, type, false, window.get());
-    // Self deleting.
-    new TestBrowserWindowOwner(std::move(window));
-    return browser;
+    return CreateBrowser(profile, type, false);
   }
 
   std::unique_ptr<content::WebContents> web_contents_;
@@ -983,7 +976,7 @@ class TabSearchPageHandlerDeclutterTest : public TabSearchPageHandlerTest {
         tab_strip_model_delegate_.get(), testing_profile_.get());
 
     browser_window_interface_ = std::make_unique<MockBrowserWindowInterface>();
-    ON_CALL(*browser_window_interface_, GetTabStripModel)
+    ON_CALL(*browser_window_interface_, GetTabStripModel())
         .WillByDefault(::testing::Return(tab_strip_model_.get()));
 
     tab_declutter_controller_ = std::make_unique<MockTabDeclutterController>(
@@ -1030,7 +1023,7 @@ class TabSearchPageHandlerDeclutterTest : public TabSearchPageHandlerTest {
   std::unique_ptr<TabStripModel> tab_strip_model_;
   std::unique_ptr<MockTabDeclutterController> tab_declutter_controller_;
   std::unique_ptr<MockBrowserWindowInterface> browser_window_interface_;
-  tabs::PreventTabFeatureInitialization prevent_;
+  const tabs::TabModel::PreventFeatureInitializationForTesting prevent_;
 };
 
 TEST_F(TabSearchPageHandlerDeclutterTest, TabDeclutterFindUnusedTabs) {

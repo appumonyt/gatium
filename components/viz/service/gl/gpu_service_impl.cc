@@ -10,9 +10,12 @@
 #include <vector>
 
 #include "base/allocator/partition_alloc_support.h"
+#include "base/android/android_info.h"
 #include "base/command_line.h"
+#include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
+#include "base/memory/memory_pressure_listener_registry.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
@@ -56,7 +59,6 @@
 #include "gpu/vulkan/buildflags.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_channel.h"
-#include "ipc/ipc_sync_message_filter.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/gpu/buildflags.h"
@@ -87,7 +89,6 @@
 #endif  // BUILDFLAG(USE_VAAPI)
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
 #include "components/viz/service/gl/throw_uncaught_exception.h"
 #include "media/base/android/media_codec_util.h"
 #endif
@@ -116,7 +117,7 @@
 #endif
 
 #if BUILDFLAG(SKIA_USE_METAL)
-#include "components/viz/common/gpu/metal_context_provider.h"
+#include "gpu/command_buffer/service/metal_context_provider.h"
 #endif
 
 #if BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX)
@@ -130,6 +131,7 @@
 
 #if BUILDFLAG(IS_OZONE)
 #include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 #endif  // BUILDFLAG(IS_OZONE)
 
 namespace viz {
@@ -212,8 +214,8 @@ GpuServiceImpl::GpuServiceImpl(
     bool is_native_gl =
         gpu_info_.gpu.vendor_id != 0xffff && gpu_info_.gpu.vendor_id != 0;
 
-    const bool is_thread_safe =
-        features::IsDrDcEnabled() && !gpu_driver_bug_workarounds_.disable_drdc;
+    const bool is_thread_safe = features::IsDrDcEnabled(gpu_feature_info);
+
     // If GL is using a real GPU, the gpu_info will be passed in and vulkan will
     // use the same GPU.
     vulkan_context_provider_ = VulkanInProcessContextProvider::Create(
@@ -496,6 +498,8 @@ void GpuServiceImpl::InitializeWithHostInternal(
   scheduler_ = scheduler;
   shutdown_event_ = shutdown_event;
 
+  use_shader_cache_shm_count_ = std::move(use_shader_cache_shm_count);
+
   mojo::Remote<mojom::GpuHost> gpu_host(std::move(pending_gpu_host));
 
 #if BUILDFLAG(IS_LINUX)
@@ -514,8 +518,7 @@ void GpuServiceImpl::InitializeWithHostInternal(
       gpu_preferences_, this, watchdog_thread_.get(), main_runner_, io_runner_,
       scheduler_, sync_point_manager, shared_image_manager,
       gpu_memory_buffer_factory_.get(), gpu_feature_info_,
-      std::move(use_shader_cache_shm_count),
-      std::move(default_offscreen_surface),
+      &use_shader_cache_shm_count_, std::move(default_offscreen_surface),
       image_decode_accelerator_worker_.get(), vulkan_context_provider(),
       metal_context_provider(), dawn_context_provider(),
       dawn_caching_interface_factory(), gr_context_options_provider_);
@@ -524,7 +527,12 @@ void GpuServiceImpl::InitializeWithHostInternal(
       gpu_channel_manager_.get());
 
   // Create and Initialize compositor gpu thread.
-  {
+  if (features::IsDrDcEnabled(gpu_feature_info_)) {
+    // Add a crash key for DrDC.
+    static auto* drdc_crash_key = base::debug::AllocateCrashKeyString(
+        "is-drdc-enabled", base::debug::CrashKeySize::Size32);
+    base::debug::SetCrashKeyString(drdc_crash_key, "1");
+
     CompositorGpuThread::CreateParams params;
     params.gpu_channel_manager = gpu_channel_manager_.get();
     params.display =
@@ -540,10 +548,21 @@ void GpuServiceImpl::InitializeWithHostInternal(
                               : nullptr;
 #endif
 #if BUILDFLAG(SKIA_USE_DAWN)
+    // Initialize the thread-safe GraphiteSharedContext before starting the DrDC
+    // thread to prevent a race on accessing it via SharedContextState.
+    if (dawn_context_provider_ &&
+        dawn_context_provider_->use_thread_safe_shared_context()) {
+      dawn_context_provider_->InitializeThreadSafeGraphiteContext(
+          gpu::GetDefaultGraphiteContextOptions(gpu_driver_bug_workarounds_),
+          &use_shader_cache_shm_count_);
+    }
     params.dawn_context_provider = dawn_context_provider_.get();
 #endif
-    compositor_gpu_thread_ = CompositorGpuThread::MaybeCreate(params);
+
+    compositor_gpu_thread_ = CompositorGpuThread::Create(params);
   }
+
+  UMA_HISTOGRAM_BOOLEAN("GPU.DrDcEnabled", !!compositor_gpu_thread_);
 
 #if BUILDFLAG(IS_WIN)
   // Add GpuServiceImpl to DirectCompositionOverlayCapsMonitor observer list for
@@ -680,6 +699,7 @@ void GpuServiceImpl::BindWebNNContextProvider(
     // `client_id` in order to support memory metrics.
     webnn_context_provider_ = webnn::WebNNContextProviderImpl::Create(
         std::move(shared_context_state), gpu_feature_info_, gpu_info_,
+        shared_image_manager(),
         base::BindOnce(&GpuServiceImpl::LoseAllContexts, weak_ptr_),
         main_runner(), GetGpuScheduler(), client_id);
   }
@@ -812,8 +832,7 @@ std::string GpuServiceImpl::GetShaderPrefixKey() {
         base::SysInfo::ProcessCPUArchitecture();
 
 #if BUILDFLAG(IS_ANDROID)
-    std::string build_fp =
-        base::android::BuildInfo::GetInstance()->android_build_fp();
+    std::string build_fp = base::android::android_info::android_build_fp();
     shader_prefix_key_ += "-" + build_fp;
 #endif
   }
@@ -1169,7 +1188,10 @@ void GpuServiceImpl::OnForegroundedOnMainThread() {
 void GpuServiceImpl::OnMemoryPressure(
     base::MemoryPressureListener::MemoryPressureLevel level) {
   // Forward the notification to the registry of MemoryPressureListeners.
-  base::MemoryPressureListener::NotifyMemoryPressure(level);
+  base::SingleThreadTaskRunner::GetMainThreadDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &base::MemoryPressureListenerRegistry::NotifyMemoryPressure, level));
 }
 #endif
 
@@ -1250,26 +1272,31 @@ bool GpuServiceImpl::OnBeginFrameDerivedImpl(const BeginFrameArgs& args) {
 #if BUILDFLAG(IS_LINUX)
 bool GpuServiceImpl::IsGMBNV12Supported() {
   CHECK(main_runner_->BelongsToCurrentThread());
+
+  // Determine whether it's possible to create an NV12 NativePixmap with
+  // GPU_READ_CPU_READ_WRITE usage (the relevant usage for the clients of this
+  // method).
   auto buffer_format = gfx::BufferFormat::YUV_420_BIPLANAR;
   auto buffer_usage = gfx::BufferUsage::GPU_READ_CPU_READ_WRITE;
 
   if (!IsNativeBufferSupported(buffer_format, buffer_usage)) {
     return false;
   }
+
   auto size = gfx::Size(2, 2);
+  scoped_refptr<gfx::NativePixmap> pixmap =
+      ui::OzonePlatform::GetInstance()
+          ->GetSurfaceFactoryOzone()
+          ->CreateNativePixmap(gpu::kNullSurfaceHandle,
+                               vulkan_context_provider()
+                                   ? vulkan_context_provider()->GetDeviceQueue()
+                                   : nullptr,
+                               size, buffer_format, buffer_usage, size);
+  if (!pixmap.get() || pixmap->ExportHandle().planes.empty()) {
+    return false;
+  }
 
-  // Note that |gmb_id| and |client_id| does not matter here as this is the
-  // first GMB which will created and immediately destroyed.
-  auto gmb_id = gfx::GpuMemoryBufferId(
-      static_cast<int>(gpu::MappableSIClientGmbId::kGpuServiceImpl));
-  auto client_id = gpu::kMappableSIClientId;
-  auto gmb_handle = gpu_memory_buffer_factory_->CreateGpuMemoryBuffer(
-      gmb_id, size, /*framebuffer_size=*/size, buffer_format, buffer_usage,
-      client_id, gpu::kNullSurfaceHandle);
-
-  // Destroy the gmb_handle since it will be no longer needed.
-  gpu_memory_buffer_factory_->DestroyGpuMemoryBuffer(gmb_id, client_id);
-  return !gmb_handle.is_null();
+  return true;
 }
 #endif
 
@@ -1329,7 +1356,7 @@ gpu::SharedImageManager* GpuServiceImpl::CreateSharedImageManager(
   // access to SharedImageManager on the viz thread to obtain the buffer
   // corresponding to a mailbox.
   const bool display_context_on_another_thread =
-      features::IsDrDcEnabled() && !gpu_driver_bug_workarounds_.disable_drdc;
+      features::IsDrDcEnabled(gpu_feature_info_);
 
   // |display_context_on_another_thread|, features::IsUsingRawDraw(),
   // kAlwaysUseRealBufferTestingOnOzone, and kSharedBitmapToSharedImage

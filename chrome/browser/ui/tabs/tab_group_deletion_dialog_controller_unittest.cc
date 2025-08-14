@@ -31,13 +31,13 @@ class DeletionDialogControllerUnitTest : public testing::Test {
         tab_strip_model_delegate_.get(), profile_.get());
     browser_window_interface_ = std::make_unique<MockBrowserWindowInterface>();
 
-    ON_CALL(*browser_window_interface_, GetTabStripModel)
+    ON_CALL(*browser_window_interface_, GetTabStripModel())
         .WillByDefault(::testing::Return(tab_strip_model_.get()));
     ON_CALL(*browser_window_interface_, GetProfile)
         .WillByDefault(::testing::Return(profile_.get()));
 
     controller_ = std::make_unique<DeletionDialogController>(
-        browser_window_interface_.get(),
+        browser_window_interface_.get(), profile_.get(), tab_strip_model_.get(),
         base::BindRepeating(&DeletionDialogControllerUnitTest::ShowDialogFn,
                             base::Unretained(this)));
   }

@@ -247,6 +247,11 @@ class SystemIdentityManager {
       id<RefreshAccessTokenError> error,
       HandleMDMCallback callback) = 0;
 
+  // Returns whether the `error` is due to restricted access to the scopes in
+  // the access token request.
+  // TODO(crbug.com/425592221): Convert to pure virtual method.
+  virtual bool IsScopeLimitedError(id<RefreshAccessTokenError> error);
+
   // Returns whether the `error` associated with `identity` is due to MDM
   // (Mobile Device Management) or not.
   virtual bool IsMDMError(id<SystemIdentity> identity, NSError* error) = 0;
@@ -268,11 +273,6 @@ class SystemIdentityManager {
 
   // Invokes OnIdentityRefreshTokenUpdated(...)` for all observers.
   void FireIdentityRefreshTokenUpdated(id<SystemIdentity> identity);
-
-  // Invokes OnIdentityAccessTokenRefreshFailed(...)` for all observers.
-  // TODO(crbug.com/350461111): Remove this method in favor of the one below.
-  void FireIdentityAccessTokenRefreshFailed(id<SystemIdentity> identity,
-                                            id<RefreshAccessTokenError> error);
 
   // Invokes OnIdentityAccessTokenRefreshFailed(...)` for all observers.
   void FireIdentityAccessTokenRefreshFailed(

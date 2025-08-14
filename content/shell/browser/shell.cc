@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "content/shell/browser/shell.h"
 
 #include <stddef.h>
@@ -17,6 +12,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/no_destructor.h"
@@ -139,7 +135,8 @@ Shell* Shell::CreateShell(std::unique_ptr<WebContents> web_contents,
   // main frame being created as a WebContentsObservers. This gives the delegate
   // a chance to act on the main frame accordingly.
   if (raw_web_contents->GetPrimaryMainFrame()->IsRenderFrameLive())
-    g_platform->MainFrameCreated(shell);
+    g_platform->MainFrameCreated(shell,
+                                 raw_web_contents->GetPrimaryMainFrame());
 
   return shell;
 }
@@ -242,8 +239,9 @@ Shell* Shell::CreateNewWindow(BrowserContext* browser_context,
 }
 
 void Shell::RenderFrameCreated(RenderFrameHost* frame_host) {
-  if (frame_host == web_contents_->GetPrimaryMainFrame())
-    g_platform->MainFrameCreated(this);
+  if (frame_host == frame_host->GetOutermostMainFrame()) {
+    g_platform->MainFrameCreated(this, frame_host);
+  }
 }
 
 void Shell::LoadURL(const GURL& url) {
@@ -789,7 +787,7 @@ gfx::Size Shell::GetShellDefaultSize() {
     const std::string size_str = command_line->GetSwitchValueASCII(
         switches::kContentShellHostWindowSize);
     int width, height;
-    if (sscanf(size_str.c_str(), "%dx%d", &width, &height) == 2) {
+    if (UNSAFE_TODO(sscanf(size_str.c_str(), "%dx%d", &width, &height)) == 2) {
       default_shell_size = gfx::Size(width, height);
     } else {
       LOG(ERROR) << "Invalid size \"" << size_str << "\" given to --"

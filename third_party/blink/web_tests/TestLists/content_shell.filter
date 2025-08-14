@@ -23,7 +23,6 @@ virtual/text-size-adjust/wpt_internal/*
 virtual/text-size-adjust-with-os-font-scale/wpt_internal/*
 virtual/generic-sensor-extra-classes/wpt_internal/*
 virtual/unload-allowed/wpt_internal/*
-virtual/single-import-map/wpt_internal/*
 
 # Blocklisted tests fail unexpectedly on headless shell for at least one
 # platform, so continue running them on content shell.
@@ -44,7 +43,7 @@ external/wpt/compat/webkit-box-horizontal-rtl-variants.html
 external/wpt/compat/webkit-box-rtl-flex.html
 external/wpt/console/console-log-large-array.any.html
 external/wpt/content-security-policy/report-hash/*
-external/wpt/cookie-store/cookieStore_subscribe_arguments.https.any.html
+external/wpt/cookiestore/cookieStore_subscribe_arguments.https.any.html
 external/wpt/cookies/attributes/attributes-ctl.sub.html
 external/wpt/cookies/attributes/domain.sub.html
 external/wpt/css/compositing/mix-blend-mode/mix-blend-mode-animation.html
@@ -626,9 +625,6 @@ external/wpt/html/semantics/interactive-elements/the-dialog-element/dialog-close
 external/wpt/html/semantics/interactive-elements/the-dialog-element/dialog-popover-closedby-simple.tentative.html
 external/wpt/html/semantics/interactive-elements/the-dialog-element/top-layer-stacking.tentative.html
 external/wpt/html/semantics/interactive-elements/the-summary-element/interactive-content.html
-external/wpt/html/semantics/permission-element/display-css-property-reftest.tentative.html
-external/wpt/html/semantics/permission-element/large-min-size-reftest.tentative.html
-external/wpt/html/semantics/permission-element/unbounded-width-with-border-reftest.tentative.html
 external/wpt/html/semantics/popovers/popover-anchor-nested-display.tentative.html
 external/wpt/html/semantics/popovers/popover-focus.html
 external/wpt/html/semantics/popovers/popover-hidden-display.html
@@ -915,14 +911,6 @@ virtual/direct-sockets/external/wpt/direct-sockets/udp_socket.https.html
 virtual/disable-css-line-clamp/external/wpt/css/css-overflow/line-clamp/webkit-line-clamp-024.html
 virtual/disable-css-line-clamp/external/wpt/css/css-overflow/line-clamp/webkit-line-clamp-025.html
 virtual/disable-css-line-clamp/external/wpt/css/css-overflow/line-clamp/webkit-line-clamp-036.html
-virtual/do-not-hide-visited-color/external/wpt/css/css-color/composited-filters-under-opacity.html
-virtual/do-not-hide-visited-color/external/wpt/css/css-color/deprecated-sameas-010.html
-virtual/do-not-hide-visited-color/external/wpt/css/css-color/filters-under-will-change-opacity.html
-virtual/do-not-hide-visited-color/external/wpt/css/css-color/system-color-consistency.html
-virtual/do-not-hide-visited-color/external/wpt/css/css-color/system-color-hightlights-vs-getSelection-001.html
-virtual/do-not-hide-visited-color/external/wpt/css/css-color/system-color-hightlights-vs-getSelection-002.html
-virtual/do-not-hide-visited-color/external/wpt/css/css-color/system-color-support.html
-virtual/do-not-hide-visited-color/external/wpt/css/css-color/t424-hsl-basic-a.xht
 external/wpt/fedcm/fedcm-multi-idp/fedcm-multi-idp-mediation-optional.https.html
 external/wpt/fedcm/fedcm-multi-idp/fedcm-multi-idp-mediation-silent.https.html
 virtual/fedcm-register/external/wpt/fedcm/fedcm-register/fedcm-no-registered-idps.https.html
@@ -956,9 +944,6 @@ virtual/no-auto-wpt-origin-isolation/external/wpt/html/semantics/embedded-conten
 virtual/no-auto-wpt-origin-isolation/external/wpt/html/semantics/embedded-content/the-iframe-element/iframe_sandbox_window_open_download_allow_downloads.tentative.html
 virtual/no-forced-frame-updates/external/wpt/html/browsers/browsing-the-web/history-traversal/pagereveal/order-in-bfcache-restore-iframe.html
 virtual/no-forced-frame-updates/external/wpt/html/dom/render-blocking/element-render-blocking-036.html
-virtual/permission-element/external/wpt/html/semantics/permission-element/display-css-property-reftest.tentative.html
-virtual/permission-element/external/wpt/html/semantics/permission-element/large-min-size-reftest.tentative.html
-virtual/permission-element/external/wpt/html/semantics/permission-element/unbounded-width-with-border-reftest.tentative.html
 virtual/pna-navigations-warning/external/wpt/fetch/private-network-access/iframe.tentative.https.window.html?include=from-treat-as-public
 virtual/customizable-select-disabled/external/wpt/html/semantics/forms/the-select-element/customizable-select/select-events.tentative.html
 virtual/select-parser-relaxation/external/wpt/html/semantics/forms/the-select-element/customizable-select/select-events.tentative.html

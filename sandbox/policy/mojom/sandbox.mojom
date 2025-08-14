@@ -67,9 +67,6 @@ enum Sandbox {
   // Like kService but allows loading of the optimization guide library.
   [EnableIf=is_linux] kVideoEffects,
 
-  // The PPAPI plugin process. (Unsandboxed on Windows.)
-  [EnableIf=enable_ppapi_sandbox] kPpapi,
-
   // Equivalent to no sandbox on all non-Fuchsia platforms.
   // Minimally privileged sandbox on Fuchsia.
   [EnableIf=is_fuchsia] kVideoCapture,
@@ -152,5 +149,5 @@ enum Sandbox {
   [EnableIf=is_linux|is_mac] kOnDeviceTranslation,
 
   // Like kUtility but allows loading of the shape detection internal library.
-  [EnableIf=is_chromeos] kShapeDetection,
+  [EnableIf=is_chromeos|is_linux] kShapeDetection,
 };

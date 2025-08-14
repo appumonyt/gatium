@@ -6,20 +6,10 @@
 
 // Keep the alphabetical order.
 
-BASE_FEATURE(kAddAddressManually,
-             "AddAddressManually",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-bool IsAddAddressManuallyEnabled() {
-  return base::FeatureList::IsEnabled(kAddAddressManually) &&
-         base::FeatureList::IsEnabled(
-             kAutofillDynamicallyLoadsFieldsForAddressInput);
-}
-
 // LINT.IfChange(autofill_allow_default_prevented_submission)
 BASE_FEATURE(kAutofillAllowDefaultPreventedSubmission,
              "AutofillAllowDefaultPreventedSubmission",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 // LINT.ThenChange(/components/autofill/ios/form_util/resources/autofill_form_features.ts:autofill_allow_default_prevented_submission)
 
 // LINT.IfChange(autofill_correct_user_edited_bit_in_parsed_field)
@@ -46,7 +36,7 @@ BASE_FEATURE(kAutofillDynamicallyLoadsFieldsForAddressInput,
 
 BASE_FEATURE(kAutofillFixXhrForXframe,
              "AutofillFixXhrForXframe",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAutofillFormSubmissionEventsInCaptureMode,
              "AutofillFormSubmissionEventsInCaptureMode",

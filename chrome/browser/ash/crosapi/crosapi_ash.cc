@@ -14,15 +14,10 @@
 #include "base/notimplemented.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
-#include "chrome/browser/ash/crosapi/cert_provisioning_ash.h"
 #include "chrome/browser/ash/crosapi/document_scan_ash.h"
-#include "chrome/browser/ash/crosapi/file_system_access_cloud_identifier_provider_ash.h"
 #include "chrome/browser/ash/crosapi/file_system_provider_service_ash.h"
 #include "chrome/browser/ash/crosapi/keystore_service_ash.h"
 #include "chrome/browser/ash/crosapi/local_printer_ash.h"
-#include "chrome/browser/ash/crosapi/login_ash.h"
-#include "chrome/browser/ash/crosapi/media_ui_ash.h"
-#include "chrome/browser/ash/crosapi/parent_access_ash.h"
 #include "chrome/browser/ash/crosapi/vpn_service_ash.h"
 #include "chrome/browser/ash/login/quick_unlock/quick_unlock_factory.h"
 #include "chrome/browser/ash/printing/print_preview/print_preview_webcontents_adapter_ash.h"
@@ -37,7 +32,6 @@
 #include "chromeos/ash/components/account_manager/account_manager_factory.h"
 #include "chromeos/ash/components/browser_context_helper/browser_context_helper.h"
 #include "chromeos/ash/components/telemetry_extension/diagnostics/diagnostics_service_ash.h"
-#include "chromeos/ash/components/telemetry_extension/events/telemetry_event_service_ash.h"
 #include "chromeos/ash/components/telemetry_extension/management/telemetry_management_service_ash.h"
 #include "chromeos/ash/components/telemetry_extension/routines/telemetry_diagnostic_routine_service_ash.h"
 #include "chromeos/ash/components/telemetry_extension/telemetry/probe_service_ash.h"
@@ -90,22 +84,14 @@ Profile* GetAshProfile() {
 }  // namespace
 
 CrosapiAsh::CrosapiAsh()
-    : cert_provisioning_ash_(std::make_unique<CertProvisioningAsh>()),
-      diagnostics_service_ash_(std::make_unique<ash::DiagnosticsServiceAsh>()),
+    : diagnostics_service_ash_(std::make_unique<ash::DiagnosticsServiceAsh>()),
       document_scan_ash_(std::make_unique<DocumentScanAsh>()),
-      file_system_access_cloud_identifier_provider_ash_(
-          std::make_unique<FileSystemAccessCloudIdentifierProviderAsh>()),
       file_system_provider_service_ash_(
           std::make_unique<FileSystemProviderServiceAsh>()),
       keystore_service_ash_(std::make_unique<KeystoreServiceAsh>()),
       local_printer_ash_(std::make_unique<LocalPrinterAsh>()),
-      login_ash_(std::make_unique<LoginAsh>()),
-      media_ui_ash_(std::make_unique<MediaUIAsh>()),
-      parent_access_ash_(std::make_unique<ParentAccessAsh>()),
       telemetry_diagnostic_routine_service_ash_(
           std::make_unique<ash::TelemetryDiagnosticsRoutineServiceAsh>()),
-      telemetry_event_service_ash_(
-          std::make_unique<ash::TelemetryEventServiceAsh>()),
       telemetry_management_service_ash_(
           std::make_unique<ash::TelemetryManagementServiceAsh>()),
       probe_service_ash_(std::make_unique<ash::ProbeServiceAsh>()),
@@ -145,11 +131,6 @@ void CrosapiAsh::BindBrowserCdmFactory(mojo::GenericPendingReceiver receiver) {
   }
 }
 
-void CrosapiAsh::BindCertProvisioning(
-    mojo::PendingReceiver<mojom::CertProvisioning> receiver) {
-  cert_provisioning_ash_->BindReceiver(std::move(receiver));
-}
-
 void CrosapiAsh::BindCfmServiceContext(
     mojo::PendingReceiver<chromeos::cfm::mojom::CfmServiceContext> receiver) {
   chromeos::cfm::ServiceConnection::GetInstance()->BindServiceContext(
@@ -169,13 +150,6 @@ void CrosapiAsh::BindDiagnosticsService(
 void CrosapiAsh::BindDocumentScan(
     mojo::PendingReceiver<mojom::DocumentScan> receiver) {
   document_scan_ash_->BindReceiver(std::move(receiver));
-}
-
-void CrosapiAsh::BindFileSystemAccessCloudIdentifierProvider(
-    mojo::PendingReceiver<
-        crosapi::mojom::FileSystemAccessCloudIdentifierProvider> receiver) {
-  file_system_access_cloud_identifier_provider_ash_->BindReceiver(
-      std::move(receiver));
 }
 
 void CrosapiAsh::BindHidManager(
@@ -198,20 +172,11 @@ void CrosapiAsh::BindLocalPrinter(
   local_printer_ash_->BindReceiver(std::move(receiver));
 }
 
-void CrosapiAsh::BindLogin(
-    mojo::PendingReceiver<crosapi::mojom::Login> receiver) {
-  login_ash_->BindReceiver(std::move(receiver));
-}
-
 void CrosapiAsh::BindMachineLearningService(
     mojo::PendingReceiver<
         chromeos::machine_learning::mojom::MachineLearningService> receiver) {
   chromeos::machine_learning::ServiceConnection::GetInstance()
       ->BindMachineLearningService(std::move(receiver));
-}
-
-void CrosapiAsh::BindMediaUI(mojo::PendingReceiver<mojom::MediaUI> receiver) {
-  media_ui_ash_->BindReceiver(std::move(receiver));
 }
 
 void CrosapiAsh::BindMediaSessionAudioFocus(
@@ -236,11 +201,6 @@ void CrosapiAsh::BindMediaSessionController(
 void CrosapiAsh::BindNetworkChange(
     mojo::PendingReceiver<crosapi::mojom::NetworkChange> receiver) {
   NOTREACHED();
-}
-
-void CrosapiAsh::BindParentAccess(
-    mojo::PendingReceiver<mojom::ParentAccess> receiver) {
-  parent_access_ash_->BindReceiver(std::move(receiver));
 }
 
 void CrosapiAsh::BindReceiver(
@@ -276,11 +236,6 @@ void CrosapiAsh::BindSensorHalClient(
 void CrosapiAsh::BindTelemetryDiagnosticRoutinesService(
     mojo::PendingReceiver<mojom::TelemetryDiagnosticRoutinesService> receiver) {
   telemetry_diagnostic_routine_service_ash_->BindReceiver(std::move(receiver));
-}
-
-void CrosapiAsh::BindTelemetryEventService(
-    mojo::PendingReceiver<mojom::TelemetryEventService> receiver) {
-  telemetry_event_service_ash_->BindReceiver(std::move(receiver));
 }
 
 void CrosapiAsh::BindTelemetryManagementService(

@@ -91,12 +91,6 @@ CanvasRenderingContextHost::CreateTransparentImage() const {
   return UnacceleratedStaticBitmapImage::Create(surface->makeImageSnapshot());
 }
 
-bool CanvasRenderingContextHost::Commit(scoped_refptr<CanvasResource>&&,
-                                        const SkIRect&) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 bool CanvasRenderingContextHost::IsValidImageSize() const {
   const gfx::Size size = Size();
   if (size.IsEmpty()) {
@@ -176,19 +170,7 @@ PlainTextPainter& CanvasRenderingContextHost::GetPlainTextPainter() {
 
 RasterMode CanvasRenderingContextHost::GetRasterModeForCanvas2D() const {
   CHECK(IsRenderingContext2D());
-  if (IsHibernating()) {
-    return RasterMode::kCPU;
-  }
-  CanvasResourceProvider* resource_provider = GetResourceProviderForCanvas2D();
-
-  if (resource_provider) {
-    return resource_provider->IsAccelerated() ? RasterMode::kGPU
-                                              : RasterMode::kCPU;
-  }
-
-  // Whether or not to accelerate is not yet resolved, the canvas cannot be
-  // accelerated if the gpu context is lost.
-  return ShouldTryToUseGpuRaster() ? RasterMode::kGPU : RasterMode::kCPU;
+  return IsAccelerated() ? RasterMode::kGPU : RasterMode::kCPU;
 }
 
 bool CanvasRenderingContextHost::IsOffscreenCanvas() const {
@@ -196,12 +178,12 @@ bool CanvasRenderingContextHost::IsOffscreenCanvas() const {
 }
 
 bool CanvasRenderingContextHost::IsAccelerated() const {
-  if (IsHibernating()) {
-    return false;
-  }
-
   if (RenderingContext()) {
-    return RenderingContext()->IsAccelerated();
+    // This method is supported only on 2D contexts.
+    CHECK(IsRenderingContext2D());
+    return RenderingContext()->IsHibernating()
+               ? false
+               : RenderingContext()->Is2DCanvasAccelerated();
   }
 
   // Whether or not to accelerate is not yet resolved, the canvas cannot be
@@ -264,11 +246,6 @@ bool CanvasRenderingContextHost::ContextHasOpenLayers(
          context->LayerCount() != 0;
 }
 
-bool CanvasRenderingContextHost::IsContextLost() const {
-  CanvasRenderingContext* context = RenderingContext();
-  return !context || context->isContextLost();
-}
-
 void CanvasRenderingContextHost::SetPreferred2DRasterMode(RasterModeHint hint) {
   // TODO(junov): move code that switches between CPU and GPU rasterization
   // to here.
@@ -277,32 +254,6 @@ void CanvasRenderingContextHost::SetPreferred2DRasterMode(RasterModeHint hint) {
 
 bool CanvasRenderingContextHost::ShouldTryToUseGpuRaster() const {
   return preferred_2d_raster_mode_ == RasterModeHint::kPreferGPU && CanUseGPU();
-}
-
-std::unique_ptr<CanvasResourceProvider>
-CanvasRenderingContextHost::ReplaceResourceProviderForCanvas2D(
-    std::unique_ptr<CanvasResourceProvider> new_resource_provider) {
-  CHECK(IsRenderingContext2D());
-  std::unique_ptr<CanvasResourceProvider> old_resource_provider =
-      std::move(resource_provider_for_canvas2d_);
-  resource_provider_for_canvas2d_ = std::move(new_resource_provider);
-  UpdateMemoryUsage();
-  if (old_resource_provider) {
-    old_resource_provider->SetCanvasResourceHost(nullptr);
-  }
-  return old_resource_provider;
-}
-
-void CanvasRenderingContextHost::DiscardResources() {
-  resource_provider_for_canvas2d_ = nullptr;
-  UpdateMemoryUsage();
-}
-
-void CanvasRenderingContextHost::FlushRecordingForCanvas2D(FlushReason reason) {
-  CHECK(IsRenderingContext2D());
-  if (auto* provider = GetResourceProviderForCanvas2D()) {
-    provider->FlushCanvas(reason);
-  }
 }
 
 }  // namespace blink

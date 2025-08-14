@@ -143,8 +143,13 @@ class CORE_EXPORT Event : public ScriptWrappable {
   const AtomicString& type() const { return type_; }
   void SetType(const AtomicString& type) { type_ = type; }
 
-  EventTarget* target() const { return target_.Get(); }
+  // Web exposed target of the event. Can't be a pseudo-element.
+  EventTarget* target() const;
   void SetTarget(EventTarget*);
+
+  // This is the target that the event was dispatched to, without any
+  // retargeting. Can be a pseudo-element. Shouldn't we web exposed.
+  EventTarget* RawTarget() const { return target_.Get(); }
 
   EventTarget* currentTarget() const;
   void SetCurrentTarget(EventTarget* current_target) {
@@ -236,6 +241,8 @@ class CORE_EXPORT Event : public ScriptWrappable {
   virtual bool IsBeforeCreatePolicyEvent() const;
   virtual bool IsBeforeUnloadEvent() const;
   virtual bool IsErrorEvent() const;
+
+  virtual bool IsPatchEvent() const;
 
   bool PropagationStopped() const {
     return propagation_stopped_ || immediate_propagation_stopped_;

@@ -39,7 +39,6 @@
 #import "components/infobars/core/infobar_manager.h"
 #import "components/keyed_service/core/service_access_type.h"
 #import "components/optimization_guide/machine_learning_tflite_buildflags.h"
-#import "components/password_manager/core/browser/features/password_features.h"
 #import "components/password_manager/core/browser/form_parsing/form_data_parser.h"
 #import "components/password_manager/core/browser/password_form.h"
 #import "components/password_manager/core/common/password_manager_pref_names.h"
@@ -78,6 +77,7 @@
 #import "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 
 #if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
+#import "components/autofill/core/browser/ml_model/field_classification_model_handler.h"
 #import "ios/chrome/browser/autofill/model/ios_autofill_field_classification_model_handler_factory.h"
 #import "ios/chrome/browser/passwords/model/ios_password_field_classification_model_handler_factory.h"
 #endif
@@ -166,8 +166,16 @@ FieldClassificationModelHandler*
 ChromeAutofillClientIOS::GetAutofillFieldClassificationModelHandler() {
 #if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
   if (base::FeatureList::IsEnabled(features::kAutofillModelPredictions)) {
-    return IOSAutofillFieldClassificationModelHandlerFactory::GetForProfile(
-        profile_);
+    FieldClassificationModelHandler* handler =
+        IOSAutofillFieldClassificationModelHandlerFactory::GetForProfile(
+            profile_);
+    if (handler && !autofill_model_change_subscription_) {
+      autofill_model_change_subscription_ =
+          handler->RegisterModelChangeCallback(base::BindRepeating(
+              &ChromeAutofillClientIOS::OnFieldClassificationModelChanged,
+              base::Unretained(this)));
+    }
+    return handler;
   }
 #endif
   return nullptr;
@@ -176,13 +184,19 @@ ChromeAutofillClientIOS::GetAutofillFieldClassificationModelHandler() {
 FieldClassificationModelHandler*
 ChromeAutofillClientIOS::GetPasswordManagerFieldClassificationModelHandler() {
 #if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
-  if (base::FeatureList::IsEnabled(
-          password_manager::features::kPasswordFormClientsideClassifier)) {
-    return IOSPasswordFieldClassificationModelHandlerFactory::GetForProfile(
-        profile_);
+  FieldClassificationModelHandler* handler =
+      IOSPasswordFieldClassificationModelHandlerFactory::GetForProfile(
+          profile_);
+  if (handler && !password_manager_model_change_subscription_) {
+    password_manager_model_change_subscription_ =
+        handler->RegisterModelChangeCallback(base::BindRepeating(
+            &ChromeAutofillClientIOS::OnFieldClassificationModelChanged,
+            base::Unretained(this)));
   }
-#endif
+  return handler;
+#else
   return nullptr;
+#endif
 }
 
 SingleFieldFillRouter& ChromeAutofillClientIOS::GetSingleFieldFillRouter() {
@@ -534,6 +548,10 @@ void ChromeAutofillClientIOS::RemoveAutofillSaveCardInfoBar() {
   if (save_card_infobar != infobar_manager_->infobars().cend()) {
     infobar_manager_->RemoveInfoBar(*save_card_infobar);
   }
+}
+
+void ChromeAutofillClientIOS::OnFieldClassificationModelChanged() {
+  GetAutofillDriverFactory().ReparseKnownForms();
 }
 
 }  // namespace autofill

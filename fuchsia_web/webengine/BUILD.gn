@@ -17,6 +17,11 @@ import("//tools/grit/repack.gni")
 # Only allow use by targets in this directory unless explicitly specified.
 visibility = [ ":*" ]
 
+declare_args() {
+  # A temporary gn arg to enable the push messaging apis.
+  enable_push_messaging_api = false
+}
+
 config("web_engine_implementation") {
   defines = [ "WEB_ENGINE_IMPLEMENTATION" ]
 }
@@ -62,7 +67,7 @@ _disallowed_extensions_deps = [
   # //extensions:extensions is addressed below.
   "//extensions:extensions_resources",
   "//extensions/browser/*",
-  "//extensions/common:common",
+  "//extensions/common",
   "//extensions/common:core_api_provider",
   "//extensions/common:export",
   "//extensions/common:mojom",
@@ -89,7 +94,7 @@ _disallowed_pdf_deps = [
 # uses "//printing/common/*".
 # "//printing/mojom/*" is allowed because Blink public APIs use its types.
 _disallowed_printing_deps = [
-  "//printing:printing",
+  "//printing",
   "//printing:printing_base",
   "//printing/backend/*",
 ]
@@ -125,6 +130,7 @@ repack("web_engine_pak") {
     "$root_gen_dir/net/net_resources.pak",
     "$root_gen_dir/third_party/blink/public/resources/blink_resources.pak",
     "$root_gen_dir/third_party/blink/public/resources/blink_scaled_resources_100_percent.pak",
+    "$root_gen_dir/ui/resources/ui_lottie_resources.pak",
     "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
   ]
 
@@ -181,6 +187,7 @@ component("web_engine_core") {
     ":web_engine_export_from_implementation",
     "//base",
     "//base:base_static",
+    "//build:branding_buildflags",
     "//build:chromecast_buildflags",
     "//components/cdm/renderer",
     "//components/client_hints/browser:in_memory",
@@ -190,6 +197,7 @@ component("web_engine_core") {
     "//components/favicon/content",
     "//components/favicon/core",
     "//components/fuchsia_component_support",
+    "//components/gcm_driver",
     "//components/keyed_service/content",
     "//components/media_control/browser",
     "//components/media_control/renderer",
@@ -316,6 +324,8 @@ component("web_engine_core") {
     "browser/navigation_policy_handler.h",
     "browser/navigation_policy_throttle.cc",
     "browser/navigation_policy_throttle.h",
+    "browser/push_messaging_service_impl.cc",
+    "browser/push_messaging_service_impl.h",
     "browser/theme_manager.cc",
     "browser/theme_manager.h",
     "browser/trace_event.h",
@@ -371,6 +381,14 @@ component("web_engine_core") {
       "//components/cast_streaming/renderer",
     ]
   }
+
+  if (enable_push_messaging_api) {
+    defines = [ "WEB_ENGINE_ENABLE_PUSH_MESSAGING_API" ]
+  }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("context_provider") {
@@ -387,7 +405,7 @@ source_set("context_provider") {
     "//base",
     "//components/fuchsia_component_support",
     "//fuchsia_web/common",
-    "//fuchsia_web/webinstance_host:webinstance_host",
+    "//fuchsia_web/webinstance_host",
     "//third_party/fuchsia-sdk/sdk/pkg/inspect_component_cpp",
     "//third_party/fuchsia-sdk/sdk/pkg/sys_cpp",
   ]
@@ -399,7 +417,7 @@ source_set("context_provider") {
 source_set("switches") {
   visibility += [
     "//fuchsia_web/shell:cast_streaming_shell_exe",
-    "//fuchsia_web/webinstance_host:webinstance_host",
+    "//fuchsia_web/webinstance_host",
   ]
   deps = [ "//base" ]
   public_deps = [ "//build:chromecast_buildflags" ]
@@ -586,7 +604,7 @@ test("web_engine_browsertests") {
     ":web_engine_core",
     "//components/fuchsia_component_support:annotations_manager",
     "//components/policy/content:safe_sites_navigation_throttle",
-    "//components/safe_search_api:safe_search_api",
+    "//components/safe_search_api",
     "//components/safe_search_api:test_support",
     "//components/version_info",
     "//content/public/browser",
@@ -629,6 +647,7 @@ test("web_engine_unittests") {
     "browser/navigation_policy_throttle_unittest.cc",
     "browser/url_request_rewrite_type_converters_unittest.cc",
     "browser/web_engine_config_unittest.cc",
+    "browser/web_engine_content_browser_client_unittest.cc",
     "context_provider_impl_unittest.cc",
     "renderer/web_engine_audio_output_device_test.cc",
     "renderer/web_engine_audio_renderer_test.cc",
@@ -718,6 +737,10 @@ test("web_engine_integration_tests") {
     "//third_party/fuchsia-sdk/sdk/pkg/sys/component/realm_builder_absolute.shard.cml",
     "//third_party/fuchsia-sdk/sdk/pkg/vulkan/client.shard.cml",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("cast_streaming_receiver") {

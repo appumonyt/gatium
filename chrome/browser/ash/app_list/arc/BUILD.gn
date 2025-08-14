@@ -69,7 +69,6 @@ static_library("arc") {
     "//chrome/browser/ash/app_list/search/ranking",
     "//chrome/browser/ash/arc:arc_util",
     "//chrome/browser/ash/arc/boot_phase_monitor",
-    "//chrome/browser/image_decoder",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/resources:component_extension_resources",
     "//chrome/common:chrome_features",
@@ -81,6 +80,7 @@ static_library("arc") {
     "//chromeos/ash/experiences/arc/mojom",
     "//chromeos/ash/experiences/arc/session",
     "//chromeos/ash/experiences/arc/session:connection_holder",
+    "//chromeos/components/kiosk",
     "//components/app_restore",
     "//components/application_locale_storage",
     "//components/crx_file",
@@ -144,6 +144,7 @@ source_set("unit_tests") {
     "//chrome/browser/ash/arc",
     "//chrome/browser/ash/arc:arc_util",
     "//chrome/browser/ash/arc/session",
+    "//chrome/browser/ash/browser_delegate:impl",
     "//chrome/browser/extensions",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/sync:factories",
@@ -254,4 +255,8 @@ static_library("test_support") {
     "//chromeos/ash/experiences/arc/session",
     "//testing/gtest",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

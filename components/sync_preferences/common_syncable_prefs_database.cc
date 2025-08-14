@@ -15,7 +15,6 @@
 #include "components/browsing_data/core/pref_names.h"
 #include "components/commerce/core/pref_names.h"
 #include "components/content_settings/core/common/pref_names.h"
-#include "components/dom_distiller/core/pref_names.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/metrics/demographics/user_demographics.h"
 #include "components/metrics/metrics_pref_names.h"
@@ -23,10 +22,10 @@
 #include "components/omnibox/browser/omnibox_prefs.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/payments/core/payment_prefs.h"
-#include "components/plus_addresses/plus_address_prefs.h"
+#include "components/plus_addresses/core/common/plus_address_prefs.h"
+#include "components/privacy_sandbox/tracking_protection_prefs.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/saved_tab_groups/public/pref_names.h"
-#include "components/search_engines/search_engines_pref_names.h"
 #include "components/sharing_message/pref_names.h"
 #include "components/sync/base/data_type.h"
 #include "components/sync/base/features.h"
@@ -75,10 +74,10 @@ enum {
   kLastClearBrowsingDataTime = 25,
   // kPreferencesMigratedToBasic = 26, (deprecated)
   kPriceEmailNotificationsEnabled = 27,
-  kFont = 28,
+  // kFont = 28, (deprecated)
   // kOfferReaderMode = 29, (deprecated)
-  kReaderForAccessibility = 30,
-  kTheme = 31,
+  // kReaderForAccessibility = 30, (deprecated)
+  // kTheme = 31, (deprecated)
   kAcceptLanguages = 32,
   // kApplicationLocale = 33,  (moved to chrome_syncable_prefs_database.cc)
   kSelectedLanguages = 34,
@@ -96,7 +95,7 @@ enum {
   kAccountTailoredSecurityUpdateTimestamp = 46,
   kCookieControlsMode = 47,
   kSafeBrowsingEnabled = 48,
-  kSyncedDefaultSearchProviderGUID = 49,
+  // kSyncedDefaultSearchProviderGUID = 49, (deprecated)
   kPrefForceTriggerTranslateCount = 50,
   // kPrefNeverPromptSitesDeprecated = 51, (deprecated)
   kPrefTranslateAcceptedCount = 52,
@@ -135,6 +134,13 @@ enum {
   kSyncableAlwaysSyncingPriorityPrefForTesting = 85,  // For tests.
   kFacilitatedPaymentsPixAccountLinking = 86,
   kShowSearchTools = 87,
+  kAutofillHomeMetadata = 88,
+  kAutofillWorkMetadata = 89,
+  kFacilitatedPaymentsA2AEnabled = 90,
+  kFacilitatedPaymentsA2ATriggeredOnce = 91,
+  kFingerprintingProtectionEnabled = 92,
+  kAutofillNameAndEmailProfileSignature = 93,
+  kAutofillNameAndEmailProfileNotSelectedCounter = 94,
   // See components/sync_preferences/README.md about adding new entries here.
   // vvvvv IMPORTANT! vvvvv
   // Note to the reviewer: IT IS YOUR RESPONSIBILITY to ensure that new syncable
@@ -160,6 +166,12 @@ constexpr auto kCommonSyncablePrefsAllowlist =
         {autofill::prefs::kAutofillProfileEnabled,
          {syncable_prefs_ids::kAutofillProfileEnabled, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kAutofillNameAndEmailProfileSignature,
+         {syncable_prefs_ids::kAutofillNameAndEmailProfileSignature,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kAutofillNameAndEmailProfileNotSelectedCounter,
+         {syncable_prefs_ids::kAutofillNameAndEmailProfileNotSelectedCounter,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
         {bookmarks::prefs::kShowAppsShortcutInBookmarkBar,
          {syncable_prefs_ids::kShowAppsShortcutInBookmarkBar,
           syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
@@ -178,15 +190,6 @@ constexpr auto kCommonSyncablePrefsAllowlist =
         {commerce::kPriceEmailNotificationsEnabled,
          {syncable_prefs_ids::kPriceEmailNotificationsEnabled,
           syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
-        {dom_distiller::prefs::kFont,
-         {syncable_prefs_ids::kFont, syncer::PREFERENCES,
-          PrefSensitivity::kNone, MergeBehavior::kNone}},
-        {dom_distiller::prefs::kReaderForAccessibility,
-         {syncable_prefs_ids::kReaderForAccessibility, syncer::PREFERENCES,
-          PrefSensitivity::kNone, MergeBehavior::kNone}},
-        {dom_distiller::prefs::kTheme,
-         {syncable_prefs_ids::kTheme, syncer::PREFERENCES,
-          PrefSensitivity::kNone, MergeBehavior::kNone}},
         {language::prefs::kAcceptLanguages,
          {syncable_prefs_ids::kAcceptLanguages, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
@@ -245,13 +248,6 @@ constexpr auto kCommonSyncablePrefsAllowlist =
         {prefs::kSafeBrowsingEnabled,
          {syncable_prefs_ids::kSafeBrowsingEnabled, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
-// TODO(crbug.com/40904479): Maybe move to chrome_syncable_prefs_database.cc,
-// see bug.
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-        {prefs::kSyncedDefaultSearchProviderGUID,
-         {syncable_prefs_ids::kSyncedDefaultSearchProviderGUID,
-          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
         {tab_groups::prefs::kAutoPinNewTabGroups,
          {syncable_prefs_ids::kAutoPinNewTabGroups, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
@@ -341,9 +337,15 @@ constexpr auto kCommonSyncablePrefsAllowlist =
         {autofill::prefs::kFacilitatedPaymentsPixAccountLinking,
          {syncable_prefs_ids::kFacilitatedPaymentsPixAccountLinking,
           syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kFacilitatedPaymentsA2AEnabled,
+         {syncable_prefs_ids::kFacilitatedPaymentsA2AEnabled,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kFacilitatedPaymentsA2ATriggeredOnce,
+         {syncable_prefs_ids::kFacilitatedPaymentsA2ATriggeredOnce,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
 #endif  // BUILDFLAG(IS_ANDROID)
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
         {autofill::prefs::kAutofillBnplEnabled,
          {syncable_prefs_ids::kAutofillBnplEnabled, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
@@ -351,7 +353,7 @@ constexpr auto kCommonSyncablePrefsAllowlist =
          {syncable_prefs_ids::kAutofillHasSeenBnpl, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
-        // BUILDFLAG(IS_CHROMEOS)
+        // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
         {kSyncablePriorityPrefForTesting,
          {syncable_prefs_ids::kSyncablePriorityPrefForTesting,
           syncer::PRIORITY_PREFERENCES, PrefSensitivity::kNone,
@@ -364,6 +366,19 @@ constexpr auto kCommonSyncablePrefsAllowlist =
         {omnibox::kShowSearchTools,
          {syncable_prefs_ids::kShowSearchTools, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kAutofillHomeMetadata,
+         {syncable_prefs_ids::kAutofillHomeMetadata,
+          syncer::PRIORITY_PREFERENCES,
+          PrefSensitivity::kExemptFromUserControlWhileSignedIn,
+          MergeBehavior::kNone}},
+        {autofill::prefs::kAutofillWorkMetadata,
+         {syncable_prefs_ids::kAutofillWorkMetadata,
+          syncer::PRIORITY_PREFERENCES,
+          PrefSensitivity::kExemptFromUserControlWhileSignedIn,
+          MergeBehavior::kNone}},
+        {prefs::kFingerprintingProtectionEnabled,
+         {syncable_prefs_ids::kFingerprintingProtectionEnabled,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
     });
 
 }  // namespace

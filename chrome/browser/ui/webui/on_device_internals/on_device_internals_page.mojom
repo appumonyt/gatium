@@ -48,6 +48,8 @@ struct BaseModelInfo {
   string component_version;
   // The file path to the base model.
   string file_path;
+  // Size of the weights file.
+  uint64 file_size;
   // The name of the base model.
   string name;
   // The version of the base model.
@@ -91,6 +93,12 @@ interface PageHandler {
             pending_receiver<on_device_model.mojom.OnDeviceModel> model) =>
       (on_device_model.mojom.LoadModelResult result,
        on_device_model.mojom.Capabilities capabilities);
+
+  // Binds a new OnDeviceModel interface via the ChromeOS platform service
+  // using model assets loaded from within `model_path`.
+  LoadPlatformModel(mojo_base.mojom.FilePath model_path,
+                    pending_receiver<on_device_model.mojom.OnDeviceModel> model) =>
+      (on_device_model.mojom.LoadModelResult result);
 
   // Returns the performance class based on benchmarks run on the device.
   GetDevicePerformanceInfo() =>

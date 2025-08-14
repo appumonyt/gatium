@@ -22,7 +22,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewStub;
-import android.widget.FrameLayout;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.VisibleForTesting;
@@ -40,6 +39,9 @@ import org.chromium.build.annotations.Initializer;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.browser_controls.BrowserStateBrowserControlsVisibilityDelegate;
+import org.chromium.chrome.browser.browser_controls.TopControlLayer;
+import org.chromium.chrome.browser.browser_controls.TopControlsStacker.TopControlType;
+import org.chromium.chrome.browser.browser_controls.TopControlsStacker.TopControlVisibility;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.fullscreen.FullscreenManager;
 import org.chromium.chrome.browser.layouts.LayoutStateProvider;
@@ -58,7 +60,7 @@ import org.chromium.components.browser_ui.desktop_windowing.AppHeaderState;
 import org.chromium.components.browser_ui.desktop_windowing.DesktopWindowStateManager;
 import org.chromium.components.browser_ui.widget.ClipDrawableProgressBar.DrawingInfo;
 import org.chromium.components.browser_ui.widget.TouchEventObserver;
-import org.chromium.components.browser_ui.widget.ViewResourceFrameLayout;
+import org.chromium.components.browser_ui.widget.ViewResourceCoordinatorLayout;
 import org.chromium.components.browser_ui.widget.gesture.SwipeGestureListener;
 import org.chromium.components.browser_ui.widget.gesture.SwipeGestureListener.SwipeHandler;
 import org.chromium.ui.KeyboardVisibilityDelegate;
@@ -75,14 +77,14 @@ import java.util.function.BooleanSupplier;
 /** Layout for the browser controls (omnibox, menu, tab strip, etc..). */
 @NullMarked
 public class ToolbarControlContainer extends OptimizedFrameLayout
-        implements ControlContainer, DesktopWindowStateManager.AppHeaderObserver {
+        implements ControlContainer, DesktopWindowStateManager.AppHeaderObserver, TopControlLayer {
     private boolean mIncognito;
     private boolean mMidVisibilityToggle;
     private boolean mIsCompositorInitialized;
     private @Nullable AppHeaderState mAppHeaderState;
 
     private Toolbar mToolbar;
-    private ToolbarViewResourceFrameLayout mToolbarContainer;
+    private ToolbarViewResourceCoordinatorLayout mToolbarContainer;
 
     private @Nullable SwipeGestureListener mSwipeGestureListener;
     private @Nullable OnDragListener mToolbarContainerDragListener;
@@ -165,7 +167,8 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
             mToolbarContainer = findViewById(R.id.toolbar_container);
             ViewStub toolbarStub = findViewById(R.id.toolbar_stub);
             toolbarStub.setLayoutResource(toolbarLayoutId);
-            toolbarStub.inflate();
+            View toolbar = toolbarStub.inflate();
+            mutateHairlineLayoutParams().setAnchorId(toolbar.getId());
         }
     }
 
@@ -201,16 +204,17 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
     }
 
     @Override
-    public FrameLayout.LayoutParams mutateHairlineLayoutParams() {
-        FrameLayout.LayoutParams hairlineParams = (LayoutParams) mToolbarHairline.getLayoutParams();
+    public CoordinatorLayout.LayoutParams mutateHairlineLayoutParams() {
+        CoordinatorLayout.LayoutParams hairlineParams =
+                (CoordinatorLayout.LayoutParams) mToolbarHairline.getLayoutParams();
         mToolbarHairline.setLayoutParams(hairlineParams);
         return hairlineParams;
     }
 
     @Override
-    public FrameLayout.LayoutParams mutateToolbarLayoutParams() {
-        FrameLayout.LayoutParams toolbarLayoutParams =
-                (LayoutParams) mToolbarView.getLayoutParams();
+    public CoordinatorLayout.LayoutParams mutateToolbarLayoutParams() {
+        CoordinatorLayout.LayoutParams toolbarLayoutParams =
+                (CoordinatorLayout.LayoutParams) mToolbarView.getLayoutParams();
         mToolbarView.setLayoutParams(toolbarLayoutParams);
         return toolbarLayoutParams;
     }
@@ -433,11 +437,11 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
 
     /** The layout that handles generating the toolbar view resource. */
     // Only publicly visible due to lint warnings.
-    public static class ToolbarViewResourceFrameLayout extends ViewResourceFrameLayout {
+    public static class ToolbarViewResourceCoordinatorLayout extends ViewResourceCoordinatorLayout {
         private BooleanSupplier mIsMidVisibilityToggle;
         private boolean mReadyForBitmapCapture;
 
-        public ToolbarViewResourceFrameLayout(Context context, AttributeSet attrs) {
+        public ToolbarViewResourceCoordinatorLayout(Context context, AttributeSet attrs) {
             super(context, attrs);
         }
 
@@ -858,7 +862,7 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
         mToolbar = testToolbar;
     }
 
-    ToolbarViewResourceFrameLayout getToolbarContainerForTesting() {
+    ToolbarViewResourceCoordinatorLayout getToolbarContainerForTesting() {
         return mToolbarContainer;
     }
 
@@ -872,5 +876,25 @@ public class ToolbarControlContainer extends OptimizedFrameLayout
 
     public void onXrSpaceModeChanged(Boolean fullSpaceMode) {
         setVisibility(Boolean.TRUE.equals(fullSpaceMode) ? View.INVISIBLE : View.VISIBLE);
+    }
+
+    // TopControlLayer implementation:
+
+    @Override
+    public @TopControlType int getTopControlType() {
+        return TopControlType.TOOLBAR;
+    }
+
+    @Override
+    public int getTopControlHeight() {
+        return getToolbarHeight();
+    }
+
+    @Override
+    public int getTopControlVisibility() {
+        // TODO(crbug.com/417238089): Possibly add way to notify stacker of visibility changes.
+        return isToolbarContainerFullyVisible()
+                ? TopControlVisibility.VISIBLE
+                : TopControlVisibility.HIDDEN;
     }
 }

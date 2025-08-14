@@ -17,7 +17,6 @@
 #include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "net/base/completion_once_callback.h"
-#include "net/base/host_mapping_rules.h"
 #include "net/base/proxy_server.h"
 #include "net/base/request_priority.h"
 #include "net/base/test_completion_callback.h"
@@ -48,7 +47,6 @@ class GURL;
 namespace net {
 
 class ClientSocketFactory;
-class HashValue;
 class HostPortPair;
 class HostResolver;
 class QuicContext;
@@ -197,7 +195,6 @@ struct SpdySessionDependencies {
   std::unique_ptr<ReportingService> reporting_service;
   std::unique_ptr<NetworkErrorLoggingService> network_error_logging_service;
 #endif
-  HostMappingRules host_mapping_rules;
   bool enable_ip_pooling = true;
   bool enable_ping = false;
   bool enable_user_alternate_protocol_ports = false;
@@ -495,8 +492,8 @@ class SpdyTestUtil {
 
 namespace test {
 
-// Returns a SHA1 HashValue in which each byte has the value |label|.
-HashValue GetTestHashValue(uint8_t label);
+// Returns a SHA256HashValue in which each byte has the value |label|.
+SHA256HashValue GetTestHashValue(uint8_t label);
 
 }  // namespace test
 }  // namespace net

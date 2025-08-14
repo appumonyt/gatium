@@ -498,8 +498,7 @@ class CacheStorageDispatcherHost::CacheImpl
                 TRACE_ID_GLOBAL(trace_id),
                 TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "status",
                 CacheStorageTracedValue(error));
-            std::move(callback).Run(
-                blink::mojom::CacheKeysResult::NewStatus(error));
+            std::move(callback).Run(base::unexpected(error));
             return;
           }
           std::vector<blink::mojom::FetchAPIRequestPtr> requests_;
@@ -515,8 +514,7 @@ class CacheStorageDispatcherHost::CacheImpl
               TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
               "request_list", CacheStorageTracedValue(requests_));
 
-          std::move(callback).Run(
-              blink::mojom::CacheKeysResult::NewKeys(std::move(requests_)));
+          std::move(callback).Run(base::ok(std::move(requests_)));
         },
         base::TimeTicks::Now(), trace_id, std::move(callback));
 
@@ -615,9 +613,7 @@ class CacheStorageDispatcherHost::CacheImpl
       return;
     }
 
-    auto buf = base::MakeRefCounted<net::IOBufferWithSize>(data.size());
-    if (data.size())
-      UNSAFE_TODO(memcpy(buf->data(), data.data(), data.size()));
+    auto buf = base::MakeRefCounted<net::VectorIOBuffer>(data);
 
     cache->WriteSideData(std::move(callback), url, expected_response_time,
                          trace_id, std::move(buf), data.size());

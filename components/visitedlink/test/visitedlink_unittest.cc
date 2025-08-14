@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include <stddef.h>
 #include <stdint.h>
 
@@ -15,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
@@ -376,11 +372,11 @@ TEST_F(VisitedLinkTest, Delete) {
 
   // Deleting 14 should move the next value up one slot (we do not specify an
   // order).
-  EXPECT_EQ(kFingerprint3, writer_->hash_table_[0]);
+  EXPECT_EQ(kFingerprint3, UNSAFE_TODO(writer_->hash_table_[0]));
   writer_->DeleteFingerprint(kFingerprint3, false);
   const VisitedLinkCommon::Fingerprint kZeroFingerprint = 0;
-  EXPECT_EQ(kZeroFingerprint, writer_->hash_table_[1]);
-  EXPECT_NE(kZeroFingerprint, writer_->hash_table_[0]);
+  EXPECT_EQ(kZeroFingerprint, UNSAFE_TODO(writer_->hash_table_[1]));
+  EXPECT_NE(kZeroFingerprint, UNSAFE_TODO(writer_->hash_table_[0]));
 
   // Deleting the other four should leave the table empty.
   writer_->DeleteFingerprint(kFingerprint0, false);
@@ -390,7 +386,7 @@ TEST_F(VisitedLinkTest, Delete) {
 
   EXPECT_EQ(0, writer_->used_items_);
   for (int i = 0; i < kInitialSize; i++) {
-    EXPECT_EQ(kZeroFingerprint, writer_->hash_table_[i])
+    EXPECT_EQ(kZeroFingerprint, UNSAFE_TODO(writer_->hash_table_[i]))
         << "Hash table has values in it.";
   }
 }
@@ -499,7 +495,7 @@ TEST_F(VisitedLinkTest, Resizing) {
   reader.GetUsageStatistics(&child_table_size, &child_table);
   ASSERT_EQ(table_size, child_table_size);
   for (int32_t i = 0; i < table_size; i++) {
-    ASSERT_EQ(table[i], child_table[i]);
+    UNSAFE_TODO(ASSERT_EQ(table[i], child_table[i]));
   }
 
   writer_->DebugValidate();
@@ -1009,10 +1005,10 @@ TEST_F(PartitionedVisitedLinkTest, DeleteWithCollisions) {
   // Deleting 14 should move the next value up one slot (we do not specify an
   // order).
   const VisitedLinkCommon::Fingerprint kZeroFingerprint = 0;
-  EXPECT_EQ(kFingerprint3, partitioned_writer_->hash_table_[0]);
+  EXPECT_EQ(kFingerprint3, UNSAFE_TODO(partitioned_writer_->hash_table_[0]));
   partitioned_writer_->DeleteFingerprint(kFingerprint3);
-  EXPECT_EQ(kZeroFingerprint, partitioned_writer_->hash_table_[1]);
-  EXPECT_NE(kZeroFingerprint, partitioned_writer_->hash_table_[0]);
+  EXPECT_EQ(kZeroFingerprint, UNSAFE_TODO(partitioned_writer_->hash_table_[1]));
+  EXPECT_NE(kZeroFingerprint, UNSAFE_TODO(partitioned_writer_->hash_table_[0]));
 
   // Deleting the other four should leave the table empty.
   partitioned_writer_->DeleteFingerprint(kFingerprint0);
@@ -1022,7 +1018,8 @@ TEST_F(PartitionedVisitedLinkTest, DeleteWithCollisions) {
 
   EXPECT_EQ(0, partitioned_writer_->used_items_);
   for (int i = 0; i < kInitialSize; i++) {
-    EXPECT_EQ(kZeroFingerprint, partitioned_writer_->hash_table_[i])
+    EXPECT_EQ(kZeroFingerprint,
+              UNSAFE_TODO(partitioned_writer_->hash_table_[i]))
         << "Hash table has values in it.";
   }
 }
@@ -1111,7 +1108,7 @@ TEST_F(PartitionedVisitedLinkTest, Resizing) {
   reader.GetUsageStatistics(&reader_table_size, &reader_table);
   ASSERT_EQ(table_size, reader_table_size);
   for (int32_t i = 0; i < table_size; i++) {
-    ASSERT_EQ(table[i], reader_table[i]);
+    UNSAFE_TODO(ASSERT_EQ(table[i], reader_table[i]));
   }
 }
 
@@ -1322,12 +1319,14 @@ class VisitedLinkRenderProcessHostFactory
     listener_ = listener;
   }
 
+  void ClearVisitedLinkEventListener() { listener_ = nullptr; }
+
   VisitCountingContext* context() { return context_.get(); }
 
   void DeleteRenderProcessHosts() { processes_.clear(); }
 
  private:
-  raw_ptr<VisitedLinkEventListener, DanglingUntriaged> listener_ = nullptr;
+  raw_ptr<VisitedLinkEventListener> listener_ = nullptr;
 
   std::list<std::unique_ptr<VisitRelayingRenderProcessHost>> processes_;
   std::unique_ptr<VisitCountingContext> context_;
@@ -1342,6 +1341,10 @@ class VisitedLinkEventsTest : public content::RenderViewHostTestHarness {
   }
 
   void TearDown() override {
+    // Clear the listener reference before destroying the writer to avoid
+    // dangling pointer issues.
+    vc_rph_factory_.ClearVisitedLinkEventListener();
+
     // Explicitly destroy the writer before proceeding with the rest
     // of teardown because it posts a task to close a file handle, and
     // we need to make sure we've finished all file related work
@@ -1562,6 +1565,10 @@ class PartitionedVisitedLinkEventsTest
   }
 
   void TearDown() override {
+    // Clear the listener reference before destroying the writer to avoid
+    // dangling pointer issues.
+    vc_rph_factory_.ClearVisitedLinkEventListener();
+
     partitioned_writer_.reset();
     DeleteContents();
     vc_rph_factory_.DeleteRenderProcessHosts();

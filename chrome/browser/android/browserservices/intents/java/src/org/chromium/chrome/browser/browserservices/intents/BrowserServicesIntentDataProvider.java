@@ -19,9 +19,11 @@ import android.widget.RemoteViews;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.Px;
+import androidx.browser.customtabs.CustomContentAction;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.browser.customtabs.CustomTabsIntent.CloseButtonPosition;
 import androidx.browser.customtabs.CustomTabsIntent.OpenInBrowserState;
+import androidx.browser.customtabs.ExperimentalCustomContentAction;
 import androidx.browser.customtabs.ExperimentalOpenInBrowser;
 import androidx.browser.trusted.FileHandlingData;
 import androidx.browser.trusted.LaunchHandlerClientMode;
@@ -33,6 +35,7 @@ import org.chromium.blink.mojom.DisplayMode;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.flags.ActivityType;
+import org.chromium.chrome.browser.util.WindowFeatures;
 import org.chromium.components.embedder_support.util.Origin;
 import org.chromium.device.mojom.ScreenOrientationLockType;
 import org.chromium.net.NetId;
@@ -683,9 +686,7 @@ public abstract class BrowserServicesIntentDataProvider {
         return ACTIVITY_SIDE_SHEET_POSITION_END;
     }
 
-    // TODO(crbug.com/422968546): Update java doc once the flag is removed from the method
-    // implementation.
-    /** Return whether calling package should be allowed to present an interactive Omnibox. */
+    /** Return whether omnibox is allowed to be displayed in the CCT. */
     public boolean isInteractiveOmniboxAllowed() {
         return false;
     }
@@ -784,6 +785,14 @@ public abstract class BrowserServicesIntentDataProvider {
     }
 
     /**
+     * @return {@link List<CustomContentAction>} the developer defined contextual menu items.
+     */
+    @ExperimentalCustomContentAction
+    public List<CustomContentAction> getCustomContentActions() {
+        return List.of();
+    }
+
+    /**
      * @return if optional button on the toolbar can be shown.
      */
     public boolean isOptionalButtonSupported() {
@@ -803,5 +812,12 @@ public abstract class BrowserServicesIntentDataProvider {
      */
     public int getAndroidBrowserHelperVersion() {
         return 0;
+    }
+
+    /**
+     * @return properties of window bounds requested by the opener if this CCT is a popup.
+     */
+    public @Nullable WindowFeatures getRequestedWindowFeatures() {
+        return null;
     }
 }

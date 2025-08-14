@@ -7,6 +7,8 @@
 #import "base/metrics/histogram_functions.h"
 #import "base/metrics/user_metrics.h"
 #import "base/metrics/user_metrics_action.h"
+#import "components/feature_engagement/public/feature_constants.h"
+#import "components/feature_engagement/public/tracker.h"
 #import "components/prefs/pref_service.h"
 #import "components/regional_capabilities/regional_capabilities_service.h"
 #import "ios/chrome/browser/browser_view/model/browser_view_visibility_notifier_browser_agent.h"
@@ -15,7 +17,9 @@
 #import "ios/chrome/browser/discover_feed/model/discover_feed_service.h"
 #import "ios/chrome/browser/discover_feed/model/discover_feed_service_factory.h"
 #import "ios/chrome/browser/discover_feed/model/discover_feed_visibility_browser_agent.h"
+#import "ios/chrome/browser/feature_engagement/model/tracker_factory.h"
 #import "ios/chrome/browser/home_customization/model/home_background_customization_service_factory.h"
+#import "ios/chrome/browser/home_customization/model/user_uploaded_image_manager_factory.h"
 #import "ios/chrome/browser/image_fetcher/model/image_fetcher_service_factory.h"
 #import "ios/chrome/browser/ntp/shared/metrics/feed_metrics_recorder.h"
 #import "ios/chrome/browser/ntp/shared/metrics/new_tab_page_metrics_constants.h"
@@ -37,23 +41,6 @@
 #import "ios/chrome/browser/signin/model/identity_manager_factory.h"
 #import "ios/chrome/browser/sync/model/sync_service_factory.h"
 #import "ios/chrome/browser/url_loading/model/url_loading_browser_agent.h"
-#import "ios/public/provider/chrome/browser/ui_utils/ui_utils_api.h"
-
-namespace {
-
-// The histogram name for the Lens button new badge status.
-const char kNTPLensButtonNewBadgeShownHistogram[] =
-    "IOS.NTP.LensButtonNewBadgeShown";
-
-// The maximum number of times to show the new badge on the Lens entrypoint.
-const NSInteger kMaxShowCountNTPLensButtonNewBadge = 3;
-
-// Logs the Lens button new badge shown histogram.
-void LogLensButtonNewBadgeShownHistogram(IOSNTPNewBadgeShownResult result) {
-  base::UmaHistogramEnumeration(kNTPLensButtonNewBadgeShownHistogram, result);
-}
-
-}  // namespace
 
 @implementation NewTabPageComponentFactory
 
@@ -72,41 +59,26 @@ void LogLensButtonNewBadgeShownHistogram(IOSNTPNewBadgeShownResult result) {
   return discoverFeedService->GetFeedMetricsRecorder();
 }
 
-- (NewTabPageHeaderViewController*)headerViewController {
-  PrefService* localState = GetApplicationContext()->GetLocalState();
-  NSInteger lensNewBadgeShowCount =
-      localState->GetInteger(prefs::kNTPLensEntryPointNewBadgeShownCount);
+- (NewTabPageHeaderViewController*)headerViewControllerForProfile:
+    (ProfileIOS*)profile {
+  feature_engagement::Tracker* tracker =
+      feature_engagement::TrackerFactory::GetForProfile(profile);
+  CHECK(tracker);
 
-  BOOL useNewBadgeForCustomizationMenu = NO;
-  NSInteger customizationNewBadgeImpressionCount = localState->GetInteger(
-      prefs::kNTPHomeCustomizationNewBadgeImpressionCount);
+  BOOL showLensBadge = tracker->ShouldTriggerHelpUI(
+      feature_engagement::kIPHiOSHomepageLensNewBadge);
 
-  if (customizationNewBadgeImpressionCount <
-      kCustomizationNewBadgeMaxImpressionCount) {
-    useNewBadgeForCustomizationMenu = YES;
-    base::RecordAction(
-        base::UserMetricsAction(kNTPCustomizationNewBadgeShownAction));
-    localState->SetInteger(prefs::kNTPHomeCustomizationNewBadgeImpressionCount,
-                           customizationNewBadgeImpressionCount + 1);
+  BOOL showCustomizationBadge = NO;
+  if (!showLensBadge) {
+    showCustomizationBadge = tracker->ShouldTriggerHelpUI(
+        feature_engagement::kIPHiOSHomepageCustomizationNewBadge);
   }
 
-  if (lensNewBadgeShowCount < kMaxShowCountNTPLensButtonNewBadge) {
-    // Show the "New" badge and colored symbol.
-    LogLensButtonNewBadgeShownHistogram(IOSNTPNewBadgeShownResult::kShown);
-    localState->SetInteger(prefs::kNTPLensEntryPointNewBadgeShownCount,
-                           lensNewBadgeShowCount + 1);
-    return [[NewTabPageHeaderViewController alloc]
-        initWithUseNewBadgeForLensButton:YES
-         useNewBadgeForCustomizationMenu:useNewBadgeForCustomizationMenu];
-  } else {
-    BOOL button_pressed = lensNewBadgeShowCount == INT_MAX;
-    LogLensButtonNewBadgeShownHistogram(
-        button_pressed ? IOSNTPNewBadgeShownResult::kNotShownButtonPressed
-                       : IOSNTPNewBadgeShownResult::kNotShownLimitReached);
-    return [[NewTabPageHeaderViewController alloc]
-        initWithUseNewBadgeForLensButton:NO
-         useNewBadgeForCustomizationMenu:useNewBadgeForCustomizationMenu];
-  }
+  // The actual notification of dismissal (tracker->Dismissed(...)) *must*
+  // happen after the badge is displayed, from within the UI layer.
+  return [[NewTabPageHeaderViewController alloc]
+      initWithUseNewBadgeForLensButton:showLensBadge
+       useNewBadgeForCustomizationMenu:showCustomizationBadge];
 }
 
 - (NewTabPageMediator*)NTPMediatorForBrowser:(Browser*)browser
@@ -134,11 +106,15 @@ void LogLensButtonNewBadgeShownHistogram(IOSNTPNewBadgeShownResult result) {
       HomeBackgroundCustomizationServiceFactory::GetForProfile(profile);
   image_fetcher::ImageFetcherService* imageFetcherService =
       ImageFetcherServiceFactory::GetForProfile(profile);
+  UserUploadedImageManager* userUploadedImageManager =
+      UserUploadedImageManagerFactory::GetForProfile(profile);
   BrowserViewVisibilityNotifierBrowserAgent*
       browserViewVisibilityNotifierBrowserAgent =
           BrowserViewVisibilityNotifierBrowserAgent::FromBrowser(browser);
   DiscoverFeedVisibilityBrowserAgent* discoverFeedVisibilityBrowserAgent =
       DiscoverFeedVisibilityBrowserAgent::FromBrowser(browser);
+  feature_engagement::Tracker* tracker =
+      feature_engagement::TrackerFactory::GetForProfile(profile);
   return [[NewTabPageMediator alloc]
               initWithTemplateURLService:templateURLService
                                URLLoader:URLLoadingBrowserAgent
@@ -152,9 +128,11 @@ void LogLensButtonNewBadgeShownHistogram(IOSNTPNewBadgeShownResult result) {
              regionalCapabilitiesService:regionalCapabilitiesService
           backgroundCustomizationService:backgroundCustomizationService
                      imageFetcherService:imageFetcherService
+                userUploadedImageManager:userUploadedImageManager
            browserViewVisibilityNotifier:
                browserViewVisibilityNotifierBrowserAgent
-      discoverFeedVisibilityBrowserAgent:discoverFeedVisibilityBrowserAgent];
+      discoverFeedVisibilityBrowserAgent:discoverFeedVisibilityBrowserAgent
+                featureEngagementTracker:tracker];
 }
 
 - (NewTabPageViewController*)NTPViewController {

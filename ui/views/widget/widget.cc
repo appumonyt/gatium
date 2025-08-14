@@ -50,7 +50,7 @@
 #include "ui/views/event_monitor.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/focus/focus_manager_factory.h"
-#include "ui/views/focus/widget_focus_manager.h"
+#include "ui/views/focus/native_view_focus_manager.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/any_widget_observer_singleton.h"
 #include "ui/views/widget/native_widget_private.h"
@@ -59,6 +59,7 @@
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_deletion_observer.h"
+#include "ui/views/widget/widget_enumerator.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/widget/widget_removals_observer.h"
 #include "ui/views/window/dialog_delegate.h"
@@ -253,6 +254,7 @@ Widget::Widget(InitParams params) {
 Widget::~Widget() {
   // DestroyRootView() will cause InvalidateLayout() to ScheduleLayout() which
   // is unnecessary.
+  is_destroying_ = true;
   widget_closed_ = true;
   autosize_task_factory_.InvalidateWeakPtrs();
 
@@ -285,10 +287,10 @@ Widget::~Widget() {
       native_widget_->ClientDestroyedWidget();
     }
 
+    HandleWidgetDestroying();
     if (native_widget_) {
       native_widget_->Close();
     }
-    HandleWidgetDestroying();
 
     HandleWidgetDestroyed();
     if (widget_delegate_) {
@@ -389,6 +391,15 @@ Widget::Widgets Widget::GetAllOwnedWidgets(gfx::NativeView native_view) {
   return native_view
              ? internal::NativeWidgetPrivate::GetAllOwnedWidgets(native_view)
              : Widget::Widgets();
+}
+
+// static
+void Widget::ForEachOwnedWidget(gfx::NativeView native_view,
+                                base::FunctionRef<void(Widget*)> on_widget) {
+  WidgetEnumerator widget_iterator(GetAllOwnedWidgets(native_view));
+  while (!widget_iterator.IsEmpty()) {
+    on_widget(widget_iterator.Next());
+  }
 }
 
 // static
@@ -790,13 +801,15 @@ void Widget::SetContentsView(View* view) {
   root_view_->LayoutImmediately();
 }
 
-View* Widget::GetContentsView() {
+View* Widget::GetContentsView() const {
   return root_view_->GetContentsView();
 }
 
-View* Widget::GetClientContentsView() {
+View* Widget::GetClientContentsView() const {
   if (non_client_view_) {
-    return non_client_view_->client_view()->children().front();
+    auto* client_view = non_client_view_->client_view();
+    return (!client_view->children().empty()) ? client_view->children().front()
+                                              : nullptr;
   }
   return GetContentsView();
 }
@@ -927,8 +940,6 @@ void Widget::CloseWithReason(ClosedReason closed_reason) {
   if (override_close_) {
     base::WeakPtr<Widget> weak_this = weak_ptr_factory_.GetWeakPtr();
     std::move(override_close_).Run(closed_reason);
-    // Ensure that `this` was destroyed.
-    CHECK(!weak_this);
     return;
   }
 
@@ -1836,6 +1847,9 @@ bool Widget::OnNativeWidgetActivationChanged(bool active) {
   observers_.Notify(&WidgetObserver::OnWidgetActivationChanged, this, active);
 
   if (active) {
+    internal::AnyWidgetObserverSingleton::GetInstance()->OnAnyWidgetActivated(
+        this);
+
     base::AutoReset<bool> is_traversing_widget_tree(&is_traversing_widget_tree_,
                                                     true);
     Widget* root = nullptr;
@@ -1895,11 +1909,11 @@ bool Widget::ShouldHandleNativeWidgetActivationChanged(bool active) {
 }
 
 void Widget::OnNativeFocus() {
-  WidgetFocusManager::GetInstance()->OnNativeFocusChanged(GetNativeView());
+  NativeViewFocusManager::GetInstance()->OnNativeFocusChanged(GetNativeView());
 }
 
 void Widget::OnNativeBlur() {
-  WidgetFocusManager::GetInstance()->OnNativeFocusChanged(gfx::NativeView());
+  NativeViewFocusManager::GetInstance()->OnNativeFocusChanged(gfx::NativeView());
 }
 
 void Widget::OnNativeWidgetVisibilityChanged(bool visible) {
@@ -2503,6 +2517,12 @@ const ui::NativeTheme* Widget::GetNativeTheme() const {
   return ui::NativeTheme::GetInstanceForNativeUi();
 }
 
+void Widget::SaveWindowPlacementIfNeeded() {
+  if (native_widget_initialized_ && save_window_placement_allowed_) {
+    SaveWindowPlacement();
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, private:
 
@@ -2511,20 +2531,14 @@ void Widget::SaveWindowPlacement() {
   // by go/crash) that in some circumstances we can end up here after
   // WM_DESTROY, at which point the window delegate is likely gone. So just
   // bail.
-  if (!widget_delegate_ || !widget_delegate_->ShouldSaveWindowPlacement() ||
-      !native_widget_) {
+  if (is_destroying_ || !widget_delegate_ ||
+      !widget_delegate_->ShouldSaveWindowPlacement() || !native_widget_) {
     return;
   }
   ui::mojom::WindowShowState show_state = ui::mojom::WindowShowState::kNormal;
   gfx::Rect bounds;
   native_widget_->GetWindowPlacement(&bounds, &show_state);
   widget_delegate_->SaveWindowPlacement(bounds, show_state);
-}
-
-void Widget::SaveWindowPlacementIfNeeded() {
-  if (native_widget_initialized_ && save_window_placement_allowed_) {
-    SaveWindowPlacement();
-  }
 }
 
 void Widget::SetInitialBounds(const gfx::Rect& bounds) {
@@ -2775,6 +2789,21 @@ void Widget::ResizeToDelegateDesiredBounds() {
 
   // Size to contents view.
   SetBounds(desired_bounds);
+}
+
+void Widget::SetClientContentsViewInternal(std::unique_ptr<View> view) {
+  if (non_client_view_) {
+    auto* client_view = non_client_view_->client_view();
+    // Remove/destroy the existing client contents view(s), if present.
+    if (!client_view->children().empty()) {
+      client_view->RemoveAllChildViews();
+    }
+    client_view->set_contents_view(view.get());
+    client_view->AddChildView(std::move(view));
+  } else {
+    SetContentsView(view.release());
+  }
+  root_view_->LayoutImmediately();
 }
 
 BEGIN_METADATA_BASE(Widget)

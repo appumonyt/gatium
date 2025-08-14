@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "chromeos/ash/components/dbus/shill/shill_client_unittest_base.h"
 
 #include <stddef.h>
@@ -16,10 +11,13 @@
 #include <optional>
 #include <utility>
 
+#include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_view_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/values.h"
 #include "dbus/message.h"
@@ -114,9 +112,6 @@ void ShillClientUnittestBase::SetUp() {
   EXPECT_CALL(*mock_proxy_.get(), DoCallMethodWithErrorResponse(_, _, _))
       .WillRepeatedly(Invoke(
           this, &ShillClientUnittestBase::OnCallMethodWithErrorResponse));
-  EXPECT_CALL(*mock_proxy_.get(), DoCallMethodWithErrorCallback(_, _, _, _))
-      .WillRepeatedly(Invoke(
-          this, &ShillClientUnittestBase::OnCallMethodWithErrorCallback));
 
   // Set an expectation so mock_proxy's ConnectToSignal() will use
   // OnConnectToPropertyChanged() to run the callback.
@@ -219,13 +214,9 @@ void ShillClientUnittestBase::ExpectIntArgument(
 void ShillClientUnittestBase::ExpectArrayOfBytesArgument(
     const std::string& expected_bytes,
     dbus::MessageReader* reader) {
-  const uint8_t* bytes = nullptr;
-  size_t size = 0;
-  ASSERT_TRUE(reader->PopArrayOfBytes(&bytes, &size));
-  EXPECT_EQ(expected_bytes.size(), size);
-  for (size_t i = 0; i < size; ++i) {
-    EXPECT_EQ(expected_bytes[i], bytes[i]);
-  }
+  base::span<const uint8_t> bytes;
+  ASSERT_TRUE(reader->PopArrayOfBytes(&bytes));
+  EXPECT_EQ(base::as_string_view(bytes), expected_bytes);
   EXPECT_FALSE(reader->HasMoreData());
 }
 
@@ -391,14 +382,6 @@ void ShillClientUnittestBase::OnCallMethodWithErrorResponse(
   task_environment_.GetMainThreadTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(*response_callback), response_, nullptr));
-}
-
-void ShillClientUnittestBase::OnCallMethodWithErrorCallback(
-    dbus::MethodCall* method_call,
-    int timeout_ms,
-    dbus::ObjectProxy::ResponseCallback* response_callback,
-    dbus::ObjectProxy::ErrorCallback* error_callback) {
-  OnCallMethod(method_call, timeout_ms, response_callback);
 }
 
 }  // namespace ash

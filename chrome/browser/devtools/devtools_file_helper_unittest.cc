@@ -14,8 +14,10 @@
 #include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
 #include "base/task/current_thread.h"
+#include "base/test/android/content_uri_test_utils.h"
 #include "base/test/bind.h"
 #include "base/test/mock_callback.h"
+#include "base/test/test_future.h"
 #include "base/uuid.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_core_service.h"
@@ -101,11 +103,12 @@ class DevToolsFileHelperTest : public Test {
   StrictMock<MockStorage>& storage() const { return *storage_; }
 
   DevToolsFileHelper::SelectFileCallback FakeSelectFileCallback(
-      base::FilePath path) {
+      ui::SelectedFileInfo file_info) {
     return base::BindLambdaForTesting(
-        [path](DevToolsFileHelper::SelectedCallback selected_callback,
-               DevToolsFileHelper::CanceledCallback, const base::FilePath&) {
-          std::move(selected_callback).Run(path);
+        [file_info](DevToolsFileHelper::SelectedCallback selected_callback,
+                    DevToolsFileHelper::CanceledCallback,
+                    const base::FilePath&) {
+          std::move(selected_callback).Run(file_info);
         });
   }
 
@@ -150,7 +153,8 @@ TEST_F(DevToolsFileHelperTest, SaveToFileBase64) {
   base::RunLoop run_loop;
   file_helper()->Save(
       "https://example.com/test.wasm", "AGFzbQEAAAA=", /* save_as */ true,
-      /* is_base64 */ true, FakeSelectFileCallback(tf.path()),
+      /* is_base64 */ true,
+      FakeSelectFileCallback(ui::SelectedFileInfo(tf.path())),
       base::BindLambdaForTesting([&](const std::string&) { run_loop.Quit(); }),
       base::DoNothing());
   run_loop.Run();
@@ -166,7 +170,8 @@ TEST_F(DevToolsFileHelperTest, SaveToFileInvalidBase64) {
   file_helper()->Save(
       "https://example.com/test.wasm", "~~~~",
       /* save_as */ true,
-      /* is_base64 */ true, FakeSelectFileCallback(tf.path()),
+      /* is_base64 */ true,
+      FakeSelectFileCallback(ui::SelectedFileInfo(tf.path())),
       base::BindLambdaForTesting([&](const std::string&) { run_loop.Quit(); }),
       base::DoNothing());
   run_loop.Run();
@@ -183,13 +188,86 @@ TEST_F(DevToolsFileHelperTest, SaveToFileText) {
   file_helper()->Save(
       "https://example.com/test.txt", "some text",
       /* save_as */ true,
-      /* is_base64 */ false, FakeSelectFileCallback(tf.path()),
+      /* is_base64 */ false,
+      FakeSelectFileCallback(ui::SelectedFileInfo(tf.path())),
       base::BindLambdaForTesting([&](const std::string&) { run_loop.Quit(); }),
       base::DoNothing());
   run_loop.Run();
 
   EXPECT_EQ(base::ReadFileToBytes(tf.path()), data);
 }
+
+TEST_F(DevToolsFileHelperTest, Append) {
+  base::ScopedTempFile tf;
+  ASSERT_TRUE(tf.Create());
+  const std::vector<uint8_t> data{'s', 'o', 'm', 'e', ' ', 't', 'e', 'x', 't'};
+
+  base::test::TestFuture<const std::string&> future1;
+  file_helper()->Save("https://example.com/test.txt", "some",
+                      /* save_as */ true,
+                      /* is_base64 */ false,
+                      FakeSelectFileCallback(ui::SelectedFileInfo(tf.path())),
+                      future1.GetCallback(), base::DoNothing());
+  EXPECT_TRUE(future1.Wait());
+
+  base::test::TestFuture<void> future2;
+  file_helper()->Append("https://example.com/test.txt", " text",
+                        future2.GetCallback());
+  EXPECT_TRUE(future2.Wait());
+
+  EXPECT_EQ(base::ReadFileToBytes(tf.path()), data);
+}
+
+#if BUILDFLAG(IS_ANDROID)
+TEST_F(DevToolsFileHelperTest, SaveToFileContentUri) {
+  base::ScopedTempFile tf;
+  ASSERT_TRUE(tf.Create());
+  const std::vector<uint8_t> data{'s', 'o', 'm', 'e', ' ', 't', 'e', 'x', 't'};
+
+  base::FilePath content_uri =
+      *base::test::android::GetContentUriFromCacheDirFilePath(tf.path());
+
+  ui::SelectedFileInfo file_info(content_uri);
+  file_info.display_name = "test.txt";
+
+  base::RunLoop run_loop;
+  file_helper()->Save(
+      "https://example.com/test.txt", "some text",
+      /* save_as */ true,
+      /* is_base64 */ false, FakeSelectFileCallback(file_info),
+      base::BindLambdaForTesting([&](const std::string&) { run_loop.Quit(); }),
+      base::DoNothing());
+  run_loop.Run();
+
+  EXPECT_EQ(base::ReadFileToBytes(tf.path()), data);
+}
+
+TEST_F(DevToolsFileHelperTest, AppendContentUri) {
+  base::ScopedTempFile tf;
+  ASSERT_TRUE(tf.Create());
+  const std::vector<uint8_t> data{'s', 'o', 'm', 'e', ' ', 't', 'e', 'x', 't'};
+
+  base::FilePath content_uri =
+      *base::test::android::GetContentUriFromCacheDirFilePath(tf.path());
+
+  ui::SelectedFileInfo file_info(content_uri);
+  file_info.display_name = "test.txt";
+
+  base::test::TestFuture<const std::string&> future1;
+  file_helper()->Save("https://example.com/test.txt", "some",
+                      /* save_as */ true,
+                      /* is_base64 */ false, FakeSelectFileCallback(file_info),
+                      future1.GetCallback(), base::DoNothing());
+  EXPECT_TRUE(future1.Wait());
+
+  base::test::TestFuture<void> future2;
+  file_helper()->Append("https://example.com/test.txt", " text",
+                        future2.GetCallback());
+  EXPECT_TRUE(future2.Wait());
+
+  EXPECT_EQ(base::ReadFileToBytes(tf.path()), data);
+}
+#endif  // BUILDFLAG(IS_ANDROID)
 
 TEST_F(DevToolsFileHelperTest, AddFileSystemWithIllegalTypeAutomatic) {
   EXPECT_CALL(delegate(), FileSystemAdded("<illegal type>", IsNull())).Times(1);

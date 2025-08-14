@@ -8,8 +8,9 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.transit.ViewElement;
-import org.chromium.chrome.test.transit.page.PageStation;
+import org.chromium.chrome.test.transit.page.CtaPageStation;
 
 /** Represents a non-grouped tab card in the Tab Switcher. */
 public class TabSwitcherTabCardFacility extends TabSwitcherCardFacility {
@@ -28,9 +29,11 @@ public class TabSwitcherTabCardFacility extends TabSwitcherCardFacility {
     }
 
     /** Clicks the tab card to show the page. */
-    public <PageStationT extends PageStation> PageStationT clickCard(
-            PageStation.Builder<PageStationT> destinationBuilder) {
-        boolean isSelecting = mHostStation.getActivity().getActivityTab().getId() == mTabId;
+    public <PageStationT extends CtaPageStation> PageStationT clickCard(
+            CtaPageStation.Builder<PageStationT> destinationBuilder) {
+        boolean isSelecting =
+                ThreadUtils.runOnUiThreadBlocking(
+                        () -> mHostStation.getActivity().getActivityTab().getId() == mTabId);
         PageStationT destination =
                 destinationBuilder
                         .withIncognito(mHostStation.isIncognito())

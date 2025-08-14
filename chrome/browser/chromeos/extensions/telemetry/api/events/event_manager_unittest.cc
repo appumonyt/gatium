@@ -106,7 +106,6 @@ class TelemetryExtensionEventManagerTest : public BrowserWithTestWindowTest {
     }
     auto extension =
         extensions::ExtensionBuilder("Test ChromeOS System Extension")
-            .SetManifestVersion(3)
             .SetManifestKey("chromeos_system_extension", base::Value::Dict())
             .SetManifestKey(
                 "externally_connectable",
@@ -208,9 +207,8 @@ TEST_F(TelemetryExtensionEventManagerTest,
 
   OpenAppUiUrlAndSetCertificateWithStatus(GURL(kPwaUrl1),
                                           /*cert_status=*/net::OK);
-  auto new_window = CreateBrowserWindow();
-  auto new_browser = CreateBrowser(GetProfile(), Browser::Type::TYPE_NORMAL,
-                                   false, new_window.get());
+  auto new_browser =
+      CreateBrowser(GetProfile(), Browser::Type::TYPE_NORMAL, false);
   BrowserList::SetLastActive(new_browser.get());
 
   EXPECT_EQ(
@@ -229,7 +227,6 @@ TEST_F(TelemetryExtensionEventManagerTest,
   EXPECT_FALSE(event_router().IsExtensionObserving(kExtensionId1));
 
   new_browser.reset();
-  new_window.reset();
 }
 
 TEST_F(TelemetryExtensionEventManagerTest,
@@ -259,9 +256,8 @@ TEST_F(TelemetryExtensionEventManagerTest,
 
   OpenAppUiUrlAndSetCertificateWithStatus(GURL(kPwaUrl1),
                                           /*cert_status=*/net::OK);
-  auto new_window = CreateBrowserWindow();
-  auto new_browser = CreateBrowser(GetProfile(), Browser::Type::TYPE_NORMAL,
-                                   false, new_window.get());
+  auto new_browser =
+      CreateBrowser(GetProfile(), Browser::Type::TYPE_NORMAL, false);
   BrowserList::SetLastActive(new_browser.get());
 
   EXPECT_EQ(EventManager::kAppUiNotFocused,
@@ -278,7 +274,6 @@ TEST_F(TelemetryExtensionEventManagerTest,
   EXPECT_FALSE(event_router().IsExtensionObserving(kExtensionId1));
 
   new_browser.reset();
-  new_window.reset();
 }
 
 TEST_F(TelemetryExtensionEventManagerTest,

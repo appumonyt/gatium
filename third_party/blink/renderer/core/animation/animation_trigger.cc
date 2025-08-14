@@ -119,9 +119,6 @@ AnimationTrigger::AnimationTrigger(AnimationTimeline* timeline,
       range_end_(range_end),
       exit_range_start_(exit_range_start),
       exit_range_end_(exit_range_end) {
-  if (timeline_) {
-    timeline_->AddAnimationTrigger(this);
-  }
   // A default trigger will need to trip immediately.
   Update();
 }
@@ -449,6 +446,10 @@ void AnimationTrigger::addAnimation(Animation* animation,
     return;
   }
 
+  if (timeline_ && animations_.empty()) {
+    timeline_->AddAnimationTrigger(this);
+  }
+
   if (state_ == State::kIdle) {
     animation->SetPausedForTrigger(true);
   } else {
@@ -465,6 +466,18 @@ void AnimationTrigger::addAnimation(Animation* animation,
 void AnimationTrigger::removeAnimation(Animation* animation) {
   animations_.erase(animation);
   animation->RemoveTrigger(this);
+
+  if (timeline_ && animations_.empty()) {
+    timeline_->RemoveAnimationTrigger(this);
+  }
+}
+
+void AnimationTrigger::RemoveAnimations() {
+  HeapHashSet<WeakMember<Animation>> animations;
+  animations_.swap(animations);
+  for (Animation* animation : animations) {
+    removeAnimation(animation);
+  }
 }
 
 void AnimationTrigger::UpdateAnimations(
@@ -477,6 +490,11 @@ void AnimationTrigger::UpdateAnimations(
     }
     UpdateAnimation(animation, update_type);
   }
+}
+
+bool AnimationTrigger::CanTrigger() {
+  return timeline_ && timeline_->IsActive() &&
+         (state_ == State::kIdle || behavior_ != Behavior::Enum::kOnce);
 }
 
 }  // namespace blink

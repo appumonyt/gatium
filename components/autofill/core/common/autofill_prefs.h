@@ -32,13 +32,13 @@ inline constexpr std::string_view kAutofillAblationSeedPref =
 inline constexpr char kAutofillAiOptInStatus[] =
     "autofill.autofill_ai.opt_in_status";
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 // Boolean that is true if BNPL on Autofill is enabled.
 inline constexpr char kAutofillBnplEnabled[] = "autofill.bnpl_enabled";
 // Boolean that is true if the user has ever seen a BNPL suggestion.
 inline constexpr char kAutofillHasSeenBnpl[] = "autofill.has_seen_bnpl";
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
-        // BUILDFLAG(IS_CHROMEOS)
+        // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 // Boolean that is true if Autofill is enabled and allowed to save credit card
 // data.
 inline constexpr char kAutofillCreditCardEnabled[] =
@@ -106,6 +106,14 @@ inline constexpr char kAutofillMetadataUploadEvents[] =
 // prefs was last reset.
 inline constexpr char kAutofillUploadEventsLastResetTimestamp[] =
     "autofill.upload_events_last_reset_timestamp";
+// A string that stores hash of concatenated NAME_FULL and EMAIL_ADDRESS info
+// coming from the Account Name Email profile.
+inline constexpr char kAutofillNameAndEmailProfileSignature[] =
+    "autofill.name_and_email_profile_signature";
+// A counter responsible for keeping track of number of times the user did not
+// accept `kAccountNameEmail` profile suggestion.
+inline constexpr char kAutofillNameAndEmailProfileNotSelectedCounter[] =
+    "autofill.name_and_email_profile_not_selected_counter";
 // Integer that is set to the last major version where the Autocomplete
 // retention policy was run.
 inline constexpr char kAutocompleteLastVersionRetentionPolicy[] =
@@ -145,8 +153,25 @@ inline constexpr char kFacilitatedPaymentsEwallet[] =
     "facilitated_payments.ewallet";
 inline constexpr char kFacilitatedPaymentsPix[] = "facilitated_payments.pix";
 inline constexpr char kFacilitatedPaymentsPixAccountLinking[] =
+    "facilitated_payments.pix_account_linking_enabled";
+inline constexpr char kFacilitatedPaymentsPixAccountLinkingDeprecated[] =
     "facilitated_payments.pix_account_linking";
+inline constexpr char kFacilitatedPaymentsA2AEnabled[] =
+    "facilitated_payments.a2a_enabled";
+// Whether the user has seen the A2A flow at least once.
+inline constexpr char kFacilitatedPaymentsA2ATriggeredOnce[] =
+    "facilitated_payments.a2a_triggered_once";
 #endif  // BUILDFLAG(IS_ANDROID)
+// Dictionaries containing metadata for Home and Work addresses. See
+// HomeAndWorkMetadataStore.
+inline constexpr char kAutofillHomeMetadata[] = "autofill.home_metadata";
+inline constexpr char kAutofillWorkMetadata[] = "autofill.work_metadata";
+// The total number of silent updates for Home and Work performed since the last
+// signed in. Not synced, as silent updates for Home and Work are not synced.
+inline constexpr char kAutofillSilentUpdatesToHomeAddress[] =
+    "autofill.silent_updates.home";
+inline constexpr char kAutofillSilentUpdatesToWorkAddress[] =
+    "autofill.silent_updates.work";
 
 // The maximum value for the
 // `kAutofillPaymentMethodsMandatoryReauthPromoShownCounter` pref. If this
@@ -225,21 +250,25 @@ void SetFacilitatedPaymentsPixAccountLinking(PrefService* prefs, bool value);
 
 bool IsFacilitatedPaymentsPixAccountLinkingEnabled(const PrefService* prefs);
 
+bool IsFacilitatedPaymentsA2AEnabled(const PrefService* prefs);
+
+void SetFacilitatedPaymentsA2ATriggeredOnce(PrefService* prefs, bool value);
+
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 void SetAutofillBnplEnabled(PrefService* prefs, bool value);
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
-        // BUILDFLAG(IS_CHROMEOS)
+        // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 
 bool IsAutofillBnplEnabled(const PrefService* prefs);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 void SetAutofillHasSeenBnpl(PrefService* prefs);
 
 bool HasSeenBnpl(const PrefService* prefs);
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
-        // BUILDFLAG(IS_CHROMEOS)
+        // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 }  // namespace autofill::prefs
 
 #endif  // COMPONENTS_AUTOFILL_CORE_COMMON_AUTOFILL_PREFS_H_

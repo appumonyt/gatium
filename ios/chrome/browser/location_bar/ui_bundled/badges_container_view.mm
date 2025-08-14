@@ -9,6 +9,20 @@
 #import "ios/chrome/browser/shared/public/features/features.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
 
+namespace {
+
+// Sets `view.hidden` to `hidden` if necessary. This helper is useful to address
+// a bug where the number of times `.hidden` is set in a view accumulates if it
+// is presented inside of a stack view. As a result, setting `.hidden = YES`
+// twice does not have the same effect as only settings it once.
+void SetViewHiddenIfNecessary(UIView* view, BOOL hidden) {
+  if (view.hidden != hidden) {
+    view.hidden = hidden;
+  }
+}
+
+}  // namespace
+
 @implementation LocationBarBadgesContainerView {
   UIStackView* _containerStackView;
 
@@ -16,6 +30,8 @@
   /// view trumps the entrypoint when kLensOverlayPriceInsightsCounterfactual is
   /// enabled.
   BOOL _contextualPanelEntrypointShouldBeVisible;
+  /// Whether the incognito badge view should be visible.
+  BOOL _incognitoBadgeViewShouldBeVisible;
   /// Whether the badge view should be visible.
   BOOL _badgeViewShouldBeVisible;
   /// Whether the reader mode chip should be visible.
@@ -43,16 +59,19 @@
 - (NSArray*)accessibilityElements {
   NSMutableArray* accessibleElements = [[NSMutableArray alloc] init];
 
-  if (IsContextualPanelEnabled() && self.contextualPanelEntrypointView &&
-      !self.contextualPanelEntrypointView.hidden) {
+  if (IsContextualPanelEnabled() && self.contextualPanelEntrypointView) {
     [accessibleElements addObject:self.contextualPanelEntrypointView];
+  }
+
+  if (self.incognitoBadgeView && !self.incognitoBadgeView.hidden) {
+    [accessibleElements addObject:self.incognitoBadgeView];
   }
 
   if (self.badgeView && !self.badgeView.hidden) {
     [accessibleElements addObject:self.badgeView];
   }
 
-  if (self.readerModeChipView && !self.readerModeChipView.hidden) {
+  if (self.readerModeChipView) {
     [accessibleElements addObject:self.readerModeChipView];
   }
 
@@ -61,6 +80,13 @@
   }
 
   return accessibleElements;
+}
+
+#pragma mark - IncognitoBadgeViewVisibilityDelegate
+
+- (void)setIncognitoBadgeViewHidden:(BOOL)hidden {
+  _incognitoBadgeViewShouldBeVisible = !hidden;
+  [self updateViewsVisibility];
 }
 
 #pragma mark - BadgeViewVisibilityDelegate
@@ -87,6 +113,22 @@
 
 #pragma mark - Setters
 
+- (void)setIncognitoBadgeView:(UIView*)incognitoBadgeView {
+  if (_incognitoBadgeView) {
+    return;
+  }
+  _incognitoBadgeView = incognitoBadgeView;
+  _incognitoBadgeView.translatesAutoresizingMaskIntoConstraints = NO;
+  _incognitoBadgeView.isAccessibilityElement = NO;
+  [_containerStackView insertArrangedSubview:_incognitoBadgeView atIndex:0];
+  SetViewHiddenIfNecessary(_incognitoBadgeView, YES);
+
+  [NSLayoutConstraint activateConstraints:@[
+    [_incognitoBadgeView.heightAnchor
+        constraintEqualToAnchor:_containerStackView.heightAnchor],
+  ]];
+}
+
 - (void)setBadgeView:(UIView*)badgeView {
   if (_badgeView) {
     return;
@@ -95,7 +137,7 @@
   _badgeView.translatesAutoresizingMaskIntoConstraints = NO;
   _badgeView.isAccessibilityElement = NO;
   [_containerStackView addArrangedSubview:_badgeView];
-  _badgeView.hidden = YES;
+  SetViewHiddenIfNecessary(_badgeView, YES);
 
   [NSLayoutConstraint activateConstraints:@[
     [_badgeView.heightAnchor
@@ -105,13 +147,16 @@
 
 - (void)setContextualPanelEntrypointView:
     (UIView*)contextualPanelEntrypointView {
+  if (IsDiamondPrototypeEnabled()) {
+    return;
+  }
   if (_contextualPanelEntrypointView) {
     return;
   }
   _contextualPanelEntrypointView = contextualPanelEntrypointView;
   _contextualPanelEntrypointView.translatesAutoresizingMaskIntoConstraints = NO;
   _contextualPanelEntrypointView.isAccessibilityElement = NO;
-  _contextualPanelEntrypointView.hidden = YES;
+  SetViewHiddenIfNecessary(_contextualPanelEntrypointView, YES);
   // The Contextual Panel entrypoint view should be first in its containing
   // stackview, regardless of when it was added.
   [_containerStackView insertArrangedSubview:_contextualPanelEntrypointView
@@ -124,14 +169,20 @@
 }
 
 - (void)setReaderModeChipView:(UIView*)readerModeChipView {
+  if (IsDiamondPrototypeEnabled()) {
+    return;
+  }
   if (_readerModeChipView) {
     return;
   }
   _readerModeChipView = readerModeChipView;
   _readerModeChipView.translatesAutoresizingMaskIntoConstraints = NO;
   _readerModeChipView.isAccessibilityElement = NO;
-  _readerModeChipView.hidden = YES;
-  [_containerStackView insertArrangedSubview:_readerModeChipView atIndex:0];
+  SetViewHiddenIfNecessary(_readerModeChipView, YES);
+  // Reading Mode chip should be shown to the right of the incognito badge
+  // view.
+  int index = _incognitoBadgeView ? 1 : 0;
+  [_containerStackView insertArrangedSubview:_readerModeChipView atIndex:index];
 
   [NSLayoutConstraint activateConstraints:@[
     [_readerModeChipView.heightAnchor
@@ -140,6 +191,9 @@
 }
 
 - (void)setPlaceholderView:(UIView*)placeholderView {
+  if (IsDiamondPrototypeEnabled()) {
+    return;
+  }
   if (_placeholderView == placeholderView) {
     return;
   }
@@ -151,7 +205,7 @@
   _placeholderView = placeholderView;
   if (_placeholderView) {
     _placeholderView.translatesAutoresizingMaskIntoConstraints = NO;
-    _placeholderView.hidden = YES;
+    SetViewHiddenIfNecessary(_placeholderView, YES);
     [_containerStackView addArrangedSubview:_placeholderView];
     [NSLayoutConstraint activateConstraints:@[
       [_placeholderView.heightAnchor
@@ -165,12 +219,18 @@
 
 // Updates the hidden state of the views.
 - (void)updateViewsVisibility {
-  self.readerModeChipView.hidden = !_readerModeChipShouldBeVisible;
-  self.badgeView.hidden =
-      !_badgeViewShouldBeVisible || _readerModeChipShouldBeVisible;
-  self.contextualPanelEntrypointView.hidden =
-      !_contextualPanelEntrypointShouldBeVisible ||
-      _readerModeChipShouldBeVisible;
+  SetViewHiddenIfNecessary(self.readerModeChipView,
+                           !_readerModeChipShouldBeVisible);
+  SetViewHiddenIfNecessary(self.incognitoBadgeView,
+                           !_incognitoBadgeViewShouldBeVisible);
+  SetViewHiddenIfNecessary(self.badgeView, !_badgeViewShouldBeVisible ||
+                                               _readerModeChipShouldBeVisible);
+  if (IsDiamondPrototypeEnabled()) {
+    SetViewHiddenIfNecessary(self.badgeView, YES);
+  }
+  SetViewHiddenIfNecessary(self.contextualPanelEntrypointView,
+                           !_contextualPanelEntrypointShouldBeVisible ||
+                               _readerModeChipShouldBeVisible);
 
   BOOL placeholderHidden =
       (self.contextualPanelEntrypointView &&
@@ -185,7 +245,7 @@
                               (self.badgeView && self.badgeView.hidden);
     placeholderHidden = !placeholderVisible;
     if (placeholderVisible) {
-      self.contextualPanelEntrypointView.hidden = YES;
+      SetViewHiddenIfNecessary(self.contextualPanelEntrypointView, YES);
     }
   }
 
@@ -193,7 +253,7 @@
     return;
   }
 
-  _placeholderView.hidden = placeholderHidden;
+  SetViewHiddenIfNecessary(_placeholderView, placeholderHidden);
 
   // Records why the placeholder view is hidden. These are not mutually
   // exclusive, price tracking will take precedence over messages.

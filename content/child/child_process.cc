@@ -22,7 +22,7 @@
 #include "mojo/public/cpp/bindings/interface_endpoint_client.h"
 #include "sandbox/policy/sandbox_type.h"
 #include "services/network/public/cpp/features.h"
-#include "services/network/scheduler/network_service_task_scheduler.h"
+#include "services/network/public/cpp/sequence_manager_configurator.h"
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "third_party/blink/public/common/features.h"
 
@@ -107,8 +107,6 @@ ChildProcess::ChildProcess(base::ThreadType io_thread_type,
     initialized_thread_pool_ = true;
   }
 
-  tracing::InitTracingPostFeatureList(/*enable_consumer=*/false);
-
   // Ensure the visibility tracker is created on the main thread.
   ProcessVisibilityTracker::GetInstance();
 
@@ -136,8 +134,7 @@ ChildProcess::ChildProcess(base::ThreadType io_thread_type,
       base::ThreadIdNameManager::GetInstance()->GetName(
           base::PlatformThread::CurrentId()) ==
           std::string_view("network.CrUtilityMain")) {
-    network::NetworkServiceTaskScheduler::ConfigureSequenceManager(
-        thread_options);
+    network::ConfigureSequenceManager(thread_options);
   }
 
   CHECK(io_thread_->StartWithOptions(std::move(thread_options)));

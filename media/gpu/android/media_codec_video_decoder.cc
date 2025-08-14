@@ -7,7 +7,7 @@
 #include <memory>
 #include <variant>
 
-#include "base/android/build_info.h"
+#include "base/android/android_info.h"
 #include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -259,7 +259,7 @@ MediaCodecVideoDecoder::MediaCodecVideoDecoder(
       allow_nonsecure_overlays_(
           base::FeatureList::IsEnabled(media::kAllowNonSecureOverlays)),
       use_block_model_(device_info_->SdkVersion() >=
-                           base::android::SDK_VERSION_V &&
+                           base::android::android_info::SDK_VERSION_V &&
                        base::FeatureList::IsEnabled(kMediaCodecBlockModel)) {
   DVLOG(2) << __func__;
   surface_chooser_helper_.chooser()->SetClientCallbacks(
@@ -467,16 +467,15 @@ void MediaCodecVideoDecoder::SetCdm(CdmContext* cdm_context, InitCB init_cb) {
 
 void MediaCodecVideoDecoder::OnMediaCryptoReady(
     InitCB init_cb,
-    JavaObjectPtr media_crypto,
+    base::android::ScopedJavaGlobalRef<jobject> media_crypto,
     bool requires_secure_video_codec) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DVLOG(1) << __func__
            << ": requires_secure_video_codec = " << requires_secure_video_codec;
 
   DCHECK(state_ == State::kInitializing);
-  DCHECK(media_crypto);
 
-  if (media_crypto->is_null()) {
+  if (!media_crypto) {
     media_crypto_context_->SetMediaCryptoReadyCB(base::NullCallback());
     media_crypto_context_ = nullptr;
 
@@ -495,7 +494,7 @@ void MediaCodecVideoDecoder::OnMediaCryptoReady(
     return;
   }
 
-  media_crypto_ = *media_crypto;
+  media_crypto_ = std::move(media_crypto);
   requires_secure_codec_ = requires_secure_video_codec;
 
   // Request a secure surface in all cases.  For L3, it's okay if we fall back
@@ -770,7 +769,8 @@ void MediaCodecVideoDecoder::OnCodecConfigured(
   // surface.  If we're in one of those cases, then retry codec allocation.
   // This only happens on R and S, so skip it otherwise.
   if (!codec && should_retry_codec_allocation &&
-      device_info_->SdkVersion() >= base::android::SDK_VERSION_R &&
+      device_info_->SdkVersion() >=
+          base::android::android_info::SDK_VERSION_R &&
       device_info_->SdkVersion() <= 32 /* SDK_VERSION_S_V2 */
   ) {
     // We might want to post this with a short delay, but there is already quite
@@ -1399,7 +1399,8 @@ bool MediaCodecVideoDecoder::CodecNeedsReallocation(int new_width) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return !use_block_model_ && new_width > last_width_ * kReallocateThreshold &&
          device_info_ &&
-         device_info_->SdkVersion() > base::android::SDK_VERSION_P;
+         device_info_->SdkVersion() >
+             base::android::android_info::SDK_VERSION_P;
 }
 
 std::vector<SupportedVideoDecoderConfig>

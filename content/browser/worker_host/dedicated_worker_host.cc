@@ -28,6 +28,7 @@
 #include "content/browser/renderer_host/private_network_access_util.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/service_worker/service_worker_client.h"
+#include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_main_resource_handle.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/url_loader_factory_params_helper.h"
@@ -355,8 +356,8 @@ void DedicatedWorkerHost::StartScriptLoad(
       nearest_ancestor_render_frame_host->GetSiteInstance()->GetPartitionDomain(
           storage_partition_impl);
 
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
-      "loading", "WorkerScriptFetcher CreateAndStart", TRACE_ID_LOCAL(this));
+  TRACE_EVENT_BEGIN("loading", "WorkerScriptFetcher CreateAndStart",
+                    perfetto::Track::FromPointer(this));
   WorkerScriptFetcher::CreateAndStart(
       worker_process_host_->GetDeprecatedID(), token_, script_url,
       *nearest_ancestor_render_frame_host, creator_render_frame_host,
@@ -383,8 +384,8 @@ void DedicatedWorkerHost::ReportNoBinderForInterface(const std::string& error) {
 void DedicatedWorkerHost::DidStartScriptLoad(
     std::optional<WorkerScriptFetcherResult> result) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  TRACE_EVENT_NESTABLE_ASYNC_END0(
-      "loading", "WorkerScriptFetcher CreateAndStart", TRACE_ID_LOCAL(this));
+  // WorkerScriptFetcher CreateAndStart
+  TRACE_EVENT_END("loading", perfetto::Track::FromPointer(this));
   TRACE_EVENT("loading", "DedicatedWorkerHost::DidStartScriptLoad",
               "final_response_url", script_request_url_);
 
@@ -445,10 +446,18 @@ void DedicatedWorkerHost::DidStartScriptLoad(
       worker_client_security_state_->is_web_secure_context =
           network::IsUrlPotentiallyTrustworthy(result->final_response_url) &&
           creator_client_security_state_->is_web_secure_context;
+      // Deprecation trial status allowing LNA requests on non-http
+      bool allow_non_secure_local_network_access =
+          ancestor_render_frame_host->policy_container_host() &&
+          ancestor_render_frame_host->policy_container_host()
+              ->policies()
+              .allow_non_secure_local_network_access;
+
       worker_client_security_state_->private_network_request_policy =
           DerivePrivateNetworkRequestPolicy(
               worker_client_security_state_->ip_address_space,
               worker_client_security_state_->is_web_secure_context,
+              allow_non_secure_local_network_access,
               PrivateNetworkRequestContext::kWorker);
     } else {
       // Preserve incorrect functionality if PNA is not enabled.
@@ -840,6 +849,15 @@ void DedicatedWorkerHost::CreateBlobUrlStoreProvider(
   storage_partition_impl->GetBlobUrlRegistry()->AddReceiver(
       GetStorageKey(), renderer_origin_, GetProcessHost()->GetDeprecatedID(),
       std::move(receiver),
+      /*context_type_for_debugging=*/"Dedicated Worker",
+      base::BindRepeating(
+          [](base::WeakPtr<DedicatedWorkerHost> host) -> std::string {
+            if (!host) {
+              return "destroyed DedicatedWorkerHost";
+            }
+            return host->GetStorageKey().GetDebugString();
+          },
+          weak_factory_.GetWeakPtr()),
       base::BindRepeating(
           [](base::WeakPtr<DedicatedWorkerHost> host) -> bool {
             if (!host) {

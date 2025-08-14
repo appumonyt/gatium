@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "content/public/browser/service_process_host.h"
 
 #include <string.h>
 
 #include <array>
 
+#include "base/compiler_specific.h"
 #include "base/memory/shared_memory_mapping.h"
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/process/process.h"
@@ -20,6 +16,7 @@
 #include "base/test/bind.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/content_browser_test.h"
 #include "services/test/echo/public/mojom/echo.mojom.h"
@@ -69,7 +66,12 @@ class EchoServiceProcessObserver : public ServiceProcessHost::Observer {
 
   void WaitForLaunch() { launch_loop_.Run(); }
   void WaitForDeath() { death_loop_.Run(); }
-  void WaitForCrash() { crash_loop_.Run(); }
+  // Returns true if the crash was a 'startup crash'.
+  bool WaitForCrash() {
+    crash_loop_.Run();
+    EXPECT_TRUE(crashed_pre_ipc_.has_value());
+    return *crashed_pre_ipc_;
+  }
 
   // Valid after WaitForLaunch.
   base::ProcessId pid() const { return process_.Pid(); }
@@ -91,6 +93,9 @@ class EchoServiceProcessObserver : public ServiceProcessHost::Observer {
   }
 
   void OnServiceProcessCrashed(const ServiceProcessInfo& info) override {
+    CHECK(info.crashed_pre_ipc().has_value());
+    crashed_pre_ipc_ = info.crashed_pre_ipc().value();
+
     if (info.IsService<echo::mojom::EchoService>()) {
       ASSERT_EQ(info.site(), GURL(kTestUrl));
       crash_loop_.Quit();
@@ -101,6 +106,7 @@ class EchoServiceProcessObserver : public ServiceProcessHost::Observer {
   base::RunLoop death_loop_;
   base::RunLoop crash_loop_;
   base::Process process_;
+  std::optional<bool> crashed_pre_ipc_;
 };
 
 IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, Launch) {
@@ -164,7 +170,7 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, AllMessagesReceived) {
   });
   auto region = base::UnsafeSharedMemoryRegion::Create(kBufferSize);
   base::WritableSharedMemoryMapping mapping = region.Map();
-  memset(mapping.memory(), 0, kBufferSize);
+  UNSAFE_TODO(memset(mapping.memory(), 0, kBufferSize));
 
   // Send several messages, since it helps to verify a lack of raciness between
   // service-side message dispatch and service termination.
@@ -176,8 +182,8 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, AllMessagesReceived) {
   observer.WaitForDeath();
 
   const std::string& kLastMessage = kMessages[std::size(kMessages) - 1];
-  EXPECT_EQ(0,
-            memcmp(mapping.memory(), kLastMessage.data(), kLastMessage.size()));
+  UNSAFE_TODO(EXPECT_EQ(
+      0, memcmp(mapping.memory(), kLastMessage.data(), kLastMessage.size())));
 }
 
 IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, ObserveCrash) {
@@ -186,8 +192,25 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, ObserveCrash) {
       ServiceProcessHost::Options().WithSite(GURL(kTestUrl)).Pass());
   observer.WaitForLaunch();
   echo_service->Crash();
-  observer.WaitForCrash();
+  bool crashed_pre_ipc = observer.WaitForCrash();
+  EXPECT_FALSE(crashed_pre_ipc);
 }
+
+// Pre-IPC crash detection is only available on Windows.
+#if BUILDFLAG(IS_WIN)
+IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, ObservePreIpcCrash) {
+  EchoServiceProcessObserver observer;
+  auto echo_service = ServiceProcessHost::Launch<echo::mojom::EchoService>(
+      ServiceProcessHost::Options()
+          .WithSite(GURL(kTestUrl))
+          .WithExtraCommandLineSwitches(
+              {switches::kUtilityImmediateCrashForTesting})
+          .Pass());
+  observer.WaitForLaunch();
+  bool crashed_pre_ipc = observer.WaitForCrash();
+  EXPECT_TRUE(crashed_pre_ipc);
+}
+#endif  // #if BUILDFLAG(IS_WIN)
 
 IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, IdleTimeout) {
   EchoServiceProcessObserver observer;

@@ -8,7 +8,9 @@
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/path_service.h"
+#include "base/strings/string_util.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -29,7 +31,9 @@
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
+#include "chrome/browser/web_applications/web_install_service_impl.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/permissions/permission_request_manager.h"
@@ -46,15 +50,19 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features_generated.h"
+#include "third_party/blink/public/mojom/use_counter/metrics/webdx_feature.mojom.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/image_model.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_unittest_util.h"
+#include "ui/views/bubble/bubble_dialog_delegate_view.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/interaction/element_tracker_views.h"
 #include "ui/views/test/dialog_test.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/any_widget_observer.h"
+
 namespace {
 constexpr webapps::WebappInstallSource kInstallSource =
     webapps::WebappInstallSource::WEB_INSTALL;
@@ -62,6 +70,8 @@ constexpr apps::LaunchSource kLaunchSource =
     apps::LaunchSource::kFromWebInstallApi;
 constexpr char kAbortError[] = "AbortError";
 constexpr char kDataError[] = "DataError";
+constexpr char kInstallResultUma[] = "WebApp.WebInstallApi.Result";
+constexpr char kInstallTypeUma[] = "WebApp.WebInstallApi.InstallType";
 }  // namespace
 
 namespace web_app {
@@ -201,6 +211,14 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   histograms.ExpectUniqueSample("WebApp.LaunchSource", kLaunchSource, 1);
   histograms.ExpectUniqueSample("WebApp.NewCraftedAppInstalled.ByUser",
                                 /*sample=*/true, 1);
+  histograms.ExpectBucketCount("Blink.UseCounter.WebDXFeatures",
+                               blink::mojom::WebDXFeature::kDRAFT_WebInstallAPI,
+                               1);
+
+  histograms.ExpectBucketCount(kInstallResultUma,
+                               web_app::WebInstallApiResult::kSuccess, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 
   EXPECT_THAT(histograms,
               test::ForAllGetAllSamples(
@@ -237,6 +255,14 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   histograms.ExpectUniqueSample("WebApp.LaunchSource", kLaunchSource, 1);
   histograms.ExpectUniqueSample("WebApp.NewCraftedAppInstalled.ByUser",
                                 /*sample=*/true, 1);
+  histograms.ExpectBucketCount("Blink.UseCounter.WebDXFeatures",
+                               blink::mojom::WebDXFeature::kDRAFT_WebInstallAPI,
+                               1);
+
+  histograms.ExpectBucketCount(kInstallResultUma,
+                               web_app::WebInstallApiResult::kSuccess, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 
   EXPECT_THAT(histograms,
               test::ForAllGetAllSamples(
@@ -293,6 +319,10 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   // Another app should've launched.
   histograms.ExpectBucketCount("WebApp.LaunchSource",
                                apps::LaunchSource::kFromReparenting, 1);
+  histograms.ExpectBucketCount(kInstallResultUma,
+                               web_app::WebInstallApiResult::kSuccess, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -321,6 +351,11 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   histograms.ExpectUniqueSample("WebApp.NewCraftedAppInstalled.ByUser",
                                 /*sample=*/true, 1);
 
+  histograms.ExpectBucketCount(kInstallResultUma,
+                               web_app::WebInstallApiResult::kSuccess, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
+
   EXPECT_THAT(histograms,
               test::ForAllGetAllSamples(
                   test::GetInstallCommandResultHistogramNames(
@@ -341,12 +376,19 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
 
   std::string install_url = GetInstallableAppURL().spec();
   std::string manifest_id = install_url;
+  base::HistogramTester histograms;
+
   SetPermissionResponse(/*permission_granted=*/false);
   ASSERT_TRUE(TryInstallApp(install_url, manifest_id));
 
   EXPECT_FALSE(ResultExists());
   EXPECT_TRUE(ErrorExists());
   EXPECT_EQ(GetErrorName(), kAbortError);
+
+  histograms.ExpectBucketCount(kInstallResultUma,
+                               WebInstallApiResult::kPermissionDenied, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
@@ -378,6 +420,11 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   histograms.ExpectUniqueSample("WebApp.NewCraftedAppInstalled.ByUser",
                                 /*sample=*/true, 1);
 
+  histograms.ExpectBucketCount(kInstallResultUma,
+                               web_app::WebInstallApiResult::kSuccess, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
+
   EXPECT_THAT(histograms,
               test::ForAllGetAllSamples(
                   test::GetInstallCommandResultHistogramNames(
@@ -397,6 +444,7 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   // Navigate to a valid URL on the primary server.
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), https_server()->GetURL("/simple.html")));
+  base::HistogramTester histograms;
 
   std::string install_url =
       secondary_server_
@@ -410,11 +458,57 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   EXPECT_FALSE(ResultExists());
   EXPECT_TRUE(ErrorExists());
   EXPECT_EQ(GetErrorName(), kAbortError);
+
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kPermissionDenied, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 }
 
+IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
+                       InstallApp_CurrentDocument_SkipsPermissionCheck) {
+  GURL current_doc_url =
+      https_server()->GetURL("/banners/manifest_with_id_test_page.html");
+  const std::string manifest_id =
+      GenerateManifestId("some_id", current_doc_url).spec();
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), current_doc_url));
+
+  base::HistogramTester histograms;
+  auto auto_accept_pwa_install_confirmation =
+      SetAutoAcceptPWAInstallConfirmationForTesting();
+  // No permission should be required.
+  SetPermissionResponse(/*permission_granted=*/false);
+
+  ASSERT_TRUE(TryInstallApp(current_doc_url.spec(), manifest_id));
+
+  EXPECT_TRUE(ResultExists());
+  EXPECT_FALSE(ErrorExists());
+
+  histograms.ExpectUniqueSample("WebApp.Install.Source.Success", kInstallSource,
+                                1);
+  histograms.ExpectUniqueSample("WebApp.LaunchSource", kLaunchSource, 1);
+  histograms.ExpectUniqueSample("WebApp.NewCraftedAppInstalled.ByUser",
+                                /*sample=*/true, 1);
+
+  EXPECT_THAT(histograms,
+              test::ForAllGetAllSamples(
+                  test::GetInstallCommandResultHistogramNames(
+                      ".WebInstallFromUrl", ".Crafted"),
+                  base::BucketsAre(base::Bucket(
+                      webapps::InstallResultCode::kSuccessNewInstall, 1))));
+  EXPECT_THAT(histograms,
+              test::ForAllGetAllSamples(
+                  test::GetInstallCommandSourceHistogramNames(
+                      ".WebInstallFromUrl", ".Crafted"),
+                  base::BucketsAre(base::Bucket(
+                      webapps::WebappInstallSource::WEB_INSTALL, 1))));
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Collection of tests for calling `navigator.install(already_installed_url)`.
 // In these cases we show the `WebAppLaunchDialog` to allow the user to launch
 // or not.
+///////////////////////////////////////////////////////////////////////////////
 using WebInstallBackgroundAppAlreadyInstalledBrowserTest =
     WebInstallFromUrlCommandBrowserTest;
 
@@ -447,6 +541,11 @@ IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
   EXPECT_EQ(GetManifestIdResult(), manifest_id);
   histograms.ExpectBucketCount("WebApp.LaunchSource",
                                apps::LaunchSource::kFromWebInstallApi, 1);
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kSuccessAlreadyInstalled,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
@@ -478,6 +577,12 @@ IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
   EXPECT_EQ(GetManifestIdResult(), manifest_id);
   histograms.ExpectBucketCount("WebApp.LaunchSource",
                                apps::LaunchSource::kFromWebInstallApi, 1);
+
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kSuccessAlreadyInstalled,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
@@ -528,6 +633,13 @@ IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
   EXPECT_TRUE(ErrorExists());
   histograms.ExpectBucketCount("WebApp.LaunchSource",
                                apps::LaunchSource::kFromWebInstallApi, 0);
+
+  // Our internal metrics can know the app was already installed.
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kSuccessAlreadyInstalled,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
@@ -581,6 +693,11 @@ IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
 
   histograms.ExpectBucketCount("WebApp.LaunchSource",
                                apps::LaunchSource::kFromWebInstallApi, 0);
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kSuccessAlreadyInstalled,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
@@ -622,6 +739,12 @@ IN_PROC_BROWSER_TEST_F(WebInstallBackgroundAppAlreadyInstalledBrowserTest,
   EXPECT_EQ(GetManifestIdResult(app_web_contents), manifest_id);
   histograms.ExpectBucketCount("WebApp.LaunchSource",
                                apps::LaunchSource::kFromWebInstallApi, 1);
+
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kSuccessAlreadyInstalled,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 }
 
 // Parameterized test for calling `navigator.install()` on an already
@@ -701,6 +824,11 @@ IN_PROC_BROWSER_TEST_P(WebInstallFromUrlCommandBrowserTest, LaunchApp) {
   histograms.ExpectUniqueSample("WebApp.NewCraftedAppInstalled.ByUser",
                                 /*sample=*/true, 1);
 
+  histograms.ExpectBucketCount(kInstallResultUma,
+                               web_app::WebInstallApiResult::kSuccess, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
+
   // It should always have OS integration and launch in an app window.
   EXPECT_EQ(registrar.GetAppById(app_id)->install_state(),
             proto::InstallState::INSTALLED_WITH_OS_INTEGRATION);
@@ -719,6 +847,33 @@ INSTANTIATE_TEST_SUITE_P(
     WebInstallFromUrlCommandBrowserTest,
     testing::Values(NotLaunchableFromInstallApi::kNoOSIntegration,
                     NotLaunchableFromInstallApi::kDisplayModeBrowser));
+
+IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
+                       UserDeclinesInstallDialog) {
+  NavigateToValidUrl();
+  GURL install_url =
+      https_server()->GetURL("/banners/manifest_with_id_test_page.html");
+
+  base::HistogramTester histograms;
+  SetPermissionResponse(/*permission_granted=*/true);
+  // Simulate the user declining the install dialog.
+  auto auto_decline_pwa_install_confirmation =
+      SetAutoDeclinePWAInstallConfirmationForTesting();
+
+  ASSERT_TRUE(TryInstallApp(install_url.spec()));
+
+  // Validate JS results.
+  EXPECT_FALSE(ResultExists());
+  EXPECT_TRUE(ErrorExists());
+  EXPECT_EQ(GetErrorName(), kAbortError);
+
+  histograms.ExpectUniqueSample("WebApp.Install.Source.Failure", kInstallSource,
+                                1);
+  histograms.ExpectUniqueSample(
+      kInstallResultUma, web_app::WebInstallApiResult::kCanceledByUser, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Error cases - bad manifests, invalid URLs, etc
@@ -739,6 +894,11 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest, NoManifest) {
   EXPECT_EQ(GetErrorName(), kAbortError);
   histograms.ExpectUniqueSample("WebApp.Install.Source.Failure", kInstallSource,
                                 1);
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kInstallCommandFailed,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 
   EXPECT_THAT(
       histograms,
@@ -771,6 +931,11 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest, InvalidManifest) {
   EXPECT_EQ(GetErrorName(), kAbortError);
   histograms.ExpectUniqueSample("WebApp.Install.Source.Failure", kInstallSource,
                                 1);
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kInstallCommandFailed,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 
   EXPECT_THAT(
       histograms,
@@ -803,6 +968,10 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   EXPECT_EQ(GetErrorName(), kDataError);
   histograms.ExpectUniqueSample("WebApp.Install.Source.Failure", kInstallSource,
                                 1);
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kManifestIdMismatch, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 
   EXPECT_THAT(histograms,
               test::ForAllGetAllSamples(
@@ -834,6 +1003,10 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest, ManifestMissingId) {
 
   histograms.ExpectUniqueSample("WebApp.Install.Source.Failure", kInstallSource,
                                 1);
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kNoCustomManifestId, 1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 
   EXPECT_THAT(histograms,
               test::ForAllGetAllSamples(
@@ -865,6 +1038,11 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest,
   EXPECT_EQ(GetErrorName(), kAbortError);
   histograms.ExpectUniqueSample("WebApp.Install.Source.Failure", kInstallSource,
                                 1);
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kInstallCommandFailed,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 
   EXPECT_THAT(
       histograms,
@@ -897,6 +1075,11 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandBrowserTest, InvalidInstallUrl) {
   EXPECT_EQ(GetErrorName(), kAbortError);
   histograms.ExpectUniqueSample("WebApp.Install.Source.Failure", kInstallSource,
                                 1);
+  histograms.ExpectBucketCount(
+      kInstallResultUma, web_app::WebInstallApiResult::kInstallCommandFailed,
+      1);
+  histograms.ExpectBucketCount(
+      kInstallTypeUma, web_app::WebInstallApiType::kBackgroundDocument, 1);
 
   EXPECT_THAT(histograms,
               test::ForAllGetAllSamples(
@@ -959,6 +1142,16 @@ IN_PROC_BROWSER_TEST_F(WebInstallFromUrlCommandDialogTest,
   // Wait for the install dialog to show.
   views::Widget* widget = widget_waiter.WaitIfNeededAndGet();
   ASSERT_NE(widget, nullptr);
+
+  // Verify the initiating origin subtitle label.
+  std::u16string expected_initiating_origin = base::ReplaceStringPlaceholders(
+      u"from: 127.0.0.1:$1",
+      base::span<const std::u16string>(
+          {base::NumberToString16(https_server()->port())}),
+      nullptr);
+  views::BubbleDialogDelegate* const bubble_delegate =
+      widget->widget_delegate()->AsBubbleDialogDelegate();
+  EXPECT_EQ(bubble_delegate->GetSubtitle(), expected_initiating_origin);
 
   views::ElementTrackerViews* tracker_views =
       views::ElementTrackerViews::GetInstance();

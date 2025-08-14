@@ -22,10 +22,10 @@ import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilterObserver;
+import org.chromium.chrome.browser.tabmodel.TabGroupUtils.TabGroupCreationCallback;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelUtils;
-import org.chromium.chrome.browser.tasks.tab_management.TabGroupListBottomSheetCoordinator.TabGroupCreationCallback;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.util.motion.MotionEventInfo;
@@ -48,14 +48,7 @@ public class TabListEditorAddToGroupAction extends TabListEditorAction {
                 }
 
                 @Override
-                public void didCreateGroup(
-                        List<Tab> tabs,
-                        List<Integer> tabOriginalIndex,
-                        List<Integer> tabOriginalRootId,
-                        List<Token> tabOriginalTabGroupId,
-                        @Nullable String destinationGroupTitle,
-                        int destinationGroupColorId,
-                        boolean destinationGroupTitleCollapsed) {
+                public void didCreateNewGroup(Tab destinationTab, TabGroupModelFilter filter) {
                     updateText();
                 }
             };

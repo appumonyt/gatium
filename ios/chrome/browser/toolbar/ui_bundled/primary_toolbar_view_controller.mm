@@ -4,8 +4,6 @@
 
 #import "ios/chrome/browser/toolbar/ui_bundled/primary_toolbar_view_controller.h"
 
-#import <MaterialComponents/MaterialProgressView.h>
-
 #import "base/check.h"
 #import "base/feature_list.h"
 #import "base/metrics/field_trial_params.h"
@@ -238,19 +236,17 @@ BASE_FEATURE(kPrimaryToolbarViewDidLoadUpdateViews,
   }
   [super setIsNTP:isNTP];
   _isNTP = isNTP;
-  if (IsSplitToolbarMode(self) || !self.shouldHideOmniboxOnNTP) {
+
+  // The omnibox is always visible when having two toolbars and no TabStrip.
+  BOOL omniboxAlwaysVisible =
+      IsSplitToolbarMode(self) && !CanShowTabStrip(self);
+  if (omniboxAlwaysVisible || !self.shouldHideOmniboxOnNTP) {
     return;
   }
 
   // This is hiding/showing and positionning the omnibox. This is only needed
   // if the omnibox should be hidden when there is only one toolbar.
-  if (!isNTP) {
-    // Reset any location bar view updates when not an NTP.
-    [self setScrollProgressForTabletOmnibox:1];
-  } else {
-    // Hides the omnibox.
-    [self setScrollProgressForTabletOmnibox:0];
-  }
+  [self setScrollProgressForTabletOmnibox:(isNTP ? 0 : 1)];
 }
 
 - (BOOL)locationBarIsExpanded {

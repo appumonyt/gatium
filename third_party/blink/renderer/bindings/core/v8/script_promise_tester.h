@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_SCRIPT_PROMISE_TESTER_H_
 #define THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_SCRIPT_PROMISE_TESTER_H_
 
+#include "base/memory/stack_allocated.h"
 #include "base/memory/weak_ptr.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
@@ -72,7 +73,7 @@ class ScriptPromiseTester final {
         : owner_(std::move(owner)), target_state_(target_state) {}
 
     using BlinkType =
-        std::conditional_t<WTF::IsGarbageCollectedType<IDLType>::value,
+        std::conditional_t<IsGarbageCollectedTypeV<IDLType>,
                            std::add_pointer_t<IDLType>,
                            typename IDLTypeToBlinkImplType<IDLType>::type>;
 
@@ -106,7 +107,7 @@ class ScriptPromiseTester final {
     }
 
    private:
-    GC_PLUGIN_IGNORE("Pointer to on-stack class is valid here.")
+    STACK_ALLOCATED_IGNORE("Pointer to on-stack class is valid here.")
     base::WeakPtr<ScriptPromiseTester> owner_;
     State target_state_;
   };

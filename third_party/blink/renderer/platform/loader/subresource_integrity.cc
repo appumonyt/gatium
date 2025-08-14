@@ -134,8 +134,6 @@ String IntegrityAlgorithmsForConsole(const FeatureContext* feature_context) {
 
 String HashAlgorithmToString(HashAlgorithm algorithm) {
   switch (algorithm) {
-    case kHashAlgorithmSha1:
-      NOTREACHED();
     case kHashAlgorithmSha256:
       return "sha256-";
     case kHashAlgorithmSha384:
@@ -175,6 +173,35 @@ String SubresourceIntegrity::GetSubresourceIntegrityHash(
     return String();
   }
   return GetIntegrityStringFromDigest(digest, algorithm);
+}
+
+bool SubresourceIntegrity::CheckUnencodedDigests(
+    const Vector<IntegrityMetadata>& digests,
+    const SegmentedBuffer* buffer) {
+  // Performs the "verify `unencoded-digest` assertions" algorithm defined in
+  // https://wicg.github.io/signature-based-sri/#unencoded-digest-validation
+  for (const IntegrityMetadata& digest : digests) {
+    HashAlgorithm algorithm =
+        IntegrityAlgorithmToHashAlgorithm(digest.algorithm);
+    DCHECK(algorithm == blink::HashAlgorithm::kHashAlgorithmSha256 ||
+           algorithm == blink::HashAlgorithm::kHashAlgorithmSha512);
+
+    DigestValue computed_digest;
+    if (!ComputeDigest(algorithm, buffer, computed_digest)) {
+      return false;
+    }
+
+    // If any specified digest doesn't match the digest computed over |buffer|,
+    // matching fails.
+    DigestValue expected_digest(base::as_byte_span(digest.value));
+    if (computed_digest != expected_digest) {
+      return false;
+    }
+  }
+
+  // If no digest failed to match (or if we didn't have any digests in the
+  // first place), matching succeeded.
+  return true;
 }
 
 bool SubresourceIntegrity::CheckSubresourceIntegrityImpl(
@@ -229,7 +256,7 @@ bool SubresourceIntegrity::CheckSubresourceIntegrityImpl(
 }
 
 bool SubresourceIntegrity::CheckHashesImpl(
-    const WTF::Vector<IntegrityMetadata>& hashes,
+    const Vector<IntegrityMetadata>& hashes,
     const SegmentedBuffer* buffer,
     const KURL& resource_url,
     const FeatureContext* feature_context,
@@ -272,10 +299,8 @@ bool SubresourceIntegrity::CheckHashesImpl(
     }
 
     // And finally decode the metadata's digest for comparison.
-    Vector<uint8_t> decoded_metadata;
-    Base64Decode(metadata.digest, decoded_metadata);
     DigestValue expected_value;
-    expected_value.AppendSpan(base::as_byte_span(decoded_metadata));
+    expected_value.AppendSpan(base::as_byte_span(metadata.value));
 
     // 5.4. If actualValue is a case-sensitive match for expectedValue, return
     // true set hash-match to true and break.
@@ -310,7 +335,7 @@ bool SubresourceIntegrity::CheckHashesImpl(
 }
 
 bool SubresourceIntegrity::CheckSignaturesImpl(
-    const WTF::Vector<IntegrityMetadata>& integrity_list,
+    const Vector<IntegrityMetadata>& integrity_list,
     const KURL& resource_url,
     const String& raw_headers,
     IntegrityReport& integrity_report) {
@@ -353,9 +378,11 @@ bool SubresourceIntegrity::CheckSignaturesImpl(
   }
 
   for (const IntegrityMetadata& metadata : integrity_list) {
-    String public_key = metadata.digest;
     for (const auto& signature : signatures) {
-      if (signature->keyid == public_key) {
+      if (signature->keyid &&
+          (signature->keyid->size() == metadata.value.size() &&
+           std::equal(metadata.value.begin(), metadata.value.end(),
+                      signature->keyid->begin()))) {
         return true;
       }
     }
@@ -369,7 +396,7 @@ bool SubresourceIntegrity::CheckSignaturesImpl(
 }
 
 IntegrityAlgorithm SubresourceIntegrity::FindBestAlgorithm(
-    const WTF::Vector<IntegrityMetadata>& metadata_list) {
+    const Vector<IntegrityMetadata>& metadata_list) {
   // Find the "strongest" algorithm in the set. (This relies on
   // IntegrityAlgorithm declaration order matching the "strongest" order, so
   // make the compiler check this assumption first.)
@@ -391,6 +418,7 @@ IntegrityAlgorithm SubresourceIntegrity::FindBestAlgorithm(
 SubresourceIntegrity::AlgorithmParseResult
 SubresourceIntegrity::ParseAttributeAlgorithm(
     std::string_view token,
+
     const FeatureContext* feature_context,
     IntegrityAlgorithm& algorithm) {
   static const AlgorithmPrefixPair kPrefixes[] = {
@@ -438,7 +466,7 @@ bool SubresourceIntegrity::ParseDigest(std::string_view maybe_digest,
 }
 
 void SubresourceIntegrity::ParseIntegrityAttribute(
-    const WTF::String& attribute,
+    const String& attribute,
     IntegrityMetadataSet& metadata_set,
     const FeatureContext* feature_context) {
   return ParseIntegrityAttribute(attribute, metadata_set, feature_context,
@@ -446,7 +474,7 @@ void SubresourceIntegrity::ParseIntegrityAttribute(
 }
 
 void SubresourceIntegrity::ParseIntegrityAttribute(
-    const WTF::String& attribute,
+    const String& attribute,
     IntegrityMetadataSet& metadata_set,
     const FeatureContext* feature_context,
     IntegrityReport* integrity_report) {
@@ -529,7 +557,9 @@ void SubresourceIntegrity::ParseIntegrityAttribute(
       }
     }
 
-    IntegrityMetadata integrity_metadata(std::move(digest), algorithm);
+    Vector<uint8_t> decoded;
+    Base64Decode(digest, decoded);
+    IntegrityMetadata integrity_metadata(algorithm, decoded);
     if (integrity_report) {
       if (IsHashingAlgorithm(algorithm)) {
         integrity_report->AddUseCount(WebFeature::kSRIHashAssertion);
@@ -587,15 +617,14 @@ bool SubresourceIntegrity::VerifyInlineIntegrity(
     semantically_valid_signatures++;
 
     for (const auto& key : integrity_metadata.public_keys) {
-      Vector<uint8_t> decoded_key;
-      if (!Base64Decode(key.digest, decoded_key) || decoded_key.size() != 32u) {
+      if (key.value.size() != 32u) {
         // TODO(391907163): Log an error for invalid public key digests.
         continue;
       }
       if (ED25519_verify(
               reinterpret_cast<const uint8_t*>(source_adaptor.data()),
               source_adaptor.size(), decoded_signature.data(),
-              decoded_key.data())) {
+              key.value.data())) {
         return true;
       }
     }

@@ -32,6 +32,16 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="Geolocation.AndroidLocationProvider.ProviderType"
+    enum="AndroidLocationProviderType" expires_after="2026-02-07">
+  <owner>alvinji@chromium.org</owner>
+  <owner>device-dev@chromium.org</owner>
+  <summary>
+    Records which underlying Android framework location provider is used by the
+    LocationProviderAdapter class.
+  </summary>
+</histogram>
+
 <histogram name="Geolocation.CoreLocationProvider.Accuracy" units="meter"
     expires_after="2025-12-14">
   <owner>alvinji@chromium.org</owner>
@@ -55,7 +65,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Geolocation.CoreLocationProvider.SessionResult"
-    enum="CoreLocationSessionResult" expires_after="2025-11-02">
+    enum="CoreLocationSessionResult" expires_after="2026-01-04">
   <owner>alvinji@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -70,7 +80,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Geolocation.CoreLocationProvider.TimeToFirstPosition"
-    units="ms" expires_after="2025-11-02">
+    units="ms" expires_after="2026-01-04">
   <owner>alvinji@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -79,7 +89,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Geolocation.GeolocationImpl.ClientId"
-    enum="GeolocationClientId" expires_after="2025-11-30">
+    enum="GeolocationClientId" expires_after="2026-02-01">
   <owner>mattreynolds@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -227,7 +237,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Geolocation.NetworkLocationProvider.SessionResult"
-    enum="NetworkLocationRequestResult" expires_after="2025-10-26">
+    enum="NetworkLocationRequestResult" expires_after="2025-12-28">
   <owner>alvinji@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -241,7 +251,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Geolocation.NetworkLocationProvider.TimeToFirstPosition"
-    units="ms" expires_after="2025-10-26">
+    units="ms" expires_after="2025-12-28">
   <owner>alvinji@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -272,7 +282,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Geolocation.NetworkLocationRequest.ResponseCode"
-    enum="HttpResponseCode" expires_after="2025-11-16">
+    enum="HttpResponseCode" expires_after="2026-01-18">
   <owner>mattreynolds@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -284,7 +294,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Geolocation.NetworkLocationRequest.Result"
-    enum="NetworkLocationRequestResult" expires_after="2025-11-30">
+    enum="NetworkLocationRequestResult" expires_after="2026-02-01">
   <owner>mattreynolds@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -299,7 +309,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Geolocation.NetworkLocationRequest.Source"
-    enum="NetworkLocationRequestSource" expires_after="2025-11-02">
+    enum="NetworkLocationRequestSource" expires_after="2026-01-04">
   <owner>mattreynolds@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -343,7 +353,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Geolocation.SystemGeolocationSourceWin.InitialPermissionStatus"
-    enum="LocationSystemPermissionStatus" expires_after="2025-11-30">
+    enum="LocationSystemPermissionStatus" expires_after="2026-02-01">
   <owner>mattreynolds@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -365,7 +375,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Geolocation.SystemGeolocationSourceWin.PermissionStatusChanged"
-    enum="LocationSystemPermissionStatus" expires_after="2025-11-30">
+    enum="LocationSystemPermissionStatus" expires_after="2026-02-01">
   <owner>mattreynolds@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>
@@ -378,7 +388,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Geolocation.SystemGeolocationSourceWin.PermissionStatusChangedAfterPrompt"
-    enum="LocationSystemPermissionStatus" expires_after="2025-11-30">
+    enum="LocationSystemPermissionStatus" expires_after="2026-02-01">
   <owner>mattreynolds@chromium.org</owner>
   <owner>device-dev@chromium.org</owner>
   <summary>

@@ -2983,7 +2983,8 @@ class LayerTreeHostTestSetNeedsCommitWithForcedRedraw
   void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
     if (num_draws_ == 3) {
       host_impl->SetViewportDamage(invalid_rect_);
-      host_impl->SetNeedsRedraw();
+      host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                                /*skip_if_inside_draw=*/false);
     }
   }
 
@@ -3367,7 +3368,8 @@ class LayerTreeHostTestFrameTimeUpdatesAfterDraw : public LayerTreeHostTest {
     frame_++;
     if (frame_ == 1) {
       first_frame_time_ = impl->CurrentBeginFrameArgs().frame_time;
-      impl->SetNeedsRedraw();
+      impl->SetNeedsRedraw(/*animation_only=*/false,
+                           /*skip_if_inside_draw=*/false);
 
       // Since we might use a low-resolution clock on Windows, we need to
       // make sure that the clock has incremented past first_frame_time_.
@@ -8817,7 +8819,7 @@ class LayerTreeHostTestRequestForceSendMetadata
       target_->OnRenderFrameSubmission(render_frame_metadata,
                                        compositor_frame_metadata, force_send);
     }
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
     void DidEndScroll() override { target_->DidEndScroll(); }
 #endif
 
@@ -8872,7 +8874,7 @@ class LayerTreeHostTestRequestForceSendMetadata
     if (force_send)
       num_force_sends_++;
   }
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
   void DidEndScroll() override {}
 #endif
 
@@ -9075,7 +9077,7 @@ class LayerTreeHostTestDelegatedInkMetadataBase
       target_->OnRenderFrameSubmission(render_frame_metadata,
                                        compositor_frame_metadata, force_send);
     }
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
     void DidEndScroll() override { target_->DidEndScroll(); }
 #endif
 
@@ -9152,7 +9154,7 @@ class LayerTreeHostTestDelegatedInkMetadataBase
     ExpectMetadata(render_frame_metadata.delegated_ink_metadata,
                    compositor_frame_metadata->delegated_ink_metadata.get());
   }
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
   void DidEndScroll() override {}
 #endif
 
@@ -9239,7 +9241,8 @@ class LayerTreeHostTestDelegatedInkMetadataCompositorOnlyFrame
     } else if (begin_frame_count_ == 4) {
       PostIssueBeginFrame(false);
     }
-    host_impl->SetNeedsRedraw();
+    host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                              /*skip_if_inside_draw=*/false);
     host_impl->SetViewportDamage(gfx::Rect(1, 1));
   }
 
@@ -9749,7 +9752,8 @@ class LayerTreeHostUkmSmoothnessMemoryOwnership : public LayerTreeTest {
     // Delegates to DFC::AddSortedFrame, which calls DFC::OnEndFrame.
     host_impl->frame_sorter_for_testing()->AddFrameResult(
         last_args_, CreateFakeImplDroppedFrameInfo());
-    host_impl->SetNeedsRedraw();
+    host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                              /*skip_if_inside_draw=*/false);
     --frames_counter_;
   }
 
@@ -10141,7 +10145,8 @@ class LayerTreeHostTestDelayRecreateTiling
       host_impl->pending_tree()->set_needs_update_draw_properties();
 
       // to make sure Draw happen
-      host_impl->SetNeedsRedraw();
+      host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                                /*skip_if_inside_draw=*/false);
     }
   }
 
@@ -10295,7 +10300,8 @@ class LayerTreeHostTestInvalidateImplSideForRerasterTiling
         // implside will be requested for rerastering tiling.
         ClearAnimationForLayer(host_impl->active_tree(), target_layer);
         ClearAnimationForLayer(host_impl->recycle_tree(), target_layer);
-        host_impl->SetNeedsRedraw();
+        host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                                  /*skip_if_inside_draw=*/false);
       }
     }
   }
@@ -10323,7 +10329,8 @@ class LayerTreeHostTestInvalidateImplSideForRerasterTiling
 
           // trigger draw to check if invalidating implside is not triggered
           // if animation is still active.
-          host_impl->SetNeedsRedraw();
+          host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                                    /*skip_if_inside_draw=*/false);
         } else {
           // check if invalidation implside was requested successfully.
           // new tiling should be created.
@@ -10889,6 +10896,200 @@ class LayerTreeHostTestDamagePropagatesFromViewTransitionSurface
 };
 MULTI_THREAD_TEST_F(LayerTreeHostTestDamagePropagatesFromViewTransitionSurface);
 
+class LayerTreeHostTestBlendingOffWhenDrawingOpaqueLayers
+    : public LayerTreeHostTest {
+ public:
+  void SetupTree() override {
+    SetInitialRootBounds(kRootLayerBounds);
+    LayerTreeHostTest::SetupTree();
+    root_ = layer_tree_host()->root_layer();
+    root_->SetMasksToBounds(false);
+
+    layer1_client_.set_fill_with_nonsolid_color(true);
+    layer1_client_.set_bounds(kLayer1Bounds);
+    layer1_ = PictureLayer::Create(&layer1_client_);
+    layer1_->SetBounds(kLayer1Bounds);
+    layer1_->SetIsDrawable(true);
+    layer1_->SetPosition(gfx::PointF(kLayer1Position));
+    root_->AddChild(layer1_);
+
+    layer2_client_.set_fill_with_nonsolid_color(true);
+    layer2_client_.set_bounds(kLayer2Bounds);
+    layer2_ = PictureLayer::Create(&layer2_client_);
+    layer2_->SetBounds(kLayer2Bounds);
+    layer2_->SetIsDrawable(true);
+    layer2_->SetPosition(gfx::PointF(kLayer2Position));
+    layer1_->AddChild(layer2_);
+  }
+
+  void BeginTest() override {
+    main_thread_state_ = kStateInitial;
+    disp_thread_state_ = kStateInitial;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  void DidCommitAndDrawFrame() override {
+    main_thread_state_ = static_cast<State>(main_thread_state_ + 1);
+    if (main_thread_state_ == kStateDone) {
+      EndTest();
+      return;
+    }
+
+    // Reset layers to a known state before applying new state.
+    layer1_->SetContentsOpaque(false);
+    layer1_->SetOpacity(1.f);
+    layer1_->SetForceRenderSurfaceForTesting(false);
+
+    layer2_->SetContentsOpaque(false);
+    layer2_->SetOpacity(1.f);
+    layer2_->SetHideLayerAndSubtree(false);
+
+    switch (main_thread_state_) {
+      case kStateInitial:
+        NOTREACHED();
+      case kStateOpaque:
+        layer1_->SetContentsOpaque(true);
+        layer2_->SetHideLayerAndSubtree(true);
+        break;
+      case kStateTranslucentContent:
+        layer1_->SetContentsOpaque(false);
+        layer2_->SetHideLayerAndSubtree(true);
+        break;
+      case kStateTranslucentOpacity:
+        layer1_->SetContentsOpaque(true);
+        layer1_->SetOpacity(0.5f);
+        layer2_->SetHideLayerAndSubtree(true);
+        break;
+      case kStateTranslucentOpacityAndContent:
+        layer1_->SetContentsOpaque(false);
+        layer1_->SetOpacity(0.5f);
+        layer2_->SetHideLayerAndSubtree(true);
+        break;
+      case kStateTwoOpaqueLayers:
+        layer1_->SetContentsOpaque(true);
+        layer2_->SetContentsOpaque(true);
+        break;
+      case kStateOpaqueChildOfTranslucentParent:
+        layer1_->SetContentsOpaque(false);
+        layer2_->SetContentsOpaque(true);
+        break;
+      case kStateSurfaceOpaqueChildOfTranslucentParent:
+        layer1_->SetContentsOpaque(true);
+        layer1_->SetOpacity(0.5f);
+        layer1_->SetForceRenderSurfaceForTesting(true);
+        layer2_->SetContentsOpaque(true);
+        break;
+      case kStateDone:
+        return;
+    }
+  }
+
+  void DisplayReceivedCompositorFrameOnThread(
+      const viz::CompositorFrame& frame) override {
+    const auto* pass = frame.render_pass_list.back().get();
+    const viz::DrawQuad* quad1 =
+        GetQuadForRect(*pass, gfx::Rect(kLayer1Position, kLayer1Bounds));
+    const viz::DrawQuad* quad2 = GetQuadForRect(
+        *pass, gfx::Rect(kLayer1Position + gfx::Vector2d(kLayer2Position.x(),
+                                                         kLayer2Position.y()),
+                         kLayer2Bounds));
+
+    switch (disp_thread_state_) {
+      case kStateInitial:
+        break;
+      case kStateOpaque:
+        ASSERT_TRUE(quad1);
+        EXPECT_FALSE(quad1->ShouldDrawWithBlending());
+        break;
+      case kStateTranslucentContent:
+        ASSERT_TRUE(quad1);
+        EXPECT_TRUE(quad1->ShouldDrawWithBlending());
+        break;
+      case kStateTranslucentOpacity:
+        ASSERT_TRUE(quad1);
+        EXPECT_TRUE(quad1->ShouldDrawWithBlending());
+        break;
+      case kStateTranslucentOpacityAndContent:
+        ASSERT_TRUE(quad1);
+        EXPECT_TRUE(quad1->ShouldDrawWithBlending());
+        break;
+      case kStateTwoOpaqueLayers:
+        ASSERT_TRUE(quad1);
+        EXPECT_FALSE(quad1->ShouldDrawWithBlending());
+        ASSERT_TRUE(quad2);
+        EXPECT_FALSE(quad2->ShouldDrawWithBlending());
+        break;
+      case kStateOpaqueChildOfTranslucentParent: {
+        ASSERT_TRUE(quad1);
+        EXPECT_TRUE(quad1->ShouldDrawWithBlending());
+        ASSERT_TRUE(quad2);
+        EXPECT_FALSE(quad2->ShouldDrawWithBlending());
+        break;
+      }
+      case kStateSurfaceOpaqueChildOfTranslucentParent: {
+        ASSERT_EQ(2u, frame.render_pass_list.size());
+        const auto* surface_pass = frame.render_pass_list.front().get();
+        // Quad positions should be surface-relative, so relative to
+        // layer 1's position.
+        const viz::DrawQuad* surface_quad1 = GetQuadForRect(
+            *surface_pass, gfx::Rect(gfx::Point(), kLayer1Bounds));
+        const viz::DrawQuad* surface_quad2 = GetQuadForRect(
+            *surface_pass, gfx::Rect(kLayer2Position, kLayer2Bounds));
+        ASSERT_TRUE(surface_quad1);
+        EXPECT_FALSE(surface_quad1->ShouldDrawWithBlending());
+        ASSERT_TRUE(surface_quad2);
+        EXPECT_FALSE(surface_quad2->ShouldDrawWithBlending());
+        break;
+      }
+      case kStateDone:
+        return;
+    }
+    disp_thread_state_ = static_cast<State>(disp_thread_state_ + 1);
+  }
+
+ protected:
+  enum State {
+    kStateInitial,
+    kStateOpaque,
+    kStateTranslucentContent,
+    kStateTranslucentOpacity,
+    kStateTranslucentOpacityAndContent,
+    kStateTwoOpaqueLayers,
+    kStateOpaqueChildOfTranslucentParent,
+    kStateSurfaceOpaqueChildOfTranslucentParent,
+    kStateDone,
+  };
+
+  const viz::DrawQuad* GetQuadForRect(const viz::CompositorRenderPass& pass,
+                                      const gfx::Rect& rect) {
+    for (auto* quad : pass.quad_list) {
+      gfx::Rect rect_in_target_space = MathUtil::MapEnclosingClippedRect(
+          quad->shared_quad_state->quad_to_target_transform, quad->rect);
+      if (rect_in_target_space == rect) {
+        return quad;
+      }
+    }
+    return nullptr;
+  }
+
+  const gfx::Point kLayer1Position = gfx::Point(10, 10);
+  const gfx::Point kLayer2Position = gfx::Point(50, 10);
+  const gfx::Size kLayer1Bounds = gfx::Size(30, 30);
+  const gfx::Size kLayer2Bounds = gfx::Size(30, 30);
+  const gfx::Size kRootLayerBounds = gfx::Size(100, 100);
+
+  State main_thread_state_;
+  State disp_thread_state_;
+  FakeContentLayerClient layer1_client_;
+  FakeContentLayerClient layer2_client_;
+  scoped_refptr<Layer> root_;
+  scoped_refptr<PictureLayer> layer1_;
+  scoped_refptr<PictureLayer> layer2_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(
+    LayerTreeHostTestBlendingOffWhenDrawingOpaqueLayers);
+
 class LayerTreeHostTestBlockOnCommitAfterInputEvent : public LayerTreeHostTest {
  protected:
   void BeginTest() override { PostSetNeedsCommitToMainThread(); }
@@ -10973,7 +11174,7 @@ class LayerTreeHostTestDetachInputDelegateAndRenderFrameObserver
         const RenderFrameMetadata& render_frame_metadata,
         viz::CompositorFrameMetadata* compositor_frame_metadata,
         bool force_send) override {}
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
     void DidEndScroll() override {}
 #endif
 

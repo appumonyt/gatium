@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/core/dom/focus_params.h"
 #include "third_party/blink/renderer/core/dom/qualified_name.h"
 #include "third_party/blink/renderer/core/events/command_event.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/forms/form_data.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
@@ -83,15 +84,15 @@ FormControlType HTMLButtonElement::FormControlType() const {
 const AtomicString& HTMLButtonElement::FormControlTypeAsString() const {
   switch (type_) {
     case Type::kButton: {
-      DEFINE_STATIC_LOCAL(const AtomicString, button, ("button"));
+      DEFINE_STATIC_LOCAL(const AtomicString, button, (keywords::kButton));
       return button;
     }
     case Type::kSubmit: {
-      DEFINE_STATIC_LOCAL(const AtomicString, submit, ("submit"));
+      DEFINE_STATIC_LOCAL(const AtomicString, submit, (keywords::kSubmit));
       return submit;
     }
     case Type::kReset: {
-      DEFINE_STATIC_LOCAL(const AtomicString, reset, ("reset"));
+      DEFINE_STATIC_LOCAL(const AtomicString, reset, (keywords::kReset));
       return reset;
     }
   }
@@ -112,15 +113,16 @@ bool HTMLButtonElement::IsPresentationAttribute(
 // static
 std::optional<HTMLButtonElement::Type> HTMLButtonElement::TypeFromString(
     const AtomicString& string) {
-  if (EqualIgnoringASCIICase(string, "reset")) {
+  if (EqualIgnoringASCIICase(string, keywords::kReset)) {
     return kReset;
-  } else if (EqualIgnoringASCIICase(string, "button")) {
-    return kButton;
-  } else if (EqualIgnoringASCIICase(string, "submit")) {
-    return kSubmit;
-  } else {
-    return std::nullopt;
   }
+  if (EqualIgnoringASCIICase(string, keywords::kButton)) {
+    return kButton;
+  }
+  if (EqualIgnoringASCIICase(string, keywords::kSubmit)) {
+    return kSubmit;
+  }
+  return std::nullopt;
 }
 
 void HTMLButtonElement::ParseAttribute(
@@ -138,9 +140,8 @@ void HTMLButtonElement::ParseAttribute(
           UseCounter::Count(GetDocument(), WebFeature::kButtonTypeAttrInvalid);
         }
       }
-      if (RuntimeEnabledFeatures::HTMLCommandAttributesEnabled() &&
-          (FastHasAttribute(html_names::kCommandAttr) ||
-           FastHasAttribute(html_names::kCommandforAttr))) {
+      if (FastHasAttribute(html_names::kCommandAttr) ||
+          FastHasAttribute(html_names::kCommandforAttr)) {
         UseCounter::Count(
             GetDocument(),
             WebFeature::kButtonTypeAttrInvalidWithCommandOrCommandfor);
@@ -163,8 +164,7 @@ void HTMLButtonElement::ParseAttribute(
           WebFeature::kButtonTypeAttrInvalidWithCommandOrCommandfor);
     }
 
-    if (RuntimeEnabledFeatures::HTMLCommandAttributesEnabled() &&
-        !params.new_value.IsNull() && !type) {
+    if (!params.new_value.IsNull() && !type) {
       // https://html.spec.whatwg.org/multipage/form-elements.html#dom-button-type
       // Type, as reflected in the IDL, must be "button" if there are command
       // attributes without an explicit valid type attribute set.
@@ -186,28 +186,39 @@ void HTMLButtonElement::SetTypeInternal(Type type) {
   }
 }
 
-Element* HTMLButtonElement::commandForElement() const {
-  if (!RuntimeEnabledFeatures::HTMLCommandAttributesEnabled()) {
+// static
+Element* HTMLButtonElement::RetrieveCommandForTargetElement(
+    const HTMLElement& invoker) {
+  if (!invoker.IsInTreeScope() || invoker.IsDisabledFormControl()) {
     return nullptr;
   }
 
-  if (!IsInTreeScope() || IsDisabledFormControl() ||
-      (Form() && FastHasAttribute(html_names::kTypeAttr) && type_ == kSubmit)) {
+  if (auto* button = DynamicTo<HTMLButtonElement>(invoker);
+      button && button->IsFormAssociatedSubmitButton()) {
     return nullptr;
   }
 
-  return GetElementAttributeResolvingReferenceTarget(
+  return invoker.GetElementAttributeResolvingReferenceTarget(
       html_names::kCommandforAttr);
+}
+
+bool HTMLButtonElement::IsFormAssociatedSubmitButton() const {
+  return Form() && FastHasAttribute(html_names::kTypeAttr) && type_ == kSubmit;
+}
+
+Element* HTMLButtonElement::commandForElement() const {
+  return RetrieveCommandForTargetElement(*this);
 }
 
 void HTMLButtonElement::setCommand(const AtomicString& type) {
   setAttribute(html_names::kCommandAttr, type);
 }
 
-AtomicString HTMLButtonElement::command() const {
-  CHECK(RuntimeEnabledFeatures::HTMLCommandAttributesEnabled());
-  const AtomicString& action = FastGetAttribute(html_names::kCommandAttr);
-  CommandEventType type = GetCommandEventType(action);
+// static
+AtomicString HTMLButtonElement::GetCommand(
+    const AtomicString& action,
+    ExecutionContext* execution_context) {
+  const CommandEventType type = GetCommandEventType(action, execution_context);
   switch (type) {
     case CommandEventType::kNone:
       return g_empty_atom;
@@ -215,14 +226,21 @@ AtomicString HTMLButtonElement::command() const {
       return action;
     default: {
       const AtomicString& lower_action = action.LowerASCII();
-      DCHECK_EQ(GetCommandEventType(lower_action), type);
+      DCHECK_EQ(GetCommandEventType(lower_action, execution_context), type);
       return lower_action;
     }
   }
 }
 
+AtomicString HTMLButtonElement::command() const {
+  return GetCommand(FastGetAttribute(html_names::kCommandAttr),
+                    GetExecutionContext());
+}
+
+// static
 CommandEventType HTMLButtonElement::GetCommandEventType(
-    const AtomicString& action) const {
+    const AtomicString& action,
+    ExecutionContext* execution_context) {
   if (action.IsNull() || action.empty()) {
     return CommandEventType::kNone;
   }
@@ -267,6 +285,15 @@ CommandEventType HTMLButtonElement::GetCommandEventType(
     if (EqualIgnoringASCIICase(action, keywords::kHideMenu)) {
       return CommandEventType::kHideMenu;
     }
+  }
+
+  // Just the toggle-interest command (behind the
+  // HTMLCommandActionToggleInterest flag) go below this point
+
+  if (EqualIgnoringASCIICase(action, keywords::kToggleInterest) &&
+      RuntimeEnabledFeatures::HTMLCommandActionToggleInterestEnabled(
+          execution_context)) {
+    return CommandEventType::kToggleInterest;
   }
 
   // V2 commands go below this point
@@ -325,54 +352,77 @@ CommandEventType HTMLButtonElement::GetCommandEventType(
   return CommandEventType::kNone;
 }
 
+// static
+void HTMLButtonElement::HandleCommandForActivation(Event& event,
+                                                   HTMLElement& element) {
+  if (event.type() != event_type_names::kDOMActivate) {
+    return;
+  }
+
+  // Buttons with a commandfor will dispatch a CommandEvent on the target of the
+  // invoker, and run `HandleCommandInternal` to perform default logic.
+  if (Element* command_target = RetrieveCommandForTargetElement(element)) {
+    // commandfor & popovertarget shouldn't be combined, so warn.
+    if (element.FastHasAttribute(html_names::kPopovertargetAttr)) {
+      element.AddConsoleMessage(
+          mojom::blink::ConsoleMessageSource::kOther,
+          mojom::blink::ConsoleMessageLevel::kWarning,
+          "popovertarget is ignored on elements with commandfor.");
+    }
+    const AtomicString& action =
+        element.FastGetAttribute(html_names::kCommandAttr);
+    const auto command_event_type =
+        GetCommandEventType(action, element.GetExecutionContext());
+    bool is_valid_builtin =
+        command_target->IsValidBuiltinCommand(element, command_event_type);
+    if (is_valid_builtin || command_event_type == CommandEventType::kCustom) {
+      Event* command_event = CommandEvent::Create(
+          event_type_names::kCommand,
+          GetCommand(action, element.GetExecutionContext()), &element);
+      command_target->DispatchEvent(*command_event);
+      if (is_valid_builtin && !command_event->defaultPrevented()) {
+        command_target->HandleCommandInternal(element, command_event_type);
+      }
+    }
+    event.SetDefaultHandled();
+  }
+}
+
 void HTMLButtonElement::DefaultEventHandler(Event& event) {
   if (event.type() == event_type_names::kDOMActivate) {
-    bool potentialCommand = (FastHasAttribute(html_names::kCommandforAttr) ||
-                             FastHasAttribute(html_names::kCommandAttr));
-    if (!IsDisabledFormControl()) {
-      if (Form() && RuntimeEnabledFeatures::HTMLCommandAttributesEnabled() &&
-          type_ == kButton) {
-        if (!EqualIgnoringASCIICase(FastGetAttribute(html_names::kTypeAttr),
-                                    "button")) {
-          DCHECK(type_ == kButton);
-          AddConsoleMessage(mojom::blink::ConsoleMessageSource::kOther,
-                            mojom::blink::ConsoleMessageLevel::kWarning,
-                            "Buttons associated with forms that include "
-                            "command or commandfor attributes are "
-                            "ambiguous, and require a type=button attribute. "
-                            "No action will be taken.");
-          return;
-        }
+    if (auto* form = Form();
+          form && !IsDisabledFormControl()) {
+      bool has_command_attr = FastHasAttribute(html_names::kCommandforAttr) ||
+                              FastHasAttribute(html_names::kCommandAttr);
+      if (has_command_attr && type_ == kButton &&
+          !EqualIgnoringASCIICase(FastGetAttribute(html_names::kTypeAttr),
+                                  keywords::kButton)) {
+        AddConsoleMessage(mojom::blink::ConsoleMessageSource::kOther,
+                          mojom::blink::ConsoleMessageLevel::kWarning,
+                          "Buttons associated with forms that include "
+                          "command or commandfor attributes are "
+                          "ambiguous, and require a type=button attribute. "
+                          "No action will be taken.");
+        return;
       }
-
-      if (Form() && type_ == kSubmit) {
-        if (!EqualIgnoringASCIICase(FastGetAttribute(html_names::kTypeAttr),
-                                    "submit") &&
-            potentialCommand) {
-          DCHECK(type_ == kSubmit);
-          AddConsoleMessage(mojom::blink::ConsoleMessageSource::kOther,
-                            mojom::blink::ConsoleMessageLevel::kWarning,
-                            "Buttons associated with forms that include "
-                            "command or commandfor attributes are "
-                            "ambiguous, and require a type=button attribute. "
-                            "No action will be taken.");
-          return;
-        } else if (potentialCommand) {
-          DCHECK(FastHasAttribute(html_names::kTypeAttr));
+      if (type_ == kSubmit) {
+        if (has_command_attr &&
+            EqualIgnoringASCIICase(FastGetAttribute(html_names::kTypeAttr),
+                                   keywords::kSubmit)) {
           AddConsoleMessage(
               mojom::blink::ConsoleMessageSource::kOther,
               mojom::blink::ConsoleMessageLevel::kWarning,
-              "Buttons with an explicit type=submit will always submit a form, "
-              "so command or commandfor attributes will be ignored.");
+              "Buttons with an explicit type=submit will always submit a "
+              "form, so command or commandfor attributes will be ignored.");
         }
-        Form()->PrepareForSubmission(&event, this);
+        form->PrepareForSubmission(&event, this);
         event.SetDefaultHandled();
         return;
       }
-      if (Form() && type_ == kReset) {
-        Form()->reset();
+      if (type_ == kReset) {
+        form->reset();
         event.SetDefaultHandled();
-        if (potentialCommand) {
+        if (has_command_attr) {
           AddConsoleMessage(
               mojom::blink::ConsoleMessageSource::kOther,
               mojom::blink::ConsoleMessageLevel::kWarning,
@@ -382,41 +432,16 @@ void HTMLButtonElement::DefaultEventHandler(Event& event) {
         return;
       }
     }
+  }
 
-    // Buttons with a commandfor will dispatch a CommandEvent on the
-    // invoker, and run HandleCommandInternal to perform default logic.
-    if (auto* command_target = commandForElement()) {
-      // commandfor & popovertarget shouldn't be combined, so warn.
-      if (FastHasAttribute(html_names::kPopovertargetAttr)) {
-        AddConsoleMessage(
-            mojom::blink::ConsoleMessageSource::kOther,
-            mojom::blink::ConsoleMessageLevel::kWarning,
-            "popovertarget is ignored on elements with commandfor.");
-      }
-
-      auto action =
-          GetCommandEventType(FastGetAttribute(html_names::kCommandAttr));
-      bool is_valid_builtin =
-          command_target->IsValidBuiltinCommand(*this, action);
-      bool should_dispatch =
-          is_valid_builtin || action == CommandEventType::kCustom;
-      if (should_dispatch) {
-        Event* commandEvent =
-            CommandEvent::Create(event_type_names::kCommand, command(), this);
-        command_target->DispatchEvent(*commandEvent);
-        if (is_valid_builtin && !commandEvent->defaultPrevented()) {
-          command_target->HandleCommandInternal(*this, action);
-        }
-      }
-
-      return;
-    }
+  HandleCommandForActivation(event, *this);
+  if (event.DefaultHandled()) {
+    return;
   }
 
   if (HandleKeyboardActivation(event)) {
     return;
   }
-
   HTMLFormControlElement::DefaultEventHandler(event);
 }
 

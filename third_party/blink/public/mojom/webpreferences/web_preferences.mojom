@@ -148,7 +148,6 @@ struct WebPreferences {
   bool allow_file_access_from_file_urls;
   bool webgl1_enabled;
   bool webgl2_enabled;
-  bool pepper_3d_enabled;
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
   bool hide_scrollbars;
@@ -508,4 +507,9 @@ struct WebPreferences {
   bool payment_request_enabled = false;
 
   bool api_based_fingerprinting_interventions_enabled = false;
+
+  bool content_based_fingerprinting_protection_enabled = false;
+
+  [EnableIf=is_android]
+  bool increment_local_surface_id_for_mainframe_same_doc_navigation = true;
 };

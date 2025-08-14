@@ -18,7 +18,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "media/media_buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/path_utils.h"
@@ -69,19 +68,8 @@ const base::FilePath::CharType kComponentUpdatedWidevineCdmHint[] =
 #endif  // BUILDFLAG(ENABLE_WIDEVINE)
 
 #if BUILDFLAG(IS_CHROMEOS)
-const base::FilePath::CharType kChromeOSTPMFirmwareUpdateLocation[] =
-    FILE_PATH_LITERAL("/run/tpm_firmware_update_location");
-const base::FilePath::CharType kChromeOSTPMFirmwareUpdateSRKVulnerableROCA[] =
-    FILE_PATH_LITERAL("/run/tpm_firmware_update_srk_vulnerable_roca");
 const base::FilePath::CharType kDeviceRefreshTokenFilePath[] =
     FILE_PATH_LITERAL("/home/chronos/device_refresh_token");
-#if BUILDFLAG(IS_CHROMEOS_DEVICE)
-const base::FilePath::CharType kChromeOSCryptohomeMountRoot[] =
-    FILE_PATH_LITERAL("/home/user");
-#else
-const base::FilePath::CharType kFakeCryptohomeMountRootDirname[] =
-    FILE_PATH_LITERAL(".home_user");
-#endif  // BUILDFLAG(IS_CHROMEOS_DEVICE)
 
 bool GetChromeOsCrdDataDirInternal(base::FilePath* result,
                                    bool* should_be_created) {
@@ -104,35 +92,11 @@ bool GetChromeOsCrdDataDirInternal(base::FilePath* result,
   return true;
 #endif  // BUILDFLAG(IS_CHROMEOS_DEVICE)
 }
-
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 base::FilePath& GetInvalidSpecifiedUserDataDirInternal() {
   static base::NoDestructor<base::FilePath> s;
   return *s;
-}
-
-// Gets the path for internal plugins.
-bool GetInternalPluginsDirectory(base::FilePath* result) {
-#if BUILDFLAG(ENABLE_PPAPI)
-#if BUILDFLAG(IS_MAC)
-  // If called from Chrome, get internal plugins from a subdirectory of the
-  // framework.
-  if (base::apple::AmIBundled()) {
-    *result = chrome::GetFrameworkBundlePath();
-    DCHECK(!result->empty());
-    *result = result->Append("Internet Plug-Ins");
-    return true;
-  }
-  // In tests, just look in the module directory (below).
-#endif  //  BUILDFLAG(IS_MAC)
-
-  // The rest of the world expects plugins in the module directory.
-  return base::PathService::Get(base::DIR_MODULE, result);
-#else  // BUILDFLAG(ENABLE_PPAPI)
-  // PPAPI plugins are not enabled, so don't return an internal plugins path.
-  return false;
-#endif
 }
 
 // Gets the path for bundled implementations of components. Note that these
@@ -325,11 +289,6 @@ bool PathProvider(int key, base::FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("Dictionaries"));
       create_dir = true;
       break;
-    case chrome::DIR_INTERNAL_PLUGINS:
-      if (!GetInternalPluginsDirectory(&cur)) {
-        return false;
-      }
-      break;
     case chrome::DIR_COMPONENTS:
       if (!GetComponentDirectory(&cur)) {
         return false;
@@ -400,24 +359,6 @@ bool PathProvider(int key, base::FilePath* result) {
       break;
 
 #if BUILDFLAG(IS_CHROMEOS)
-    case chrome::DIR_CHROMEOS_WALLPAPERS:
-      if (!base::PathService::Get(chrome::DIR_USER_DATA, &cur)) {
-        return false;
-      }
-      cur = cur.Append(FILE_PATH_LITERAL("wallpapers"));
-      break;
-    case chrome::DIR_CHROMEOS_WALLPAPER_THUMBNAILS:
-      if (!base::PathService::Get(chrome::DIR_USER_DATA, &cur)) {
-        return false;
-      }
-      cur = cur.Append(FILE_PATH_LITERAL("wallpaper_thumbnails"));
-      break;
-    case chrome::DIR_CHROMEOS_CUSTOM_WALLPAPERS:
-      if (!base::PathService::Get(chrome::DIR_USER_DATA, &cur)) {
-        return false;
-      }
-      cur = cur.Append(FILE_PATH_LITERAL("custom_wallpapers"));
-      break;
     case chrome::DIR_CHROMEOS_CRD_DATA:
       if (!GetChromeOsCrdDataDirInternal(&cur,
                                          /*should_be_created=*/&create_dir)) {
@@ -425,6 +366,7 @@ bool PathProvider(int key, base::FilePath* result) {
       }
       break;
 #endif
+
     // The following are only valid in the development environment, and
     // will fail if executed from an installed executable (because the
     // generated path won't exist).
@@ -557,27 +499,13 @@ bool PathProvider(int key, base::FilePath* result) {
       cur = cur.Append(kGCMStoreDirname);
       break;
 #endif  // !BUILDFLAG(IS_ANDROID)
+
 #if BUILDFLAG(IS_CHROMEOS)
-    case chrome::FILE_CHROME_OS_TPM_FIRMWARE_UPDATE_LOCATION:
-      cur = base::FilePath(kChromeOSTPMFirmwareUpdateLocation);
-      break;
-    case chrome::FILE_CHROME_OS_TPM_FIRMWARE_UPDATE_SRK_VULNERABLE_ROCA:
-      cur = base::FilePath(kChromeOSTPMFirmwareUpdateSRKVulnerableROCA);
-      break;
     case chrome::FILE_CHROME_OS_DEVICE_REFRESH_TOKEN:
       cur = base::FilePath(kDeviceRefreshTokenFilePath);
       break;
-    case chrome::DIR_CHROMEOS_HOMEDIR_MOUNT:
-#if BUILDFLAG(IS_CHROMEOS_DEVICE)
-      cur = base::FilePath(kChromeOSCryptohomeMountRoot);
-#else
-      if (!base::PathService::Get(chrome::DIR_USER_DATA, &cur)) {
-        return false;
-      }
-      cur = cur.Append(kFakeCryptohomeMountRootDirname);
-#endif  // BUILDFLAG(IS_CHROMEOS_DEVICE)
-      break;
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
     case chrome::DIR_OPTIMIZATION_GUIDE_PREDICTION_MODELS:
       if (!base::PathService::Get(chrome::DIR_USER_DATA, &cur)) {
         return false;

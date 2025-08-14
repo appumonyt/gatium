@@ -6,6 +6,7 @@
 
 #import "base/apple/foundation_util.h"
 #import "base/functional/bind.h"
+#import "base/ios/ios_util.h"
 #import "base/location.h"
 #import "base/strings/string_number_conversions.h"
 #import "base/strings/sys_string_conversions.h"
@@ -21,6 +22,7 @@
 #import "components/keyed_service/core/service_access_type.h"
 #import "components/password_manager/core/browser/leak_detection/mock_bulk_leak_check_service.h"
 #import "components/password_manager/core/browser/password_form.h"
+#import "components/password_manager/core/browser/password_manager_constants.h"
 #import "components/password_manager/core/browser/password_manager_test_utils.h"
 #import "components/password_manager/core/browser/password_store/test_password_store.h"
 #import "ios/chrome/browser/affiliations/model/ios_chrome_affiliation_service_factory.h"
@@ -46,7 +48,6 @@
 #import "ios/chrome/browser/shared/model/application_context/application_context.h"
 #import "ios/chrome/browser/shared/model/browser/test/test_browser.h"
 #import "ios/chrome/browser/shared/model/profile/test/test_profile_ios.h"
-#import "ios/chrome/browser/shared/public/features/features.h"
 #import "ios/chrome/browser/shared/ui/symbols/symbols.h"
 #import "ios/chrome/browser/shared/ui/table_view/cells/table_view_detail_text_item.h"
 #import "ios/chrome/browser/shared/ui/table_view/cells/table_view_text_item.h"
@@ -116,8 +117,8 @@ class PasswordManagerViewControllerTest
                                          GetForProfile(profile)
                        faviconLoader:IOSChromeFaviconLoaderFactory::
                                          GetForProfile(profile)
-                         syncService:SyncServiceFactory::GetForProfile(profile)
-                         prefService:profile->GetPrefs()];
+                         syncService:SyncServiceFactory::GetForProfile(
+                                         profile)];
 
     // Inject some fake passwords to pass the loading state.
     PasswordManagerViewController* passwords_controller =
@@ -637,6 +638,10 @@ TEST_F(PasswordManagerViewControllerTest,
 // Tests that opening the PasswordManagerViewController in search mode shows the
 // expected content.
 TEST_F(PasswordManagerViewControllerTest, TestOpenInSearchMode) {
+  // TODO(crbug.com/437314312): Re-enable the test on iOS26.
+  if (base::ios::IsRunningOnIOS26OrLater()) {
+    return;
+  }
   // Call `settingsWillBeDismissed` on the initial view controller so that its
   // observers are reset.
   [GetPasswordManagerViewController() settingsWillBeDismissed];
@@ -1533,9 +1538,7 @@ TEST_F(PasswordManagerViewControllerTest, ManageAccountHeaderIsBeingUpdated) {
   [GetPasswordManagerViewController() setSavingPasswordsToAccount:YES];
 
   EXPECT_NSEQ(l10n_util::GetNSString(
-                  IOSPasskeysM2Enabled()
-                      ? IDS_IOS_SAVE_PASSWORDS_PASSKEYS_MANAGE_ACCOUNT_HEADER
-                      : IDS_IOS_SAVE_PASSWORDS_MANAGE_ACCOUNT_HEADER),
+                  IDS_IOS_SAVE_PASSWORDS_PASSKEYS_MANAGE_ACCOUNT_HEADER),
               header.text);
   EXPECT_EQ(1U, [header.urls count]);
   CrURL* expectedHeaderUrl = [[CrURL alloc]

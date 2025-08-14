@@ -9,7 +9,7 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -38,14 +38,14 @@ class MessageCardView extends LinearLayout {
         void fetchIconDrawable(Callback<Drawable> drawable);
     }
 
-    /** An interface to handle the review action. */
-    public interface ReviewActionProvider {
-        void review();
+    /** An interface to handle a message action. */
+    public interface ActionProvider {
+        void action();
     }
 
     /** An interface to handle the dismiss action. */
-    public interface DismissActionProvider {
-        void dismiss(@MessageService.MessageType int messageType);
+    public interface ServiceDismissActionProvider<T> {
+        void dismiss(T messageType);
     }
 
     private ChromeImageView mIcon;
@@ -173,9 +173,9 @@ class MessageCardView extends LinearLayout {
             return;
         }
         // Set dynamic color.
-        GradientDrawable gradientDrawable = (GradientDrawable) getBackground();
-        gradientDrawable.setColor(
-                SurfaceColorUpdateUtils.getMessageCardBackgroundColor(getContext()));
+        LayerDrawable drawable = (LayerDrawable) getBackground();
+        drawable.findDrawableByLayerId(R.id.card_background_base)
+                .setTint(SurfaceColorUpdateUtils.getMessageCardBackgroundColor(getContext()));
     }
 
     /**

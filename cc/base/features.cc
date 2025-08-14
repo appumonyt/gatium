@@ -22,6 +22,13 @@ std::atomic<bool> s_is_eligible_for_throttle_main_frame_to_60hz = false;
 BASE_FEATURE(kAlignSurfaceLayerImplToPixelGrid,
              "AlignSurfaceLayerImplToPixelGrid",
              base::FEATURE_ENABLED_BY_DEFAULT);
+// When enabled, this forces raster translation to be computed using screen
+// space and draw transforms scaled by external page scale factor.
+// Whithout this, text in OOPIFs that isn't aligned to the pixel grid may appear
+// blurry. https://crbug.com/399478935
+BASE_FEATURE(kComputeRasterTranslateForExternalScale,
+             "ComputeRasterTranslateForExternalScale",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Whether the compositor should attempt to sync with the scroll handlers before
 // submitting a frame.
@@ -32,10 +39,6 @@ BASE_FEATURE(kSynchronizedScrolling,
 #else
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-
-BASE_FEATURE(kZeroCopyRBPPartialRasterWithGpuCompositor,
-             "ZeroCopyRBPPartialRasterWithGpuCompositor",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kMainRepaintScrollPrefersNewContent,
              "MainRepaintScrollPrefersNewContent",
@@ -58,10 +61,6 @@ BASE_FEATURE(kUseDMSAAForTiles,
              base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 );
-
-BASE_FEATURE(kReclaimResourcesDelayedFlushInBackground,
-             "ReclaimResourcesDelayedFlushInBackground",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kReclaimPrepaintTilesWhenIdle,
              "ReclaimPrepaintTilesWhenIdle",
@@ -87,10 +86,6 @@ BASE_FEATURE(kReclaimOldPrepaintTiles,
 
 const base::FeatureParam<int> kReclaimDelayInSeconds{&kSmallerInterestArea,
                                                      "reclaim_delay_s", 30};
-
-BASE_FEATURE(kEvictionThrottlesDraw,
-             "EvictionThrottlesDraw",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kClearCanvasResourcesInBackground,
              "ClearCanvasResourcesInBackground",
@@ -145,21 +140,17 @@ BASE_FEATURE(kSendExplicitDecodeRequestsImmediately,
 BASE_FEATURE(kNewContentForCheckerboardedScrolls,
              "NewContentForCheckerboardedScrolls",
              base::FEATURE_ENABLED_BY_DEFAULT);
+constexpr const char kNewContentForCheckerboardedScrollsPerScroll[] =
+    "per_scroll";
+constexpr const char kNewContentForCheckerboardedScrollsPerFrame[] =
+    "per_frame";
+const base::FeatureParam<std::string> kNewContentForCheckerboardedScrollsParam(
+    &kNewContentForCheckerboardedScrolls,
+    "mode",
+    kNewContentForCheckerboardedScrollsPerScroll);
 
 BASE_FEATURE(kAllowLCDTextWithFilter,
              "AllowLCDTextWithFilter",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kMultipleImplOnlyScrollAnimations,
-             "MultipleImplOnlyScrollAnimations",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-bool MultiImplOnlyScrollAnimationsSupported() {
-  return base::FeatureList::IsEnabled(
-      features::kMultipleImplOnlyScrollAnimations);
-}
-
-BASE_FEATURE(kRenderSurfacePixelAlignment,
-             "RenderSurfacePixelAlignment",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kPreventDuplicateImageDecodes,
@@ -168,10 +159,6 @@ BASE_FEATURE(kPreventDuplicateImageDecodes,
 
 BASE_FEATURE(kInitImageDecodeLastUseTime,
              "InitImageDecodeLastUseTime",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kDynamicSafeAreaInsetsSupportedByCC,
-             "DynamicSafeAreaInsetsSupportedByCC",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kThrottleMainFrameTo60Hz,
@@ -210,10 +197,6 @@ const base::FeatureParam<int> kRenderThrottledFrameIntervalHz{
 BASE_FEATURE(kFastPathNoRaster,
              "FastPathNoRaster",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kExportFrameTimingAfterFrameDone,
-             "ExportFrameTimingAfterFrameDone",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kInternalBeginFrameSourceOnManyDidNotProduceFrame,
              "InternalBeginFrameSourceOnManyDidNotProduceFrame",
@@ -270,4 +253,8 @@ BASE_FEATURE(kSlimDirectReceiverIpc,
 BASE_FEATURE(kOverscrollBehaviorRespectedOnAllScrollContainers,
              "OverscrollBehaviorRespectedOnAllScrollContainers",
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kSkipFinishDuringReleaseLayerTreeFrameSink,
+             "SkipFinishDuringReleaseLayerTreeFrameSink",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 }  // namespace features

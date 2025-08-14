@@ -89,7 +89,7 @@
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/device_info.h"
 #include "chrome/browser/download/download_prompt_status.h"
 #endif
 
@@ -842,16 +842,23 @@ TEST_F(ChromeDownloadManagerDelegateTest, InterceptDownloadByOfflinePages) {
   const GURL kUrl("http://example.com/foo");
   std::string mime_type = "text/html";
   bool should_intercept = delegate()->InterceptDownloadIfApplicable(
-      kUrl, "", "", mime_type, "", 10, false /*is_transient*/, nullptr);
+      kUrl, "", "", mime_type, "", 10, false /*is_transient*/,
+      false /*is_content_initiated*/, nullptr);
   EXPECT_TRUE(should_intercept);
 
   should_intercept = delegate()->InterceptDownloadIfApplicable(
-      kUrl, "", "", mime_type, "", 10, true /*is_transient*/, nullptr);
+      kUrl, "", "", mime_type, "", 10, false /*is_transient*/,
+      true /*is_content_initiated*/, nullptr);
+  EXPECT_FALSE(should_intercept);
+
+  should_intercept = delegate()->InterceptDownloadIfApplicable(
+      kUrl, "", "", mime_type, "", 10, true /*is_transient*/,
+      false /*is_content_initiated*/, nullptr);
   EXPECT_FALSE(should_intercept);
 
   should_intercept = delegate()->InterceptDownloadIfApplicable(
       kUrl, "", "attachment" /*content_disposition*/, mime_type, "", 10,
-      false /*is_transient*/, nullptr);
+      false /*is_transient*/, false /*is_content_initiated*/, nullptr);
   EXPECT_FALSE(should_intercept);
 }
 
@@ -879,7 +886,7 @@ class TestDownloadMessageBridge : public DownloadMessageBridge {
 }  // namespace
 
 TEST_F(ChromeDownloadManagerDelegateTest, InterceptDownloadForAutomotive) {
-  if (!base::android::BuildInfo::GetInstance()->is_automotive()) {
+  if (!base::android::device_info::is_automotive()) {
     GTEST_SKIP() << "This test should only run on automotive.";
   }
   base::HistogramTester histograms;
@@ -891,12 +898,14 @@ TEST_F(ChromeDownloadManagerDelegateTest, InterceptDownloadForAutomotive) {
   const GURL kUrl("http://example.com/foo");
   std::string mime_type = "image/png";
   bool should_intercept = delegate()->InterceptDownloadIfApplicable(
-      kUrl, "", "", mime_type, "", 10, false /*is_transient*/, nullptr);
+      kUrl, "", "", mime_type, "", 10, false /*is_transient*/,
+      false /*is_content_initiated*/, nullptr);
   EXPECT_FALSE(should_intercept);
 
   mime_type = "application/pdf";
   should_intercept = delegate()->InterceptDownloadIfApplicable(
-      kUrl, "", "", mime_type, "", 10, false /*is_transient*/, nullptr);
+      kUrl, "", "", mime_type, "", 10, false /*is_transient*/,
+      false /*is_content_initiated*/, nullptr);
   EXPECT_TRUE(should_intercept);
   histograms.ExpectUniqueSample("Download.Blocked.ContentType.Automotive",
                                 download::DownloadContent::kPdf, 1);

@@ -45,6 +45,11 @@ chromium-metrics-reviews@google.com.
   <int value="24" label="ExecutorDestroyed"/>
   <int value="25" label="WindowWentAway"/>
   <int value="26" label="FrameLocationChangedSinceObservation"/>
+  <int value="27" label="TriggeredNavigationBlocked"/>
+  <int value="28" label="EmptyActionSequence"/>
+  <int value="29" label="ExecutorBusy"/>
+  <int value="30" label="ObservedTargetElementDestroyed"/>
+  <int value="31" label="ObservedTargetElementChanged"/>
   <int value="100" label="NavigateInvalidUrl"/>
   <int value="200" label="ClickSuppressed"/>
   <int value="300" label="DragAndReleaseFromOffscreen"/>
@@ -75,6 +80,38 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(//chrome/common/actor.mojom:ActionResultCode) -->
+
+<!-- LINT.IfChange(ComputedTargetResult) -->
+
+<enum name="ComputedTargetResult">
+  <int value="0" label="kSuccess"/>
+  <int value="1" label="kMissingActorTabData"/>
+  <int value="2" label="kMissingAnnotatedPageContent"/>
+  <int value="3" label="kTargetNotResolvedInApc"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/actor/ui/event_dispatcher.h:ComputedTargetResult) -->
+
+<!-- LINT.IfChange(GetDomNodeResult) -->
+
+<enum name="GetDomNodeResult">
+  <int value="0" label="kSuccess"/>
+  <int value="1" label="kNoApcMainFrameData"/>
+  <int value="2" label="kNodeNotFoundInApc"/>
+  <int value="3" label="kNoGeometry"/>
+  <int value="4" label="kOffScreen"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/actor/ui/dom_node_geometry.h:GetDomNodeResult) -->
+
+<!-- LINT.IfChange(ModelPageTargetType) -->
+
+<enum name="ModelPageTargetType">
+  <int value="0" label="kDomNode"/>
+  <int value="1" label="kPoint"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/actor/ui/event_dispatcher.h:ModelPageTargetType) -->
 
 </enums>
 

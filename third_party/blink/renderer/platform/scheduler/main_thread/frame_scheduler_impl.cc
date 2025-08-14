@@ -55,7 +55,12 @@ namespace {
 // more refined solution. See crbug.com/1513904.
 BASE_FEATURE(kRendererMainIsDefaultThreadTypeForWebRTC,
              "RendererMainIsNormalThreadTypeForWebRTC",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+#if BUILDFLAG(IS_ANDROID)
+             base::FEATURE_DISABLED_BY_DEFAULT
+#else   // BUILDFLAG(IS_ANDROID)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#endif  // BUILDFLAG(IS_ANDROID)
+);
 
 perfetto::StaticString VisibilityStateToString(bool is_visible) {
   if (is_visible) {
@@ -709,7 +714,7 @@ void FrameSchedulerImpl::DidCommitProvisionalLoad(
 }
 
 WebScopedVirtualTimePauser FrameSchedulerImpl::CreateWebScopedVirtualTimePauser(
-    const WTF::String& name,
+    const String& name,
     WebScopedVirtualTimePauser::VirtualTaskDuration duration) {
   return WebScopedVirtualTimePauser(main_thread_scheduler_, duration, name);
 }
@@ -958,7 +963,8 @@ void FrameSchedulerImpl::UpdateQueuePolicy(
   // Override the frozen state for queues that should run while in BFCache. This
   // allows tasks like eviction-triggering messages to be processed, while still
   // freezing the queue for other reasons (e.g., to save resources).
-  if (queue_frozen && queue->CanRunInBFCache() &&
+  if (base::FeatureList::IsEnabled(features::kBFCacheWithSharedWorker) &&
+      queue_frozen && queue->CanRunInBFCache() &&
       parent_page_scheduler_->IsInBackForwardCache()) {
     queue_frozen = false;
   }
@@ -1323,7 +1329,7 @@ void FrameSchedulerImpl::OnIPCTaskPostedWhileInBackForwardCache(
       duration, base::TimeDelta(), base::Minutes(5), 100);
 }
 
-WTF::HashSet<SchedulingPolicy::Feature>
+HashSet<SchedulingPolicy::Feature>
 FrameSchedulerImpl::GetActiveFeaturesTrackedForBackForwardCacheMetrics() {
   return back_forward_cache_disabling_feature_tracker_
       .GetActiveFeaturesTrackedForBackForwardCacheMetrics();

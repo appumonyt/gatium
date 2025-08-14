@@ -21,6 +21,7 @@ class MockBrowserWindowInterface : public BrowserWindowInterface {
               (override));
   MOCK_METHOD(const SessionID&, GetSessionID, (), (const override));
   MOCK_METHOD(TabStripModel*, GetTabStripModel, (), (override));
+  MOCK_METHOD(const TabStripModel*, GetTabStripModel, (), (const, override));
   MOCK_METHOD(bool, IsTabStripVisible, (), (override));
   MOCK_METHOD(bool, ShouldHideUIForFullscreen, (), (const, override));
   MOCK_METHOD(base::CallbackListSubscription,
@@ -40,8 +41,10 @@ class MockBrowserWindowInterface : public BrowserWindowInterface {
   MOCK_METHOD(tabs::TabInterface*, GetActiveTabInterface, (), (override));
   MOCK_METHOD(BrowserWindowFeatures&, GetFeatures, (), (override));
   MOCK_METHOD(const BrowserWindowFeatures&, GetFeatures, (), (const, override));
-  MOCK_METHOD(UnownedUserDataHost&, GetUnownedUserDataHost, (), (override));
-  MOCK_METHOD(const UnownedUserDataHost&,
+  // The non-const version should never return something different from the
+  // const version, so implement one in terms of th other.
+  ui::UnownedUserDataHost& GetUnownedUserDataHost() override;
+  MOCK_METHOD(const ui::UnownedUserDataHost&,
               GetUnownedUserDataHost,
               (),
               (const, override));
@@ -68,10 +71,10 @@ class MockBrowserWindowInterface : public BrowserWindowInterface {
               (override));
   MOCK_METHOD(BrowserActions*, GetActions, (), (override));
   MOCK_METHOD(Type, GetType, (), (const, override));
-  MOCK_METHOD(BrowserUserEducationInterface*,
-              GetUserEducationInterface,
+  MOCK_METHOD(const web_app::AppBrowserController*,
+              GetAppBrowserController,
               (),
-              (override));
+              (const, override));
   MOCK_METHOD(web_app::AppBrowserController*,
               GetAppBrowserController,
               (),

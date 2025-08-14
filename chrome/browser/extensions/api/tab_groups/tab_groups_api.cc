@@ -16,7 +16,6 @@
 #include "chrome/browser/extensions/chrome_extension_function_details.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
@@ -128,8 +127,7 @@ ExtensionFunction::ResponseAction TabGroupsQueryFunction::Run() {
     if (!include_incognito_information() && profile != browser->profile())
       continue;
 
-    if (!browser->GetFeatures()
-             .extension_window_controller()
+    if (!BrowserExtensionWindowController::From(browser)
              ->IsVisibleToTabsAPIForExtension(
                  extension(), /*allow_dev_tools_windows=*/false)) {
       continue;

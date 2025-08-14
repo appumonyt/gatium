@@ -41,6 +41,7 @@
 #include "third_party/webrtc/api/audio_codecs/audio_encoder_factory_template.h"
 #include "third_party/webrtc/api/audio_codecs/opus/audio_decoder_opus.h"
 #include "third_party/webrtc/api/audio_codecs/opus/audio_encoder_opus.h"
+#include "third_party/webrtc/api/create_modular_peer_connection_factory.h"
 #include "third_party/webrtc/api/enable_media.h"
 #include "third_party/webrtc/api/peer_connection_interface.h"
 #include "third_party/webrtc/api/rtc_event_log/rtc_event_log_factory.h"
@@ -811,6 +812,7 @@ void WebrtcTransport::OnLocalSessionDescriptionCreated(
   }
   description_sdp = sdp_message.ToString();
   webrtc::SdpParseError parse_error;
+
   description = webrtc::CreateSessionDescription(description->GetType(),
                                                  description_sdp, &parse_error);
   if (!description) {
@@ -840,10 +842,15 @@ void WebrtcTransport::OnLocalSessionDescriptionCreated(
 
   send_transport_info_callback_.Run(std::move(transport_info));
 
-  peer_connection()->SetLocalDescription(
-      SetSessionDescriptionObserver::Create(base::BindOnce(
-          &WebrtcTransport::OnLocalDescriptionSet, weak_factory_.GetWeakPtr())),
-      description.release());
+  {
+    // Addresses an issue reported on ChromeOS M140 with DCHECKs enabled.
+    ScopedAllowSyncPrimitivesForWebRtcTransport allow_sync_primitives;
+    peer_connection()->SetLocalDescription(
+        SetSessionDescriptionObserver::Create(
+            base::BindOnce(&WebrtcTransport::OnLocalDescriptionSet,
+                           weak_factory_.GetWeakPtr())),
+        description.release());
+  }
 }
 
 void WebrtcTransport::OnLocalDescriptionSet(bool success,

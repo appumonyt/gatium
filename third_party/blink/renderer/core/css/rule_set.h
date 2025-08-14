@@ -303,8 +303,7 @@ class RuleMap {
     RobinHoodMap<AtomicString, Extent>::const_iterator sub_it;
     const RuleMap* rule_map;
 
-    WTF::KeyValuePair<AtomicString, base::span<const RuleData>> operator*()
-        const {
+    KeyValuePair<AtomicString, base::span<const RuleData>> operator*() const {
       return {sub_it->key, rule_map->GetRulesFromExtent(sub_it->value)};
     }
     bool operator==(const ConstIterator& other) const {
@@ -381,20 +380,37 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
   RuleSet(const RuleSet&) = delete;
   RuleSet& operator=(const RuleSet&) = delete;
 
-  void AddRulesFromSheet(const StyleSheetContents*,
-                         const MediaQueryEvaluator&,
-                         CascadeLayer* = nullptr,
-                         const StyleScope* = nullptr);
+  void AddRulesFromSheet(const StyleSheetContents* contents,
+                         const MediaQueryEvaluator& medium,
+                         const MixinMap& mixins,
+                         CascadeLayer* cascade_layer = nullptr,
+                         const StyleScope* style_scope = nullptr);
 
-  // “within_mixin” means that we are currently adding this rule
+  // Keeps track of what @apply rules are we currently processing.
+  struct ApplyingMixin {
+    DISALLOW_NEW();
+
+   public:
+    Member<StyleRuleMixin> mixin;
+    Member<StyleRuleApplyMixin> invoking_apply_rule;
+
+    void Trace(Visitor* visitor) const {
+      visitor->Trace(mixin);
+      visitor->Trace(invoking_apply_rule);
+    }
+  };
+  using ApplyMixinsStack = HeapVector<ApplyingMixin, 4>;
+
+  // Nonempty “apply_mixins_stack” means that we are currently adding this rule
   // as part of @apply in a mixin, and all rules we add must be
-  // duplicated and reparented. This is also propagated through
-  // AddChildRules().
+  // duplicated and reparented (to the uppermost one9. This is also propagated
+  // through AddChildRules().
   void AddStyleRule(StyleRule* style_rule,
                     StyleRule* parent_rule,
                     const MediaQueryEvaluator& medium,
+                    const MixinMap& mixins,
                     AddRuleFlags add_rule_flags,
-                    bool within_mixin,
+                    ApplyMixinsStack& apply_mixins_stack,
                     const ContainerQuery* container_query = nullptr,
                     CascadeLayer* cascade_layer = nullptr,
                     const StyleScope* style_scope = nullptr);
@@ -642,11 +658,12 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
   void AddChildRules(StyleRule* parent_rule,
                      base::span<const Member<StyleRuleBase>>,
                      const MediaQueryEvaluator& medium,
+                     const MixinMap& mixins,
                      AddRuleFlags,
                      const ContainerQuery*,
                      CascadeLayer*,
                      const StyleScope*,
-                     bool within_mixin);
+                     ApplyMixinsStack& apply_mixins_stack);
 
   // Determines whether or not CSSSelector::is_covered_by_bucketing_ should
   // be computed during calls to FindBestRuleSetAndAdd.
@@ -760,7 +777,6 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
   HeapVector<Member<StyleRulePositionTry>> position_try_rules_;
   HeapVector<MediaQuerySetResult> media_query_set_results_;
   HeapVector<Member<StyleRuleFunction>> function_rules_;
-  HeapHashMap<AtomicString, Member<StyleRuleMixin>> mixins_;
 
   // Whether there is a ruleset bucket for rules with a selector on
   // the style attribute (which is rare, but allowed). If so, the caller
@@ -822,5 +838,6 @@ WTF_ALLOW_CLEAR_UNUSED_SLOTS_WITH_MEM_FUNCTIONS(
     blink::RuleSet::Interval<blink::ContainerQuery>)
 WTF_ALLOW_CLEAR_UNUSED_SLOTS_WITH_MEM_FUNCTIONS(
     blink::RuleSet::Interval<blink::StyleScope>)
+WTF_ALLOW_CLEAR_UNUSED_SLOTS_WITH_MEM_FUNCTIONS(blink::RuleSet::ApplyingMixin)
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_CSS_RULE_SET_H_

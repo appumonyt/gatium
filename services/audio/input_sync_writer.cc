@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "services/audio/input_sync_writer.h"
 
 #include <algorithm>
@@ -14,6 +9,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/compiler_specific.h"
 #include "base/containers/heap_array.h"
 #include "base/containers/span.h"
 #include "base/format_macros.h"
@@ -103,7 +99,7 @@ InputSyncWriter::InputSyncWriter(
     media::AudioInputBuffer* buffer =
         reinterpret_cast<media::AudioInputBuffer*>(ptr);
     bus = media::AudioBus::WrapMemory(params, buffer->audio);
-    ptr += shared_memory_segment_size_;
+    UNSAFE_TODO(ptr += shared_memory_segment_size_);
   }
 }
 
@@ -272,9 +268,10 @@ void InputSyncWriter::ReceiveReadConfirmationsFromConsumer() {
       // The next buffer we expect to read a confirmation from.
       media::AudioInputBuffer* buffer =
           GetSharedInputBuffer(next_read_buffer_index_ % audio_buses_.size());
+      std::atomic_ref<uint32_t> has_unread_data(buffer->params.has_unread_data);
       // If this buffer has been read by the consumer side, it will have set the
       // `has_unread_data` flag to 0.
-      if (base::subtle::NoBarrier_Load(&(buffer->params.has_unread_data))) {
+      if (has_unread_data.load(std::memory_order_relaxed)) {
         break;
       }
       ++next_read_buffer_index_;
@@ -381,7 +378,8 @@ bool InputSyncWriter::WriteDataToCurrentSegment(
     // Part of the experimental synchronization mechanism. We will not write
     // more data to this buffer until the consumer side has set this flag back
     // to 0.
-    base::subtle::NoBarrier_Store(&(buffer->params.has_unread_data), 1);
+    std::atomic_ref<uint32_t> has_unread_data(buffer->params.has_unread_data);
+    has_unread_data.store(1, std::memory_order_relaxed);
   }
 
   // Copy data into shared memory using pre-allocated audio buses.
@@ -421,7 +419,7 @@ media::AudioInputBuffer* InputSyncWriter::GetSharedInputBuffer(
     uint32_t segment_id) {
   uint8_t* ptr = static_cast<uint8_t*>(shared_memory_mapping_.memory());
   CHECK_LT(segment_id, audio_buses_.size());
-  ptr += segment_id * shared_memory_segment_size_;
+  UNSAFE_TODO(ptr += segment_id * shared_memory_segment_size_);
   return reinterpret_cast<media::AudioInputBuffer*>(ptr);
 }
 

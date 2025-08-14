@@ -39,6 +39,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
+#include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
@@ -72,7 +73,7 @@ std::string ComposeFetchEventResultString(
   return stream.str();
 }
 
-const std::string ComposeNavigationTypeString(
+const std::string_view ComposeNavigationTypeString(
     const network::ResourceRequest& resource_request) {
   return (resource_request.request_initiator &&
           resource_request.request_initiator->IsSameOriginWith(
@@ -94,6 +95,16 @@ bool IsStaticRouterRaceRequestFixEnabled() {
   return base::FeatureList::IsEnabled(
       features::kServiceWorkerStaticRouterRaceRequestFix);
 }
+
+void MaybeSetHeaderReceivedTiming(net::LoadTimingInfo& timing) {
+  if (timing.receive_headers_start.is_null()) {
+    timing.receive_headers_start = base::TimeTicks::Now();
+    timing.receive_headers_end = timing.receive_headers_start;
+  }
+}
+
+constexpr char kHistogramSyntheticResponseEligibility[] =
+    "ServiceWorker.SyntheticResponse.Eligibility";
 
 }  // namespace
 
@@ -431,6 +442,11 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
     scoped_refptr<ServiceWorkerContextWrapper> context,
     scoped_refptr<ServiceWorkerVersion> version) {
   if (!base::FeatureList::IsEnabled(features::kServiceWorkerAutoPreload)) {
+    return false;
+  }
+
+  if (!GetContentClient()->browser()->IsServiceWorkerAutoPreloadAllowed(
+          context->browser_context())) {
     return false;
   }
 
@@ -999,16 +1015,22 @@ void ServiceWorkerMainResourceLoader::Fallback(
 bool ServiceWorkerMainResourceLoader::MaybeStartSyntheticNetworkRequest(
     scoped_refptr<ServiceWorkerContextWrapper> context_wrapper,
     scoped_refptr<ServiceWorkerVersion> version) {
-  is_synthetic_response_used_ =
-      service_worker_loader_helpers::IsEligibleForSyntheticResponse(
-          context_wrapper->browser_context(), resource_request_.url) &&
-      resource_request_.is_outermost_main_frame;
-  if (!is_synthetic_response_used_) {
+  if (!service_worker_client_ || !resource_request_.is_outermost_main_frame ||
+      !service_worker_loader_helpers::IsEligibleForSyntheticResponse(
+          context_wrapper->browser_context(), resource_request_.url)) {
     return false;
   }
-  if (!service_worker_client_) {
+  const int kReloadFlags = net::LOAD_VALIDATE_CACHE | net::LOAD_BYPASS_CACHE;
+  if (resource_request_.load_flags & kReloadFlags) {
+    // Synthetic response is not enabled in reloading the page.
+    base::UmaHistogramEnumeration(
+        kHistogramSyntheticResponseEligibility,
+        ServiceWorkerMetrics::SyntheticResponseEligibility::
+            kNotEligibleByReload);
     return false;
   }
+
+  is_synthetic_response_used_ = true;
 
   synthetic_response_manager_.emplace(
       service_worker_client_->CreateNetworkURLLoaderFactory(
@@ -1045,6 +1067,10 @@ bool ServiceWorkerMainResourceLoader::MaybeStartSyntheticNetworkRequest(
       // When it's not ready, the header is not stored yet. That means we don't
       // create a synthetic response locally, and wait for the response from the
       // network.
+      base::UmaHistogramEnumeration(
+          kHistogramSyntheticResponseEligibility,
+          ServiceWorkerMetrics::SyntheticResponseEligibility::
+              kNotEligibleByNoHeaderStored);
       break;
     case SyntheticResponseStatus::kReady:
       // When it's ready, the header which the service worker locally storead is
@@ -1054,6 +1080,9 @@ bool ServiceWorkerMainResourceLoader::MaybeStartSyntheticNetworkRequest(
       synthetic_response_manager_->StartSyntheticResponse(base::BindOnce(
           &ServiceWorkerMainResourceLoader::DidDispatchFetchEvent,
           weak_factory_.GetWeakPtr()));
+      base::UmaHistogramEnumeration(
+          kHistogramSyntheticResponseEligibility,
+          ServiceWorkerMetrics::SyntheticResponseEligibility::kEligible);
       break;
   }
 
@@ -1069,6 +1098,7 @@ void ServiceWorkerMainResourceLoader::
   // yet. Return the response from the network to the client here.
   CHECK_EQ(synthetic_response_manager_->Status(),
            SyntheticResponseStatus::kNotReady);
+  MaybeSetHeaderReceivedTiming(response_head->load_timing);
   SetCommitResponsibility(FetchResponseFrom::kWithoutServiceWorker);
   CHECK(url_loader_client_.is_bound());
   CommitResponseBody(response_head, std::move(body), std::nullopt);
@@ -1077,6 +1107,10 @@ void ServiceWorkerMainResourceLoader::
 void ServiceWorkerMainResourceLoader::OnCompleteSyntheticNetworkRequest(
     const network::URLLoaderCompletionStatus& status) {
   CHECK(synthetic_response_manager_);
+  if (status_ == Status::kCompleted) {
+    // Already completed by the stream response for the fallback.
+    return;
+  }
   CommitCompleted(status.error_code, "Synthetic response");
 }
 
@@ -1092,11 +1126,7 @@ void ServiceWorkerMainResourceLoader::StartResponse(
 
   response_head_->did_service_worker_navigation_preload =
       dispatched_preload_type() == DispatchedPreloadType::kNavigationPreload;
-  if (response_head_->load_timing.receive_headers_start.is_null()) {
-    response_head_->load_timing.receive_headers_start = base::TimeTicks::Now();
-    response_head_->load_timing.receive_headers_end =
-        response_head_->load_timing.receive_headers_start;
-  }
+  MaybeSetHeaderReceivedTiming(response_head_->load_timing);
   response_source_ = response->response_source;
   if (ShouldRecordServiceWorkerFetchStart()) {
     response_head_->load_timing.service_worker_fetch_start =
@@ -1318,7 +1348,7 @@ ServiceWorkerMainResourceLoader::ConvertToServiceWorkerStatus(
   }
 }
 
-std::string
+std::string_view
 ServiceWorkerMainResourceLoader::GetInitialServiceWorkerStatusString() {
   CHECK(initial_service_worker_status_);
   switch (*initial_service_worker_status_) {
@@ -1433,22 +1463,23 @@ bool ServiceWorkerMainResourceLoader::IsEligibleForRecordingTimingMetrics() {
 }
 
 void ServiceWorkerMainResourceLoader::RecordFindRegistrationToCompletedTrace() {
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP1(
-      "ServiceWorker", kHistogramLoadTiming, this,
+  TRACE_EVENT_BEGIN(
+      "ServiceWorker", kHistogramLoadTiming, perfetto::Track::FromPointer(this),
       find_registration_start_time_, "url", resource_request_.url);
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker", kHistogramLoadTiming, this, completion_time_);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  completion_time_);
 }
 
 void ServiceWorkerMainResourceLoader::
     RecordFindRegistrationToRequestStartTiming() {
   const base::TimeTicks request_start =
       response_head_->load_timing.request_start;
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP1(
-      "ServiceWorker", "FindRegistrationToRequestStart", this,
-      find_registration_start_time_, "url", resource_request_.url);
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker", "FindRegistrationToRequestStart", this, request_start);
+  TRACE_EVENT_BEGIN("ServiceWorker", "FindRegistrationToRequestStart",
+                    perfetto::Track::FromPointer(this),
+                    find_registration_start_time_, "url",
+                    resource_request_.url);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  request_start);
 
   base::UmaHistogramMediumTimes(
       base::StrCat({kHistogramLoadTiming, ".FindRegistrationToRequestStart"}),
@@ -1498,20 +1529,19 @@ void ServiceWorkerMainResourceLoader::
       base::StrCat({kHistogramLoadTiming, ".StartToForwardServiceWorker.",
                     GetInitialServiceWorkerStatusString()}),
       load_timing.service_worker_start_time - load_timing.request_start);
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
-      "ServiceWorker", "RequestStartToForwardServiceWorker", this,
-      load_timing.request_start);
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker", "RequestStartToForwardServiceWorker", this,
-      load_timing.service_worker_start_time);
+  TRACE_EVENT_BEGIN("ServiceWorker", "RequestStartToForwardServiceWorker",
+                    perfetto::Track::FromPointer(this),
+                    load_timing.request_start);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  load_timing.service_worker_start_time);
 }
 
 void ServiceWorkerMainResourceLoader::
     RecordForwardServiceWorkerToWorkerReadyTiming() {
   const net::LoadTimingInfo& load_timing = response_head_->load_timing;
-  const std::string navigation_type_string =
+  const std::string_view navigation_type_string =
       ComposeNavigationTypeString(resource_request_);
-  const std::string is_browser_startup_completed_str =
+  const std::string_view is_browser_startup_completed_str =
       is_browser_startup_completed_ ? "BrowserStartupCompleted"
                                     : "BrowserStartupNotCompleted";
   base::TimeDelta time = load_timing.service_worker_ready_time -
@@ -1535,23 +1565,18 @@ void ServiceWorkerMainResourceLoader::
           {kHistogramLoadTiming, ".ForwardServiceWorkerToWorkerReady2.",
            GetInitialServiceWorkerStatusString(), ".", navigation_type_string}),
       time);
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP1(
+  TRACE_EVENT_BEGIN(
       "ServiceWorker",
-      base::StrCat({"ForwardServiceWorkerToWorkerReady.",
-                    GetInitialServiceWorkerStatusString(), ".",
-                    navigation_type_string, ".",
-                    is_browser_startup_completed_str})
-          .c_str(),
-      this, load_timing.service_worker_start_time,
+      perfetto::StaticString(
+          base::StrCat({"ForwardServiceWorkerToWorkerReady.",
+                        GetInitialServiceWorkerStatusString(), ".",
+                        navigation_type_string, ".",
+                        is_browser_startup_completed_str})
+              .c_str()),
+      perfetto::Track::FromPointer(this), load_timing.service_worker_start_time,
       "initial_service_worker_status", GetInitialServiceWorkerStatusString());
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker",
-      base::StrCat({"ForwardServiceWorkerToWorkerReady.",
-                    GetInitialServiceWorkerStatusString(), ".",
-                    navigation_type_string, ".",
-                    is_browser_startup_completed_str})
-          .c_str(),
-      this, load_timing.service_worker_ready_time);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  load_timing.service_worker_ready_time);
 }
 
 void ServiceWorkerMainResourceLoader::
@@ -1567,12 +1592,11 @@ void ServiceWorkerMainResourceLoader::
                     GetInitialServiceWorkerStatusString()}),
       fetch_event_timing_->dispatch_event_time -
           load_timing.service_worker_ready_time);
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
-      "ServiceWorker", "WorkerReadyToFetchHandlerStart", this,
-      load_timing.service_worker_ready_time);
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker", "WorkerReadyToFetchHandlerStart", this,
-      fetch_event_timing_->dispatch_event_time);
+  TRACE_EVENT_BEGIN("ServiceWorker", "WorkerReadyToFetchHandlerStart",
+                    perfetto::Track::FromPointer(this),
+                    load_timing.service_worker_ready_time);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  fetch_event_timing_->dispatch_event_time);
 }
 
 void ServiceWorkerMainResourceLoader::
@@ -1587,12 +1611,11 @@ void ServiceWorkerMainResourceLoader::
                                         GetInitialServiceWorkerStatusString()}),
                           fetch_event_timing_->respond_with_settled_time -
                               fetch_event_timing_->dispatch_event_time);
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
-      "ServiceWorker", "FetchHandlerStartToFetchHandlerEnd", this,
-      fetch_event_timing_->dispatch_event_time);
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker", "FetchHandlerStartToFetchHandlerEnd", this,
-      fetch_event_timing_->respond_with_settled_time);
+  TRACE_EVENT_BEGIN("ServiceWorker", "FetchHandlerStartToFetchHandlerEnd",
+                    perfetto::Track::FromPointer(this),
+                    fetch_event_timing_->dispatch_event_time);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  fetch_event_timing_->respond_with_settled_time);
 }
 
 void ServiceWorkerMainResourceLoader::
@@ -1608,12 +1631,11 @@ void ServiceWorkerMainResourceLoader::
                     GetInitialServiceWorkerStatusString()}),
       load_timing.receive_headers_end -
           fetch_event_timing_->respond_with_settled_time);
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
-      "ServiceWorker", "FetchHandlerEndToResponseReceived", this,
-      fetch_event_timing_->respond_with_settled_time);
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker", "FetchHandlerEndToResponseReceived", this,
-      load_timing.receive_headers_end);
+  TRACE_EVENT_BEGIN("ServiceWorker", "FetchHandlerEndToResponseReceived",
+                    perfetto::Track::FromPointer(this),
+                    fetch_event_timing_->respond_with_settled_time);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  load_timing.receive_headers_end);
 }
 
 void ServiceWorkerMainResourceLoader::
@@ -1626,13 +1648,14 @@ void ServiceWorkerMainResourceLoader::
       base::StrCat({kHistogramLoadTiming, ".ResponseReceivedToCompleted2.",
                     GetInitialServiceWorkerStatusString()}),
       completion_time_ - load_timing.receive_headers_end);
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP1(
-      "ServiceWorker", "ResponseReceivedToCompleted", this,
-      load_timing.receive_headers_end, "fetch_response_source",
+  TRACE_EVENT_BEGIN(
+      "ServiceWorker", "ResponseReceivedToCompleted",
+      perfetto::Track::FromPointer(this), load_timing.receive_headers_end,
+      "fetch_response_source",
       blink::ServiceWorkerLoaderHelpers::FetchResponseSourceToSuffix(
           response_source_));
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker", "ResponseReceivedToCompleted", this, completion_time_);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  completion_time_);
   // Same as above, breakdown by response source.
   base::UmaHistogramMediumTimes(
       base::StrCat(
@@ -1704,12 +1727,11 @@ void ServiceWorkerMainResourceLoader::
       base::StrCat({kHistogramLoadTiming, ".FetchHandlerEndToFallbackNetwork.",
                     GetInitialServiceWorkerStatusString()}),
       completion_time_ - fetch_event_timing_->respond_with_settled_time);
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
-      "ServiceWorker", "FetchHandlerEndToFallbackNetwork", this,
-      fetch_event_timing_->respond_with_settled_time);
-  TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-      "ServiceWorker", "FetchHandlerEndToFallbackNetwork", this,
-      completion_time_);
+  TRACE_EVENT_BEGIN("ServiceWorker", "FetchHandlerEndToFallbackNetwork",
+                    perfetto::Track::FromPointer(this),
+                    fetch_event_timing_->respond_with_settled_time);
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  completion_time_);
 }
 
 void ServiceWorkerMainResourceLoader::RecordFetchEventHandlerMetrics(
@@ -1746,7 +1768,8 @@ void ServiceWorkerMainResourceLoader::TransitionToStatus(Status new_status) {
           // Network fallback after interception.
           status_ == Status::kStarted ||
           // Success case or error while sending the response's body.
-          status_ == Status::kSentBody);
+          status_ == Status::kSentBody)
+          << static_cast<int>(status_);
       break;
   }
 #endif  // DCHECK_IS_ON()

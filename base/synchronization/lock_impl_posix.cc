@@ -14,6 +14,7 @@
 #include "base/check_op.h"
 #include "base/posix/safe_strerror.h"
 #include "base/synchronization/lock.h"
+#include "base/synchronization/lock_metrics_recorder.h"
 #include "base/synchronization/synchronization_buildflags.h"
 #include "base/system/sys_info.h"
 #include "build/build_config.h"
@@ -88,7 +89,7 @@ void dcheck_unlock_result(int rv) {
 // Lock::PriorityInheritanceAvailable still must be checked as the code may
 // compile but the underlying platform still may not correctly support priority
 // inheritance locks.
-#if BUILDFLAG(IS_NACL) || BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_FUCHSIA)
 #define PRIORITY_INHERITANCE_LOCKS_POSSIBLE() 0
 #else
 #define PRIORITY_INHERITANCE_LOCKS_POSSIBLE() 1
@@ -124,6 +125,7 @@ LockImpl::~LockImpl() {
 }
 
 void LockImpl::LockInternal() {
+  LockMetricsRecorder::ScopedLockAcquisitionTimer timer;
   int rv = pthread_mutex_lock(&native_handle_);
   DCHECK_EQ(rv, 0) << ". " << SystemErrorCodeToString(rv);
 }

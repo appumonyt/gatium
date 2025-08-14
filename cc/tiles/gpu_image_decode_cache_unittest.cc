@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "cc/tiles/gpu_image_decode_cache.h"
 
 #include <algorithm>
@@ -18,6 +13,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
@@ -182,18 +178,18 @@ class FakeGPUImageDecodeTestGLES2Interface : public viz::TestGLES2Interface,
   void CompleteLockDiscardableTexureOnContextThread(
       uint32_t texture_id) override {}
 
-  void* MapTransferCacheEntry(uint32_t serialized_size) override {
+  base::span<uint8_t> MapTransferCacheEntry(uint32_t serialized_size) override {
     mapped_entry_size_ = serialized_size;
     auto buffer =
         PaintOpWriter::AllocateAlignedBuffer<uint8_t>(serialized_size);
     mapped_entry_.swap(buffer);
-    return mapped_entry_.get();
+    return UNSAFE_TODO(base::span(mapped_entry_.get(), mapped_entry_size_));
   }
 
   void UnmapAndCreateTransferCacheEntry(uint32_t type, uint32_t id) override {
     transfer_cache_helper_->CreateEntryDirect(
         MakeEntryKey(type, id),
-        base::span(mapped_entry_.get(), mapped_entry_size_));
+        UNSAFE_TODO(base::span(mapped_entry_.get(), mapped_entry_size_)));
     mapped_entry_ = nullptr;
     mapped_entry_size_ = 0;
   }
@@ -275,7 +271,7 @@ class FakeGPUImageDecodeTestGLES2Interface : public viz::TestGLES2Interface,
   }
   void DeleteTextures(GLsizei n, const GLuint* textures) override {
     for (GLsizei i = 0; i < n; i++) {
-      discardable_manager_->DeleteTexture(textures[i]);
+      discardable_manager_->DeleteTexture(UNSAFE_TODO(textures[i]));
     }
     TestGLES2Interface::DeleteTextures(n, textures);
   }
@@ -579,7 +575,6 @@ class GpuImageDecodeCacheTest
     TargetColorParams target_color_params = DefaultTargetColorParams();
     if (color_space)
       target_color_params.color_space = *color_space;
-    target_color_params.sdr_max_luminance_nits = sdr_white_level;
 
     return DrawImage(paint_image, use_dark_mode, *src_rect, filter_quality,
                      matrix, frame_index, target_color_params);
@@ -733,7 +728,7 @@ class GpuImageDecodeCacheTest
             draw_image, static_cast<YUVIndex>(i));
       }
       ASSERT_TRUE(uploaded_plane);
-      EXPECT_EQ(plane_sizes[i], uploaded_plane->dimensions());
+      UNSAFE_TODO(EXPECT_EQ(plane_sizes[i], uploaded_plane->dimensions()));
       EXPECT_EQ(expected_color_type, uploaded_plane->colorType());
       if (expected_cs && use_transfer_cache_) {
         EXPECT_TRUE(
@@ -3855,8 +3850,6 @@ TEST_P(GpuImageDecodeCacheTest, HighBitDepthYUVDecoding) {
 
     TargetColorParams target_color_params;
     target_color_params.color_space = target_cs;
-    target_color_params.sdr_max_luminance_nits =
-        gfx::ColorSpace::kDefaultSDRWhiteLevel;
 
     DrawImage draw_image(
         image, false, SkIRect::MakeWH(image.width(), image.height()),

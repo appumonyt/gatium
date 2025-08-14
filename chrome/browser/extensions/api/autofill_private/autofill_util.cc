@@ -86,6 +86,8 @@ autofill_private::AddressRecordType ConvertProfileRecordType(
       return autofill_private::AddressRecordType::kAccountHome;
     case autofill::AutofillProfile::RecordType::kAccountWork:
       return autofill_private::AddressRecordType::kAccountWork;
+    case autofill::AutofillProfile::RecordType::kAccountNameEmail:
+      return autofill_private::AddressRecordType::kAccountNameEmail;
   }
   NOTREACHED();
 }
@@ -233,6 +235,10 @@ std::pair<std::string, std::string> PayOverTimeIssuerToIconResourceIdString(
       return std::pair<std::string, std::string>(
           "chrome://theme/IDR_AUTOFILL_METADATA_BNPL_GENERIC",
           "chrome://theme/IDR_AUTOFILL_METADATA_BNPL_GENERIC");
+    case autofill::BnplIssuer::IssuerId::kBnplKlarna:
+      return std::pair<std::string, std::string>(
+          "chrome://theme/IDR_AUTOFILL_KLARNA_LINKED",
+          "chrome://theme/IDR_AUTOFILL_KLARNA_LINKED_DARK");
   }
   NOTREACHED();
 }
@@ -324,8 +330,21 @@ IbanEntryList GenerateIbanList(const autofill::PaymentsDataManager& paydm) {
 
 PayOverTimeIssuerEntryList GeneratePayOverTimeIssuerList(
     const autofill::PaymentsDataManager& paydm) {
-  return base::ToVector(paydm.GetLinkedBnplIssuers(),
-                        &BnplIssuerToPayOverTimeIssuerEntry);
+  std::vector<autofill::BnplIssuer> linked_issuers =
+      base::ToVector(paydm.GetLinkedBnplIssuers());
+
+  // Remove the issuer entry if a BNPL issuer is linked externally, due to
+  // missing terms of services acceptance.
+  linked_issuers.erase(
+      std::remove_if(
+          linked_issuers.begin(), linked_issuers.end(),
+          [](autofill::BnplIssuer& issuer) {
+            return issuer.payment_instrument()->action_required().contains(
+                autofill::PaymentInstrument::ActionRequired::kAcceptTos);
+          }),
+      linked_issuers.end());
+
+  return base::ToVector(linked_issuers, &BnplIssuerToPayOverTimeIssuerEntry);
 }
 
 std::optional<api::autofill_private::AccountInfo> GetAccountInfo(

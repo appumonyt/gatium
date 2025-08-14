@@ -60,7 +60,9 @@ startxref
     const pdfBlob = new Blob([pdf], {type: 'application/pdf'});
     const printers = await navigator.printing.getPrinters();
 
-    const printJob = await printers[0].printJob("Title", { data: pdfBlob }, {
+    const printJob = await printers[0].submitPrintJob("Title", {
+      data: pdfBlob
+    }, {
       mediaCol: {
         mediaSize: {
           xDimension: 21000,
@@ -357,7 +359,7 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, FetchAttributes) {
   auto eval_result = EvalJs(app_frame(), kFetchAttributesScript);
   ASSERT_THAT(eval_result, content::EvalJsResult::IsOk());
 
-  EXPECT_THAT(eval_result.value,
+  EXPECT_THAT(eval_result.ExtractDict(),
               base::test::DictionaryHasValues(
                   base::test::ParseJsonDict(kExpectedAttributes)));
 }
@@ -411,8 +413,9 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest,
     })();
   )";
 
-  ASSERT_THAT(EvalJs(app_frame(), kGetPrintersScript).error,
-              testing::HasSubstr("User denied access"));
+  ASSERT_THAT(
+      EvalJs(app_frame(), kGetPrintersScript),
+      content::EvalJsResult::ErrorIs(testing::HasSubstr("User denied access")));
 }
 
 // Validate that further calls to printer's methods fail when content setting
@@ -445,10 +448,11 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest,
       await printer.fetchAttributes();
     })();
   )";
-  ASSERT_THAT(EvalJs(app_frame(), kFetchAttributesScript).error,
-              testing::HasSubstr("User denied access"));
+  ASSERT_THAT(
+      EvalJs(app_frame(), kFetchAttributesScript),
+      content::EvalJsResult::ErrorIs(testing::HasSubstr("User denied access")));
 
-  // Ensure that `printer.printJob()` reports access denied.
+  // Ensure that `printer.submitPrintJob()` reports access denied.
   constexpr std::string_view kPrintJobScript = R"(
     (async () => {
       const pdf = `%PDF-1.0
@@ -466,11 +470,13 @@ startxref
 149
 %EOF`;
       const pdfBlob = new Blob([pdf], {type: 'application/pdf'});
-      const printJob = await printer.printJob("Fail", { data: pdfBlob }, {});
+      const printJob = await printer.submitPrintJob("Fail", { data: pdfBlob },
+        {});
     })();
   )";
-  ASSERT_THAT(EvalJs(app_frame(), kPrintJobScript).error,
-              testing::HasSubstr("User denied access"));
+  ASSERT_THAT(
+      EvalJs(app_frame(), kPrintJobScript),
+      content::EvalJsResult::ErrorIs(testing::HasSubstr("User denied access")));
 }
 
 IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, CancelImmediately) {
@@ -498,7 +504,8 @@ startxref
     const pdfBlob = new Blob([pdf], {type: 'application/pdf'});
     const printers = await navigator.printing.getPrinters();
 
-    const printJob = await printers[0].printJob("Title", { data: pdfBlob }, {});
+    const printJob = await printers[0].submitPrintJob("Title",
+      { data: pdfBlob }, {});
     let phase = 0;
     const printJobCanceled = new Promise((resolve, reject) => {
       printJob.onjobstatechange = () => {
@@ -551,7 +558,8 @@ startxref
     const pdfBlob = new Blob([pdf], {type: 'application/pdf'});
     const printers = await navigator.printing.getPrinters();
 
-    const printJob = await printers[0].printJob("Title", { data: pdfBlob }, {});
+    const printJob = await printers[0].submitPrintJob("Title",
+      { data: pdfBlob }, {});
     let phase = 0;
     const printJobProcessingThenCanceled = new Promise((resolve, reject) => {
       printJob.onjobstatechange = () => {

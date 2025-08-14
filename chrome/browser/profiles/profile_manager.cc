@@ -71,7 +71,6 @@
 #include "chrome/browser/supervised_user/child_accounts/child_account_service_factory.h"
 #include "chrome/browser/supervised_user/child_accounts/list_family_members_service_factory.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
-#include "chrome/browser/ui/tabs/organization/tab_organization_service_factory.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/unified_consent/unified_consent_service_factory.h"
 #include "chrome/common/buildflags.h"
@@ -118,7 +117,6 @@
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "extensions/browser/api/management/management_api.h"
-#include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
@@ -241,7 +239,7 @@ void ProfileSizeTask(const base::FilePath& path, int enabled_app_count) {
 
   size = base::ComputeDirectorySize(path);
   size_MB = static_cast<int>(size / kBytesInOneMB);
-  UMA_HISTOGRAM_COUNTS_10000("Profile.TotalSizeRecursive", size_MB);
+  UMA_HISTOGRAM_COUNTS_100000("Profile.TotalSizeRecursive", size_MB);
 
   size = ComputeFilesSize(path, FILE_PATH_LITERAL("History"));
   size_MB = static_cast<int>(size / kBytesInOneMB);
@@ -1262,12 +1260,6 @@ void ProfileManager::AddKeepAlive(const Profile* profile,
             << "The keepalive was not added. This may cause a crash during "
             << "teardown. (except in unit tests, where Profiles may not be "
             << "registered with the ProfileManager)";
-    // TODO(crbug.com/368360956): Not incrementing the refcount will cause
-    // `profile` to get destroyed too early. Remove or convert to a CHECK() once
-    // the root cause is fixed.
-    SCOPED_CRASH_KEY_STRING32("ProfileKeepAlive", "origin",
-                              GetKeepAliveOriginName(origin));
-    base::debug::DumpWithoutCrashing();
     return;
   }
 
@@ -1465,17 +1457,6 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
 #endif
   extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(
       extensions_enabled);
-
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-  // Set the block extensions bit on the ExtensionRegistrar. There likely are no
-  // blockable extensions to block.
-  ProfileAttributesEntry* entry =
-      GetProfileAttributesStorage().GetProfileAttributesWithPath(
-          profile->GetPath());
-  if (entry && entry->IsSigninRequired()) {
-    extensions::ExtensionRegistrar::Get(profile)->BlockAllExtensions();
-  }
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 #if BUILDFLAG(IS_CHROMEOS)
   // Ensure that the `ContactCenterInsightsExtensionManager` is instantiated

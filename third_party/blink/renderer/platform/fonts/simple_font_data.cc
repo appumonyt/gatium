@@ -45,6 +45,7 @@
 #include "third_party/blink/renderer/platform/fonts/opentype/open_type_baseline_metrics.h"
 #include "third_party/blink/renderer/platform/fonts/opentype/open_type_vertical_data.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_face.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/ng_shape_cache.h"
 #include "third_party/blink/renderer/platform/fonts/skia/skia_text_metrics.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -262,6 +263,30 @@ Glyph SimpleFontData::GlyphForCharacter(UChar32 codepoint) const {
   return harfbuzz_face->HbGlyphForCharacter(codepoint);
 }
 
+Glyph SimpleFontData::GlyphForMathCharacter(UChar32 codepoint,
+                                            TextDirection direction) const {
+  // If the text is RTL, try to get a suitable mirrored glyph. This is handled
+  // automatically by harfbuzz when setting HB_DIRECTION_RTL in the buffer.
+  if (RuntimeEnabledFeatures::MathMLOperatorRTLMirroringEnabled() &&
+      direction == TextDirection::kRtl) {
+    StringBuilder builder;
+    builder.Append(codepoint);
+    HarfBuzzShaper shaper(builder.ToString());
+    HarfBuzzShaper::GlyphDataList glyph_data_list;
+    shaper.GetGlyphData(*this, LayoutLocale::GetDefault(),
+                        UScriptCode::USCRIPT_MATHEMATICAL_NOTATION,
+                        /*is_horizontal=*/true, direction, glyph_data_list);
+    // If found, return the first mirrored glyph.
+    if (!glyph_data_list.empty()) {
+      return glyph_data_list[0].glyph;
+    }
+  }
+
+  // When a mirrored glyph can't be found, or when the text direction is LTR,
+  // fall back to the original behaviour.
+  return this->GlyphForCharacter(codepoint);
+}
+
 bool SimpleFontData::IsSegmented() const {
   return false;
 }
@@ -465,7 +490,7 @@ const HanKerning::FontData& SimpleFontData::HanKerningData(
 
   // The cache didn't hit. Shift the list and create a new entry at `[0]`.
   for (wtf_size_t i = 1; i < std::size(han_kerning_cache_); ++i) {
-    UNSAFE_TODO(han_kerning_cache_[i] = std::move(han_kerning_cache_[i - 1]));
+    han_kerning_cache_[i] = std::move(han_kerning_cache_[i - 1]);
   }
   HanKerningCacheEntry& new_entry = han_kerning_cache_[0];
   new_entry = {.locale = &locale,
@@ -495,7 +520,7 @@ void SimpleFontData::BoundsForGlyphs(const Vector<Glyph, 256>& glyphs,
   }
 
   DCHECK_EQ(bounds->size(), glyphs.size());
-  SkFontGetBoundsForGlyphs(font_, glyphs, bounds->data());
+  SkFontGetBoundsForGlyphs(font_, glyphs, *bounds);
 }
 
 float SimpleFontData::WidthForGlyph(Glyph glyph) const {

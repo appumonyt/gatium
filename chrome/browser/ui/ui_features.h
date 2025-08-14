@@ -44,22 +44,21 @@ BASE_DECLARE_FEATURE(kExtensionsCollapseMainMenu);
 #if BUILDFLAG(IS_WIN)
 BASE_DECLARE_FEATURE(kOfferPinToTaskbarWhenSettingToDefault);
 BASE_DECLARE_FEATURE(kOfferPinToTaskbarInFirstRunExperience);
-BASE_DECLARE_FEATURE(kOfferPinToTaskbarInfoBar);
 #endif
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+BASE_DECLARE_FEATURE(kOfferPinToTaskbarInfoBar);
 BASE_DECLARE_FEATURE(kPdfInfoBar);
-enum class PdfInfoBarTrigger { kPdfLoad = 0, kStartup = 1 };
-inline constexpr base::FeatureParam<PdfInfoBarTrigger>::Option
-    kPdfInfoBarTriggerOptions[] = {{PdfInfoBarTrigger::kPdfLoad, "pdf-load"},
-                                   {PdfInfoBarTrigger::kStartup, "startup"}};
 
-inline constexpr base::FeatureParam<PdfInfoBarTrigger> kPdfInfoBarTrigger(
-    &kPdfInfoBar,
-    "trigger",
-    PdfInfoBarTrigger::kPdfLoad,
-    &kPdfInfoBarTriggerOptions);
+enum class PdfInfoBarTrigger { kPdfLoad = 0, kStartup = 1 };
+
+BASE_DECLARE_FEATURE_PARAM(PdfInfoBarTrigger, kPdfInfoBarTrigger);
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+// When enabled, user may see the session restore UI flow.
+BASE_DECLARE_FEATURE(kSessionRestoreInfobar);
+#endif
 
 BASE_DECLARE_FEATURE(kPreloadTopChromeWebUI);
 // This enum entry values must be in sync with
@@ -137,6 +136,8 @@ BASE_DECLARE_FEATURE(kPreloadTopChromeWebUILessNavigations);
 
 BASE_DECLARE_FEATURE(kPressAndHoldEscToExitBrowserFullscreen);
 
+BASE_DECLARE_FEATURE(kReloadSelectionModel);
+
 BASE_DECLARE_FEATURE(kScrimForBrowserWindowModal);
 
 BASE_DECLARE_FEATURE(KScrimForTabModal);
@@ -145,27 +146,44 @@ BASE_DECLARE_FEATURE(kSideBySide);
 
 BASE_DECLARE_FEATURE_PARAM(base::TimeDelta, kSideBySideShowDropTargetDelay);
 
-BASE_DECLARE_FEATURE_PARAM(int, kSideBySideDropTargetInnerPadding);
+// Feature params for the width of the multi-contents drop target.
+// If the `kSideBySideDropTargetNudge` feature is enabled, then these only
+// apply for tab dragging.
+BASE_DECLARE_FEATURE_PARAM(int, kSideBySideDropTargetMinWidth);
+BASE_DECLARE_FEATURE_PARAM(int, kSideBySideDropTargetMaxWidth);
+BASE_DECLARE_FEATURE_PARAM(int, kSideBySideDropTargetTargetWidthPercentage);
+
+// Feature and params to control the "nudge" behavior of drop targets.
+BASE_DECLARE_FEATURE(kSideBySideDropTargetNudge);
+BASE_DECLARE_FEATURE_PARAM(int, kSideBySideDropTargetNudgeMinWidth);
+BASE_DECLARE_FEATURE_PARAM(int, kSideBySideDropTargetNudgeMaxWidth);
+BASE_DECLARE_FEATURE_PARAM(int,
+                           kSideBySideDropTargetNudgeTargetWidthPercentage);
+BASE_DECLARE_FEATURE_PARAM(int, kSideBySideDropTargetNudgeToFullMinWidth);
+BASE_DECLARE_FEATURE_PARAM(int, kSideBySideDropTargetNudgeToFullMaxWidth);
+BASE_DECLARE_FEATURE_PARAM(
+    int,
+    kSideBySideDropTargetNudgeToFullTargetWidthPercentage);
 
 enum class MiniToolbarActiveConfiguration {
   // Hides the toolbar in the active view.
   Hide,
   // Shows only the menu button in the active view.
-  ShowMenuOnly,
-  // Shows favicon, domain, alerts and menu button in the active view.
-  ShowAll
+  ShowMenu,
+  // Shows only the close button in the active view.
+  ShowClose,
 };
 
 BASE_DECLARE_FEATURE_PARAM(MiniToolbarActiveConfiguration,
                            kSideBySideMiniToolbarActiveConfiguration);
+
+BASE_DECLARE_FEATURE_PARAM(int, kSideBySideSnapDistance);
 
 BASE_DECLARE_FEATURE(kSideBySideSessionRestore);
 
 bool IsRestoringSplitViewEnabled();
 
 BASE_DECLARE_FEATURE(kSideBySideLinkMenuNewBadge);
-
-bool IsNtpFooterEnabledWithoutSideBySide();
 
 BASE_DECLARE_FEATURE(kTabDuplicateMetrics);
 
@@ -210,11 +228,43 @@ inline constexpr char kTabHoverCardImagesCrossfadePreviewAtParameterName[] =
 inline constexpr char kTabHoverCardAdditionalMaxWidthDelay[] =
     "additional_max_width_delay";
 
+// If enabled, use desktop widget to show tab modal dialogs.
+BASE_DECLARE_FEATURE(kTabModalUsesDesktopWidget);
+
 BASE_DECLARE_FEATURE(kTabOrganization);
 bool IsTabOrganization();
 
+// The target (and minimum) interval between proactive nudge triggers. Measured
+// against a clock that only runs while Chrome is in the foreground.
+BASE_DECLARE_FEATURE_PARAM(base::TimeDelta, kTabOrganizationTriggerPeriod);
+
+// The base to use for the trigger logic's exponential backoff.
+BASE_DECLARE_FEATURE_PARAM(double, kTabOrganizationTriggerBackoffBase);
+
+// The minimum score threshold for proactive nudge triggering to occur.
+BASE_DECLARE_FEATURE_PARAM(double, kTabOrganizationTriggerThreshold);
+
+// The maximum sensitivity score for a tab to contribute to trigger scoring.
+BASE_DECLARE_FEATURE_PARAM(double, kTabOrganizationTriggerSensitivityThreshold);
+
+// Enable 'demo mode' for Tab Organization triggering, which triggers much more
+// predictably and frequently.
+BASE_DECLARE_FEATURE_PARAM(bool, KTabOrganizationTriggerDemoMode);
+
 BASE_DECLARE_FEATURE(kTabstripDeclutter);
 bool IsTabstripDeclutterEnabled();
+
+// Duration of inactivity after which a tab is considered stale for declutter.
+BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
+                           kTabstripDeclutterStaleThresholdDuration);
+
+// Interval between a recomputation of stale tabs for declutter.
+BASE_DECLARE_FEATURE_PARAM(base::TimeDelta, kTabstripDeclutterTimerInterval);
+
+// Default interval after showing a nudge to prevent another nudge from being
+// shown for declutter.
+BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
+                           kTabstripDeclutterNudgeTimerInterval);
 
 BASE_DECLARE_FEATURE(kTabstripDedupe);
 bool IsTabstripDedupeEnabled();
@@ -227,55 +277,6 @@ BASE_DECLARE_FEATURE(kTabOrganizationEnableNudgeForEnterprise);
 
 BASE_DECLARE_FEATURE(kTabOrganizationUserInstruction);
 
-// Duration of inactivity after which a tab is considered stale for declutter.
-inline constexpr base::FeatureParam<base::TimeDelta>
-    kTabstripDeclutterStaleThresholdDuration(&kTabstripDeclutter,
-                                             "stale_threshold_duration",
-                                             base::Days(7));
-
-// Interval between a recomputation of stale tabs for declutter.
-inline constexpr base::FeatureParam<base::TimeDelta>
-    kTabstripDeclutterTimerInterval(&kTabstripDeclutter,
-                                    "declutter_timer_interval",
-                                    base::Minutes(10));
-
-// Default interval after showing a nudge to prevent another nudge from being
-// shown for declutter.
-inline constexpr base::FeatureParam<base::TimeDelta>
-    kTabstripDeclutterNudgeTimerInterval(&kTabstripDeclutter,
-                                         "nudge_timer_interval",
-                                         base::Minutes(6 * 60));
-
-// The target (and minimum) interval between proactive nudge triggers. Measured
-// against a clock that only runs while Chrome is in the foreground.
-inline constexpr base::FeatureParam<base::TimeDelta>
-    kTabOrganizationTriggerPeriod(&kTabOrganization,
-                                  "trigger_period",
-                                  base::Hours(6));
-
-// The base to use for the trigger logic's exponential backoff.
-inline constexpr base::FeatureParam<double>
-    kTabOrganizationTriggerBackoffBase(&kTabOrganization, "backoff_base", 2.0);
-
-// The minimum score threshold for proactive nudge triggering to occur.
-inline constexpr base::FeatureParam<double> kTabOrganizationTriggerThreshold(
-    &kTabOrganization,
-    "trigger_threshold",
-    7.0);
-
-// The maximum sensitivity score for a tab to contribute to trigger scoring.
-inline constexpr base::FeatureParam<double>
-    kTabOrganizationTriggerSensitivityThreshold(&kTabOrganization,
-                                                "trigger_sensitivity_threshold",
-                                                0.5);
-
-// Enable 'demo mode' for Tab Organization triggering, which triggers much more
-// predictably and frequently.
-inline constexpr base::FeatureParam<bool> KTabOrganizationTriggerDemoMode(
-    &kTabOrganization,
-    "trigger_demo_mode",
-    false);
-
 BASE_DECLARE_FEATURE(kTearOffWebAppTabOpensWebAppWindow);
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -286,15 +287,12 @@ BASE_DECLARE_FEATURE(kThreeButtonPasswordSaveDialog);
 
 bool IsToolbarPinningEnabled();
 
-BASE_DECLARE_FEATURE(kPinnedCastButton);
-
 BASE_DECLARE_FEATURE(kEnterpriseProfileBadgingForAvatar);
 BASE_DECLARE_FEATURE(kEnterpriseProfileBadgingForMenu);
 BASE_DECLARE_FEATURE(kEnterpriseBadgingForNtpFooter);
 BASE_DECLARE_FEATURE(kNTPFooterBadgingPolicies);
 BASE_DECLARE_FEATURE(kEnterpriseProfileBadgingPolicies);
 BASE_DECLARE_FEATURE(kEnterpriseManagementDisclaimerUsesCustomLabel);
-BASE_DECLARE_FEATURE(kEnterpriseUpdatedProfileCreationScreen);
 BASE_DECLARE_FEATURE(kManagedProfileRequiredInterstitial);
 
 // Enables using the same colors used for the default app menu button for the
@@ -337,66 +335,28 @@ BASE_DECLARE_FEATURE(kInlineFullscreenPerfExperiment);
 BASE_DECLARE_FEATURE(kPageActionsMigration);
 
 // For development only, set this to enable all page actions.
-inline constexpr base::FeatureParam<bool>
-    kPageActionsMigrationEnableAll(&kPageActionsMigration, "enable_all", false);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationEnableAll);
 
 // The following feature params indicate whether individual features should
 // have their page actions controlled using the new framework.
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationLensOverlay(
-    &kPageActionsMigration,
-    "lens_overlay",
-    false);
-
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationMemorySaver(
-    &kPageActionsMigration,
-    "memory_saver",
-    false);
-
-inline constexpr base::FeatureParam<bool>
-    kPageActionsMigrationTranslate(&kPageActionsMigration, "translate", false);
-
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationIntentPicker(
-    &kPageActionsMigration,
-    "intent_picker",
-    false);
-
-inline constexpr base::FeatureParam<bool>
-    kPageActionsMigrationZoom(&kPageActionsMigration, "zoom", false);
-
-inline constexpr base::FeatureParam<bool>
-    kPageActionsMigrationOfferNotification(&kPageActionsMigration,
-                                           "offer_notification",
-                                           false);
-
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationFileSystemAccess(
-    &kPageActionsMigration,
-    "file_system_access",
-    false);
-
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationPwaInstall(
-    &kPageActionsMigration,
-    "pwa_install",
-    false);
-
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationPriceInsights(
-    &kPageActionsMigration,
-    "price_insights",
-    false);
-
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationManagePasswords(
-    &kPageActionsMigration,
-    "manage_passwords",
-    false);
-
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationCookieControls(
-    &kPageActionsMigration,
-    "cookie_controls",
-    false);
-
-inline constexpr base::FeatureParam<bool> kPageActionsMigrationAutofillAddress(
-    &kPageActionsMigration,
-    "autofill_address",
-    false);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationLensOverlay);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationMemorySaver);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationTranslate);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationIntentPicker);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationZoom);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationOfferNotification);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationFileSystemAccess);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationPwaInstall);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationPriceInsights);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationDiscounts);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationProductSpecifications);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationManagePasswords);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationCookieControls);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationAutofillAddress);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationFind);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationCollaborationMessaging);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationPriceTracking);
+BASE_DECLARE_FEATURE_PARAM(bool, kPageActionsMigrationAutofillMandatoryReauth);
 
 // Determines whether the "save password" page action displays different UI if
 // the user has said to never save passwords for that site.
@@ -412,29 +372,30 @@ BASE_DECLARE_FEATURE(kByDateHistoryInSidePanel);
 // Controls whether to use the TabStrip browser api's controller.
 BASE_DECLARE_FEATURE(kTabStripBrowserApi);
 
-// Controls where tab search lives in the browser.
+// Controls where tab search lives in the browser. By default, the tab search
+// feature lives in the tab strip. The feature moves to the toolbar button if
+// the user is in the US and `kLaunchedTabSearchToolbarButton` is enabled or if
+// `kTabstripComboButton` is enabled and `kTabSearchToolbarButton` is true.
 BASE_DECLARE_FEATURE(kTabstripComboButton);
 BASE_DECLARE_FEATURE(kLaunchedTabSearchToolbarButton);
 
-inline constexpr base::FeatureParam<bool> kTabstripComboButtonHasBackground(
-    &kTabstripComboButton,
-    "has_background",
-    false);
+BASE_DECLARE_FEATURE_PARAM(bool, kTabSearchToolbarButton);
 
-inline constexpr base::FeatureParam<bool>
-    kTabstripComboButtonHasReverseButtonOrder(&kTabstripComboButton,
-                                              "reverse_button_order",
-                                              false);
-
-inline constexpr base::FeatureParam<bool> kTabSearchToolbarButton(
-    &kTabstripComboButton,
-    "tab_search_toolbar_button",
-    false);
-
-bool IsTabSearchMoving();
-bool HasTabstripComboButtonWithBackground();
-bool HasTabstripComboButtonWithReverseButtonOrder();
 bool HasTabSearchToolbarButton();
+
+#if !BUILDFLAG(IS_ANDROID)
+// Controls whether to add new tabs to active tab group or to the end of the
+// tab strip.
+BASE_DECLARE_FEATURE(kNewTabAddsToActiveGroup);
+#endif  // !BUILDFLAG(IS_ANDROID)
+
+// Controls whether to show a toast for Chrome non milestone update.
+BASE_DECLARE_FEATURE(kNonMilestoneUpdateToast);
+
+// Controls whether the updated bookmark and tab group conversion is enabled.
+BASE_DECLARE_FEATURE(kBookmarkTabGroupConversion);
+
+bool IsBookmarkTabGroupConversionEnabled();
 
 }  // namespace features
 

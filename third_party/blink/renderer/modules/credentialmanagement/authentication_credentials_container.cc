@@ -1565,19 +1565,15 @@ ScriptPromise<IDLNullable<Credential>> AuthenticationCredentialsContainer::get(
           CredentialManagerProxy::From(script_state)->Authenticator();
       authenticator->GetCredential(
           std::move(mojo_options),
-          WTF::BindOnce(
-              &OnAuthenticatorGetCredentialComplete,
-              std::make_unique<ScopedPromiseResolver>(resolver),
-              std::move(scoped_abort_state),
-              RuntimeEnabledFeatures::
-                      WebAuthenticationNewBfCacheHandlingBlinkEnabled()
-                  ? ExecutionContext::From(script_state)
-                        ->GetScheduler()
-                        ->RegisterFeature(
-                            SchedulingPolicy::Feature::kWebAuthentication,
-                            SchedulingPolicy::DisableBackForwardCache())
-                  : FrameOrWorkerScheduler::SchedulingAffectingFeatureHandle(),
-              mediation));
+          WTF::BindOnce(&OnAuthenticatorGetCredentialComplete,
+                        std::make_unique<ScopedPromiseResolver>(resolver),
+                        std::move(scoped_abort_state),
+                        ExecutionContext::From(script_state)
+                            ->GetScheduler()
+                            ->RegisterFeature(
+                                SchedulingPolicy::Feature::kWebAuthentication,
+                                SchedulingPolicy::DisableBackForwardCache()),
+                        mediation));
     } else {
       resolver->Reject(MakeGarbageCollected<DOMException>(
           DOMExceptionCode::kNotSupportedError,
@@ -2037,12 +2033,10 @@ AuthenticationCredentialsContainer::create(
   auto* authenticator =
       CredentialManagerProxy::From(script_state)->Authenticator();
   FrameOrWorkerScheduler::SchedulingAffectingFeatureHandle feature_handle =
-      RuntimeEnabledFeatures::WebAuthenticationNewBfCacheHandlingBlinkEnabled()
-          ? ExecutionContext::From(script_state)
-                ->GetScheduler()
-                ->RegisterFeature(SchedulingPolicy::Feature::kWebAuthentication,
-                                  SchedulingPolicy::DisableBackForwardCache())
-          : FrameOrWorkerScheduler::SchedulingAffectingFeatureHandle();
+      ExecutionContext::From(script_state)
+          ->GetScheduler()
+          ->RegisterFeature(SchedulingPolicy::Feature::kWebAuthentication,
+                            SchedulingPolicy::DisableBackForwardCache());
   if (mojo_options->is_payment_credential_creation) {
     String rp_id_for_payment_extension = mojo_options->relying_party->id;
     WTF::Vector<uint8_t> user_id_for_payment_extension = mojo_options->user->id;
@@ -2143,19 +2137,10 @@ void AuthenticationCredentialsContainer::GetForIdentity(
       resolver->GetExecutionContext()
           ->GetContentSecurityPolicyForCurrentWorld();
   if (identity_options.providers().size() > 1) {
-    if (RuntimeEnabledFeatures::FedCmMultipleIdentityProvidersEnabled(
-            context)) {
-      UseCounter::Count(resolver->GetExecutionContext(),
-                        WebFeature::kFedCmMultipleIdentityProviders);
-      if (identity_options.providers().size() > 10u) {
-        resolver->RejectWithTypeError(
-            "More than 10 providers are not allowed.");
-        return;
-      }
-    } else {
-      resolver->RejectWithTypeError(
-          "Multiple providers specified but FedCmMultipleIdentityProviders "
-          "flag is disabled.");
+    UseCounter::Count(resolver->GetExecutionContext(),
+                      WebFeature::kFedCmMultipleIdentityProviders);
+    if (identity_options.providers().size() > 10u) {
+      resolver->RejectWithTypeError("More than 10 providers are not allowed.");
       return;
     }
   }

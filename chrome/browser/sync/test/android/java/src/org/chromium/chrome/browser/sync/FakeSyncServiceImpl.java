@@ -38,6 +38,7 @@ public class FakeSyncServiceImpl implements SyncService {
     private boolean mTrustedVaultRecoverabilityDegraded;
     private boolean mEncryptEverythingEnabled;
     private boolean mRequiresClientUpgrade;
+    private boolean mHasUnrecoverableError;
     private GoogleServiceAuthError mAuthError =
             new GoogleServiceAuthError(GoogleServiceAuthErrorState.NONE);
     private Set<Integer> mTypesWithUnsyncedData = Set.of();
@@ -72,6 +73,21 @@ public class FakeSyncServiceImpl implements SyncService {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
                     mAuthError = authError;
+                    notifySyncStateChanged();
+                });
+    }
+
+    @Override
+    public boolean hasUnrecoverableError() {
+        ThreadUtils.assertOnUiThread();
+        return mHasUnrecoverableError;
+    }
+
+    @AnyThread
+    public void setHasUnrecoverableError(boolean hasUnrecoverableError) {
+        ThreadUtils.runOnUiThreadBlocking(
+                () -> {
+                    mHasUnrecoverableError = hasUnrecoverableError;
                     notifySyncStateChanged();
                 });
     }
@@ -208,11 +224,6 @@ public class FakeSyncServiceImpl implements SyncService {
         return mDelegate.isSyncDisabledByEnterprisePolicy();
     }
 
-    @Override
-    public boolean hasUnrecoverableError() {
-        return mDelegate.hasUnrecoverableError();
-    }
-
     @Nullable
     @Override
     public CoreAccountInfo getAccountInfo() {
@@ -303,6 +314,11 @@ public class FakeSyncServiceImpl implements SyncService {
     @Override
     public int getTransportState() {
         return mDelegate.getTransportState();
+    }
+
+    @Override
+    public int getUserActionableError() {
+        return mDelegate.getUserActionableError();
     }
 
     @Override

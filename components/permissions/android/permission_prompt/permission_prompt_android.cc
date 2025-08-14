@@ -126,21 +126,6 @@ PermissionPromptAndroid::GetPositiveEphemeralButtonText(
     bool is_one_time) const {
   return ConvertUTF16ToJavaString(env, std::u16string_view());
 }
-base::android::ScopedJavaLocalRef<jobjectArray>
-PermissionPromptAndroid::GetRadioButtonTexts(JNIEnv* env,
-                                             bool is_one_time) const {
-  if (!is_one_time) {
-    return base::android::ToJavaArrayOfStrings(env, base::span<std::string>());
-  }
-  if (Requests()[0]->request_type() == RequestType::kGeolocation &&
-      base::FeatureList::IsEnabled(
-          content_settings::features::kApproximateGeolocationPermission)) {
-    return base::android::ToJavaArrayOfStrings(
-        env, {l10n_util::GetStringUTF16(IDS_PERMISSION_ALLOW_APPROXIMATE_GEO),
-              l10n_util::GetStringUTF16(IDS_PERMISSION_ALLOW_PRECISE_GEO)});
-  }
-  return base::android::ToJavaArrayOfStrings(env, base::span<std::string>());
-}
 
 size_t PermissionPromptAndroid::PermissionCount() const {
   return Requests().size();
@@ -239,6 +224,11 @@ PermissionPromptAndroid::GetBoldRanges(JNIEnv* env) const {
     bolded_ranges.push_back(base::checked_cast<int>(end));
   }
   return base::android::ToJavaIntArray(env, bolded_ranges);
+}
+
+void PermissionPromptAndroid::SetPromptOptions(
+    PromptOptions prompt_options) {
+  delegate_->SetPromptOptions(std::move(prompt_options));
 }
 
 }  // namespace permissions

@@ -136,7 +136,8 @@ suite('LanguagesPage', function() {
         dialogClosedResolver = new PromiseResolver();
         dialogClosedObserver = new MutationObserver(onMutation);
         dialogClosedObserver.observe(
-            languagesPage.shadowRoot!, {childList: true});
+            languagesPage.shadowRoot!.querySelector('settings-section')!,
+            {childList: true});
 
         actionButton = dialog.shadowRoot!.querySelector<CrButtonElement>(
             '.action-button')!;
@@ -288,7 +289,7 @@ suite('LanguagesPage', function() {
     /*
      * This suite tests that the translate target language is labelled
      */
-    test('test translate target language is labelled', function() {
+    test('translate target language is labelled', function() {
       // Translate target language disabled.
       const targetLanguageCode = languageHelper.languages!.translateTarget;
       assertTrue(!!targetLanguageCode);

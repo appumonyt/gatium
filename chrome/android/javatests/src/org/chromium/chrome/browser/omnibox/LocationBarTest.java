@@ -45,7 +45,7 @@ import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.DoNotBatch;
-import org.chromium.base.test.util.Features.EnableFeatures;
+import org.chromium.base.test.util.Features.DisableFeatures;
 import org.chromium.base.test.util.Restriction;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.app.ChromeActivity;
@@ -216,7 +216,7 @@ public class LocationBarTest {
                     mediator.onPrimaryColorChanged();
                     mediator.onSecurityStateChanged();
                     mediator.onTemplateURLServiceChanged();
-                    mediator.onUrlChanged();
+                    mediator.onUrlChanged(false);
                 });
     }
 
@@ -265,8 +265,7 @@ public class LocationBarTest {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> mLocationBarMediator.performSearchQuery(TEST_QUERY, TEST_PARAMS));
 
-        ChromeTabUtils.waitForTabPageLoaded(
-                mActivityTestRule.getActivity().getActivityTab(), mSearchUrl);
+        ChromeTabUtils.waitForTabPageLoaded(mActivityTestRule.getActivityTab(), mSearchUrl);
     }
 
     @Test
@@ -338,14 +337,14 @@ public class LocationBarTest {
     @Test
     @MediumTest
     public void testEditingText_withRetainOmniboxOnFocusDisabled() {
-        OmniboxFeatures.setShouldRetainOmniboxOnFocusForTesting(Boolean.FALSE);
+        OmniboxFeatures.setShouldRetainOmniboxOnFocusForTesting(false);
         testEditingText(/* expectRetainOmniboxOnFocus= */ false);
     }
 
     @Test
     @MediumTest
     public void testEditingText_withRetainOmniboxOnFocusEnabled() {
-        OmniboxFeatures.setShouldRetainOmniboxOnFocusForTesting(Boolean.TRUE);
+        OmniboxFeatures.setShouldRetainOmniboxOnFocusForTesting(true);
         testEditingText(/* expectRetainOmniboxOnFocus= */ true);
     }
 
@@ -610,8 +609,8 @@ public class LocationBarTest {
         doReturn(true).when(mLensController).isLensEnabled(any());
         doReturn(true).when(mTemplateUrlService).isDefaultSearchEngineGoogle();
         mActivityTestRule.loadUrlInNewTab(url, /* incognito= */ false);
-        updateLocationBar();
         onView(withId(R.id.lens_camera_button)).check(matches(not(isDisplayed())));
+        updateLocationBar();
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
                     mUrlBar.requestFocus();
@@ -643,7 +642,7 @@ public class LocationBarTest {
     })
     @Restriction(DeviceFormFactor.TABLET_OR_DESKTOP)
     public void testFocusLogic_buttonVisibilityTabletWithRetainOmniboxOnFocusDisabled() {
-        OmniboxFeatures.setShouldRetainOmniboxOnFocusForTesting(Boolean.FALSE);
+        OmniboxFeatures.setShouldRetainOmniboxOnFocusForTesting(false);
         testFocusLogic_buttonVisibilityTablet(/* expectRetainOmniboxOnFocus= */ false);
     }
 
@@ -654,7 +653,7 @@ public class LocationBarTest {
     })
     @Restriction(DeviceFormFactor.TABLET_OR_DESKTOP)
     public void testFocusLogic_buttonVisibilityTabletWithRetainOmniboxOnFocusEnabled() {
-        OmniboxFeatures.setShouldRetainOmniboxOnFocusForTesting(Boolean.TRUE);
+        OmniboxFeatures.setShouldRetainOmniboxOnFocusForTesting(true);
         testFocusLogic_buttonVisibilityTablet(/* expectRetainOmniboxOnFocus= */ true);
     }
 
@@ -676,15 +675,6 @@ public class LocationBarTest {
                 .check(matches(withEffectiveVisibility(ViewMatchers.Visibility.GONE)));
         onView(withId(R.id.bookmark_button))
                 .check(matches(withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)));
-
-        // TODO(crbug.com/393394998): Remove all instances of this view after launching the feature.
-        if (ChromeFeatureList.sHideTabletToolbarDownloadButton.isEnabled()) {
-            onView(withId(R.id.save_offline_button))
-                    .check(matches(withEffectiveVisibility(ViewMatchers.Visibility.GONE)));
-        } else {
-            onView(withId(R.id.save_offline_button))
-                    .check(matches(withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)));
-        }
 
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
@@ -720,8 +710,6 @@ public class LocationBarTest {
                 });
 
         onView(withId(R.id.bookmark_button))
-                .check(matches(withEffectiveVisibility(ViewMatchers.Visibility.GONE)));
-        onView(withId(R.id.save_offline_button))
                 .check(matches(withEffectiveVisibility(ViewMatchers.Visibility.GONE)));
     }
 
@@ -767,7 +755,7 @@ public class LocationBarTest {
     @Test
     @SmallTest
     @Restriction(DeviceFormFactor.PHONE)
-    @EnableFeatures(OmniboxFeatureList.OMNIBOX_MOBILE_PARITY_UPDATE)
+    @DisableFeatures(OmniboxFeatureList.OMNIBOX_MOBILE_PARITY_UPDATE_V2)
     public void testOmniboxSearchEngineLogo_unfocusedOnSRP_nonGoogleSearchEngine() {
         setupSearchEngineLogo(NON_GOOGLE_URL);
         startActivityNormally();
@@ -786,7 +774,6 @@ public class LocationBarTest {
     @Test
     @SmallTest
     @Restriction(DeviceFormFactor.PHONE)
-    @EnableFeatures(OmniboxFeatureList.OMNIBOX_MOBILE_PARITY_UPDATE)
     public void testOmniboxSearchEngineLogo_unfocusedOnSRP_incognito() {
         setupSearchEngineLogo(GOOGLE_URL);
         startActivityNormally();

@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/interaction/browser_elements.h"
 #include "chrome/browser/ui/performance_controls/test_support/battery_saver_browser_test_mixin.h"
 #include "chrome/browser/ui/performance_controls/test_support/memory_saver_interactive_test_mixin.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
@@ -49,25 +50,29 @@ DEFINE_LOCAL_CUSTOM_ELEMENT_EVENT_TYPE(kElementHides);
 DEFINE_LOCAL_CUSTOM_ELEMENT_EVENT_TYPE(kExceptionDialogShows);
 
 const WebContentsInteractionTestUtil::DeepQuery kMemorySaverToggleQuery = {
-    "settings-ui",          "settings-main",          "settings-basic-page",
-    "settings-memory-page", "settings-toggle-button", "cr-toggle#control"};
+    "settings-ui",
+    "settings-main",
+    "settings-performance-page-index",
+    "settings-memory-page",
+    "settings-toggle-button",
+    "cr-toggle#control"};
 
 const WebContentsInteractionTestUtil::DeepQuery kMediumQuery = {
-    "settings-ui", "settings-main", "settings-basic-page",
+    "settings-ui", "settings-main", "settings-performance-page-index",
     "settings-memory-page", "controlled-radio-button#mediumButton"};
 
 const WebContentsInteractionTestUtil::DeepQuery kAggressiveQuery = {
-    "settings-ui", "settings-main", "settings-basic-page",
+    "settings-ui", "settings-main", "settings-performance-page-index",
     "settings-memory-page", "controlled-radio-button#aggressiveButton"};
 
 const WebContentsInteractionTestUtil::DeepQuery kConservativeQuery = {
-    "settings-ui", "settings-main", "settings-basic-page",
+    "settings-ui", "settings-main", "settings-performance-page-index",
     "settings-memory-page", "controlled-radio-button#conservativeButton"};
 
 const WebContentsInteractionTestUtil::DeepQuery kExceptionDialogEntry = {
     "settings-ui",
     "settings-main",
-    "settings-basic-page",
+    "settings-performance-page-index",
     "settings-performance-page",
     "tab-discard-exception-list",
     "tab-discard-exception-tabbed-add-dialog",
@@ -77,23 +82,35 @@ const WebContentsInteractionTestUtil::DeepQuery kExceptionDialogEntry = {
 const WebContentsInteractionTestUtil::DeepQuery kExceptionDialogAddButton = {
     "settings-ui",
     "settings-main",
-    "settings-basic-page",
+    "settings-performance-page-index",
     "settings-performance-page",
     "tab-discard-exception-list",
     "tab-discard-exception-tabbed-add-dialog",
     "cr-button#actionButton"};
 
 const WebContentsInteractionTestUtil::DeepQuery kPerformanceFeedbackButton = {
-    "settings-ui", "settings-main", "settings-basic-page",
-    "settings-section#performanceSettingsSection", "cr-icon-button#feedback"};
+    "settings-ui",
+    "settings-main",
+    "settings-performance-page-index",
+    "settings-performance-page",
+    "settings-section",
+    "cr-icon-button#feedback"};
 
 const WebContentsInteractionTestUtil::DeepQuery kMemorySaverFeedbackButton = {
-    "settings-ui", "settings-main", "settings-basic-page",
-    "settings-section#memorySettingsSection", "cr-icon-button#feedback"};
+    "settings-ui",
+    "settings-main",
+    "settings-performance-page-index",
+    "settings-memory-page",
+    "settings-section",
+    "cr-icon-button#feedback"};
 
 const WebContentsInteractionTestUtil::DeepQuery kBatterySaverFeedbackButton = {
-    "settings-ui", "settings-main", "settings-basic-page",
-    "settings-section#batterySettingsSection", "cr-icon-button#feedback"};
+    "settings-ui",
+    "settings-main",
+    "settings-performance-page-index",
+    "settings-battery-page",
+    "settings-section",
+    "cr-icon-button#feedback"};
 
 }  // namespace
 
@@ -120,7 +137,7 @@ IN_PROC_BROWSER_TEST_F(PerformanceSettingsInteractiveTest,
       discard_ring_treatment_setting = {
           "settings-ui",
           "settings-main",
-          "settings-basic-page",
+          "settings-performance-page-index",
           "settings-performance-page",
           "settings-toggle-button#discardRingTreatmentToggleButton",
           "cr-toggle#control"};
@@ -180,7 +197,7 @@ IN_PROC_BROWSER_TEST_F(PerformanceSettingsCrosInteractiveTest,
   ASSERT_NE(browser, nullptr);
 
   RunTestSequence(
-      InContext(browser->window()->GetElementContext(),
+      InContext(BrowserElements::From(browser)->GetContext(),
                 InstrumentTab(kPerformanceSettingsPage)),
       WaitForElementToRender(kPerformanceSettingsPage,
                              kPerformanceFeedbackButton),
@@ -248,9 +265,12 @@ IN_PROC_BROWSER_TEST_F(MemorySettingsInteractiveTest, MemorySaverPrefChanged) {
 IN_PROC_BROWSER_TEST_F(MemorySettingsInteractiveTest,
                        MemorySaverLearnMoreLinkNavigates) {
   DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kLearnMorePage);
-  const DeepQuery memory_saver_learn_more = {
-      "settings-ui",          "settings-main",          "settings-basic-page",
-      "settings-memory-page", "settings-toggle-button", "a#learn-more"};
+  const DeepQuery memory_saver_learn_more = {"settings-ui",
+                                             "settings-main",
+                                             "settings-performance-page-index",
+                                             "settings-memory-page",
+                                             "settings-toggle-button",
+                                             "a#learn-more"};
 
   RunTestSequence(
       InstrumentTab(kPerformanceSettingsPage),
@@ -322,7 +342,7 @@ IN_PROC_BROWSER_TEST_F(MemorySettingsCrosInteractiveTest,
   ASSERT_NE(browser, nullptr);
 
   RunTestSequence(
-      InContext(browser->window()->GetElementContext(),
+      InContext(BrowserElements::From(browser)->GetContext(),
                 InstrumentTab(kPerformanceSettingsPage)),
       WaitForElementToRender(kPerformanceSettingsPage,
                              kMemorySaverFeedbackButton),
@@ -486,9 +506,12 @@ class BatterySettingsInteractiveTest
 IN_PROC_BROWSER_TEST_F(BatterySettingsInteractiveTest,
                        BatterySaverLearnMoreLink) {
   DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kLearnMorePage);
-  const DeepQuery battery_saver_learn_more = {
-      "settings-ui",           "settings-main",          "settings-basic-page",
-      "settings-battery-page", "settings-toggle-button", "a#learn-more"};
+  const DeepQuery battery_saver_learn_more = {"settings-ui",
+                                              "settings-main",
+                                              "settings-performance-page-index",
+                                              "settings-battery-page",
+                                              "settings-toggle-button",
+                                              "a#learn-more"};
 
   RunTestSequence(
       InstrumentTab(kPerformanceSettingsPage),
@@ -506,20 +529,23 @@ IN_PROC_BROWSER_TEST_F(BatterySettingsInteractiveTest,
 
 IN_PROC_BROWSER_TEST_F(BatterySettingsInteractiveTest,
                        BatterySaverMetricsShouldLogOnToggle) {
-  const DeepQuery battery_saver_toggle = {
-      "settings-ui",           "settings-main",          "settings-basic-page",
-      "settings-battery-page", "settings-toggle-button", "cr-toggle#control"};
+  const DeepQuery battery_saver_toggle = {"settings-ui",
+                                          "settings-main",
+                                          "settings-performance-page-index",
+                                          "settings-battery-page",
+                                          "settings-toggle-button",
+                                          "cr-toggle#control"};
 
   const DeepQuery iron_collapse = {
-      "settings-ui", "settings-main", "settings-basic-page",
+      "settings-ui", "settings-main", "settings-performance-page-index",
       "settings-battery-page", "cr-collapse#radioGroupCollapse"};
 
   const DeepQuery turn_on_at_threshold_button = {
-      "settings-ui", "settings-main", "settings-basic-page",
+      "settings-ui", "settings-main", "settings-performance-page-index",
       "settings-battery-page", "controlled-radio-button"};
 
   const DeepQuery turn_on_when_unplugged_button = {
-      "settings-ui", "settings-main", "settings-basic-page",
+      "settings-ui", "settings-main", "settings-performance-page-index",
       "settings-battery-page",
       "controlled-radio-button#enabledOnBatteryButton"};
 
@@ -606,7 +632,7 @@ IN_PROC_BROWSER_TEST_F(BatterySettingsInteractiveTest,
   DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kOsSettingsElementId);
 
   const DeepQuery battery_saver_link_row = {
-      "settings-ui", "settings-main", "settings-basic-page",
+      "settings-ui", "settings-main", "settings-performance-page-index",
       "settings-battery-page", "cr-link-row#batterySaverOSSettingsLinkRow"};
 
   CreateBrowserWindow(
@@ -615,7 +641,7 @@ IN_PROC_BROWSER_TEST_F(BatterySettingsInteractiveTest,
   ASSERT_NE(browser, nullptr);
 
   RunTestSequence(
-      InContext(browser->window()->GetElementContext(),
+      InContext(BrowserElements::From(browser)->GetContext(),
                 InstrumentTab(kPerformanceSettingsPage)),
       WaitForElementToRender(kPerformanceSettingsPage, battery_saver_link_row),
       InstrumentNextTab(kOsSettingsElementId, AnyBrowser()),
@@ -638,7 +664,7 @@ IN_PROC_BROWSER_TEST_F(BatterySettingsInteractiveTest,
   ASSERT_NE(browser, nullptr);
 
   RunTestSequence(
-      InContext(browser->window()->GetElementContext(),
+      InContext(BrowserElements::From(browser)->GetContext(),
                 InstrumentTab(kPerformanceSettingsPage)),
       WaitForElementToRender(kPerformanceSettingsPage,
                              kBatterySaverFeedbackButton),
@@ -669,7 +695,7 @@ class TabDiscardExceptionsSettingsInteractiveTest
     const WebContentsInteractionTestUtil::DeepQuery add_exceptions_button = {
         "settings-ui",
         "settings-main",
-        "settings-basic-page",
+        "settings-performance-page-index",
         "settings-performance-page",
         "tab-discard-exception-list",
         "cr-button#addButton"};
@@ -677,7 +703,7 @@ class TabDiscardExceptionsSettingsInteractiveTest
     const WebContentsInteractionTestUtil::DeepQuery picker_dialog = {
         "settings-ui",
         "settings-main",
-        "settings-basic-page",
+        "settings-performance-page-index",
         "settings-performance-page",
         "tab-discard-exception-list",
         "tab-discard-exception-tabbed-add-dialog"};
@@ -685,7 +711,7 @@ class TabDiscardExceptionsSettingsInteractiveTest
     const WebContentsInteractionTestUtil::DeepQuery tab_picker_tab = {
         "settings-ui",
         "settings-main",
-        "settings-basic-page",
+        "settings-performance-page-index",
         "settings-performance-page",
         "tab-discard-exception-list",
         "tab-discard-exception-tabbed-add-dialog",
@@ -718,7 +744,7 @@ IN_PROC_BROWSER_TEST_F(TabDiscardExceptionsSettingsInteractiveTest,
   const WebContentsInteractionTestUtil::DeepQuery exception_entry = {
       "settings-ui",
       "settings-main",
-      "settings-basic-page",
+      "settings-performance-page-index",
       "settings-performance-page",
       "tab-discard-exception-list",
       "tab-discard-exception-entry"};
@@ -810,7 +836,7 @@ IN_PROC_BROWSER_TEST_F(PerformanceInterventionSettingsInteractiveTest,
       performance_intervention_setting = {
           "settings-ui",
           "settings-main",
-          "settings-basic-page",
+          "settings-performance-page-index",
           "settings-performance-page",
           "settings-toggle-button#performanceInterventionToggleButton",
           "cr-toggle#control"};

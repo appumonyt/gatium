@@ -10,7 +10,6 @@ source_set("ui") {
     ":container_presenter",
     ":lvf_transition_manager",
     ":network_issue_alert_presenter",
-    ":progress_bar",
     ":protocols",
     ":results_page_presenter",
     ":view_controller",
@@ -22,10 +21,13 @@ source_set("protocols") {
     "lens_overlay_bottom_sheet_presentation_delegate.h",
     "lens_overlay_error_handler.h",
     "lens_overlay_result_consumer.h",
+    "lens_overlay_results_page_presenting.h",
     "lens_result_page_mutator.h",
     "lens_toolbar_consumer.h",
     "lens_toolbar_mutator.h",
   ]
+  public_deps =
+      [ "//ios/chrome/browser/lens_overlay/model:detent_state_header" ]
   frameworks = [ "UIKit.framework" ]
 }
 
@@ -85,7 +87,6 @@ source_set("view_controller") {
   ]
   deps = [
     ":accessibility_identifier_constants",
-    ":progress_bar",
     ":protocols",
     "//base",
     "//components/strings",
@@ -101,6 +102,7 @@ source_set("view_controller") {
     "//ios/chrome/browser/shared/ui/elements",
     "//ios/chrome/browser/shared/ui/symbols",
     "//ios/chrome/browser/shared/ui/util",
+    "//ios/chrome/browser/toolbar/ui_bundled:ui",
     "//ios/chrome/common",
     "//ios/chrome/common/ui/colors",
     "//ios/chrome/common/ui/promo_style",
@@ -113,21 +115,6 @@ source_set("view_controller") {
     "//url",
   ]
   frameworks = [ "UIKit.framework" ]
-}
-
-source_set("progress_bar") {
-  sources = [
-    "lens_overlay_progress_bar.h",
-    "lens_overlay_progress_bar.mm",
-  ]
-  deps = [
-    "//base",
-    "//components/strings",
-    "//ios/chrome/app/strings",
-    "//ios/chrome/common:string_conversions",
-    "//ios/third_party/material_components_ios",
-    "//ui/base",
-  ]
 }
 
 source_set("entry_point") {

@@ -13,6 +13,7 @@
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "third_party/blink/public/common/cache_storage/cache_storage_utils.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/scheme_registry.h"
 #include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
@@ -81,7 +82,8 @@ bool HasJavascriptMimeType(const Response* response) {
 void ValidateRequestForPut(const Request* request,
                            ExceptionState& exception_state) {
   const KURL& url = request->url();
-  if (!url.ProtocolIsInHTTPFamily()) {
+  if (!url.ProtocolIsInHTTPFamily() &&
+      !CommonSchemeRegistry::IsIsolatedAppScheme(url.Protocol().Ascii())) {
     exception_state.ThrowTypeError(
         StrCat({"Request scheme '", url.Protocol(), "' is unsupported"}));
     return;
@@ -1257,24 +1259,24 @@ ScriptPromise<IDLSequence<Request>> Cache::KeysImpl(
           [](base::TimeTicks start_time, const CacheQueryOptions* options,
              int64_t trace_id, Cache* _,
              ScriptPromiseResolver<IDLSequence<Request>>* resolver,
-             mojom::blink::CacheKeysResultPtr result) {
+             mojom::blink::CacheStorageCache::KeysResult result) {
             UMA_HISTOGRAM_LONG_TIMES("ServiceWorkerCache.Cache.Renderer.Keys",
                                      base::TimeTicks::Now() - start_time);
-            if (result->is_status()) {
+            if (!result.has_value()) {
               TRACE_EVENT_WITH_FLOW1(
                   "CacheStorage", "Cache::KeysImpl::Callback",
                   TRACE_ID_GLOBAL(trace_id), TRACE_EVENT_FLAG_FLOW_IN, "status",
-                  CacheStorageTracedValue(result->get_status()));
-              RejectCacheStorageWithError(resolver, result->get_status());
+                  CacheStorageTracedValue(result.error()));
+              RejectCacheStorageWithError(resolver, result.error());
             } else {
               TRACE_EVENT_WITH_FLOW1(
                   "CacheStorage", "Cache::KeysImpl::Callback",
                   TRACE_ID_GLOBAL(trace_id), TRACE_EVENT_FLAG_FLOW_IN, "status",
-                  CacheStorageTracedValue(result->get_keys()));
+                  CacheStorageTracedValue(result.value()));
               ScriptState::Scope scope(resolver->GetScriptState());
               HeapVector<Member<Request>> requests;
-              requests.ReserveInitialCapacity(result->get_keys().size());
-              for (auto& request : result->get_keys()) {
+              requests.ReserveInitialCapacity(result.value().size());
+              for (auto& request : result.value()) {
                 requests.push_back(Request::Create(
                     resolver->GetScriptState(), std::move(request),
                     Request::ForServiceWorkerFetchEvent::kFalse));

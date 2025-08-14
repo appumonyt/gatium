@@ -178,10 +178,6 @@ class MediaSessionImpl : public MediaSession,
   // Creates a binding between |this| and |request|.
   mojo::PendingRemote<media_session::mojom::MediaSession> AddRemote();
 
-  // Returns information about the MediaSession.
-  CONTENT_EXPORT media_session::mojom::MediaSessionInfoPtr
-  GetMediaSessionInfoSync();
-
   // Returns if the session can be controlled by the user.
   CONTENT_EXPORT bool IsControllable() const;
 
@@ -213,8 +209,21 @@ class MediaSessionImpl : public MediaSession,
       const base::UnguessableToken& group_id) override;
 
   // Returns the `RenderFrameHost` for the currently MediaSession routed
-  // service.
+  // service, if the routed service exists, otherwise returns the top most frame
+  // with an active media player.
   RenderFrameHost* GetRoutedFrame() override;
+
+  // Returns the current media session info synchronously for a one-off request.
+  CONTENT_EXPORT media_session::mojom::MediaSessionInfoPtr
+  GetMediaSessionInfoSync() override;
+
+  // Returns the current media session position for a one-off request.
+  CONTENT_EXPORT std::optional<media_session::MediaPosition>
+  GetMediaSessionPosition() override;
+
+  // Returns the current media session metadata for a one-off request.
+  CONTENT_EXPORT const media_session::MediaMetadata& GetMediaSessionMetadata()
+      override;
 
   // Suspend the media session.
   // |type| represents the origin of the request.
@@ -465,9 +474,12 @@ class MediaSessionImpl : public MediaSession,
   // Returns whether the frame |rfh| uses MediaSession API.
   bool IsServiceActiveForRenderFrameHost(RenderFrameHost* rfh);
 
-  // Compute the MediaSessionService that should be routed, which will be used
-  // to update |routed_service_|.
-  CONTENT_EXPORT MediaSessionServiceImpl* ComputeServiceForRouting();
+  // Compute the frame that should be routed for media session. If
+  // |ensure_service| is true, the routed frame must have an active
+  // MediaSessionService, otherwise it does not, e.g. when no MediaSession API
+  // has been called but there is an active media player. This method can be
+  // used to compute both the routed frame and routed service.
+  CONTENT_EXPORT RenderFrameHost* ComputeFrameForRouting(bool ensure_service);
 
   // Rebuilds |actions_| and notifies observers if they have changed.
   void RebuildAndNotifyActionsChanged();

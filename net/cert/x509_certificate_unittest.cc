@@ -20,7 +20,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/string_view_util.h"
 #include "base/time/time.h"
-#include "crypto/rsa_private_key.h"
 #include "net/base/net_errors.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/x509_util.h"
@@ -1392,7 +1391,7 @@ const struct PublicKeyInfoTestData {
     {"rsa-768", 768, X509Certificate::kPublicKeyTypeRSA},
     {"rsa-1024", 1024, X509Certificate::kPublicKeyTypeRSA},
     {"rsa-2048", 2048, X509Certificate::kPublicKeyTypeRSA},
-    {"rsa-8200", 8200, X509Certificate::kPublicKeyTypeRSA},
+    {"rsa-8000", 8000, X509Certificate::kPublicKeyTypeRSA},
     {"ec-prime256v1", 256, X509Certificate::kPublicKeyTypeECDSA},
 };
 

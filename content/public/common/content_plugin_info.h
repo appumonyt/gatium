@@ -12,8 +12,8 @@
 
 #include "base/files/file_path.h"
 #include "content/common/content_export.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/webplugininfo.h"
-#include "ppapi/buildflags/buildflags.h"
 
 #if !BUILDFLAG(ENABLE_PLUGINS)
 #error "Plugins should be enabled"
@@ -35,17 +35,11 @@ struct CONTENT_EXPORT ContentPluginInfo {
   // Defaults to false.
   bool is_internal = false;
 
-  // True when this plugin should be run out of process. Defaults to false.
-  bool is_out_of_process = false;
-
   base::FilePath path;  // Internal plugins have "internal-[name]" as path.
   std::string name;
   std::string description;
   std::string version;
   std::vector<WebPluginMimeType> mime_types;
-
-  // Permission bits from ppapi::Permission.
-  uint32_t permissions = 0;
 };
 
 }  // namespace content

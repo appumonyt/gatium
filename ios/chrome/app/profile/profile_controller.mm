@@ -42,6 +42,7 @@
 #import "ios/chrome/app/profile/features.h"
 #import "ios/chrome/app/profile/first_run_profile_agent.h"
 #import "ios/chrome/app/profile/identity_confirmation_profile_agent.h"
+#import "ios/chrome/app/profile/multi_profile_forced_migration_profile_agent.h"
 #import "ios/chrome/app/profile/post_restore_profile_agent.h"
 #import "ios/chrome/app/profile/profile_state.h"
 #import "ios/chrome/app/profile/profile_state_observer.h"
@@ -76,6 +77,7 @@
 #import "ios/chrome/browser/shared/model/browser/browser_list.h"
 #import "ios/chrome/browser/shared/model/browser/browser_list_factory.h"
 #import "ios/chrome/browser/shared/model/prefs/pref_names.h"
+#import "ios/chrome/browser/shared/model/profile/features.h"
 #import "ios/chrome/browser/shared/model/profile/profile_attributes_ios.h"
 #import "ios/chrome/browser/shared/model/profile/profile_attributes_storage_ios.h"
 #import "ios/chrome/browser/shared/model/profile/profile_ios.h"
@@ -654,6 +656,7 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
 - (void)attachProfileAgents {
   [_state addAgent:[[CertificatePolicyProfileAgent alloc] init]];
   [_state addAgent:[[FirstRunProfileAgent alloc] init]];
+  [_state addAgent:[[MultiProfileForcedMigrationProfileAgent alloc] init]];
   [_state addAgent:[[IdentityConfirmationProfileAgent alloc] init]];
   [_state addAgent:[[ProfileActivityProfileAgent alloc] init]];
   [_state addAgent:[[PostRestoreProfileAgent alloc] init]];
@@ -705,7 +708,9 @@ void RecordDiscardedSceneConnectedAfterBeingPurged(
   [self sendChromeOpenedEvent];
 
   _spotlightManager = [SpotlightManager spotlightManagerWithProfile:profile];
-  ShareExtensionServiceFactory::GetForProfile(profile)->Initialize();
+  if (!IsShareExtensionForMultiprofileEnabled()) {
+    ShareExtensionServiceFactory::GetForProfile(profile)->Initialize();
+  }
 
 #if BUILDFLAG(IOS_CREDENTIAL_PROVIDER_ENABLED)
   CredentialProviderServiceFactory::GetForProfile(profile);

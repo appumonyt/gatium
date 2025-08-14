@@ -246,12 +246,17 @@ public interface WebContents extends Parcelable {
 
     /**
      * ChildProcessImportance on Android allows controls of the renderer process bindings
-     * independent of visibility. Note this does not affect importance of subframe processes or main
-     * frames processeses for non-primary pages.
+     * independent of visibility. Note this does not affect importance of processes for non-primary
+     * pages.
      *
-     * @param importance importance of the primary page's main frame process.
+     * <p>The subframeImportance must be less than or equal to the mainFrameImportance.
+     *
+     * @param mainFrameImportance importance of the primary page's main frame process.
+     * @param subframeImportance importance of the primary page's subframes process.
      */
-    void setPrimaryMainFrameImportance(@ChildProcessImportance int importance);
+    void setPrimaryPageImportance(
+            @ChildProcessImportance int mainFrameImportance,
+            @ChildProcessImportance int subframeImportance);
 
     /**
      * Suspends all media players for this WebContents. Note: There may still be activities
@@ -556,14 +561,6 @@ public interface WebContents extends Parcelable {
     void setDisplayCutoutSafeArea(Rect insets);
 
     /**
-     * Sets the context menu "safe area" of the WebContents. These are insets from each edge in
-     * physical pixels.
-     *
-     * @param insets The insets stored in a Rect.
-     */
-    void setContextMenuInsets(Rect insets);
-
-    /**
      * Instructs the web contents to "show interest" in the Element corresponding to the provided
      * nodeID.
      *
@@ -618,6 +615,15 @@ public interface WebContents extends Parcelable {
      * @param enabled {@code true} to enabled the behavior.
      */
     void setLongPressLinkSelectText(boolean enabled);
+
+    /**
+     * Allow drag-drop of files such as an image to load and replace contents.
+     *
+     * @param enabled whether the behavior should be enabled.
+     */
+    void setCanAcceptLoadDrops(boolean enabled);
+
+    boolean getCanAcceptLoadDropsForTesting();
 
     /**
      * Update the OffsetTagDefinitions. This could be because the controls' visibility constraints

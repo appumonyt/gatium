@@ -3,27 +3,30 @@
 # found in the LICENSE file.
 """Definitions of builders in the chromium.fuchsia.fyi builder group."""
 
-load("//lib/branches.star", "branches")
-load("//lib/builder_config.star", "builder_config")
-load("//lib/builder_health_indicators.star", "health_spec")
-load("//lib/builders.star", "free_space", "gardener_rotations", "os", "siso")
-load("//lib/ci.star", "ci")
-load("//lib/consoles.star", "consoles")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/targets.star", "targets")
+load("@chromium-luci//branches.star", "branches")
+load("@chromium-luci//builder_config.star", "builder_config")
+load("@chromium-luci//builder_health_indicators.star", "health_spec")
+load("@chromium-luci//builders.star", "free_space", "os")
+load("@chromium-luci//ci.star", "ci")
+load("@chromium-luci//consoles.star", "consoles")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//targets.star", "targets")
+load("//lib/ci_constants.star", "ci_constants")
+load("//lib/gardener_rotations.star", "gardener_rotations")
+load("//lib/siso.star", "siso")
 
 ci.defaults.set(
-    executable = ci.DEFAULT_EXECUTABLE,
+    executable = ci_constants.DEFAULT_EXECUTABLE,
     builder_group = "chromium.fuchsia.fyi",
-    pool = ci.DEFAULT_POOL,
+    pool = ci_constants.DEFAULT_POOL,
     cores = 8,
     os = os.LINUX_DEFAULT,
     gardener_rotations = gardener_rotations.FUCHSIA,
     execution_timeout = 10 * time.hour,
-    health_spec = health_spec.DEFAULT,
+    health_spec = health_spec.default(),
     notifies = ["cr-fuchsia"],
-    service_account = ci.DEFAULT_SERVICE_ACCOUNT,
-    shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+    service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
+    shadow_service_account = ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
 )
@@ -57,7 +60,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.FUCHSIA,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -77,7 +79,7 @@ ci.builder(
         mixins = [
             "arm64",
             "docker",
-            "linux-jammy-or-focal",
+            "linux-jammy",
         ],
         per_test_modifications = {
             "blink_web_tests": targets.remove(
@@ -172,7 +174,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.FUCHSIA,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
         # This builder is slow naturally, running everything in serial to avoid
         # using too much resource.
         run_tests_serially = True,
@@ -275,7 +276,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.FUCHSIA,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -292,7 +292,7 @@ ci.builder(
         ],
         mixins = [
             "fuchsia-persistent-emulator",
-            "linux-focal",
+            "linux-jammy",
             targets.mixin(
                 swarming = targets.swarming(
                     dimensions = {
@@ -335,7 +335,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.FUCHSIA,
         ),
-        build_gs_bucket = "chromium-linux-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -427,7 +426,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.FUCHSIA,
         ),
-        build_gs_bucket = "chromium-linux-archive",
     ),
     gn_args = gn_args.config(
         configs = [

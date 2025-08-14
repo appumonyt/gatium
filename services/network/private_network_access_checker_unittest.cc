@@ -114,7 +114,7 @@ TEST(PrivateNetworkAccessCheckerTest, ClientSecurityStateFromRequestIgnored) {
       request.trusted_params->client_security_state =
           mojom::ClientSecurityState::New();
       request.trusted_params->client_security_state->ip_address_space =
-          mojom::IPAddressSpace::kPrivate;
+          mojom::IPAddressSpace::kLocal;
     }
     PrivateNetworkAccessChecker checker(request, kNullClientSecurityState,
                                         mojom::kURLLoadOptionNone);
@@ -330,7 +330,7 @@ TEST(PrivateNetworkAccessCheckerTest, CheckAllowedNoLessPublic) {
   base::HistogramTester histogram_tester;
 
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kBlock;
 
@@ -344,14 +344,14 @@ TEST(PrivateNetworkAccessCheckerTest, CheckAllowedNoLessPublic) {
                                       Result::kAllowedNoLessPublic, 1);
 }
 
-// PNA doesn't collapse private and loopback address spaces, so private ->
+// PNA doesn't collapse local and loopback address spaces, so local ->
 // loopback should be blocked.
 TEST(PrivateNetworkAccessCheckerTest,
-     CheckBlockedPNADoesNotCollapsePrivateLoopback) {
+     CheckBlockedPNADoesNotCollapseLocalLoopback) {
   base::HistogramTester histogram_tester;
 
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kBlock;
 
@@ -365,10 +365,10 @@ TEST(PrivateNetworkAccessCheckerTest,
                                       Result::kBlockedByPolicyBlock, 1);
 }
 
-// LNA collapses private and loopback address spaces so private -> loopback
-// should be allowed.
+// LNA collapses local and loopback address spaces so local -> loopback should
+// be allowed.
 TEST(PrivateNetworkAccessCheckerTest,
-     CheckAllowedNoLessPublicCollapsePrivateLoopback) {
+     CheckAllowedNoLessPublicCollapseLocalLoopback) {
   base::test::ScopedFeatureList feature_list;
   base::FieldTrialParams params;
   params["LocalNetworkAccessChecksWarn"] = "false";
@@ -378,7 +378,7 @@ TEST(PrivateNetworkAccessCheckerTest,
   base::HistogramTester histogram_tester;
 
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kBlock;
 
@@ -578,7 +578,7 @@ TEST(PrivateNetworkAccessCheckerTest, CheckAllowedByTargetIpAddressSpace) {
       mojom::PrivateNetworkRequestPolicy::kPreflightBlock;
 
   ResourceRequest request;
-  request.target_ip_address_space = mojom::IPAddressSpace::kPrivate;
+  request.target_ip_address_space = mojom::IPAddressSpace::kLocal;
 
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
@@ -614,7 +614,7 @@ TEST(PrivateNetworkAccessCheckerTest,
 TEST(PrivateNetworkAccessCheckerTest,
      CheckBlockedByInconsistentIpAddressSpace) {
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kPreflightBlock;
 
@@ -634,8 +634,16 @@ TEST(PrivateNetworkAccessCheckerTest,
       1);
 }
 
-TEST(PrivateNetworkAccessCheckerTest,
-     CheckBlockedByUnmatchedRequiredAddressSpaceAndResourceAddressSpace) {
+// Disabled because this relies on
+// network::features::kPrivateNetworkAccessPermissionPrompt being enabled; not
+// deleted because we want to keep this test when
+// features::kLocalNetworkAccessChecks is enabled.
+//
+// TODO(crbug.com/394636065): re-enable test when cleaning up PNA and porting
+// over to LNA
+TEST(
+    PrivateNetworkAccessCheckerTest,
+    DISABLED_CheckBlockedByUnmatchedRequiredAddressSpaceAndResourceAddressSpace) {
   mojom::ClientSecurityState client_security_state;
   client_security_state.ip_address_space = mojom::IPAddressSpace::kPublic;
   client_security_state.private_network_request_policy =
@@ -643,7 +651,7 @@ TEST(PrivateNetworkAccessCheckerTest,
 
   ResourceRequest request;
   request.target_ip_address_space = mojom::IPAddressSpace::kUnknown;
-  request.required_ip_address_space = mojom::IPAddressSpace::kPrivate;
+  request.required_ip_address_space = mojom::IPAddressSpace::kLocal;
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
 
@@ -665,7 +673,7 @@ TEST(PrivateNetworkAccessCheckerTest, ResponseAddressSpace) {
   checker.Check(DirectTransport(PrivateEndpoint()));
 
   EXPECT_THAT(checker.ResponseAddressSpace(),
-              Optional(mojom::IPAddressSpace::kPrivate));
+              Optional(mojom::IPAddressSpace::kLocal));
 }
 
 TEST(PrivateNetworkAccessCheckerTest, ProxiedTransportAddressSpaceIsUnknown) {
@@ -719,7 +727,7 @@ TEST(PrivateNetworkAccessCheckerTest, CachedTransportAddressSpace) {
 
 TEST(PrivateNetworkAccessCheckerTest, ResetTargetAddressSpace) {
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kPreflightBlock;
 
@@ -797,7 +805,7 @@ TEST(PrivateNetworkAccessCheckerTest,
 
   ResourceRequest request;
   request.url = GURL("http://192.168.1.1");
-  request.target_ip_address_space = mojom::IPAddressSpace::kPrivate;
+  request.target_ip_address_space = mojom::IPAddressSpace::kLocal;
 
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
@@ -831,7 +839,7 @@ TEST(PrivateNetworkAccessCheckerTest,
 TEST(PrivateNetworkAccessCheckerTest,
      RecordsPrivateIpInferrableHistogramNoLessPublic) {
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kBlock;
 

@@ -19,6 +19,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/history/core/browser/features.h"
 #include "components/history/core/browser/history_constants.h"
 #include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_types.h"
@@ -170,6 +171,60 @@ class HistoryTabHelperTest : public ChromeRenderViewHostTestHarness {
   TestFeedApi test_feed_api_;
 #endif  // BUILDFLAG(IS_ANDROID)
 };
+
+class HistoryTabHelperVisitedFilteringTest
+    : public HistoryTabHelperTest,
+      public testing::WithParamInterface<bool> {
+ public:
+  HistoryTabHelperVisitedFilteringTest() {
+    scoped_feature_list_.InitWithFeatureState(history::kVisitedLinksOn404,
+                                              GetParam());
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+TEST_P(HistoryTabHelperVisitedFilteringTest, ShouldConsiderForNtpMostVisited) {
+  bool are_404s_eligible_for_history =
+      base::FeatureList::IsEnabled(history::kVisitedLinksOn404);
+  NiceMock<content::MockNavigationHandle> navigation_handle(web_contents());
+  const GURL some_url = GURL("https://someurl.com");
+  navigation_handle.set_redirect_chain({some_url});
+
+  // Simulate a user navigating to a forbidden resource.
+  std::string raw_response_headers = "HTTP/1.1 403 Forbidden\r\n\r\n";
+  scoped_refptr<net::HttpResponseHeaders> response_headers =
+      net::HttpResponseHeaders::TryToCreate(raw_response_headers);
+  navigation_handle.set_response_headers(response_headers);
+
+  // Create HistoryAddPageArgs for the 403 navigation.
+  history::HistoryAddPageArgs args =
+      history_tab_helper()->CreateHistoryAddPageArgs(some_url, base::Time(), 1,
+                                                     &navigation_handle);
+
+  // We should never be filtering out 403 navigations when determining NTP most
+  // visited. This is because all error navigations other than 404 are eligible.
+  EXPECT_EQ(args.consider_for_ntp_most_visited, true);
+
+  // Simulate a user navigating to a resource that is not found.
+  raw_response_headers = "HTTP/1.1 404 Not Found\r\n\r\n";
+  response_headers =
+      net::HttpResponseHeaders::TryToCreate(raw_response_headers);
+  navigation_handle.set_response_headers(response_headers);
+
+  // Create HistoryAddPageArgs for the 404 navigation.
+  args = history_tab_helper()->CreateHistoryAddPageArgs(
+      GURL("https://someurl.com"), base::Time(), 1, &navigation_handle);
+
+  // If 404 error navigations are recorded in history, we should filter them out
+  // when determining NTP most visited.
+  EXPECT_EQ(args.consider_for_ntp_most_visited, !are_404s_eligible_for_history);
+}
+
+INSTANTIATE_TEST_SUITE_P(All,
+                         HistoryTabHelperVisitedFilteringTest,
+                         ::testing::Bool());
 
 TEST_F(HistoryTabHelperTest, ShouldUpdateTitleInHistory) {
   web_contents_tester()->NavigateAndCommit(page_url_);

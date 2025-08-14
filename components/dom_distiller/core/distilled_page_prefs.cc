@@ -10,8 +10,8 @@
 #include "base/observer_list.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/dom_distiller/core/pref_names.h"
-#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_change_registrar.h"
+#include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 
 namespace {
@@ -46,18 +46,13 @@ DistilledPagePrefs::DistilledPagePrefs(PrefService* pref_service)
 DistilledPagePrefs::~DistilledPagePrefs() = default;
 
 // static
-void DistilledPagePrefs::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
+void DistilledPagePrefs::RegisterProfilePrefs(PrefRegistrySimple* registry) {
+  registry->RegisterIntegerPref(prefs::kTheme,
+                                static_cast<int32_t>(mojom::Theme::kLight));
   registry->RegisterIntegerPref(
-      prefs::kTheme, static_cast<int32_t>(mojom::Theme::kLight),
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterIntegerPref(
-      prefs::kFont, static_cast<int32_t>(mojom::FontFamily::kSansSerif),
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+      prefs::kFont, static_cast<int32_t>(mojom::FontFamily::kSansSerif));
   registry->RegisterDoublePref(prefs::kFontScale, kDefaultFontScale);
-  registry->RegisterBooleanPref(
-      prefs::kReaderForAccessibility, false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kReaderForAccessibility, false);
 }
 
 void DistilledPagePrefs::SetFontFamily(mojom::FontFamily new_font_family) {
@@ -80,22 +75,33 @@ mojom::FontFamily DistilledPagePrefs::GetFontFamily() {
   return mojom::FontFamily::kSansSerif;
 }
 
-void DistilledPagePrefs::SetTheme(mojom::Theme new_theme) {
+void DistilledPagePrefs::SetUserPrefTheme(mojom::Theme new_theme) {
   pref_service_->SetInteger(prefs::kTheme, static_cast<int32_t>(new_theme));
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&DistilledPagePrefs::NotifyOnChangeTheme,
                                 weak_ptr_factory_.GetWeakPtr()));
 }
 
+void DistilledPagePrefs::SetDefaultTheme(mojom::Theme default_theme) {
+  default_theme_ = default_theme;
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&DistilledPagePrefs::NotifyOnChangeTheme,
+                                weak_ptr_factory_.GetWeakPtr()));
+}
+
 mojom::Theme DistilledPagePrefs::GetTheme() {
-  auto theme =
-      static_cast<mojom::Theme>(pref_service_->GetInteger(prefs::kTheme));
+  mojom::Theme theme;
+  if (pref_service_->FindPreference(prefs::kTheme)->HasUserSetting()) {
+    theme = static_cast<mojom::Theme>(pref_service_->GetInteger(prefs::kTheme));
+  } else {
+    theme = default_theme_.value_or(mojom::Theme::kLight);
+  }
   if (mojom::IsKnownEnumValue(theme))
     return theme;
 
   // Persisted data was incorrect, trying to clean it up by storing the
   // default.
-  SetTheme(mojom::Theme::kLight);
+  SetUserPrefTheme(mojom::Theme::kLight);
   return mojom::Theme::kLight;
 }
 

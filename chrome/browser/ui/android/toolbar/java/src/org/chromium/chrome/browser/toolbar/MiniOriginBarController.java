@@ -14,6 +14,7 @@ import android.widget.FrameLayout;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.VisibleForTesting;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.view.WindowInsetsAnimationCompat;
 import androidx.core.view.WindowInsetsAnimationCompat.BoundsCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -298,8 +299,8 @@ public class MiniOriginBarController implements Observer {
                         + mContext.getResources()
                                 .getDimensionPixelSize(R.dimen.toolbar_hairline_height);
         var minifiedLayoutParams =
-                new FrameLayout.LayoutParams(
-                        LayoutParams.WRAP_CONTENT, newLocationBarHeight, Gravity.CENTER_VERTICAL);
+                new CoordinatorLayout.LayoutParams(LayoutParams.WRAP_CONTENT, newLocationBarHeight);
+        minifiedLayoutParams.gravity = Gravity.CENTER_VERTICAL;
 
         var locationBarView = mLocationBar.getContainerView();
         locationBarView.setLayoutParams(minifiedLayoutParams);
@@ -410,12 +411,17 @@ public class MiniOriginBarController implements Observer {
                 return switch (miniOriginEvent) {
                     case MiniOriginEvent.ACCESSORY_SHEET_APPEARED -> MiniOriginState
                             .SHOWING_WITH_ACCESSORY_SHEET;
+                    case MiniOriginEvent.FORM_FIELD_LOST_FOCUS -> isKeyboardShowing()
+                            ? MiniOriginState.SHOWING
+                            : MiniOriginState.NOT_READY;
                     case MiniOriginEvent.CONTROLS_POSITION_BECAME_TOP -> MiniOriginState.NOT_READY;
                     case MiniOriginEvent.KEYBOARD_ANIMATION_PREPARED -> MiniOriginState.ANIMATING;
                     case MiniOriginEvent.KEYBOARD_DISAPPEARED ->
                     // Skip our animation if we get a keyboard disappearance event before the
                     // animation prepare signal.
-                    MiniOriginState.READY;
+                    mIsFormFieldFocusedSupplier.getAsBoolean()
+                            ? MiniOriginState.READY
+                            : MiniOriginState.NOT_READY;
                     default -> MiniOriginState.SHOWING;
                 };
             }
@@ -519,16 +525,26 @@ public class MiniOriginBarController implements Observer {
         @Override
         public void onStart(WindowInsetsAnimationCompat animation, BoundsCompat bounds) {
             if (animation != mAnimation) {
-                return;
+                if ((animation.getTypeMask() & WindowInsetsCompat.Type.ime()) == 0) {
+                    return;
+                }
+                mAnimation = animation;
             }
 
+            mAnimationInProgress = true;
             mMaxKeyboardHeight = bounds.getUpperBound().bottom;
+            // In some cases, e.g. a floating keyboard, we get a notification of an inset animation
+            // even though IME inset bottom will start and end at 0. There is a not a clean way to
+            // handle this, so we just bail out of the animation early.
+            if (mMaxKeyboardHeight == 0) {
+                onEnd(animation);
+                return;
+            }
             // Prevent clipping so that the mini origin bar can draw in bounds allocated for the
             // keyboard; we will prevent overlap by syncing our translation to its movement in
             // onProgress.
             ViewUtils.setAncestorsShouldClipChildren(mContainerView, false, View.NO_ID);
             ViewUtils.setAncestorsShouldClipToPadding(mContainerView, false, View.NO_ID);
-            mAnimationInProgress = true;
             mFinalKeyboardHeight =
                     mKeyboardVisibilityDelegate.isKeyboardShowing(mContext, mContainerView)
                             ? bounds.getUpperBound().bottom

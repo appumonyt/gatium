@@ -455,14 +455,17 @@ void LocalFrameClientImpl::DidFinishSameDocumentNavigation(
       if (!should_skip_screenshot && commit_type != kWebHistoryInertCommit &&
           !web_frame_->GetFrame()->GetSettings()->GetPrefersReducedMotion()) {
         navigation_with_screenshot = true;
-        if (RuntimeEnabledFeatures::
-                IncrementLocalSurfaceIdForMainframeSameDocNavigationEnabled()) {
+#if BUILDFLAG(IS_ANDROID)
+        if (web_frame_->View()
+                ->GetWebPreferences()
+                .increment_local_surface_id_for_mainframe_same_doc_navigation) {
           frame_widget->RequestNewLocalSurfaceId();
           if (RuntimeEnabledFeatures::BackForwardTransitionsEnabled()) {
             screenshot_destination = base::UnguessableToken::Create();
             frame_widget->RequestViewportScreenshot(screenshot_destination);
           }
         }
+#endif  // BUILDFLAG(IS_ANDROID)
 
         frame_widget->NotifyPresentationTime(WTF::BindOnce(
             [](base::TimeTicks start,
@@ -801,8 +804,7 @@ void LocalFrameClientImpl::DidStopLoading() {
 bool LocalFrameClientImpl::NavigateBackForward(
     int offset,
     base::TimeTicks actual_navigation_start,
-    std::optional<scheduler::TaskAttributionId>
-        soft_navigation_heuristics_task_id) const {
+    std::optional<scheduler::TaskAttributionId> task_state_id) const {
   WebViewImpl* webview = web_frame_->ViewImpl();
   DCHECK(webview->Client());
   DCHECK(web_frame_->Client());
@@ -816,8 +818,7 @@ bool LocalFrameClientImpl::NavigateBackForward(
   bool has_user_gesture =
       LocalFrame::HasTransientUserActivation(web_frame_->GetFrame());
   web_frame_->GetFrame()->GetLocalFrameHostRemote().GoToEntryAtOffset(
-      offset, has_user_gesture, actual_navigation_start,
-      soft_navigation_heuristics_task_id);
+      offset, has_user_gesture, actual_navigation_start, task_state_id);
   return true;
 }
 
@@ -873,7 +874,7 @@ void LocalFrameClientImpl::DidObserveNewFeatureUsage(
 
 // A new soft navigation was observed.
 void LocalFrameClientImpl::DidObserveSoftNavigation(
-    SoftNavigationMetrics metrics) {
+    SoftNavigationMetricsForReporting metrics) {
   if (WebLocalFrameClient* client = web_frame_->Client()) {
     client->DidObserveSoftNavigation(metrics);
   }

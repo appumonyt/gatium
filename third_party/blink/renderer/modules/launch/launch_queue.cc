@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/launch/launch_queue.h"
 
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/strcat.h"
 #include "base/time/time.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_launch_consumer.h"
 #include "third_party/blink/renderer/modules/launch/launch_params.h"
@@ -65,7 +66,7 @@ void LaunchQueue::MeasureLatencyFromBrowserProcess(
   std::string histogram_variant =
       navigation_started ? ".WithNavigation" : ".WithoutNavigation";
   std::string histogram_name =
-      base::StrCat({"WebApp.NavigationCapturing.LaunchParamsConsumedTime",
+      base::StrCat({"Webapp.NavigationCapturing.LaunchParamsConsumedTime",
                     histogram_variant});
   base::UmaHistogramMediumTimes(histogram_name, time_to_navigate);
 }

@@ -1079,10 +1079,10 @@ void EmitProcessUmaAndUkm(const GlobalMemoryDump::ProcessDump& pmd,
       base::StrCat({kMemoryHistogramPrefix, process_name, ".MappingsCount"}),
       pmd.os_dump().mappings_count);
   base::UmaHistogramMemoryMB(
-      base::StrCat({kMemoryHistogramPrefix, process_name, ".Pss"}),
+      base::StrCat({kMemoryHistogramPrefix, process_name, ".Pss2"}),
       pmd.os_dump().pss_kb / kKiB);
   base::UmaHistogramMemoryMB(
-      base::StrCat({kMemoryHistogramPrefix, process_name, ".SwapPss"}),
+      base::StrCat({kMemoryHistogramPrefix, process_name, ".SwapPss2"}),
       pmd.os_dump().swap_pss_kb / kKiB);
 #endif
 
@@ -1690,12 +1690,12 @@ void ProcessMemoryMetricsEmitter::CollateResults() {
     per_tab_metrics.RecordPmfs(GetUkmRecorder());
 
 #if BUILDFLAG(IS_CHROMEOS)
-    base::SystemMemoryInfoKB system_meminfo;
+    base::SystemMemoryInfo system_meminfo;
     if (base::GetSystemMemoryInfo(&system_meminfo)) {
-      int mem_used_mb =
-          (system_meminfo.total - system_meminfo.available) / 1024;
+      int64_t mem_used_mb =
+          (system_meminfo.total - system_meminfo.available).InMiB();
       UMA_HISTOGRAM_LARGE_MEMORY_MB("Memory.System.MemAvailableMB",
-                                    system_meminfo.available / 1024);
+                                    system_meminfo.available.InMiB());
       UMA_HISTOGRAM_LARGE_MEMORY_MB("Memory.System.MemUsedMB", mem_used_mb);
     }
 #endif

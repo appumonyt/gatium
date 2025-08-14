@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/byte_count.h"
 #include "base/command_line.h"
 #include "base/i18n/message_formatter.h"
 #include "base/i18n/number_formatting.h"
@@ -48,8 +49,6 @@
 namespace task_manager {
 
 namespace {
-
-const char kCpuTextFormatString[] = "%.1f";
 
 #if BUILDFLAG(IS_MAC)
 // Match Activity Monitor's default refresh rate.
@@ -137,7 +136,6 @@ bool ShouldKeepTaskForTabsAndExtensions(Task::Type type,
       return subtype == Task::SubType::kNoSubType;
     case Task::EXTENSION:
     case Task::GUEST:
-    case Task::PLUGIN:
       return true;
     default:
       return false;
@@ -152,7 +150,6 @@ bool ShouldKeepTaskForSystem(Task::Type type, Task::SubType subtype) {
     case Task::GPU:
     case Task::ARC:
     case Task::CROSTINI:
-    case Task::PLUGIN_VM:
     case Task::ZYGOTE:
     case Task::UTILITY:
     case Task::SANDBOX_HELPER:
@@ -176,7 +173,7 @@ class TaskManagerValuesStringifier {
  public:
   TaskManagerValuesStringifier()
       : n_a_string_(l10n_util::GetStringUTF16(IDS_TASK_MANAGER_NA_CELL_TEXT)),
-        zero_string_(u"0"),
+        zero_string_(base::FormatNumber(0)),
         backgrounded_string_(
             l10n_util::GetStringUTF16(IDS_TASK_MANAGER_BACKGROUNDED_TEXT)),
         foregrounded_string_(
@@ -192,8 +189,8 @@ class TaskManagerValuesStringifier {
     if (std::isnan(cpu_usage)) {
       return n_a_string_;
     }
-    return base::UTF8ToUTF16(
-        base::StringPrintf(kCpuTextFormatString, cpu_usage));
+    return base::FormatDouble(cpu_usage, /*min_fractional_digits=*/1,
+                              /*max_fractional_digits=*/1);
   }
 
   std::u16string GetStartTimeText(base::Time start_time) {
@@ -223,9 +220,7 @@ class TaskManagerValuesStringifier {
 
 #if BUILDFLAG(IS_MAC)
     // System expectation is to show "100 kB", "200 MB", etc.
-    // TODO(thakis): [This TODO has been taken as is from the old task manager]:
-    // Switch to metric units (as opposed to powers of two).
-    std::u16string memory_text = ui::FormatBytes(memory_usage);
+    std::u16string memory_text = ui::FormatBytes(base::ByteCount(memory_usage));
 #else
     std::u16string memory_text = base::FormatNumber(memory_usage / 1024);
     // Adjust number string if necessary.
@@ -259,8 +254,8 @@ class TaskManagerValuesStringifier {
 
   std::u16string GetWindowsHandlesText(int64_t current, int64_t peak) {
     return l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_HANDLES_CELL_TEXT,
-                                      base::NumberToString16(current),
-                                      base::NumberToString16(peak));
+                                      base::FormatNumber(current),
+                                      base::FormatNumber(peak));
   }
 
   std::u16string GetNetworkUsageText(int64_t network_usage) {
@@ -272,20 +267,23 @@ class TaskManagerValuesStringifier {
       return zero_string_;
     }
 
-    std::u16string net_byte = ui::FormatSpeed(network_usage);
+    std::u16string net_byte = ui::FormatSpeed(base::ByteCount(network_usage));
     // Force number string to have LTR directionality.
     return base::i18n::GetDisplayStringInLTRDirectionality(net_byte);
   }
 
   std::u16string GetProcessIdText(base::ProcessId proc_id) {
+    // The PID is a "computer number" and so is deliberately not localized.
     return base::NumberToString16(proc_id);
   }
 
   std::u16string FormatAllocatedAndUsedMemory(int64_t allocated, int64_t used) {
     return l10n_util::GetStringFUTF16(
         IDS_TASK_MANAGER_CACHE_SIZE_CELL_TEXT,
-        ui::FormatBytesWithUnits(allocated, ui::DATA_UNITS_KIBIBYTE, false),
-        ui::FormatBytesWithUnits(used, ui::DATA_UNITS_KIBIBYTE, false));
+        ui::FormatBytesWithUnits(base::ByteCount(allocated),
+                                 ui::DataUnits::kKibibyte, false),
+        ui::FormatBytesWithUnits(base::ByteCount(used),
+                                 ui::DataUnits::kKibibyte, false));
   }
 
   std::u16string GetWebCacheStatText(
@@ -297,11 +295,10 @@ class TaskManagerValuesStringifier {
     if (keepalive_count < 0) {
       return n_a_string();
     }
-    return base::NumberToString16(keepalive_count);
+    return base::FormatNumber(keepalive_count);
   }
 
   const std::u16string& n_a_string() const { return n_a_string_; }
-  const std::u16string& zero_string() const { return zero_string_; }
   const std::u16string& backgrounded_string() const {
     return backgrounded_string_;
   }
@@ -314,7 +311,7 @@ class TaskManagerValuesStringifier {
   // The localized string "N/A".
   const std::u16string n_a_string_;
 
-  // The value 0 as a string "0".
+  // The localized string for a value 0.
   const std::u16string zero_string_;
 
   // The localized string "Backgrounded" for process priority.
@@ -1102,7 +1099,7 @@ void TaskManagerTableModel::StartUpdating() {
   // In order for the scrollbar of the TableView to work properly on startup of
   // the task manager, we must invoke TableModelObserver::OnModelChanged() which
   // in turn will invoke TableView::NumRowsChanged(). This will adjust the
-  // vertical scrollbar correctly. crbug.com/570966.
+  // vertical scrollbar correctly. https://crbug.com/40449918.
   if (table_model_observer_) {
     table_model_observer_->OnModelChanged();
   }

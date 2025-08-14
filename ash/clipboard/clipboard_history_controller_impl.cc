@@ -227,21 +227,6 @@ void SyntheticPaste(
       display::Screen::GetScreen()->GetDisplayForNewWindows().id());
   CHECK(host);
 
-  // Because we do not require the user to release Ctrl+V before selecting a
-  // clipboard history item to paste, the Ctrl+V event we synthesize below may
-  // be discarded as a perceived continuation of the long press. Preempt this
-  // scenario by issuing a Ctrl+V release to ensure that the press and release
-  // below are handled as an independent paste.
-  // TODO(http://b/283533126): Replace this workaround with a long-term fix.
-  if (paste_source == crosapi::mojom::ClipboardHistoryControllerShowSource::
-                          kControlVLongpress) {
-    ui::KeyEvent v_release = SyntheticCtrlV(ui::EventType::kKeyReleased);
-    host->DeliverEventToSink(&v_release);
-
-    ui::KeyEvent ctrl_release = SyntheticCtrl(ui::EventType::kKeyReleased);
-    host->DeliverEventToSink(&ctrl_release);
-  }
-
   ui::KeyEvent ctrl_press = SyntheticCtrl(ui::EventType::kKeyPressed);
   host->DeliverEventToSink(&ctrl_press);
 
@@ -436,7 +421,6 @@ class ClipboardHistoryControllerImpl::MenuDelegate
 ClipboardHistoryControllerImpl::ClipboardHistoryControllerImpl(
     std::unique_ptr<ClipboardHistoryControllerDelegate> delegate)
     : delegate_(std::move(delegate)),
-      image_model_factory_(delegate_->CreateImageModelFactory()),
       clipboard_history_(std::make_unique<ClipboardHistory>()),
       resource_manager_(std::make_unique<ClipboardHistoryResourceManager>(
           clipboard_history_.get())),
@@ -444,9 +428,6 @@ ClipboardHistoryControllerImpl::ClipboardHistoryControllerImpl(
       nudge_controller_(
           std::make_unique<ClipboardNudgeController>(clipboard_history_.get())),
       menu_delegate_(std::make_unique<MenuDelegate>(this)) {
-  if (!image_model_factory_) {
-    CHECK_IS_TEST();
-  }
   clipboard_history_->AddObserver(this);
   resource_manager_->AddObserver(this);
   SessionController::Get()->AddObserver(this);

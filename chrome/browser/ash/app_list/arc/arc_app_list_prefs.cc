@@ -42,7 +42,6 @@
 #include "chrome/browser/ash/arc/session/arc_initial_optin_metrics_recorder_factory.h"
 #include "chrome/browser/ash/arc/session/arc_session_manager.h"
 #include "chrome/browser/ash/login/session/user_session_manager.h"
-#include "chrome/browser/image_decoder/image_decoder.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/shelf/chrome_shelf_controller.h"
@@ -59,6 +58,7 @@
 #include "chromeos/ash/experiences/arc/session/arc_bridge_service.h"
 #include "chromeos/ash/experiences/arc/session/arc_service_manager.h"
 #include "chromeos/ash/experiences/arc/session/connection_holder.h"
+#include "chromeos/components/kiosk/kiosk_utils.h"
 #include "components/crx_file/id_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -1199,7 +1199,7 @@ void ArcAppListPrefs::SetLastLaunchTimeInternal(const std::string& app_id) {
     const user_manager::UserManager* user_manager =
         user_manager::UserManager::Get();
     if (arc::ArcSessionManager::Get()->skipped_terms_of_service_negotiation() &&
-        !user_manager->IsLoggedInAsKioskChromeApp() &&
+        !chromeos::IsChromeAppKioskSession() &&
         !user_manager->IsLoggedInAsKioskArcvmApp() &&
         !ash::UserSessionManager::GetInstance()->ui_shown_time().is_null()) {
       UMA_HISTOGRAM_CUSTOM_TIMES(

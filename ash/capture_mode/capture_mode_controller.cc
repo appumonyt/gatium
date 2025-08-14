@@ -255,7 +255,7 @@ base::FilePath SaveFile(scoped_refptr<base::RefCountedMemory> data,
 // Called when the "Share to YouTube" button is pressed to
 // open the YouTube share video page.
 void OnShareToYouTubeButtonPressed() {
-  NewWindowDelegate::GetPrimary()->OpenUrl(
+  NewWindowDelegate::GetInstance()->OpenUrl(
       GURL(kShareToYouTubeURL),
       NewWindowDelegate::OpenUrlFrom::kUserInteraction,
       NewWindowDelegate::Disposition::kNewForegroundTab);
@@ -715,6 +715,15 @@ CaptureModeController::~CaptureModeController() {
 
   DCHECK_EQ(g_instance, this);
   g_instance = nullptr;
+}
+
+// static
+bool CaptureModeController::HasInstance() {
+  if (g_instance) {
+    return true;
+  }
+
+  return false;
 }
 
 // static

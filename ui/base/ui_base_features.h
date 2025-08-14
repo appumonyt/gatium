@@ -14,6 +14,8 @@
 namespace features {
 
 COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE(kSendEmptyGestureScrollUpdate);
+COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kExperimentalFlingAnimation);
 COMPONENT_EXPORT(UI_BASE_FEATURES) BASE_DECLARE_FEATURE(kFocusFollowsCursor);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
@@ -23,8 +25,6 @@ BASE_DECLARE_FEATURE(kDragDropOnlySynthesizeHttpOrHttpsUrlsFromText);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kSettingsShowsPerKeyboardSettings);
 #endif  // BUILDFLAG(IS_CHROMEOS)
-COMPONENT_EXPORT(UI_BASE_FEATURES)
-BASE_DECLARE_FEATURE(kInputMethodSettingsUiUpdate);
 COMPONENT_EXPORT(UI_BASE_FEATURES) BASE_DECLARE_FEATURE(kSystemKeyboardLock);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kUiCompositorScrollWithLayers);
@@ -33,13 +33,14 @@ BASE_DECLARE_FEATURE(kUiCompositorUsesLayerLists);
 
 COMPONENT_EXPORT(UI_BASE_FEATURES) bool IsUiGpuRasterizationEnabled();
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_APPLE)
 COMPONENT_EXPORT(UI_BASE_FEATURES) BASE_DECLARE_FEATURE(kElasticOverscroll);
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
+#endif
+
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE(kLimitScrollDeltaToScrollerSize);
 
 #if BUILDFLAG(IS_WIN)
-COMPONENT_EXPORT(UI_BASE_FEATURES)
-BASE_DECLARE_FEATURE(kApplyNativeOccludedRegionToWindowTracker);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kCalculateNativeWinOcclusion);
 
@@ -123,19 +124,8 @@ COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kWaylandTextInputV3);
 
 COMPONENT_EXPORT(UI_BASE_FEATURES)
-BASE_DECLARE_FEATURE(kWaylandUiScale);
-
-COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kWaylandSessionManagement);
 #endif  // BUILDFLAG(IS_OZONE)
-
-#if BUILDFLAG(IS_LINUX)
-COMPONENT_EXPORT(UI_BASE_FEATURES)
-BASE_DECLARE_FEATURE(kOverrideDefaultOzonePlatformHintToAuto);
-#endif  // BUILDFLAG(IS_LINUX)
-
-COMPONENT_EXPORT(UI_BASE_FEATURES)
-BASE_DECLARE_FEATURE(kXInput2KeyEvents);
 
 // Indicates whether DrmOverlayManager should used the synchronous API to
 // perform pageflip tests.
@@ -193,8 +183,6 @@ COMPONENT_EXPORT(UI_BASE_FEATURES) bool IsUsingRawDraw();
 COMPONENT_EXPORT(UI_BASE_FEATURES) double RawDrawTileSizeFactor();
 COMPONENT_EXPORT(UI_BASE_FEATURES) bool IsRawDrawUsingMSAA();
 
-COMPONENT_EXPORT(UI_BASE_FEATURES) BASE_DECLARE_FEATURE(kStylusSpecificTapSlop);
-
 // This feature indicates that this device should have variable refresh rates
 // enabled by default if available. This overrides the default value of
 // |kEnableVariableRefreshRate|. This flag is added by cros-config and not
@@ -240,12 +228,18 @@ BASE_DECLARE_FEATURE(kAsyncFullscreenWindowState);
 // Enable ClipboardChange event API
 // https://chromestatus.com/feature/5085102657503232
 COMPONENT_EXPORT(UI_BASE_FEATURES)
-BASE_DECLARE_FEATURE(kClipboardChangeEvent);
+BASE_DECLARE_FEATURE(kPlatformClipboardMonitor);
 
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kEnablePixelCanvasRecording);
 
 bool COMPONENT_EXPORT(UI_BASE_FEATURES) IsPixelCanvasRecordingEnabled();
+
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE(kHandleIMESpanChangesOnUpdateComposition);
+
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+bool IsHandleIMESpanChangesOnUpdateCompositionEnabled();
 
 }  // namespace features
 

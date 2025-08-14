@@ -43,14 +43,12 @@
 #include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "base/version.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/web_applications/web_app_dialogs.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_integrity_block_data.h"
-#include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_storage_location.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolation_data.h"
 #include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/proto/web_app.pb.h"
@@ -83,7 +81,9 @@
 #include "components/sync/model/string_ordinal.h"
 #include "components/sync/protocol/web_app_specifics.pb.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
-#include "components/webapps/isolated_web_apps/update_channel.h"
+#include "components/webapps/isolated_web_apps/types/iwa_version.h"
+#include "components/webapps/isolated_web_apps/types/storage_location.h"
+#include "components/webapps/isolated_web_apps/types/update_channel.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/permissions_policy/origin_with_possible_wildcards.h"
@@ -119,6 +119,9 @@ constexpr std::string_view kEcdsaP256PublicKeyBase64 =
 constexpr std::string_view kEcdsaP256SHA256SignatureHex =
     "3044022007381524F538B04F99CCC62703F06C87F66EF41BDA18A22D8E57952AA23E53A6"
     "022063C7F81D3A44798CB95823FA38FC23B15E0483744657FF49E1E83AB8C06B63C2";
+
+const std::array<web_app::SquareSizePx, 8> icon_sizes = {32,  48,  64,  96,
+                                                         128, 256, 512, 1024};
 
 }  // namespace
 
@@ -610,6 +613,32 @@ CreateRandomRelatedApplications(RandomHelper& random) {
   return related_applications;
 }
 
+std::vector<apps::IconInfo> CreateRandomIconMetadata(RandomHelper& random,
+                                                     const GURL& base_url) {
+  const int num_icons = random.next_uint(10) + 1;
+  std::vector<apps::IconInfo> icons(num_icons);
+  for (int i = 0; i < num_icons; i++) {
+    apps::IconInfo icon;
+    icon.url = base_url.Resolve(
+        base::StrCat({"/icons", base::NumberToString(random.next_uint())}));
+    icon.square_size_px = icon_sizes[random.next_uint(8)];
+
+    int purpose = random.next_uint(4);
+    if (purpose == 0) {
+      icon.purpose = apps::IconInfo::Purpose::kAny;
+    }
+    if (purpose == 1) {
+      icon.purpose = apps::IconInfo::Purpose::kMaskable;
+    }
+    if (purpose == 2) {
+      icon.purpose = apps::IconInfo::Purpose::kMonochrome;
+    }
+    // if (purpose == 3), leave purpose unset. Should default to ANY.
+    icons[i] = icon;
+  }
+  return icons;
+}
+
 }  // namespace
 
 std::unique_ptr<WebApp> CreateWebApp(const GURL& start_url,
@@ -827,40 +856,19 @@ std::unique_ptr<WebApp> CreateRandomWebApp(CreateRandomWebAppParams params) {
 
   app->SetRunOnOsLoginMode(random.next_enum<RunOnOsLoginMode>());
 
-  const SquareSizePx size = 256;
-  const int num_icons = random.next_uint(10);
-  std::vector<apps::IconInfo> manifest_icons(num_icons);
-  for (int i = 0; i < num_icons; i++) {
-    apps::IconInfo icon;
-    icon.url = params.base_url.Resolve(
-        "/icon" + base::NumberToString(random.next_uint()));
-    if (random.next_bool()) {
-      icon.square_size_px = size;
-    }
+  app->SetManifestIcons(CreateRandomIconMetadata(random, params.base_url));
 
-    int purpose = random.next_uint(4);
-    if (purpose == 0) {
-      icon.purpose = apps::IconInfo::Purpose::kAny;
-    }
-    if (purpose == 1) {
-      icon.purpose = apps::IconInfo::Purpose::kMaskable;
-    }
-    if (purpose == 2) {
-      icon.purpose = apps::IconInfo::Purpose::kMonochrome;
-    }
-    // if (purpose == 3), leave purpose unset. Should default to ANY.
-
-    manifest_icons[i] = icon;
-  }
-  app->SetManifestIcons(manifest_icons);
   if (random.next_bool()) {
-    app->SetDownloadedIconSizes(IconPurpose::ANY, {size});
+    app->SetDownloadedIconSizes(IconPurpose::ANY,
+                                {icon_sizes[random.next_uint(8)]});
   }
   if (random.next_bool()) {
-    app->SetDownloadedIconSizes(IconPurpose::MASKABLE, {size});
+    app->SetDownloadedIconSizes(IconPurpose::MASKABLE,
+                                {icon_sizes[random.next_uint(8)]});
   }
   if (random.next_bool()) {
-    app->SetDownloadedIconSizes(IconPurpose::MONOCHROME, {size});
+    app->SetDownloadedIconSizes(IconPurpose::MONOCHROME,
+                                {icon_sizes[random.next_uint(8)]});
   }
   app->SetIsGeneratedIcon(random.next_bool());
 
@@ -1095,13 +1103,14 @@ std::unique_ptr<WebApp> CreateRandomWebApp(CreateRandomWebAppParams params) {
       }
     };
 
-    base::Version version = base::Version({
+    IwaVersion iwa_version = *IwaVersion::Create({
         random.next_uint(UINT32_MAX - 1U),
         random.next_uint(),
         random.next_uint(),
     });
 
-    auto idb = IsolationData::Builder(get_location_type(), version);
+    auto idb =
+        IsolationData::Builder(get_location_type(), iwa_version.version());
     std::optional<IsolatedWebAppIntegrityBlockData> integrity_block_data =
         CreateIntegrityBlockData(random);
     if (integrity_block_data) {
@@ -1112,28 +1121,36 @@ std::unique_ptr<WebApp> CreateRandomWebApp(CreateRandomWebAppParams params) {
       idb.SetControlledFramePartitions({"partition_name"});
     }
     if (random.next_bool()) {
-      base::Version pending_version = [&] {
+      IwaVersion pending_version = [&] {
         if (random.next_bool()) {
           // Case where `pending_version == version`. Useful for validating key
           // rotation scenarios.
-          return version;
+          return iwa_version;
         }
         // Otherwise, create `pending_version > version`.
-        uint32_t major_version = version.components()[0];
+        uint32_t major_version = iwa_version.version().components()[0];
         CHECK_LT(major_version, UINT32_MAX - 1U);
         uint32_t delta = random.next_uint(UINT32_MAX - 1U - major_version) + 1;
         // `major_version` + `delta` < UINT32_MAX.
-        return base::Version(
+        return *IwaVersion::Create(
             {major_version + delta, random.next_uint(), random.next_uint()});
       }();
-      CHECK_GE(pending_version, version);
+      CHECK_GE(pending_version, iwa_version);
       IsolationData::PendingUpdateInfo pending_update_info(
-          get_location_type(), pending_version, integrity_block_data);
+          get_location_type(), pending_version.version(), integrity_block_data);
       idb.SetPendingUpdateInfo(std::move(pending_update_info));
     }
     if (dev_mode && random.next_bool()) {
       idb.SetUpdateManifestUrl(GURL("https://update-manifest.com"));
       idb.SetUpdateChannel(UpdateChannel::default_channel());
+    }
+    if (random.next_bool()) {
+      proto::IsolationData::OpenedTabsCounterNotificationState proto_state;
+      proto_state.set_acknowledged(random.next_bool());
+      proto_state.set_times_shown(random.next_uint(3));
+      idb.SetOpenedTabsCounterNotificationState(
+          IsolationData::OpenedTabsCounterNotificationState(
+              std::move(proto_state)));
     }
     app->SetIsolationData(std::move(idb).Build());
   }
@@ -1158,6 +1175,36 @@ std::unique_ptr<WebApp> CreateRandomWebApp(CreateRandomWebAppParams params) {
   app->SetSupportedLinksOfferDismissCount(random.next_uint());
   app->SetRelatedApplications(CreateRandomRelatedApplications(random));
   app->SetDiyAppIconsMaskedOnMac(random.next_bool());
+
+  if (random.next_bool()) {
+    proto::PendingUpdateInfo pending_update_info;
+    if (random.next_bool()) {
+      pending_update_info.set_name(name);
+    }
+
+    if (random.next_bool() || !pending_update_info.has_name()) {
+      std::vector<apps::IconInfo> icons_to_update =
+          CreateRandomIconMetadata(random, params.base_url);
+
+      for (const auto& icon : icons_to_update) {
+        *pending_update_info.add_trusted_icons() = AppIconInfoToSyncProto(icon);
+        *pending_update_info.add_manifest_icons() =
+            AppIconInfoToSyncProto(icon);
+      }
+    }
+
+    app->SetPendingUpdateInfo(pending_update_info);
+  }
+
+  app->SetTrustedIcons(CreateRandomIconMetadata(random, params.base_url));
+  if (random.next_bool()) {
+    app->SetStoredTrustedIconSizes(IconPurpose::ANY,
+                                   {icon_sizes[random.next_uint(8)]});
+  }
+  if (random.next_bool()) {
+    app->SetStoredTrustedIconSizes(IconPurpose::MASKABLE,
+                                   {icon_sizes[random.next_uint(8)]});
+  }
 
   return app;
 }

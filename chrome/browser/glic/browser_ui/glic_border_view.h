@@ -11,10 +11,12 @@
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/compositor/compositor_animation_observer.h"
 #include "ui/compositor/compositor_observer.h"
+#include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/views/metadata/view_factory.h"
 #include "ui/views/view.h"
 
 class Browser;
+class ContentsWebView;
 class ThemeService;
 
 namespace gfx {
@@ -43,7 +45,7 @@ class GlicBorderView : public views::View,
   // Allows the test to inject the tester at the border's creation.
   class Factory {
    public:
-    static std::unique_ptr<GlicBorderView> Create(Browser* browser);
+    static std::unique_ptr<GlicBorderView> Create(Browser*, ContentsWebView*);
     static void set_factory(Factory* factory) { factory_ = factory; }
 
    protected:
@@ -52,7 +54,8 @@ class GlicBorderView : public views::View,
 
     // For tests to override.
     virtual std::unique_ptr<GlicBorderView> CreateBorderView(
-        Browser* browser) = 0;
+        Browser* browser,
+        ContentsWebView* contents_web_view) = 0;
 
    private:
     static Factory* factory_;
@@ -75,6 +78,8 @@ class GlicBorderView : public views::View,
   void OnGpuInfoUpdate() override;
 
   bool IsShowing() const;
+
+  void SetRoundedCorners(const gfx::RoundedCornersF& radii);
 
   // TODO(crbug.com/384712084): Ideally we shouldn't expose these internals for
   // testing. The pixel comparison tests were flaky thus reverted. Remove these
@@ -99,7 +104,9 @@ class GlicBorderView : public views::View,
 
  protected:
   friend class Factory;
-  explicit GlicBorderView(Browser* browser, std::unique_ptr<Tester> tester);
+  explicit GlicBorderView(Browser* browser,
+                          ContentsWebView* contents_web_view,
+                          std::unique_ptr<Tester> tester);
 
  private:
   void Show();
@@ -123,6 +130,9 @@ class GlicBorderView : public views::View,
   // Returns a value from 0 to 1 indicating progress through the effect.
   float GetEffectProgress(base::TimeTicks timestamp) const;
 
+  // Returns the rounded corner radius to use for the border.
+  gfx::RoundedCornersF GetContentBorderRadius() const;
+
   // Returns the timestamp when the instance was created (but permits being
   // adjusted by the Tester).
   base::TimeTicks GetCreationTime() const;
@@ -132,6 +142,8 @@ class GlicBorderView : public views::View,
   GlicKeyedService* GetGlicService() const;
 
   void UpdateShader();
+
+  raw_ptr<Browser> browser_ = nullptr;
 
   // A utility class that subscribe to `GlicKeyedService` for various browser UI
   // status change.
@@ -147,6 +159,8 @@ class GlicBorderView : public views::View,
   float opacity_ = 0.f;
   float emphasis_ = 0.f;
   float progress_ = 0.f;
+
+  gfx::RoundedCornersF corner_radius_;
 
   const base::TimeTicks creation_time_;
   base::TimeTicks first_frame_time_;
@@ -182,7 +196,6 @@ class GlicBorderView : public views::View,
 
   raw_ptr<ui::Compositor> compositor_ = nullptr;
   raw_ptr<ThemeService> theme_service_ = nullptr;
-  raw_ptr<Browser> browser_ = nullptr;
 };
 
 BEGIN_VIEW_BUILDER(, GlicBorderView, views::View)

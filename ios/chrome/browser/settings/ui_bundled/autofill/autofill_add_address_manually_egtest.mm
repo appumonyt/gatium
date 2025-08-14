@@ -95,16 +95,6 @@ UIViewController* TopPresentedViewController() {
 
 @implementation AutofillAddAddressManuallyTestCase
 
-- (AppLaunchConfiguration)appConfigurationForTestCase {
-  AppLaunchConfiguration config;
-
-  config.features_enabled.push_back(kAddAddressManually);
-  config.features_enabled.push_back(
-      kAutofillDynamicallyLoadsFieldsForAddressInput);
-
-  return config;
-}
-
 - (void)setUp {
   [super setUp];
   [AutofillAppInterface clearProfilesStore];
@@ -191,6 +181,11 @@ UIViewController* TopPresentedViewController() {
 
   // Fill the required fields.
   [self fillRequiredFields];
+
+  // Scroll to bottom, this is needed in some cases because the "Save" button is
+  // not always visible.
+  [[EarlGrey selectElementWithMatcher:EditProfileBottomSheet()]
+      performAction:grey_scrollToContentEdge(kGREYContentEdgeBottom)];
 
   // Save the profile.
   [[EarlGrey selectElementWithMatcher:SaveAddressButton()]

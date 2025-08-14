@@ -45,6 +45,7 @@
 #include "media/base/test_helpers.h"
 #include "media/cdm/clear_key_cdm_common.h"
 #include "media/filters/pipeline_controller.h"
+#include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
 #include "media/mojo/services/media_metrics_provider.h"
 #include "media/mojo/services/video_decode_stats_recorder.h"
 #include "media/mojo/services/watch_time_recorder.h"
@@ -57,6 +58,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
+#include "third_party/blink/public/platform/cross_variant_mojo_util.h"
 #include "third_party/blink/public/platform/media/web_media_player_builder.h"
 #include "third_party/blink/public/platform/media/web_media_player_delegate.h"
 #include "third_party/blink/public/platform/web_fullscreen_video_status.h"
@@ -426,17 +428,17 @@ class WebMediaPlayerImplTest
             nullptr));
 #endif
 
-    mojo::Remote<media::mojom::MediaMetricsProvider> provider;
+    mojo::Remote<media::mojom::blink::MediaMetricsProvider> provider;
     media::MediaMetricsProvider::Create(
         media::MediaMetricsProvider::BrowsingMode::kNormal,
         media::MediaMetricsProvider::FrameStatus::kNotTopFrame,
-        ukm::kInvalidSourceId, media::learning::FeatureValue(0),
-        media::VideoDecodePerfHistory::SaveCallback(),
-        media::MediaMetricsProvider::GetLearningSessionCallback(),
+        ukm::kInvalidSourceId, media::VideoDecodePerfHistory::SaveCallback(),
         WTF::BindRepeating(&WebMediaPlayerImplTest::IsShuttingDown,
                            WTF::Unretained(this)),
         media::PictureInPictureEventsInfo::AutoPipReasonCallback(),
-        provider.BindNewPipeAndPassReceiver());
+        CrossVariantMojoReceiver<
+            media::mojom::MediaMetricsProviderInterfaceBase>(
+            provider.BindNewPipeAndPassReceiver()));
 
     // Initialize provider since none of the tests below actually go through the
     // full loading/pipeline initialize phase. If this ever changes the provider
@@ -508,7 +510,7 @@ class WebMediaPlayerImplTest
     wmpi_->SetTickClockForTest(clock);
   }
   void SetWasSuspendedForFrameClosed(bool is_suspended) {
-    wmpi_->was_suspended_for_frame_closed_ = is_suspended;
+    wmpi_->was_suspended_for_frame_closed_or_frozen_ = is_suspended;
   }
 
   void SetFullscreen(bool is_fullscreen) {
@@ -737,7 +739,7 @@ class WebMediaPlayerImplTest
     // which returns non-null from GetAsCrossOriginDataSource is
     // MultiBufferDataSource, so the CHECKs above allow us to be safe casting
     // this here.
-    // TODO(crbug/1377053): Can we add |cancel_on_defer_for_testing| to
+    // TODO(crbug.com/40243452): Can we add |cancel_on_defer_for_testing| to
     // CrossOriginDataSource? We can't do a |GetAsMultiBufferDataSource| since
     // MBDS is in blink, and we can't import that into media.
     return static_cast<const MultiBufferDataSource*>(ds)
@@ -2061,7 +2063,7 @@ TEST_F(WebMediaPlayerImplTest, PipelineErrorHardwareContextReset) {
 
 // Same as above, but tests that when PIPELINE_ERROR_HARDWARE_CONTEXT_RESET
 // happens twice, the pipeline will always suspend/resume the pipeline, which
-// will create new Renderers. See https://crbug.com/1454226 for the context.
+// will create new Renderers. See https://crbug.com/40272221 for the context.
 TEST_F(WebMediaPlayerImplTest, PipelineErrorHardwareContextReset_Twice) {
   InitializeWebMediaPlayerImpl();
   // To avoid PreloadMetadataLazyLoad.
@@ -2452,6 +2454,15 @@ TEST_F(WebMediaPlayerImplTest, NotifiesObserverWhenFrozen) {
   wmpi_->OnFrozen();
 }
 
+TEST_F(WebMediaPlayerImplTest, OnFrozenSuspendsPlayback) {
+  base::test::ScopedFeatureList feature_list(
+      media::kSuspendMediaForFrozenFrames);
+  InitializeWebMediaPlayerImpl();
+  ASSERT_FALSE(IsSuspended());
+  wmpi_->OnFrozen();
+  ASSERT_TRUE(IsSuspended());
+}
+
 TEST_F(WebMediaPlayerImplTest, BackgroundIdlePauseTimerDependsOnAudio) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
@@ -2581,7 +2592,7 @@ TEST_F(WebMediaPlayerImplTest, PictureInPictureStateChange) {
 
 // Test that OnPictureInPictureStateChange is not called for audio elements.
 // This test explicitly sets display type to picture in picture, for an audio
-// element, for testing purposes only (See crbug.com/1403547 for reference).
+// element, for testing purposes only (See crbug.com/40251587 for reference).
 TEST_F(WebMediaPlayerImplTest, OnPictureInPictureStateChangeNotCalled) {
   InitializeWebMediaPlayerImpl();
 
@@ -2711,7 +2722,7 @@ TEST_F(WebMediaPlayerImplTest, MemDumpReporting) {
       1 /* dump_guid*/, base::trace_event::MemoryDumpType::kExplicitlyTriggered,
       base::trace_event::MemoryDumpLevelOfDetail::kDetailed};
 
-  int32_t id = media::GetNextMediaPlayerLoggingID() - 1;
+  auto id = media::GetNextMediaPlayerLoggingID().value() - 1;
   int dump_count = 0;
 
   auto on_memory_dump_done = base::BindLambdaForTesting(
@@ -2768,7 +2779,7 @@ TEST_F(WebMediaPlayerImplTest, MemDumpReporting) {
 }
 
 // Verify that a demuxer override is used when specified.
-// TODO(https://crbug.com/1084476): This test is flaky.
+// TODO(crbug.com/40131757): This test is flaky.
 TEST_F(WebMediaPlayerImplTest, DISABLED_DemuxerOverride) {
   std::unique_ptr<media::MockDemuxer> demuxer =
       std::make_unique<NiceMock<media::MockDemuxer>>();
@@ -2969,44 +2980,39 @@ class WebMediaPlayerImplBackgroundBehaviorTest
 
 TEST_P(WebMediaPlayerImplBackgroundBehaviorTest, AudioOnly) {
   SCOPED_TRACE(testing::Message() << PrintValues());
-  if (base::FeatureList::IsEnabled(media::kPauseBackgroundMutedAudio)) {
-    // Audio only players should pause if they are muted and not captured.
-    EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
-    SetMetadata(true, false);
+  // Audio only players should pause if they are muted and not captured.
+  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
+  SetMetadata(true, false);
+  EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
+  EXPECT_FALSE(ShouldDisableVideoWhenHidden());
+
+  auto provider = wmpi_->GetAudioSourceProvider();
+  provider->SetClient(this);
+  if (IsFrameHiddenAndShouldPauseWhenHidden()) {
     EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
-    EXPECT_FALSE(ShouldDisableVideoWhenHidden());
-
-    auto provider = wmpi_->GetAudioSourceProvider();
-    provider->SetClient(this);
-    if (IsFrameHiddenAndShouldPauseWhenHidden()) {
-      EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
-    } else {
-      EXPECT_FALSE(ShouldPausePlaybackWhenHidden());
-    }
-    EXPECT_FALSE(ShouldDisableVideoWhenHidden());
-
-    provider->SetClient(nullptr);
-    EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
-    EXPECT_FALSE(ShouldDisableVideoWhenHidden());
-
-    provider->SetCopyAudioCallback(base::DoNothing());
-    if (IsFrameHiddenAndShouldPauseWhenHidden()) {
-      EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
-    } else {
-      EXPECT_FALSE(ShouldPausePlaybackWhenHidden());
-    }
-    EXPECT_FALSE(ShouldDisableVideoWhenHidden());
-
-    provider->ClearCopyAudioCallback();
-    EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
-    EXPECT_FALSE(ShouldDisableVideoWhenHidden());
-
-    testing::Mock::VerifyAndClearExpectations(&client_);
-    SetPiPExpectations();
   } else {
-    // Never optimize or pause an audio-only player.
-    SetMetadata(true, false);
+    EXPECT_FALSE(ShouldPausePlaybackWhenHidden());
   }
+  EXPECT_FALSE(ShouldDisableVideoWhenHidden());
+
+  provider->SetClient(nullptr);
+  EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
+  EXPECT_FALSE(ShouldDisableVideoWhenHidden());
+
+  provider->SetCopyAudioCallback(base::DoNothing());
+  if (IsFrameHiddenAndShouldPauseWhenHidden()) {
+    EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
+  } else {
+    EXPECT_FALSE(ShouldPausePlaybackWhenHidden());
+  }
+  EXPECT_FALSE(ShouldDisableVideoWhenHidden());
+
+  provider->ClearCopyAudioCallback();
+  EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
+  EXPECT_FALSE(ShouldDisableVideoWhenHidden());
+
+  testing::Mock::VerifyAndClearExpectations(&client_);
+  SetPiPExpectations();
 
   if (IsFrameHiddenAndShouldPauseWhenHidden()) {
     EXPECT_TRUE(ShouldPausePlaybackWhenHidden());
@@ -3059,29 +3065,25 @@ TEST_P(WebMediaPlayerImplBackgroundBehaviorTest, AudioVideo) {
     should_pause = true;
   }
 
-  if (base::FeatureList::IsEnabled(media::kPauseBackgroundMutedAudio)) {
-    EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
-    SetMetadata(true, true);
-    EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
+  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
+  SetMetadata(true, true);
+  EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
 
-    auto provider = wmpi_->GetAudioSourceProvider();
-    provider->SetClient(this);
-    EXPECT_EQ(always_pause, ShouldPausePlaybackWhenHidden());
+  auto provider = wmpi_->GetAudioSourceProvider();
+  provider->SetClient(this);
+  EXPECT_EQ(always_pause, ShouldPausePlaybackWhenHidden());
 
-    provider->SetClient(nullptr);
-    EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
+  provider->SetClient(nullptr);
+  EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
 
-    provider->SetCopyAudioCallback(base::DoNothing());
-    EXPECT_EQ(always_pause, ShouldPausePlaybackWhenHidden());
+  provider->SetCopyAudioCallback(base::DoNothing());
+  EXPECT_EQ(always_pause, ShouldPausePlaybackWhenHidden());
 
-    provider->ClearCopyAudioCallback();
-    EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
+  provider->ClearCopyAudioCallback();
+  EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
 
-    testing::Mock::VerifyAndClearExpectations(&client_);
-    SetPiPExpectations();
-  } else {
-    SetMetadata(true, true);
-  }
+  testing::Mock::VerifyAndClearExpectations(&client_);
+  SetPiPExpectations();
 
   // Only pause audible videos if both media suspend and resume background
   // videos is on and background video playback is disabled. Background video

@@ -45,6 +45,8 @@ std::string FillingProductToString(FillingProduct filling_product) {
       return "IdentityCredential";
     case FillingProduct::kDataList:
       return "DataList";
+    case FillingProduct::kOneTimePassword:
+      return "OneTimePassword";
   }
   NOTREACHED();
 }
@@ -119,6 +121,8 @@ FillingProduct GetFillingProductFromSuggestionType(SuggestionType type) {
       return FillingProduct::kLoyaltyCard;
     case SuggestionType::kIdentityCredential:
       return FillingProduct::kIdentityCredential;
+    case SuggestionType::kOneTimePasswordEntry:
+      return FillingProduct::kOneTimePassword;
   }
   NOTREACHED();
 }
@@ -159,20 +163,10 @@ FillingProduct GetFillingProductFromFieldTypeGroup(
       return FillingProduct::kAutofillAi;
     case kLoyaltyCard:
       return FillingProduct::kLoyaltyCard;
+    case kOneTimePassword:
+      return FillingProduct::kOneTimePassword;
   }
   NOTREACHED();
-}
-
-FillingProduct GetPreferredSuggestionFillingProduct(
-    FieldType trigger_field_type,
-    AutofillSuggestionTriggerSource suggestion_trigger_source) {
-  FillingProduct filling_product = GetFillingProductFromFieldTypeGroup(
-      GroupTypeOfFieldType(trigger_field_type));
-  // Autofill suggestions fallbacks to autocomplete if no product could be
-  // inferred from the suggestion context.
-  return filling_product == FillingProduct::kNone
-             ? FillingProduct::kAutocomplete
-             : filling_product;
 }
 
 }  // namespace autofill

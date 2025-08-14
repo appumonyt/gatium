@@ -6,12 +6,8 @@ include_rules = [
   "+components/live_caption",
   "+components/tabs/public",
   "+components/app_icon_loader",
-  "+dbus",
   "+extensions/strings/grit/extensions_strings.h",
   "+services/network/public",
-
-  # For access to testing command line switches.
-  "+ppapi/shared_impl",
 
   # Fuzzer tests require ICU initialization.
   "+third_party/icu/fuzzers/fuzzer_utils.h",

@@ -16,10 +16,8 @@
 #include "content/common/buildflags.h"
 #include "content/common/content_export.h"
 #include "content/public/common/bindings_policy.h"
-#include "ipc/ipc_listener.h"
-#include "ipc/ipc_sender.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
+#include "third_party/blink/public/common/use_counter/use_counter_feature.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 #include "third_party/blink/public/mojom/frame/triggering_event_info.mojom-shared.h"
 #include "third_party/blink/public/platform/task_type.h"
@@ -84,19 +82,10 @@ class AXTreeSnapshotter {
 // navigation. It provides communication with a corresponding RenderFrameHost
 // in the browser process.
 class CONTENT_EXPORT RenderFrame :
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-    public IPC::Listener,
-    public IPC::Sender,
-#endif
     public base::SupportsUserData {
  public:
   // Returns the RenderFrame given a WebLocalFrame.
   static RenderFrame* FromWebFrame(blink::WebLocalFrame* web_frame);
-
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-  // Returns the RenderFrame given a routing id.
-  static RenderFrame* FromRoutingID(int routing_id);
-#endif
 
   // Visit all live RenderFrames.
   static void ForEach(RenderFrameVisitor* visitor);
@@ -114,11 +103,6 @@ class CONTENT_EXPORT RenderFrame :
   // fields of AXNodeData are populated when you make a snapshot.
   virtual std::unique_ptr<AXTreeSnapshotter> CreateAXTreeSnapshotter(
       ui::AXMode ax_mode) = 0;
-
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-  // Get the routing ID of the frame.
-  virtual int GetRoutingID() = 0;
-#endif
 
   // Returns the associated WebView.
   virtual blink::WebView* GetWebView() = 0;
@@ -233,6 +217,12 @@ class CONTENT_EXPORT RenderFrame :
   // this RenderFrame.
   virtual blink::scheduler::WebAgentGroupScheduler&
   GetAgentGroupScheduler() = 0;
+
+  // Sets the callback which is called when the renderer observes a new use
+  // counter usage. This is used for UseCounter metrics.
+  using NewFeatureUsageCallback =
+      base::RepeatingCallback<void(const blink::UseCounterFeature&)>;
+  virtual void SetNewFeatureUsageCallback(NewFeatureUsageCallback callback) = 0;
 
  protected:
   ~RenderFrame() override {}

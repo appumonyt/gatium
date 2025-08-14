@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "services/tracing/public/cpp/perfetto/perfetto_config.h"
 
 #include <cstdint>
@@ -89,8 +84,8 @@ void AddDataSourceConfigs(
   }
 
   auto* trace_event_data_source = AddDataSourceConfig(
-      perfetto_config, tracing::mojom::kTraceEventDataSourceName, "",
-      privacy_filtering_enabled, convert_to_legacy_json,
+      perfetto_config, tracing::mojom::kTraceEventDataSourceName,
+      chrome_config_string, privacy_filtering_enabled, convert_to_legacy_json,
       json_agent_label_filter, enable_package_name_filter);
   auto* trace_event_source_config = trace_event_data_source->mutable_config();
   trace_event_source_config->set_name("track_event");
@@ -256,19 +251,19 @@ void AdaptDataSourceConfig(
 
 }  // namespace
 
-size_t GetDefaultTraceBufferSize() {
+base::ByteCount GetDefaultTraceBufferSize() {
   auto* command_line = base::CommandLine::ForCurrentProcess();
   std::string switch_value = command_line->GetSwitchValueASCII(
       switches::kDefaultTraceBufferSizeLimitInKb);
   size_t switch_kilobytes;
   if (!switch_value.empty() &&
       base::StringToSizeT(switch_value, &switch_kilobytes)) {
-    return switch_kilobytes;
+    return base::KiB(switch_kilobytes);
   } else {
     // TODO(eseckler): Reduce the default buffer size after benchmarks set
     // what they require. Should also invest some time to reduce the overhead
     // of begin/end pairs further.
-    return 200 * 1024;
+    return base::MiB(200);
   }
 }
 
@@ -279,13 +274,13 @@ perfetto::TraceConfig GetDefaultPerfettoConfig(
     const std::string& json_agent_label_filter) {
   perfetto::TraceConfig perfetto_config;
 
-  size_t size_limit = chrome_config.GetTraceBufferSizeInKb();
-  if (size_limit == 0) {
+  base::ByteCount size_limit = chrome_config.GetTraceBufferSizeInBytes();
+  if (size_limit.is_zero()) {
     // If trace config did not provide trace buffer size, we will use default
     size_limit = GetDefaultTraceBufferSize();
   }
   auto* buffer_config = perfetto_config.add_buffers();
-  buffer_config->set_size_kb(size_limit);
+  buffer_config->set_size_kb(size_limit.InKiB());
   switch (chrome_config.GetTraceRecordMode()) {
     case base::trace_event::RECORD_UNTIL_FULL:
     case base::trace_event::RECORD_AS_MUCH_AS_POSSIBLE:
@@ -300,7 +295,7 @@ perfetto::TraceConfig GetDefaultPerfettoConfig(
       NOTREACHED();
   }
   auto* metadata_buffer_config = perfetto_config.add_buffers();
-  metadata_buffer_config->set_size_kb(kMetadataBufferSizeKb);
+  metadata_buffer_config->set_size_kb(kMetadataBufferSize.InKiB());
   metadata_buffer_config->set_fill_policy(
       perfetto::TraceConfig::BufferConfig::DISCARD);
 
@@ -320,7 +315,7 @@ perfetto::TraceConfig GetDefaultPerfettoConfig(
   base::trace_event::TraceConfig stripped_config(chrome_config);
   stripped_config.SetProcessFilterConfig(
       base::trace_event::TraceConfig::ProcessFilterConfig());
-  stripped_config.SetTraceBufferSizeInKb(0);
+  stripped_config.SetTraceBufferSizeInBytes(base::ByteCount(0));
   stripped_config.SetTraceBufferSizeInEvents(0);
 
   AddDataSourceConfigs(&perfetto_config, chrome_config.process_filter_config(),
@@ -339,7 +334,7 @@ bool AdaptPerfettoConfigForChrome(
     bool enable_system_backend) {
   if (perfetto_config->buffers_size() < 1) {
     auto* buffer_config = perfetto_config->add_buffers();
-    buffer_config->set_size_kb(GetDefaultTraceBufferSize());
+    buffer_config->set_size_kb(GetDefaultTraceBufferSize().InKiB());
     buffer_config->set_fill_policy(
         perfetto::TraceConfig::BufferConfig::RING_BUFFER);
   }

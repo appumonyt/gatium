@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.customtabs.features.toolbar;
 
 import static androidx.browser.customtabs.CustomTabsIntent.CLOSE_BUTTON_POSITION_END;
 
+import static org.chromium.build.NullUtil.assertNonNull;
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.CLICK_LISTENER;
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.CLOSE_BUTTON;
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.CUSTOM_ACTION_BUTTONS;
@@ -20,11 +21,14 @@ import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabT
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.SIDE_SHEET_MAXIMIZE_BUTTON;
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.TITLE_VISIBLE;
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.TOOLBAR_WIDTH;
+import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.TYPE;
 
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.support.annotation.DrawableRes;
+import android.util.Pair;
+import android.util.SparseBooleanArray;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -32,11 +36,12 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 
+import androidx.annotation.DimenRes;
 import androidx.annotation.Px;
 
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.customtabs.features.minimizedcustomtab.MinimizedFeatureUtils;
+import org.chromium.chrome.browser.browserservices.intents.CustomButtonParams.ButtonType;
 import org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.SideSheetMaximizeButtonData;
 import org.chromium.components.browser_ui.styles.ChromeColors;
 import org.chromium.ui.UiUtils;
@@ -61,9 +66,61 @@ public class CustomTabToolbarButtonsViewBinder
         public int spacingFromLastEndAlignedButton;
     }
 
+    /**
+     * Adjusts button visibility priority between minimize and Custom/Chrome action buttons. Chrome
+     * action buttons (Share, Open-in-Browser) of state DEFAULT has a priority lower than minimize
+     * button i.e. MINIMIZE > SHARE > OPEN-IN-CHROME > EXPAND. If MINIMIZE was hidden and either
+     * SHARE or OPEN-IN-CHROME is visible, flip their state.
+     */
+    private static class ButtonVisibilityFlipper {
+        private boolean mActive; // Visibility needs flipping if true.
+        private @ButtonType int mButtonToHide; // The type of Chrome action button to hide.
+        private final SparseBooleanArray mVisibleButtons =
+                new SparseBooleanArray(2); // For OPEN_IN_BROWSER, SHARE
+
+        private boolean canShowMinimizeButton() {
+            return mActive;
+        }
+
+        private boolean isCustomButtonToHide(@ButtonType int buttonType) {
+            return mActive && mButtonToHide == buttonType;
+        }
+
+        private void addVisibleButtonType(@ButtonType int buttonType) {
+            if (!mActive) mVisibleButtons.put(buttonType, true);
+        }
+
+        private boolean maybeFlipVisibility() {
+            if (mActive) return false;
+
+            // If minimize button is hidden and chrome action (either share or open-in-browser) is
+            // shown, set |mActive| to true to enable minimize button, mark the chrome action (in
+            // the order of open-in-browser, share) to hide. This take effect in the next round of
+            // positioning job.
+            if (mVisibleButtons.get(ButtonType.CCT_OPEN_IN_BROWSER_BUTTON)) {
+                mActive = true;
+                mButtonToHide = ButtonType.CCT_OPEN_IN_BROWSER_BUTTON;
+            } else if (mVisibleButtons.get(ButtonType.CCT_SHARE_BUTTON)) {
+                mActive = true;
+                mButtonToHide = ButtonType.CCT_SHARE_BUTTON;
+            }
+            return mActive;
+        }
+
+        // Reset the flip state whenever the toolbar width is altered.
+        private void reset() {
+            mActive = false;
+            mButtonToHide = ButtonType.OTHER;
+            mVisibleButtons.clear();
+        }
+    }
+
+    private final ButtonVisibilityFlipper mVisFlipper = new ButtonVisibilityFlipper();
+
     @Override
     public void bind(PropertyModel model, CustomTabToolbar view, PropertyKey propertyKey) {
-        inflateAndPositionToolbarElements(view, model);
+        mVisFlipper.reset();
+        inflateAndPositionToolbarElements(view, model, mVisFlipper);
     }
 
     @Override
@@ -72,7 +129,8 @@ public class CustomTabToolbarButtonsViewBinder
             CustomTabToolbar view,
             int index,
             int count) {
-        inflateAndPositionToolbarElements(view, (PropertyModel) view.getTag(R.id.view_model));
+        inflateAndPositionToolbarElements(
+                view, (PropertyModel) view.getTag(R.id.view_model), mVisFlipper);
     }
 
     @Override
@@ -81,7 +139,8 @@ public class CustomTabToolbarButtonsViewBinder
             CustomTabToolbar view,
             int index,
             int count) {
-        inflateAndPositionToolbarElements(view, (PropertyModel) view.getTag(R.id.view_model));
+        inflateAndPositionToolbarElements(
+                view, (PropertyModel) view.getTag(R.id.view_model), mVisFlipper);
     }
 
     @Override
@@ -107,9 +166,10 @@ public class CustomTabToolbarButtonsViewBinder
      *
      * @param view The {@link CustomTabToolbar} that hosts the buttons.
      * @param model The {@link PropertyModel} containing the needed properties.
+     * @param visFlipper {@link ButtonVisibilityFlipper} used to adjust button priority.
      */
     private static void inflateAndPositionToolbarElements(
-            CustomTabToolbar view, PropertyModel model) {
+            CustomTabToolbar view, PropertyModel model, ButtonVisibilityFlipper visFlipper) {
         var resources = view.getResources();
         int defaultButtonWidth = resources.getDimensionPixelSize(R.dimen.toolbar_button_width);
         int defaultIconWidth = resources.getDimensionPixelSize(R.dimen.toolbar_icon_default_width);
@@ -165,16 +225,35 @@ public class CustomTabToolbarButtonsViewBinder
                     isEndPosition);
         }
 
+        FrameLayout customActionButtons = view.getCustomActionButtonsParent();
+        // TODO(crbug.com/402213312): Think of how we can optimize this so we don't reinflate all
+        // buttons any time if we add/remove one.
+        customActionButtons.removeAllViews();
+
+        if (model.get(CUSTOM_ACTION_BUTTONS_VISIBLE)) {
+            var models = model.get(CUSTOM_ACTION_BUTTONS);
+            for (var actionButtonModel : models) {
+                if (visFlipper.isCustomButtonToHide(actionButtonModel.get(TYPE))) continue;
+                if (!maybeInflateAndPositionCustomButton(
+                        view, actionButtonModel, posParams, defaultButtonWidth, iconSpacing)) {
+                    break;
+                }
+                visFlipper.addVisibleButtonType(actionButtonModel.get(TYPE));
+            }
+        }
+
         var minimizeButtonData = model.get(MINIMIZE_BUTTON);
+        boolean minimizeButtonHidden = false;
         // Check if we have space for the minimize button and we should be showing it.
-        if (posParams.availableWidth >= defaultButtonWidth && minimizeButtonData.visible) {
+        if ((posParams.availableWidth >= defaultButtonWidth || visFlipper.canShowMinimizeButton())
+                && minimizeButtonData.visible) {
             var minimizeButton = view.ensureMinimizeButtonInflated();
             minimizeButton.setOnClickListener(minimizeButtonData.clickListener);
             Context context = view.getContext();
             var d =
                     UiUtils.getTintedDrawable(
                             context,
-                            MinimizedFeatureUtils.getMinimizeIcon(),
+                            R.drawable.ic_minimize,
                             ChromeColors.getPrimaryIconTint(context, model.get(IS_INCOGNITO)));
             minimizeButton.setTag(R.id.custom_tabs_toolbar_tintable, true);
             minimizeButton.setImageDrawable(d);
@@ -188,43 +267,23 @@ public class CustomTabToolbarButtonsViewBinder
                     iconSpacing,
                     defaultIconWidth,
                     /* isEndAligned= */ false);
-        } else if (view.getMinimizeButton() != null) {
-            view.getMinimizeButton().setVisibility(View.GONE);
+        } else {
+            // Set to true only when hidden due to width constraint.
+            minimizeButtonHidden = !(posParams.availableWidth >= defaultButtonWidth);
+            if (view.getMinimizeButton() != null) view.getMinimizeButton().setVisibility(View.GONE);
         }
 
-        int customActionButtonCount =
-                model.get(CUSTOM_ACTION_BUTTONS_VISIBLE)
-                        ? model.get(CUSTOM_ACTION_BUTTONS).size()
-                        : 0;
         // Check if we have space for the optional button and we should be showing it. The optional
         // button is handled by its own MVC component, so it will have been inflated elsewhere.
-        if (posParams.availableWidth >= defaultButtonWidth
-                && model.get(OPTIONAL_BUTTON_VISIBLE)
-                && customActionButtonCount < 2) {
-            var optionalButton = view.getOptionalButton();
-            assert optionalButton != null;
+        var optionalButton = view.getOptionalButton();
+        if (posParams.availableWidth >= defaultButtonWidth && model.get(OPTIONAL_BUTTON_VISIBLE)) {
+            assertNonNull(optionalButton);
             optionalButton.setVisibility(View.VISIBLE);
-
             positionOptionalButton(
                     optionalButton, posParams, defaultButtonWidth, iconSpacing, defaultIconWidth);
-        } else if (view.getOptionalButton() != null) {
-            view.getOptionalButton().setVisibility(View.GONE);
-        }
-
-        // TODO(crbug.com/402213312): We need to think about how this should work with MTB.
-        FrameLayout customActionButtons = view.getCustomActionButtonsParent();
-        // TODO(crbug.com/402213312): Think of how we can optimize this so we don't reinflate all
-        // buttons any time if we add/remove one.
-        customActionButtons.removeAllViews();
-
-        if (model.get(CUSTOM_ACTION_BUTTONS_VISIBLE)) {
-            var models = model.get(CUSTOM_ACTION_BUTTONS);
-            for (var actionButtonModel : models) {
-                if (!maybeInflateAndPositionCustomButton(
-                        view, actionButtonModel, posParams, defaultButtonWidth, iconSpacing)) {
-                    break;
-                }
-            }
+            customActionButtons.addView(optionalButton);
+        } else if (optionalButton != null) {
+            optionalButton.setVisibility(View.GONE);
         }
 
         // Check if we have space for the side-sheet maximize button we should be showing it.
@@ -247,6 +306,15 @@ public class CustomTabToolbarButtonsViewBinder
         }
 
         positionLocationBar(view, model, posParams);
+
+        // Swap the position/padding of custom action / optional button. They were processed in
+        // the order of priority above but their positions don't match, therefore should be swapped.
+        maybeSwapCustomActionAndOptionalButtonPosition(view);
+
+        if (minimizeButtonHidden && visFlipper.maybeFlipVisibility()) {
+            // If button visibility got flipped, run this method again to reflect the change.
+            inflateAndPositionToolbarElements(view, model, visFlipper);
+        }
     }
 
     /**
@@ -439,18 +507,16 @@ public class CustomTabToolbarButtonsViewBinder
         // the default width because its icon is wider, make the start padding 0.
         startPadding = Math.max(0, defaultButtonWidth - iconWidth - endPadding);
         posParams.spacingFromLastEndAlignedButton = startPadding;
+        setOptionalButtonHorizontalPadding(button, startPadding, endPadding);
 
-        // Set the padding for the icon.
-        View icon = button.findViewById(R.id.swappable_icon_animation_image);
-        setHorizontalPadding(icon, startPadding, endPadding);
-
-        // Set the padding for the menu button.
-        View menu = button.findViewById(R.id.optional_toolbar_button);
-        setHorizontalPadding(menu, startPadding, endPadding);
-
-        // Set the padding for the background.
+        // Adjust background padding to align it with the menu button.
+        int paddingStart =
+                getDimensionPx(button, R.dimen.custom_tabs_adaptive_button_bg_padding_start);
+        int paddingEnd = getDimensionPx(button, R.dimen.custom_tabs_adaptive_button_bg_padding_end);
+        int paddingVert =
+                getDimensionPx(button, R.dimen.custom_tabs_adaptive_button_bg_padding_vert);
         View background = button.findViewById(R.id.swappable_icon_secondary_background);
-        setHorizontalPadding(background, startPadding, endPadding);
+        background.setPaddingRelative(paddingStart, paddingVert, paddingEnd, paddingVert);
 
         // Optional button is end aligned. Offset it by the total width of the buttons we've
         // previously placed.
@@ -465,6 +531,26 @@ public class CustomTabToolbarButtonsViewBinder
                 startPadding, view.getPaddingTop(), endPadding, view.getPaddingBottom());
     }
 
+    private static void setOptionalButtonHorizontalPadding(
+            View button, @Px int startPadding, @Px int endPadding) {
+        // Set the padding for the icon.
+        View icon = button.findViewById(R.id.swappable_icon_animation_image);
+        setHorizontalPadding(icon, startPadding, endPadding);
+
+        // Set the padding for the menu button.
+        View menu = button.findViewById(R.id.optional_toolbar_button);
+        setHorizontalPadding(menu, startPadding, endPadding);
+    }
+
+    private static Pair<Integer, Integer> getOptionalButtonHorizontalPadding(View button) {
+        View icon = button.findViewById(R.id.swappable_icon_animation_image);
+        return Pair.create(icon.getPaddingStart(), icon.getPaddingEnd());
+    }
+
+    private static @Px int getDimensionPx(View v, @DimenRes int resId) {
+        return v.getResources().getDimensionPixelSize(resId);
+    }
+
     private static void setHorizontalLayoutParams(
             View view, @Px int startMargin, @Px int endMargin, boolean isEndAligned) {
         var lp = (FrameLayout.LayoutParams) view.getLayoutParams();
@@ -475,8 +561,34 @@ public class CustomTabToolbarButtonsViewBinder
         view.setLayoutParams(lp);
     }
 
+    private static void maybeSwapCustomActionAndOptionalButtonPosition(CustomTabToolbar view) {
+        View optionalButton = view.getOptionalButton();
+        FrameLayout customActionButtons = view.getCustomActionButtonsParent();
+        if (optionalButton == null
+                || optionalButton.getVisibility() != View.VISIBLE
+                || customActionButtons.getChildCount() != 2) {
+            return;
+        }
+
+        View customButton = customActionButtons.getChildAt(0);
+        var padding = getOptionalButtonHorizontalPadding(optionalButton);
+        int optionalStartPadding = padding.first;
+        int optionalEndPadding = padding.second;
+        int customStartPadding = customButton.getPaddingStart();
+        int customEndPadding = customButton.getPaddingEnd();
+        setOptionalButtonHorizontalPadding(optionalButton, customStartPadding, customEndPadding);
+        setHorizontalPadding(customButton, optionalStartPadding, optionalEndPadding);
+
+        var olp = (ViewGroup.MarginLayoutParams) optionalButton.getLayoutParams();
+        var clp = (ViewGroup.MarginLayoutParams) customButton.getLayoutParams();
+        int optionalEndMargin = olp.getMarginEnd();
+        int customEndMargin = clp.getMarginEnd();
+        setHorizontalLayoutParams(optionalButton, 0, customEndMargin, /* isEndAligned= */ true);
+        setHorizontalLayoutParams(customButton, 0, optionalEndMargin, /* isEndAligned= */ true);
+    }
+
     @Px
-    private static int getLocationBarMinWidth(
+    static int getLocationBarMinWidth(
             Resources resources, boolean omniboxEnabled, boolean titleVisible) {
         int locationBarMinWidth =
                 resources.getDimensionPixelSize(R.dimen.location_bar_min_url_width);

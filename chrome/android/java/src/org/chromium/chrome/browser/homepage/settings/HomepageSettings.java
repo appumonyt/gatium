@@ -12,6 +12,7 @@ import androidx.preference.Preference;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.base.supplier.ObservableSupplierImpl;
+import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.homepage.HomepageManager;
@@ -27,6 +28,7 @@ import org.chromium.components.url_formatter.UrlFormatter;
 import org.chromium.url.GURL;
 
 /** Fragment that allows the user to configure homepage related preferences. */
+@NullMarked
 public class HomepageSettings extends ChromeBaseSettingsFragment {
     @VisibleForTesting public static final String PREF_HOMEPAGE_SWITCH = "homepage_switch";
 
@@ -55,10 +57,39 @@ public class HomepageSettings extends ChromeBaseSettingsFragment {
                                 || HomepagePolicyManager.isShowHomeButtonManaged()
                                 || HomepagePolicyManager.isHomepageNewTabPageManaged();
                     }
+
+                    @Override
+                    public @Nullable Boolean isPreferenceRecommendation(Preference preference) {
+                        if (!HomepagePolicyManager.isShowHomeButtonRecommended()) return null;
+                        return HomepagePolicyManager.isFollowingHomepageButtonRecommendation();
+                    }
                 });
 
         mRadioButtons =
                 (RadioButtonGroupHomepagePreference) findPreference(PREF_HOMEPAGE_RADIO_GROUP);
+        mRadioButtons.setManagedPreferenceDelegate(
+                new ChromeManagedPreferenceDelegate(getProfile()) {
+                    @Override
+                    public boolean isPreferenceControlledByPolicy(Preference preference) {
+                        // If the mRadioButtons are controlled by policy, the associated managed
+                        // message is displayed under the switch instead of beneath them.
+                        return false;
+                    }
+
+                    @Override
+                    public @Nullable Boolean isPreferenceRecommendation(Preference preference) {
+                        // If the switch is managed due to the homepage location or homepageIsNTP
+                        // policies, then there cannot be a homepage selection recommendation.
+                        if (HomepagePolicyManager.isHomepageLocationManaged()
+                                || HomepagePolicyManager.isHomepageNewTabPageManaged()
+                                || (HomepagePolicyManager.isShowHomeButtonManaged()
+                                        && !HomepagePolicyManager.getShowHomeButtonValue())
+                                || !HomepagePolicyManager.isHomepageSelectionRecommended()) {
+                            return null;
+                        }
+                        return HomepagePolicyManager.isFollowingHomepageSelectionRecommendation();
+                    }
+                });
 
         // Set up listeners and update the page.
         boolean isHomepageEnabled = mHomepageManager.isHomepageEnabled();
@@ -68,6 +99,7 @@ public class HomepageSettings extends ChromeBaseSettingsFragment {
                     onSwitchPreferenceChange((boolean) newValue);
                     return true;
                 });
+        mRadioButtons.setOnHomepagePreferenceChangeListener(this::onRadioButtonGroupChanged);
         mRadioButtons.setupPreferenceValues(createPreferenceValuesForRadioGroup());
 
         RecordUserAction.record("Settings.Homepage.Opened");
@@ -87,21 +119,27 @@ public class HomepageSettings extends ChromeBaseSettingsFragment {
         }
     }
 
-    @Override
-    public void onStop() {
-        super.onStop();
-
-        // Save the final shared preference data.
-        updateHomepageFromRadioGroupPreference(mRadioButtons.getPreferenceValue());
-    }
-
     /**
-     * Handle the preference changes when we toggled the homepage switch.
+     * Handle the preference changes when the homepage switch is toggled.
+     *
      * @param isChecked Whether switch is turned on.
      */
     private void onSwitchPreferenceChange(boolean isChecked) {
         mHomepageManager.setPrefHomepageEnabled(isChecked);
         mRadioButtons.setupPreferenceValues(createPreferenceValuesForRadioGroup());
+        mRadioButtons.scheduleManagedViewUpdate();
+    }
+
+    /**
+     * Handles user changes to the homepage selection in the radio button group. Updates relevant
+     * state and managed UI.
+     *
+     * @param newValues The {@link PreferenceValues} object containing the new state of the radio
+     *     button group, including the selected option and any custom URI.
+     */
+    private void onRadioButtonGroupChanged(PreferenceValues newValues) {
+        updateHomepageFromRadioGroupPreference(newValues);
+        mRadioButtons.scheduleManagedViewUpdate();
     }
 
     /**
@@ -126,7 +164,7 @@ public class HomepageSettings extends ChromeBaseSettingsFragment {
         }
         boolean useDefaultUri = mHomepageManager.getDefaultHomepageGurl().equals(newHomepage);
 
-        mHomepageManager.setHomepagePreferences(setToUseNtp, useDefaultUri, newHomepage);
+        mHomepageManager.setHomepageSelection(setToUseNtp, useDefaultUri, newHomepage);
     }
 
     /**
@@ -166,7 +204,6 @@ public class HomepageSettings extends ChromeBaseSettingsFragment {
                     homepageIsNtp
                             ? HomepageOption.ENTRY_CHROME_NTP
                             : HomepageOption.ENTRY_CUSTOM_URI;
-            // TODO (crbug.com/400800634): Confirm this behavior
             // Homepage location is enabled if HomepageIsNTP is false, HomepageLocation policy
             // is unmanaged, and homepage is not otherwise disabled.
             boolean enabled = !homepageIsNtp && !isHomepageLocationManaged && isHomepageEnabled;
@@ -210,6 +247,14 @@ public class HomepageSettings extends ChromeBaseSettingsFragment {
                 isEnabled,
                 isNtpOptionVisible,
                 isCustomizedOptionVisible);
+    }
+
+    ChromeSwitchPreference getHomepageSwitchForTesting() {
+        return (ChromeSwitchPreference) findPreference(PREF_HOMEPAGE_SWITCH);
+    }
+
+    RadioButtonGroupHomepagePreference getHomepageRadioGroupForTesting() {
+        return mRadioButtons;
     }
 
     @Override

@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "components/tracing/common/etw_system_data_source_win.h"
 
@@ -28,13 +24,13 @@ namespace tracing {
 
 namespace {
 
-ULONG EtwSystemFlagsFromEnum(
-    perfetto::protos::gen::EtwConfig::KernelFlag flag) {
-  switch (flag) {
-    case perfetto::protos::gen::EtwConfig::CSWITCH:
-      return EVENT_TRACE_FLAG_CSWITCH;
-    case perfetto::protos::gen::EtwConfig::DISPATCHER:
-      return EVENT_TRACE_FLAG_DISPATCHER;
+ULONG EtwSystemFlagsFromSchedulerProvider(const std::string& keyword) {
+  if (keyword == "CONTEXT_SWITCH") {
+    return EVENT_TRACE_FLAG_CSWITCH;
+  } else if (keyword == "DISPATCHER") {
+    return EVENT_TRACE_FLAG_DISPATCHER;
+  } else {
+    return 0;
   }
 }
 
@@ -115,8 +111,8 @@ void EtwSystemDataSource::OnStart(const StartArgs&) {
   // Enable process and thread events for categorization and filtering.
   p.EnableFlags = EVENT_TRACE_FLAG_PROCESS | EVENT_TRACE_FLAG_THREAD;
 
-  for (auto flag : etw_config.kernel_flags()) {
-    p.EnableFlags |= EtwSystemFlagsFromEnum(flag);
+  for (const auto& keyword : etw_config.scheduler_provider_events()) {
+    p.EnableFlags |= EtwSystemFlagsFromSchedulerProvider(keyword);
   }
 
   hr = etw_controller_.Start(kEtwSystemSessionName, &prop);

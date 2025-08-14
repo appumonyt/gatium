@@ -24,10 +24,8 @@
 #include "third_party/blink/renderer/core/layout/inline/inline_node.h"
 #include "third_party/blink/renderer/core/layout/inline/physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/inline/ruby_utils.h"
-#include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_result.h"
-#include "third_party/blink/renderer/core/layout/legacy_layout_tree_walking.h"
 #include "third_party/blink/renderer/core/layout/length_utils.h"
 #include "third_party/blink/renderer/core/layout/list/unpositioned_list_marker.h"
 #include "third_party/blink/renderer/core/layout/logical_box_fragment.h"
@@ -56,24 +54,20 @@ bool HasLineEvenIfEmpty(LayoutBox* box) {
   // Note: |block_flow->NeedsCollectInline()| is true after removing all
   // children from block[1].
   // [1] editing/inserting/insert_after_delete.html
-  if (!GetLayoutObjectForFirstChildNode(block_flow)) {
+  if (!block_flow->FirstChild()) {
     // Note: |block_flow->ChildrenInline()| can be both true or false:
     //  - true: just after construction, <div></div>
     //  - true: one of child is inline them remove all, <div>abc</div>
     //  - false: all children are block then remove all, <div><p></p></div>
     return block_flow->HasLineIfEmpty();
   }
-  if (AreNGBlockFlowChildrenInline(block_flow)) {
+  if (block_flow->ChildrenInline()) {
     return block_flow->HasLineIfEmpty() &&
            InlineNode(block_flow).IsBlockLevel();
   }
   const LayoutBlockFlow* fragmentation_context_root = nullptr;
-  if (RuntimeEnabledFeatures::FlowThreadLessEnabled()) {
-    if (block_flow->IsMulticolContainer()) {
-      fragmentation_context_root = block_flow;
-    }
-  } else {
-    fragmentation_context_root = block_flow->MultiColumnFlowThread();
+  if (block_flow->IsMulticolContainer()) {
+    fragmentation_context_root = block_flow;
   }
   if (fragmentation_context_root) {
     DCHECK(!fragmentation_context_root->ChildrenInline());
@@ -348,11 +342,15 @@ void BlockLayoutAlgorithm::SetupRelayoutData(
   if (relayout_type == kRelayoutIgnoringLineClamp) {
     line_clamp_data_.data.state = LineClampData::kDisabled;
     line_clamp_data_.ignore_line_clamp = true;
-  } else if (relayout_type == kRelayoutWithLineClampBlockSize) {
+  } else if (relayout_type == kRelayoutClampingByLines) {
     line_clamp_data_.data.state = LineClampData::kClampByLines;
     line_clamp_data_.data.lines_until_clamp =
         line_clamp_data_.initial_lines_until_clamp =
             previous.line_clamp_data_.data.lines_until_clamp;
+  } else if (relayout_type == kRelayoutClampingAfterLayoutObject) {
+    line_clamp_data_.data.state = LineClampData::kClampAfterLayoutObject;
+    line_clamp_data_.data.clamp_after_layout_object =
+        previous.line_clamp_data_.last_layout_object;
   } else if (previous.line_clamp_data_.data.state ==
              LineClampData::kClampByLines) {
     line_clamp_data_.data.state = LineClampData::kClampByLines;
@@ -622,7 +620,11 @@ BlockLayoutAlgorithm::HandleNonsuccessfulLayoutResult(
         return RelayoutIgnoringLineClamp();
       }
       if (GetConstraintSpace().IsNewFormattingContext()) {
-        return RelayoutWithLineClampBlockSize(result->LinesUntilClamp());
+        if (result->LineClampAfterLayoutObject()) {
+          return RelayoutClampingAfterLayoutObject(
+              result->LineClampAfterLayoutObject());
+        }
+        return RelayoutClampingByLines(result->LinesUntilClamp());
       }
       // Propagate the error upwards until we reach the BFC root.
       return result;
@@ -673,12 +675,22 @@ NOINLINE const LayoutResult* BlockLayoutAlgorithm::RelayoutIgnoringLineClamp() {
   return Relayout<BlockLayoutAlgorithm>(kRelayoutIgnoringLineClamp);
 }
 
-NOINLINE const LayoutResult*
-BlockLayoutAlgorithm::RelayoutWithLineClampBlockSize(int lines_until_clamp) {
+NOINLINE const LayoutResult* BlockLayoutAlgorithm::RelayoutClampingByLines(
+    int lines_until_clamp) {
   DCHECK_EQ(line_clamp_data_.data.state,
             LineClampData::kMeasureLinesUntilBfcOffset);
-  line_clamp_data_.data.lines_until_clamp = std::max(1, lines_until_clamp);
-  return Relayout<BlockLayoutAlgorithm>(kRelayoutWithLineClampBlockSize);
+  line_clamp_data_.data.lines_until_clamp = std::max(0, lines_until_clamp);
+  return Relayout<BlockLayoutAlgorithm>(kRelayoutClampingByLines);
+}
+
+NOINLINE const LayoutResult*
+BlockLayoutAlgorithm::RelayoutClampingAfterLayoutObject(
+    const LayoutObject* layout_object) {
+  DCHECK_EQ(line_clamp_data_.data.state,
+            LineClampData::kMeasureLinesUntilBfcOffset);
+  DCHECK(layout_object);
+  line_clamp_data_.last_layout_object = layout_object;
+  return Relayout<BlockLayoutAlgorithm>(kRelayoutClampingAfterLayoutObject);
 }
 
 NOINLINE const LayoutResult* BlockLayoutAlgorithm::RelayoutForTextBoxTrimEnd() {
@@ -723,7 +735,7 @@ inline const LayoutResult* BlockLayoutAlgorithm::Layout(
     abort_when_bfc_block_offset_updated_ = true;
   }
 
-  if (Style().HasAutoStandardLineClamp()) {
+  if (Style().HasAutoLineClamp()) {
     if (!line_clamp_data_.data.IsLineClampContext()) {
       LayoutUnit clamp_bfc_offset = ChildAvailableSize().block_size;
       if (clamp_bfc_offset == kIndefiniteSize) {
@@ -739,8 +751,7 @@ inline const LayoutResult* BlockLayoutAlgorithm::Layout(
             (BorderScrollbarPadding().block_start + clamp_bfc_offset)
                 .ClampNegativeToZero();
       }
-      line_clamp_data_.UpdateClampOffsetFromStyle(
-          clamp_bfc_offset, BorderScrollbarPadding().block_start);
+      line_clamp_data_.UpdateClampOffsetFromStyle(clamp_bfc_offset);
     }
   } else if (Style().HasLineClamp()) {
     if (!line_clamp_data_.data.IsLineClampContext()) {
@@ -857,6 +868,16 @@ inline const LayoutResult* BlockLayoutAlgorithm::Layout(
     DCHECK(!constraint_space.IsNewFormattingContext());
   }
 #endif
+
+  // Clamping at the start of a line-clamp container.
+  // This can only happen when clamping by a height (e.g. line-clamp: auto;
+  // max-height: 0).
+  if (constraint_space.IsNewFormattingContext() &&
+      line_clamp_data_.IsPastClampPoint()) {
+    DCHECK(Style().HasLineClamp() && Style().LineClamp() == 0);
+    line_clamp_data_.previous_inflow_position_when_clamped =
+        previous_inflow_position;
+  }
 
   // If this node is a quirky container, (we are in quirks mode and either a
   // table cell or body), we set our margin strut to a mode where it only
@@ -1018,14 +1039,16 @@ inline const LayoutResult* BlockLayoutAlgorithm::Layout(
   // all parallel flows from incoming break tokens means that we'll never get
   // the opportunity to handle them again. We don't repropagate unhandled
   // incoming break tokens, and there should be no need to.
-  if (auto* inline_token = DynamicTo<InlineBreakToken>(entry.token)) {
-    DCHECK(!inline_token->IsInParallelBlockFlow());
-  } else if (auto* block_token = DynamicTo<BlockBreakToken>(entry.token)) {
-    // A column spanner forces all content preceding it to stay in the same
-    // flow, so we can (and must) skip the check. Even if IsAtBlockEnd() is true
-    // in such cases, it doesn't mean that a parallel flow is established.
-    if (!container_builder_.FoundColumnSpanner() &&
-        !container_builder_.ShouldForceSameFragmentationFlow()) {
+  //
+  // However, a column spanner forces all content preceding it to stay in the
+  // same flow, so we can (and must) skip the check. Even if IsAtBlockEnd() /
+  // IsInParallelBlockFlow() is true in such cases, it doesn't mean that a
+  // parallel flow is established.
+  if (!container_builder_.FoundColumnSpanner() &&
+      !container_builder_.ShouldForceSameFragmentationFlow()) {
+    if (auto* inline_token = DynamicTo<InlineBreakToken>(entry.token)) {
+      DCHECK(!inline_token->IsInParallelBlockFlow());
+    } else if (auto* block_token = DynamicTo<BlockBreakToken>(entry.token)) {
       DCHECK(!block_token->IsAtBlockEnd());
     }
   }
@@ -1372,6 +1395,8 @@ const LayoutResult* BlockLayoutAlgorithm::FinishLayout(
   } else {
     container_builder_.SetLinesUntilClamp(
         line_clamp_data_.data.LinesUntilClamp(/*show_measured_lines*/ true));
+    container_builder_.SetLineClampAfterLayoutObject(
+        line_clamp_data_.last_layout_object);
   }
 
   if (constraint_space.UseFirstLineStyle()) {
@@ -1869,6 +1894,8 @@ LayoutResult::EStatus BlockLayoutAlgorithm::HandleNewFormattingContext(
           *previous_inflow_position, Padding().block_end)) {
     container_builder_.SetLinesUntilClamp(
         line_clamp_data_.LinesUntilClamp(/*show_measured_lines*/ true));
+    container_builder_.SetLineClampAfterLayoutObject(
+        line_clamp_data_.last_layout_object);
     return LayoutResult::kNeedsLineClampRelayout;
   }
 
@@ -2205,6 +2232,8 @@ LayoutResult::EStatus BlockLayoutAlgorithm::FinishInflow(
     DCHECK_EQ(line_clamp_data_.data.state,
               LineClampData::kMeasureLinesUntilBfcOffset);
     container_builder_.SetLinesUntilClamp(layout_result->LinesUntilClamp());
+    container_builder_.SetLineClampAfterLayoutObject(
+        line_clamp_data_.PropagateClampAfterLayoutObject(layout_result));
     return LayoutResult::kNeedsLineClampRelayout;
   }
 
@@ -2410,6 +2439,8 @@ LayoutResult::EStatus BlockLayoutAlgorithm::FinishInflow(
       DCHECK_EQ(line_clamp_data_.data.state,
                 LineClampData::kMeasureLinesUntilBfcOffset);
       container_builder_.SetLinesUntilClamp(layout_result->LinesUntilClamp());
+      container_builder_.SetLineClampAfterLayoutObject(
+          line_clamp_data_.PropagateClampAfterLayoutObject(layout_result));
       return LayoutResult::kNeedsLineClampRelayout;
     }
 
@@ -2584,6 +2615,8 @@ LayoutResult::EStatus BlockLayoutAlgorithm::FinishInflow(
                                             Padding().block_end)) {
       container_builder_.SetLinesUntilClamp(
           line_clamp_data_.LinesUntilClamp(/*show_measured_lines*/ true));
+      container_builder_.SetLineClampAfterLayoutObject(
+          line_clamp_data_.last_layout_object);
       return LayoutResult::kNeedsLineClampRelayout;
     }
   }

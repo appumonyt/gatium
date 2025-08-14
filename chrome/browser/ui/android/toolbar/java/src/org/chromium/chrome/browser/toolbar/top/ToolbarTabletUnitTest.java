@@ -7,8 +7,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -39,6 +41,7 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
+import org.mockito.stubbing.Answer;
 import org.robolectric.Robolectric;
 import org.robolectric.Shadows;
 import org.robolectric.annotation.LooperMode;
@@ -53,6 +56,8 @@ import org.chromium.chrome.browser.omnibox.LocationBarCoordinatorTablet;
 import org.chromium.chrome.browser.omnibox.LocationBarLayout;
 import org.chromium.chrome.browser.omnibox.NewTabPageDelegate;
 import org.chromium.chrome.browser.omnibox.status.StatusCoordinator;
+import org.chromium.chrome.browser.tabmodel.IncognitoStateProvider;
+import org.chromium.chrome.browser.theme.ThemeColorProvider;
 import org.chromium.chrome.browser.theme.ThemeUtils;
 import org.chromium.chrome.browser.toolbar.R;
 import org.chromium.chrome.browser.toolbar.ToolbarDataProvider;
@@ -60,6 +65,7 @@ import org.chromium.chrome.browser.toolbar.ToolbarProgressBar;
 import org.chromium.chrome.browser.toolbar.ToolbarProgressBarAnimatingView;
 import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarButtonVariant;
 import org.chromium.chrome.browser.toolbar.back_button.BackButtonCoordinator;
+import org.chromium.chrome.browser.toolbar.incognito.IncognitoIndicatorCoordinator;
 import org.chromium.chrome.browser.toolbar.menu_button.MenuButtonCoordinator;
 import org.chromium.chrome.browser.toolbar.optional_button.ButtonData.ButtonSpec;
 import org.chromium.chrome.browser.toolbar.optional_button.ButtonDataImpl;
@@ -90,6 +96,9 @@ public final class ToolbarTabletUnitTest {
     @Mock private NewTabPageDelegate mNewTabPageDelegate;
     @Mock private ReloadButtonCoordinator mReloadButtonCoordinator;
     @Mock private BackButtonCoordinator mBackButtonCoordinator;
+    @Mock private IncognitoIndicatorCoordinator mIncognitoIndicatorCoordinator;
+    @Mock private ThemeColorProvider mThemeColorProvider;
+    @Mock private IncognitoStateProvider mIncognitoStateProvider;
     private Activity mActivity;
     private ToolbarTablet mToolbarTablet;
     private LinearLayout mToolbarTabletLayout;
@@ -98,8 +107,14 @@ public final class ToolbarTabletUnitTest {
     private ImageButton mBackButton;
     private ImageButton mForwardButton;
     private ImageButton mBookmarkButton;
-    private ImageButton mSaveOfflineButton;
     private ToolbarProgressBar mProgressBar;
+
+    private final Answer<Object> mAddIncognitoObserverInIncognitoMode =
+            (invocation) -> {
+                IncognitoStateProvider.IncognitoStateObserver observer = invocation.getArgument(0);
+                observer.onIncognitoStateChanged(/* isIncognito */ true);
+                return null;
+            };
 
     @Before
     public void setUp() {
@@ -118,13 +133,13 @@ public final class ToolbarTabletUnitTest {
         mToolbarTablet.setToolbarColorObserver(mToolbarColorObserver);
         mToolbarTablet.setReloadButtonCoordinator(mReloadButtonCoordinator);
         mToolbarTablet.setBackButtonCoordinator(mBackButtonCoordinator);
+        mToolbarTablet.setIncognitoIndicatorCoordinatorForTesting(mIncognitoIndicatorCoordinator);
         mToolbarTabletLayout = mToolbarTablet.findViewById(R.id.toolbar_tablet_layout);
         mHomeButton = mToolbarTablet.findViewById(R.id.home_button);
         mBackButton = mToolbarTablet.findViewById(R.id.back_button);
         mForwardButton = mToolbarTablet.findViewById(R.id.forward_button);
         mReloadingButton = mToolbarTablet.findViewById(R.id.refresh_button);
         mBookmarkButton = mToolbarTablet.findViewById(R.id.bookmark_button);
-        mSaveOfflineButton = mToolbarTablet.findViewById(R.id.save_offline_button);
         mProgressBar = new ToolbarProgressBar(mActivity, null);
         mProgressBar.setAnimatingView(new ToolbarProgressBarAnimatingView(mActivity, null));
         when(mReloadButtonCoordinator.getFadeAnimator(false))
@@ -166,6 +181,10 @@ public final class ToolbarTabletUnitTest {
     @EnableFeatures(ChromeFeatureList.TAB_STRIP_INCOGNITO_MIGRATION)
     @Test
     public void testButtonPositionIncognito() {
+        doAnswer(mAddIncognitoObserverInIncognitoMode)
+                .when(mIncognitoStateProvider)
+                .addIncognitoStateObserverAndTrigger(any());
+
         mToolbarTablet.onFinishInflate();
         mToolbarTablet.initialize(
                 mToolbarDataProvider,
@@ -178,7 +197,10 @@ public final class ToolbarTabletUnitTest {
                 mProgressBar,
                 mReloadButtonCoordinator,
                 mBackButtonCoordinator,
-                /* homeButtonDisplay= */ null);
+                /* homeButtonDisplay= */ null,
+                null,
+                mThemeColorProvider,
+                mIncognitoStateProvider);
         when(mToolbarDataProvider.getNewTabPageDelegate()).thenReturn(mNewTabPageDelegate);
         when(mToolbarDataProvider.isIncognitoBranded()).thenReturn(true);
         mToolbarTablet.onTabOrModelChanged();
@@ -259,6 +281,10 @@ public final class ToolbarTabletUnitTest {
     @Test
     @EnableFeatures(ChromeFeatureList.TAB_STRIP_INCOGNITO_MIGRATION)
     public void onMeasureIncognito_flipIncognitoVisibility() {
+        doAnswer(mAddIncognitoObserverInIncognitoMode)
+                .when(mIncognitoStateProvider)
+                .addIncognitoStateObserverAndTrigger(any());
+
         mToolbarTablet.onFinishInflate();
         mToolbarTablet.initialize(
                 mToolbarDataProvider,
@@ -271,7 +297,10 @@ public final class ToolbarTabletUnitTest {
                 mProgressBar,
                 mReloadButtonCoordinator,
                 mBackButtonCoordinator,
-                /* homeButtonDisplay= */ null);
+                /* homeButtonDisplay= */ null,
+                null,
+                mThemeColorProvider,
+                mIncognitoStateProvider);
         when(mToolbarDataProvider.getNewTabPageDelegate()).thenReturn(mNewTabPageDelegate);
         when(mToolbarDataProvider.isIncognitoBranded()).thenReturn(true);
         mToolbarTablet.onTabOrModelChanged();
@@ -688,10 +717,6 @@ public final class ToolbarTabletUnitTest {
                 "Forward button tint is incorrect.",
                 activityFocusTint.getDefaultColor(),
                 mForwardButton.getImageTintList().getDefaultColor());
-        Assert.assertEquals(
-                "Save offline button tint is incorrect.",
-                tint.getDefaultColor(),
-                mSaveOfflineButton.getImageTintList().getDefaultColor());
         Assert.assertEquals(
                 "Bookmark button tint is incorrect.",
                 tint.getDefaultColor(),

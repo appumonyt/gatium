@@ -72,11 +72,6 @@ struct GPU_IPC_COMMON_EXPORT StructTraits<
     return attribs.gpu_preference;
   }
 
-  static bool bind_generates_resource(
-      const gpu::ContextCreationAttribs& attribs) {
-    return attribs.bind_generates_resource;
-  }
-
   static bool fail_if_major_perf_caveat(
       const gpu::ContextCreationAttribs& attribs) {
     return attribs.fail_if_major_perf_caveat;
@@ -90,10 +85,6 @@ struct GPU_IPC_COMMON_EXPORT StructTraits<
   static bool enable_gles2_interface(
       const gpu::ContextCreationAttribs& attribs) {
     return attribs.enable_gles2_interface;
-  }
-
-  static bool enable_grcontext(const gpu::ContextCreationAttribs& attribs) {
-    return attribs.enable_grcontext;
   }
 
   static bool enable_raster_interface(

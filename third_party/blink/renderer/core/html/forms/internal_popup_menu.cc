@@ -552,7 +552,7 @@ void InternalPopupMenu::AppendOwnerElementPseudoStyles(
     const String& target,
     SegmentedBuffer& data,
     const ComputedStyle& style) {
-  PagePopupClient::AddString(target + "{ \n", data);
+  PagePopupClient::AddString(StrCat({target, "{ \n"}), data);
 
   const CSSPropertyID serialize_targets[] = {
       CSSPropertyID::kDisplay,        CSSPropertyID::kBackgroundColor,
@@ -610,9 +610,7 @@ void InternalPopupMenu::SetValueAndClosePopup(int num_value,
       // Only dispatch mouseup event when the interaction was not keyboard
       // initiated.
       // https://crbug.com/40698108
-      if (!RuntimeEnabledFeatures::
-              SelectNoMouseUpForKeyboardSelectionEnabled() ||
-          !is_keyboard_event) {
+      if (!is_keyboard_event) {
         frame->GetEventHandler().HandleTargetedMouseEvent(
             owner, event, event_type_names::kMouseup, Vector<WebMouseEvent>(),
             Vector<WebMouseEvent>());

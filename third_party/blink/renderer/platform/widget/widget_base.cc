@@ -280,11 +280,10 @@ void WidgetBase::InitializeNonCompositing() {
   initialized_ = true;
 }
 
-void WidgetBase::DidFirstVisuallyNonEmptyPaint(
-    base::TimeTicks& first_paint_time) {
+void WidgetBase::OnFirstContentfulPaint(
+    const base::TimeTicks& first_paint_time) {
   if (widget_input_handler_manager_) {
-    widget_input_handler_manager_->DidFirstVisuallyNonEmptyPaint(
-        first_paint_time);
+    widget_input_handler_manager_->OnFirstContentfulPaint(first_paint_time);
   }
 }
 
@@ -311,6 +310,10 @@ void WidgetBase::Shutdown(bool delay_release) {
         base::SingleThreadTaskRunner::GetCurrentDefault();
     base::TimeDelta task_delay(base::Seconds(0));
     if (delay_release) {
+#if BUILDFLAG(IS_ANDROID)
+      CHECK(!Platform::Current()
+                 ->IsSynchronousCompositingEnabledForAndroidWebView());
+#endif
       CHECK(base::FeatureList::IsEnabled(
           blink::features::kDelayLayerTreeViewDeletionOnLocalSwap));
       task_delay =
@@ -366,6 +369,10 @@ void WidgetBase::DisconnectLayerTreeView(WidgetBase* new_widget,
     new_widget->layer_tree_view_ = std::move(layer_tree_view_);
     layer_tree_view_ = nullptr;
   } else if (delay_release) {
+#if BUILDFLAG(IS_ANDROID)
+    CHECK(!Platform::Current()
+               ->IsSynchronousCompositingEnabledForAndroidWebView());
+#endif
     CHECK(base::FeatureList::IsEnabled(
         blink::features::kDelayLayerTreeViewDeletionOnLocalSwap));
     // Detach the LayerTreeView now without attaching it to anything else. The
@@ -876,13 +883,11 @@ void WidgetBase::FinishRequestNewLayerTreeFrameSink(
   // This is for an offscreen context for the compositor. So the default
   // framebuffer doesn't need alpha, depth, stencil, antialiasing.
   gpu::ContextCreationAttribs attributes;
-  attributes.bind_generates_resource = false;
   attributes.lose_context_when_out_of_memory = true;
   // VideoResourceUpdater was the only usage of gles2 interface from this
   // RasterContextProvider and now we use RasterInterface in
   // VideoResourceUpdater.
   attributes.enable_gles2_interface = false;
-  attributes.enable_grcontext = false;
   attributes.enable_raster_interface = true;
   attributes.enable_gpu_rasterization = false;
 

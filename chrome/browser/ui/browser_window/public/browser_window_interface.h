@@ -51,22 +51,21 @@ class WebContentsModalDialogHost;
 
 class Browser;
 class BrowserActions;
-class BrowserUserEducationInterface;
 class BrowserWindowFeatures;
 class DesktopBrowserWindowCapabilities;
 class ExclusiveAccessManager;
 class GURL;
 class ImmersiveModeController;
-class Profile;
-class SessionID;
 class TabStripModel;
 #endif  // BUILDFLAG(IS_ANDROID)
 
 namespace ui {
 class BaseWindow;
+class UnownedUserDataHost;
 }  // namespace ui
 
-class UnownedUserDataHost;
+class Profile;
+class SessionID;
 
 #if !BUILDFLAG(IS_ANDROID)
 // A feature which wants to show window level call to action UI  should call
@@ -84,13 +83,77 @@ class BrowserWindowInterface : public content::PageNavigator {
   // Returns the UnownedUserDataHost associated with this browser window. This
   // is used to retrieve arbitrary features from the browser window without
   // requiring BrowserWindowInterface to have knowledge of them.
-  virtual UnownedUserDataHost& GetUnownedUserDataHost() = 0;
-  virtual const UnownedUserDataHost& GetUnownedUserDataHost() const = 0;
+  virtual ui::UnownedUserDataHost& GetUnownedUserDataHost() = 0;
+  virtual const ui::UnownedUserDataHost& GetUnownedUserDataHost() const = 0;
 
   // Returns the ui::BaseWindow for this browser window. This allows for
   // generic window actions, such as activation, querying minimize/maximized
   // state, etc.
   virtual ui::BaseWindow* GetWindow() = 0;
+
+  // Returns the profile that semantically owns this browser window.
+  // On most desktop platforms, there is only one profile per browser window.
+  // This will never be null and never changes for the lifetime of a given
+  // browser window. All tabs contained in a browser window have the same
+  // Profile / BrowserContext as the browser window itself.
+  // On mobile platforms, this is not the case -- browser windows may have
+  // multiple profiles. Since this is currently not needed on mobile platforms,
+  // this is okay.
+  // On the experimental desktop android platform, we are adapting the mobile
+  // version to have the same guarantees as existing desktop platforms. Thus,
+  // when implemented, this will return a single Profile for the given browser
+  // window.
+  virtual Profile* GetProfile() = 0;
+
+  // Returns a session-unique ID.
+  virtual const SessionID& GetSessionID() const = 0;
+
+  // SessionService::WindowType mirrors these values.  If you add to this
+  // enum, look at SessionService::WindowType to see if it needs to be
+  // updated.
+  // TODO(https://crbug.com/331031753): Several of these existing Window Types
+  // likely should not have been using Browser as a base to begin with and
+  // should be migrated. Other types are not available on all platforms.
+  // Please refrain from adding new types.
+  enum Type {
+    // Normal tabbed non-app browser (previously TYPE_TABBED).
+    TYPE_NORMAL,
+    // Popup browser.
+    TYPE_POPUP,
+    // App browser. Specifically, one of these:
+    // * Web app; comes in different flavors but is backed by the same code:
+    //   - Progressive Web App (PWA)
+    //   - Shortcut app (from 3-dot menu > More tools > Create shortcut)
+    //   - System web app (Chrome OS only)
+    // * Legacy packaged app ("v1 packaged app")
+    // * Hosted app (e.g. the Web Store "app" preinstalled on Chromebooks)
+    TYPE_APP,
+#if !BUILDFLAG(IS_ANDROID)
+    // Devtools browser.
+    TYPE_DEVTOOLS,
+#endif
+    // App popup browser. It behaves like an app browser (e.g. it should have an
+    // AppBrowserController) but looks like a popup (e.g. it never has a tab
+    // strip).
+    TYPE_APP_POPUP,
+#if BUILDFLAG(IS_CHROMEOS)
+    // Browser for ARC++ Chrome custom tabs.
+    // It's an enhanced version of TYPE_POPUP, and is used to show the Chrome
+    // Custom Tab toolbar for ARC++ apps. It has UI customizations like using
+    // the Android app's theme color, and the three dot menu in
+    // CustomTabToolbarview.
+    TYPE_CUSTOM_TAB,
+#endif
+#if !BUILDFLAG(IS_ANDROID)
+    // Document picture-in-picture browser.  It's mostly the same as a
+    // TYPE_POPUP, except that it floats above other windows.  It also has some
+    // additional restrictions, like it cannot navigated, to prevent misuse.
+    TYPE_PICTURE_IN_PICTURE,
+#endif
+    // If you add a new type, consider updating the test
+    // BrowserTest.StartMaximized.
+  };
+  virtual Type GetType() const = 0;
 
   // S T O P
   // Please do not add new features here without consulting desktop leads
@@ -107,21 +170,13 @@ class BrowserWindowInterface : public content::PageNavigator {
   // the instance itself remains the same.
   virtual views::WebView* GetWebView() = 0;
 
-  // Returns the profile that semantically owns this browser window. This value
-  // is never null, and never changes for the lifetime of a given browser
-  // window. All tabs contained in a browser window have the same
-  // profile/BrowserContext as the browser window itself.
-  virtual Profile* GetProfile() = 0;
-
   // Opens a URL, with the given disposition. This is a convenience wrapper
   // around OpenURL from content::PageNavigator.
   virtual void OpenGURL(const GURL& gurl,
                         WindowOpenDisposition disposition) = 0;
 
-  // Returns a session-unique ID.
-  virtual const SessionID& GetSessionID() const = 0;
-
   virtual TabStripModel* GetTabStripModel() = 0;
+  virtual const TabStripModel* GetTabStripModel() const = 0;
 
   // Returns true if the tab strip is currently visible for this browser window.
   // Will return false on browser initialization before the tab strip is
@@ -221,54 +276,9 @@ class BrowserWindowInterface : public content::PageNavigator {
   // browser window (e.g. most of the 3-dot menu actions).
   virtual BrowserActions* GetActions() = 0;
 
-  // SessionService::WindowType mirrors these values.  If you add to this
-  // enum, look at SessionService::WindowType to see if it needs to be
-  // updated.
-  // TODO(https://crbug.com/331031753): Several of these existing Window Types
-  // likely should not have been using Browser as a base to begin with and
-  // should be migrated. Please refrain from adding new types.
-  enum Type {
-    // Normal tabbed non-app browser (previously TYPE_TABBED).
-    TYPE_NORMAL,
-    // Popup browser.
-    TYPE_POPUP,
-    // App browser. Specifically, one of these:
-    // * Web app; comes in different flavors but is backed by the same code:
-    //   - Progressive Web App (PWA)
-    //   - Shortcut app (from 3-dot menu > More tools > Create shortcut)
-    //   - System web app (Chrome OS only)
-    // * Legacy packaged app ("v1 packaged app")
-    // * Hosted app (e.g. the Web Store "app" preinstalled on Chromebooks)
-    TYPE_APP,
-    // Devtools browser.
-    TYPE_DEVTOOLS,
-    // App popup browser. It behaves like an app browser (e.g. it should have an
-    // AppBrowserController) but looks like a popup (e.g. it never has a tab
-    // strip).
-    TYPE_APP_POPUP,
-#if BUILDFLAG(IS_CHROMEOS)
-    // Browser for ARC++ Chrome custom tabs.
-    // It's an enhanced version of TYPE_POPUP, and is used to show the Chrome
-    // Custom Tab toolbar for ARC++ apps. It has UI customizations like using
-    // the Android app's theme color, and the three dot menu in
-    // CustomTabToolbarview.
-    TYPE_CUSTOM_TAB,
-#endif
-    // Document picture-in-picture browser.  It's mostly the same as a
-    // TYPE_POPUP, except that it floats above other windows.  It also has some
-    // additional restrictions, like it cannot navigated, to prevent misuse.
-    TYPE_PICTURE_IN_PICTURE,
-    // If you add a new type, consider updating the test
-    // BrowserTest.StartMaximized.
-  };
-  virtual Type GetType() const = 0;
-
-  // Gets an object that provides common per-browser-window functionality for
-  // user education. The remainder of functionality is provided directly by the
-  // UserEducationService, which can be retrieved directly from the profile.
-  virtual BrowserUserEducationInterface* GetUserEducationInterface() = 0;
-
   virtual web_app::AppBrowserController* GetAppBrowserController() = 0;
+  virtual const web_app::AppBrowserController* GetAppBrowserController()
+      const = 0;
 
   // This is used by features that need to operate on most or all tabs in the
   // browser window. Do not use this method to find a specific tab.

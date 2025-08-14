@@ -116,9 +116,6 @@ class WebAppUiManagerImpl : public BrowserListObserver,
                     Profile& profile,
                     LaunchWebAppDebugValueCallback callback,
                     WithAppResources& lock) override;
-  void WaitForFirstRunService(
-      Profile& profile,
-      FirstRunServiceCompletedCallback callback) override;
 #if BUILDFLAG(IS_CHROMEOS)
   void MigrateLauncherState(const webapps::AppId& from_app_id,
                             const webapps::AppId& to_app_id,
@@ -152,6 +149,7 @@ class WebAppUiManagerImpl : public BrowserListObserver,
       const webapps::AppId& app_id,
       Profile* profile,
       const std::string& app_name,
+      const SkBitmap& icon,
       WebInstallAppLaunchAcceptanceCallback callback) override;
 
   void PresentUserUninstallDialog(
@@ -246,13 +244,13 @@ class WebAppUiManagerImpl : public BrowserListObserver,
       webapps::UninstallResultCode uninstall_code);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-  void ShowIPHPromoForAppsLaunchedViaLinkCapturing(const Browser* browser,
+  void ShowIPHPromoForAppsLaunchedViaLinkCapturing(Browser* browser,
                                                    const webapps::AppId& app_id,
                                                    bool is_activated);
-  void OnIPHPromoResponseForLinkCapturing(const Browser* browser,
+  void OnIPHPromoResponseForLinkCapturing(Browser* browser,
                                           const webapps::AppId& app_id);
 
-  void OnTabChangedDuringIph(const Browser* browser);
+  void OnTabChangedDuringIph(Browser* browser);
 
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 

@@ -62,11 +62,13 @@ void ComputeAvailableSizes(const BoxStrut& border_scrollbar_padding,
   }
 }
 
-wtf_size_t CalculateAutomaticRepetitions(const GridTrackList& track_list,
-                                         const LayoutUnit gutter_size,
-                                         LayoutUnit available_size,
-                                         LayoutUnit min_available_size,
-                                         LayoutUnit max_available_size) {
+wtf_size_t CalculateAutomaticRepetitions(
+    const GridTrackList& track_list,
+    const LayoutUnit gutter_size,
+    LayoutUnit available_size,
+    LayoutUnit min_available_size,
+    LayoutUnit max_available_size,
+    const Vector<LayoutUnit>* intrinsic_repeat_track_sizes) {
   DCHECK(track_list.HasAutoRepeater());
 
   if (available_size == kIndefiniteSize) {
@@ -92,6 +94,12 @@ wtf_size_t CalculateAutomaticRepetitions(const GridTrackList& track_list,
       const GridTrackSize& track_size =
           track_list.RepeatTrackSize(repeater_index, i);
 
+      const bool is_track_size_intrinsic =
+          track_size.IsTrackDefinitionIntrinsic();
+      if (is_track_size_intrinsic && !intrinsic_repeat_track_sizes) {
+        return 0;
+      }
+
       std::optional<LayoutUnit> fixed_min_track_breadth;
       if (track_size.HasFixedMinTrackBreadth()) {
         fixed_min_track_breadth.emplace(MinimumValueForLength(
@@ -105,7 +113,10 @@ wtf_size_t CalculateAutomaticRepetitions(const GridTrackList& track_list,
       }
 
       LayoutUnit track_contribution;
-      if (fixed_max_track_breadth && fixed_min_track_breadth) {
+      if (is_track_size_intrinsic) {
+        CHECK_EQ(intrinsic_repeat_track_sizes->size(), repeater_track_count);
+        track_contribution = (*intrinsic_repeat_track_sizes)[i];
+      } else if (fixed_max_track_breadth && fixed_min_track_breadth) {
         track_contribution =
             std::max(*fixed_max_track_breadth, *fixed_min_track_breadth);
       } else if (fixed_max_track_breadth) {

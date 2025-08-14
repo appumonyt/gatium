@@ -13,7 +13,7 @@
 #include "base/types/cxx23_to_underlying.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/plus_addresses/android/plus_address_creation_controller_android.h"
-#include "components/plus_addresses/features.h"
+#include "components/plus_addresses/core/common/features.h"
 #include "components/plus_addresses/grit/plus_addresses_strings.h"
 #include "components/plus_addresses/plus_address_types.h"
 #include "content/public/browser/web_contents.h"
@@ -142,33 +142,23 @@ void PlusAddressCreationViewAndroid::ShowInit(
       refresh_supported);
 }
 
-void PlusAddressCreationViewAndroid::TryAgainToReservePlusAddress(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+void PlusAddressCreationViewAndroid::TryAgainToReservePlusAddress(JNIEnv* env) {
   controller_->TryAgainToReservePlusAddress();
 }
 
-void PlusAddressCreationViewAndroid::OnRefreshClicked(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+void PlusAddressCreationViewAndroid::OnRefreshClicked(JNIEnv* env) {
   controller_->OnRefreshClicked();
 }
 
-void PlusAddressCreationViewAndroid::OnConfirmRequested(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+void PlusAddressCreationViewAndroid::OnConfirmRequested(JNIEnv* env) {
   controller_->OnConfirmed();
 }
 
-void PlusAddressCreationViewAndroid::OnCanceled(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+void PlusAddressCreationViewAndroid::OnCanceled(JNIEnv* env) {
   controller_->OnCanceled();
 }
 
-void PlusAddressCreationViewAndroid::PromptDismissed(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+void PlusAddressCreationViewAndroid::PromptDismissed(JNIEnv* env) {
   controller_->OnDialogDestroyed();
 }
 

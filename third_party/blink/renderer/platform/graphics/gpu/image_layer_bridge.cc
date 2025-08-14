@@ -175,12 +175,7 @@ bool ImageLayerBridge::PrepareTransferableResource(
       return false;
     }
 
-    const gfx::Size size(image_for_compositor->width(),
-                         image_for_compositor->height());
-
     viz::TransferableResource::MetadataOverride overrides = {
-        .format = image_for_compositor->GetSharedImageFormat(),
-        .size = size,
         .color_space = gfx::ColorSpace(),
         .alpha_type = kPremul_SkAlphaType,
     };
@@ -190,9 +185,9 @@ bool ImageLayerBridge::PrepareTransferableResource(
         viz::TransferableResource::ResourceSource::kImageLayerBridge,
         image_for_compositor->GetSyncToken(), overrides);
 
-    auto func = WTF::BindOnce(&ImageLayerBridge::ResourceReleasedGpu,
-                              WrapWeakPersistent(this),
-                              std::move(image_for_compositor));
+    auto func = blink::BindOnce(&ImageLayerBridge::ResourceReleasedGpu,
+                                WrapWeakPersistent(this),
+                                std::move(image_for_compositor));
     *out_release_callback = std::move(func);
   } else {
     image_ = image_->MakeUnaccelerated();
@@ -230,8 +225,8 @@ bool ImageLayerBridge::PrepareTransferableResource(
         resource.shared_image,
         viz::TransferableResource::ResourceSource::kImageLayerBridge,
         resource.sync_token);
-    auto func = WTF::BindOnce(&ImageLayerBridge::ResourceReleasedSoftware,
-                              WrapWeakPersistent(this), std::move(resource));
+    auto func = BindOnce(&ImageLayerBridge::ResourceReleasedSoftware,
+                         WrapWeakPersistent(this), std::move(resource));
     *out_release_callback = std::move(func);
   }
 

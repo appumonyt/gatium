@@ -287,8 +287,9 @@ bool ContainsPhone(uint32_t groups) {
 uint32_t DetermineGroups(const FormStructure& form) {
   uint32_t group_bitmask = 0;
   for (const auto& field : form) {
-    FieldType type = field->Type().GetStorableType();
-    AddGroupToBitmask(&group_bitmask, type);
+    for (FieldType type : field->Type().GetTypes()) {
+      AddGroupToBitmask(&group_bitmask, type);
+    }
   }
   return group_bitmask;
 }
@@ -376,6 +377,22 @@ bool IsCJKName(std::u16string_view name) {
     previous_was_cjk = is_cjk;
   }
   return word_count > 0 && word_count < 3;
+}
+
+bool HasKatakanaCharacter(std::u16string_view text) {
+  UErrorCode error = U_ZERO_ERROR;
+  for (base::i18n::UTF16CharIterator iter(text); !iter.end(); iter.Advance()) {
+    UScriptCode character = uscript_getScript(iter.get(), &error);
+    if (U_FAILURE(error)) {
+      DLOG(ERROR) << "uscript_getScript failed, error code: "
+                  << u_errorName(error);
+      return false;
+    }
+    if (character == USCRIPT_KATAKANA) {
+      return true;
+    }
+  }
+  return false;
 }
 
 NameParts SplitName(std::u16string_view name) {

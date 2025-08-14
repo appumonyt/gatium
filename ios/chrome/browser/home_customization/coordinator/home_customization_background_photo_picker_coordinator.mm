@@ -5,11 +5,20 @@
 #import "ios/chrome/browser/home_customization/coordinator/home_customization_background_photo_picker_coordinator.h"
 
 #import "base/check.h"
+#import "base/values.h"
+#import "ios/chrome/browser/google/model/google_logo_service_factory.h"
+#import "ios/chrome/browser/home_customization/coordinator/home_customization_background_photo_framing_mediator.h"
+#import "ios/chrome/browser/home_customization/model/home_background_customization_service_factory.h"
+#import "ios/chrome/browser/home_customization/model/user_uploaded_image_manager_factory.h"
 #import "ios/chrome/browser/home_customization/ui/home_customization_background_photo_framing_view_controller.h"
+#import "ios/chrome/browser/ntp/search_engine_logo/mediator/search_engine_logo_mediator.h"
+#import "ios/chrome/browser/search_engines/model/template_url_service_factory.h"
 #import "ios/chrome/browser/shared/model/browser/browser.h"
+#import "ios/chrome/browser/shared/model/profile/profile_ios.h"
 #import "ios/chrome/browser/shared/model/web_state_list/web_state_list.h"
+#import "ios/chrome/browser/url_loading/model/url_loading_browser_agent.h"
 #import "ios/chrome/grit/ios_strings.h"
-#import "ios/public/provider/chrome/browser/ui_utils/ui_utils_api.h"
+#import "services/network/public/cpp/shared_url_loader_factory.h"
 #import "ui/base/l10n/l10n_util_mac.h"
 
 @interface HomeCustomizationBackgroundPhotoPickerCoordinator () <
@@ -19,6 +28,8 @@
 @implementation HomeCustomizationBackgroundPhotoPickerCoordinator {
   // Strong reference to the framing view controller while it's being presented.
   HomeCustomizationImageFramingViewController* _framingViewController;
+  // Mediator for handling background photo framing.
+  HomeCustomizationBackgroundPhotoFramingMediator* _mediator;
 }
 
 - (void)start {
@@ -26,12 +37,11 @@
 }
 
 - (void)stop {
-  // Dismiss any presented picker if it's still showing.
-  if (self.baseViewController.presentedViewController) {
-    [self.baseViewController dismissViewControllerAnimated:NO completion:nil];
+  // Dismiss the framing view controller if it's presented.
+  if (_framingViewController) {
+    [_framingViewController dismissViewControllerAnimated:YES completion:nil];
+    _framingViewController = nil;
   }
-
-  _framingViewController = nil;
 
   [super stop];
 }
@@ -88,16 +98,43 @@
 
 // Handles the selected image and presents the framing view.
 - (void)handleSelectedImage:(UIImage*)image {
+  if (!_mediator) {
+    HomeBackgroundCustomizationService* backgroundService =
+        HomeBackgroundCustomizationServiceFactory::GetForProfile(self.profile);
+    UserUploadedImageManager* userUploadedImageManager =
+        UserUploadedImageManagerFactory::GetForProfile(self.profile);
+    _mediator = [[HomeCustomizationBackgroundPhotoFramingMediator alloc]
+        initWithUserUploadedImageManager:userUploadedImageManager
+                       backgroundService:backgroundService];
+  }
+
   // Create the logo vendor
-  id<LogoVendor> logoVendor = ios::provider::CreateLogoVendor(
-      self.browser, self.browser->GetWebStateList()->GetActiveWebState());
+  ProfileIOS* profile = self.browser->GetProfile();
+  web::WebState* webState =
+      self.browser->GetWebStateList()->GetActiveWebState();
+  TemplateURLService* templateURLService =
+      ios::TemplateURLServiceFactory::GetForProfile(profile);
+  GoogleLogoService* logoService =
+      GoogleLogoServiceFactory::GetForProfile(profile);
+  UrlLoadingBrowserAgent* URLLoadingBrowserAgent =
+      UrlLoadingBrowserAgent::FromBrowser(self.browser);
+  scoped_refptr<network::SharedURLLoaderFactory> sharedURLLoaderFactory =
+      profile->GetSharedURLLoaderFactory();
+  BOOL offTheRecord = profile->IsOffTheRecord();
+  SearchEngineLogoMediator* searchEngineLogoMediator =
+      [[SearchEngineLogoMediator alloc] initWithWebState:webState
+                                      templateURLService:templateURLService
+                                             logoService:logoService
+                                  URLLoadingBrowserAgent:URLLoadingBrowserAgent
+                                  sharedURLLoaderFactory:sharedURLLoaderFactory
+                                            offTheRecord:offTheRecord];
 
-  // Create the framing view controller with both image and logo vendor
+  // Create the framing view controller.
   _framingViewController = [[HomeCustomizationImageFramingViewController alloc]
-      initWithImage:image
-         logoVendor:logoVendor];
+                 initWithImage:image
+      searchEngineLogoMediator:searchEngineLogoMediator];
 
-  // Set the delegate to handle the framed image.
+  _framingViewController.mutator = _mediator;
   _framingViewController.delegate = self;
 
   _framingViewController.modalPresentationStyle =
@@ -113,26 +150,11 @@
 
 #pragma mark - HomeCustomizationImageFramingViewControllerDelegate
 
-- (void)imageFramingViewController:
-            (HomeCustomizationImageFramingViewController*)controller
-                didFinishWithImage:(UIImage*)framedImage {
-  // Dismiss the framing view controller.
-  __weak __typeof(self) weakSelf = self;
-  [controller dismissViewControllerAnimated:YES
-                                 completion:^{
-                                   // Pass the framed image to the delegate.
-                                   [weakSelf.delegate
-                                       photoPickerCoordinator:weakSelf
-                                               didSelectImage:framedImage];
-                                 }];
-
-  _framingViewController = nil;
-}
-
 - (void)imageFramingViewControllerDidCancel:
     (HomeCustomizationImageFramingViewController*)controller {
   // Dismiss the framing view controller.
   __weak __typeof(self) weakSelf = self;
+  [_mediator discardBackground];
   [controller
       dismissViewControllerAnimated:YES
                          completion:^{
@@ -142,6 +164,11 @@
                          }];
 
   _framingViewController = nil;
+}
+
+- (void)imageFramingViewControllerDidSucceed:
+    (HomeCustomizationImageFramingViewController*)controller {
+  [self.delegate photoPickerCoordinatorDidFinish:self];
 }
 
 @end

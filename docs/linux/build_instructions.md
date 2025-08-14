@@ -159,7 +159,7 @@ sorted so that the things that make the biggest difference are first.
 *** note
 **Warning:** If you are a Google employee, do not follow the instructions below.
 See
-[go/chrome-linux-build#setup-remote-execution](https://goto.google.com/chrome-linux-build#setup-remote-execution)
+[go/chrome-linux-build#set-up-remote-execution](https://goto.google.com/chrome-linux-build#set-up-remote-execution)
 instead.
 ***
 
@@ -192,7 +192,9 @@ If you would like to use `siso` with Google's RBE,
 you'll first need to:
 
 1. Run `siso login` and login with your authorized account.
-If it is blocked in OAuth2 flow, run `gcloud auth login` instead.
+If it is blocked in OAuth2 flow, run `gcloud auth login` (and
+export environment variable `SISO_CREDENTIAL_HELPER=gcloud`
+since siso v1.3.12).
 
 Next, you'll have to specify your `rbe_instance` in your `.gclient`
 configuration to use the correct one for Chromium contributors:
@@ -200,7 +202,7 @@ configuration to use the correct one for Chromium contributors:
 *** note
 **Warning:** If you are a Google employee, do not follow the instructions below.
 See
-[go/chrome-linux-build#setup-remote-execution](https://goto.google.com/chrome-linux-build#setup-remote-execution)
+[go/chrome-linux-build#set-up-remote-execution](https://goto.google.com/chrome-linux-build#set-up-remote-execution)
 instead.
 ***
 
@@ -219,8 +221,22 @@ solutions = [
 ]
 ```
 
+For own REAPI backend other than Google RBE, set `reapi_address` and
+`reapi_instance`.
+
+```
+solutions = [
+  {
+    "custom_vars": {
+      "reapi_instance": "default",
+      "reapi_address": "remotebuild.example.com:443",
+    },
+  }
+]
+```
+
 And run `gclient sync`. This will regenerate the config files in
-`build/config/siso/backend_config/backend.star` to use the `rbe_instance`
+`build/config/siso/backend_config/backend.star` to use the REAPI instance
 that you just added to your `.gclient` file.
 
 If `rbe_instance` is not owned by Google, you may need to create your

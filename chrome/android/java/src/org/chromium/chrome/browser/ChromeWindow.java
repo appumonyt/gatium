@@ -13,6 +13,7 @@ import androidx.annotation.VisibleForTesting;
 import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.browser.compositor.CompositorViewHolder;
 import org.chromium.chrome.browser.keyboard_accessory.ManualFillingComponent;
+import org.chromium.chrome.browser.ui.browser_window.ChromeAndroidTaskTrackerFactory;
 import org.chromium.ui.base.ActivityKeyboardVisibilityDelegate;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.IntentRequestTracker;
@@ -95,6 +96,16 @@ public class ChromeWindow extends ActivityWindowAndroid {
         assert insetObserver != null;
         mCompositorViewHolderSupplier = compositorViewHolderSupplier;
         mModalDialogManagerSupplier = modalDialogManagerSupplier;
+    }
+
+    @Override
+    public void destroy() {
+        var chromeAndroidTaskTracker = ChromeAndroidTaskTrackerFactory.getInstance();
+        if (chromeAndroidTaskTracker != null) {
+            chromeAndroidTaskTracker.onActivityWindowAndroidDestroy(this);
+        }
+
+        super.destroy();
     }
 
     @Override

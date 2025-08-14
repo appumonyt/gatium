@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/browser/extensions/api/messaging/native_message_process_host.h"
 
 #include <stddef.h>
@@ -15,6 +10,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
@@ -196,8 +192,9 @@ void NativeMessageProcessHost::OnMessage(const std::string& json) {
   static_assert(sizeof(uint32_t) == kMessageHeaderSize,
                 "kMessageHeaderSize is incorrect");
   const uint32_t message_size = base::checked_cast<uint32_t>(json.size());
-  memcpy(buffer->data(), reinterpret_cast<const char*>(&message_size),
-         kMessageHeaderSize);
+  UNSAFE_TODO(memcpy(buffer->data(),
+                     reinterpret_cast<const char*>(&message_size),
+                     kMessageHeaderSize));
 
   buffer->span()
       .subspan(kMessageHeaderSize)
@@ -301,8 +298,9 @@ void NativeMessageProcessHost::ProcessIncomingData(
     if (incoming_data_.size() < kMessageHeaderSize)
       return;
 
+    // TODO(crbug.com/428945428): Fix unsafe uses of std::string::data().
     size_t message_size =
-        *reinterpret_cast<const uint32_t*>(incoming_data_.data());
+        *UNSAFE_TODO(reinterpret_cast<const uint32_t*>(incoming_data_.data()));
 
     if (message_size > kMaximumNativeMessageSize) {
       LOG(ERROR) << "Native Messaging host tried sending a message that is "

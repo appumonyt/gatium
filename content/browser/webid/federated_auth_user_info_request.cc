@@ -6,13 +6,14 @@
 
 #include "base/functional/callback.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/webid/federated_auth_request_page_data.h"
 #include "content/browser/webid/flags.h"
 #include "content/browser/webid/webid_utils.h"
-#include "content/public/browser/federated_identity_api_permission_context_delegate.h"
-#include "content/public/browser/federated_identity_permission_context_delegate.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/webid/federated_identity_api_permission_context_delegate.h"
+#include "content/public/browser/webid/federated_identity_permission_context_delegate.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "third_party/blink/public/mojom/webid/federated_auth_request.mojom.h"
 #include "url/origin.h"
@@ -101,7 +102,8 @@ FederatedAuthUserInfoRequest::FederatedAuthUserInfoRequest(
       render_frame_host_(render_frame_host),
       client_id_(provider->client_id),
       idp_config_url_(provider->config_url),
-      origin_(render_frame_host->GetLastCommittedOrigin()) {
+      origin_(render_frame_host->GetLastCommittedOrigin()),
+      perfetto_track_(webid::CreatePerfettoTrackForFedCM(this)) {
   RenderFrameHost* main_frame = render_frame_host->GetMainFrame();
   DCHECK(main_frame->IsInPrimaryMainFrame());
   embedding_origin_ = main_frame->GetLastCommittedOrigin();
@@ -113,6 +115,7 @@ FederatedAuthUserInfoRequest::FederatedAuthUserInfoRequest(
 
 void FederatedAuthUserInfoRequest::SetCallbackAndStart(
     blink::mojom::FederatedAuthRequest::RequestUserInfoCallback callback) {
+  TRACE_EVENT_BEGIN("content.fedcm", "FedCM getUserInfo", perfetto_track_);
   callback_ = std::move(callback);
 
   request_start_time_ = base::TimeTicks::Now();
@@ -161,9 +164,9 @@ void FederatedAuthUserInfoRequest::SetCallbackAndStart(
     return;
   }
 
-  // FedCmConfigFetcher is stored as a member so that it is destroyed when
+  // ConfigFetcher is stored as a member so that it is destroyed when
   // FederatedAuthRequestImpl is destroyed.
-  config_fetcher_ = std::make_unique<FedCmConfigFetcher>(
+  config_fetcher_ = std::make_unique<webid::ConfigFetcher>(
       *render_frame_host_, network_manager_.get());
   // TODO(crbug.com/390626180): It seems ok to ignore the well-known checks in
   // all cases here. However, keeping this unchanged for now when the IDP
@@ -179,7 +182,7 @@ void FederatedAuthUserInfoRequest::SetCallbackAndStart(
 }
 
 void FederatedAuthUserInfoRequest::OnAllConfigAndWellKnownFetched(
-    std::vector<FedCmConfigFetcher::FetchResult> fetch_results) {
+    std::vector<webid::ConfigFetcher::FetchResult> fetch_results) {
   config_fetcher_.reset();
 
   if (fetch_results.size() != 1u) {
@@ -326,6 +329,8 @@ void FederatedAuthUserInfoRequest::Complete(
   if (!callback_) {
     return;
   }
+
+  TRACE_EVENT_END("content.fedcm", perfetto_track_);
 
   base::UmaHistogramEnumeration("Blink.FedCm.UserInfo.Status", request_status);
 

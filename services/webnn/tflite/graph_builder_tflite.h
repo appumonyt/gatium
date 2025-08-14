@@ -34,6 +34,10 @@ class WebNNConstantOperand;
 
 namespace tflite {
 
+struct Float16 {
+  uint16_t data;
+};
+
 namespace internal {
 
 // Methods which take a generic numerical type as input (e.g. uint32_t) and
@@ -44,8 +48,15 @@ namespace internal {
 template <typename T, typename... U>
 concept IsAnyOf = (std::same_as<T, U> || ...);
 template <typename T>
-concept IsSupportedTensorType =
-    IsAnyOf<T, float, int32_t, uint32_t, int64_t, int8_t, uint8_t, bool>;
+concept IsSupportedTensorType = IsAnyOf<T,
+                                        Float16,
+                                        float,
+                                        int32_t,
+                                        uint32_t,
+                                        int64_t,
+                                        int8_t,
+                                        uint8_t,
+                                        bool>;
 
 }  // namespace internal
 
@@ -222,6 +233,8 @@ class GraphBuilderTflite final {
 
   // Get the value from constant operand and cast it to int64 data type.
   base::FixedArray<int64_t> GetConstantInt64Value(OperandId operand_id);
+  // Get quantize scale value for float16 and float32 data type.
+  base::FixedArray<float> GetQuantizeScaleValue(OperandId operand_id);
 
   // Operation serialization helpers for operations not directly declared in
   // the mojom::Operation union.
@@ -272,9 +285,10 @@ class GraphBuilderTflite final {
 
   // Serialize gather_nd indices tensor.
   template <typename DataType>
-  base::expected<TensorIndex, std::string> SerializeGatherNDIndices(
+  base::expected<TensorIndex, std::string> SerializeGatherIndices(
       const TensorInfo& indices_tensor_info,
-      const TensorInfo& input_tensor_info);
+      const TensorInfo& input_tensor_info,
+      std::optional<uint32_t> gather_axis = std::nullopt);
   TensorIndex CastGatherIndices(const TensorInfo& indices_tensor_info);
 
   // This function is called by `SerializeGatherND` to serialize WebNN
@@ -575,22 +589,21 @@ class GraphBuilderTflite final {
       std::optional<OperandId> state_operand_id,
       base::span<const int32_t> state_dimensions);
 
-  // Reshape hidden and cell state, concat the reshaped tensor if the input
-  // tensor of concat is provided.
-  TensorIndex ReshapeHiddenAndCellState(
+  // Serialize a sub graph (reshape appending concat operation) for gru /lstm.
+  TensorIndex SerializeSubGraphReshapeConcat(
       ::tflite::TensorType input_tensor_type,
       TensorIndex input_tensor_index,
       base::span<const int32_t> new_shape,
       std::optional<TensorIndex> concat_input_tensor_index,
-      base::span<const int32_t> concat_output_shape);
+      base::span<const int32_t> concat_output_shape,
+      bool backward = false);
 
   // Serialize a sub graph (slice appending squeeze operation) for gru.
   base::expected<TensorIndex, std::string> SerializeSubGraphSliceSqueeze(
       ::tflite::TensorType input_tensor_type,
       TensorIndex input_tensor_index,
       base::span<const int32_t> slice_starts,
-      base::span<const int32_t> slice_sizes,
-      int32_t squeeze_axis);
+      base::span<const int32_t> slice_sizes);
 
   // Serialize functions for members of the mojom::Operation union. Keep these
   // functions in the same order as in webnn_graph.mojom.

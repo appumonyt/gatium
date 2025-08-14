@@ -43,6 +43,7 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.LaunchIntentDispatcher;
 import org.chromium.chrome.browser.app.metrics.LaunchCauseMetrics;
+import org.chromium.chrome.browser.app.tab_activity_glue.PopupCreator;
 import org.chromium.chrome.browser.auxiliary_search.AuxiliarySearchController;
 import org.chromium.chrome.browser.auxiliary_search.AuxiliarySearchControllerFactory;
 import org.chromium.chrome.browser.auxiliary_search.AuxiliarySearchMetrics;
@@ -91,7 +92,7 @@ public class CustomTabActivity extends BaseCustomTabActivity {
             ChromeFeatureList.sCctBlockTouchesDuringEnterAnimation.isEnabled();
     private boolean mIsEnterAnimationCompleted;
     private @Nullable AuxiliarySearchController mAuxiliarySearchController;
-
+    private CustomTabActivityTimeoutHandler mTimeoutHandler;
     private final CustomTabActivityTabProvider.Observer mTabChangeObserver =
             new CustomTabActivityTabProvider.Observer() {
                 @Override
@@ -145,10 +146,12 @@ public class CustomTabActivity extends BaseCustomTabActivity {
     @Override
     public void performPreInflationStartup() {
         super.performPreInflationStartup();
+        var savedInstanceState = getSavedInstanceState();
+        mTimeoutHandler = new CustomTabActivityTimeoutHandler(this::finish, getIntent());
+
         // If the activity is being recreated, #onEnterAnimationComplete() doesn't get called.
         // So, we need to manually set mIsEnterAnimationCompleted to true. See crbug.com/399194973.
         if (sBlockTouchesDuringEnterAnimation) {
-            var savedInstanceState = getSavedInstanceState();
             if (savedInstanceState != null) {
                 mIsEnterAnimationCompleted = true;
             }
@@ -171,6 +174,8 @@ public class CustomTabActivity extends BaseCustomTabActivity {
                         && mEdgeToEdgeControllerSupplier.get().isPageOptedIntoEdgeToEdge();
         CustomTabNavigationBarController.update(
                 getWindow(), getIntentDataProvider(), this, drawEdgeToEdge);
+
+        mTimeoutHandler.restoreInstanceState(savedInstanceState);
     }
 
     @Override
@@ -231,6 +236,15 @@ public class CustomTabActivity extends BaseCustomTabActivity {
                                     mConnection.getClientPackageNameForSession(mSession));
                 });
         super.finishNativeInitialization();
+
+        // Window bounds adjustments are called here because we probe WebContents' width and height
+        // from the native object.
+        if (getIntentDataProvider().getUiType() == CustomTabsUiType.POPUP
+                && ChromeFeatureList.isEnabled(
+                        ChromeFeatureList.ANDROID_WINDOW_POPUP_RESIZE_AFTER_SPAWN)) {
+            PopupCreator.adjustWindowBoundsToRequested(
+                    this, getIntentDataProvider().getRequestedWindowFeatures());
+        }
     }
 
     @Override
@@ -265,6 +279,12 @@ public class CustomTabActivity extends BaseCustomTabActivity {
     }
 
     @Override
+    public void onResume() {
+        if (mTimeoutHandler != null) mTimeoutHandler.onResume();
+        super.onResume();
+    }
+
+    @Override
     public void onPause() {
         super.onPause();
 
@@ -277,7 +297,14 @@ public class CustomTabActivity extends BaseCustomTabActivity {
     }
 
     @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        if (mTimeoutHandler != null) mTimeoutHandler.onSaveInstanceState(outState);
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
     protected void onUserLeaveHint() {
+        if (mTimeoutHandler != null) mTimeoutHandler.onUserLeaveHint();
         if (mOpenTimeRecorder != null) mOpenTimeRecorder.onUserLeaveHint();
         super.onUserLeaveHint();
     }

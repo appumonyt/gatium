@@ -18,6 +18,7 @@ import org.chromium.base.supplier.TransitiveObservableSupplier;
 import org.chromium.build.annotations.Initializer;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabCreationState;
 import org.chromium.chrome.browser.tab.TabLaunchType;
@@ -147,12 +148,13 @@ public abstract class TabModelSelectorBase
     }
 
     /**
-     * Should be called once the native library is loaded so that the actual internals of this
-     * class can be initialized.
+     * Should be called once the native library is loaded so that the actual internals of this class
+     * can be initialized.
      *
      * @param tabContentProvider A {@link TabContentManager} instance.
      */
-    public void onNativeLibraryReady(TabContentManager tabContentProvider) {}
+    public void onNativeLibraryReady(
+            TabContentManager tabContentProvider, boolean wasTabCollectionsActive) {}
 
     @Override
     public void onTabsViewShown() {}
@@ -316,8 +318,11 @@ public abstract class TabModelSelectorBase
         }
 
         if (getModels().isEmpty()) {
-            // Tab may be destroyed here via Tab#destroy(). It is skipped for now
-            // to examine its potential side effect on crbug.com/325558929.
+            if (ChromeFeatureList.sCctDestroyTabWhenModelIsEmpty.isEnabled()
+                    && tab.isCustomTab()
+                    && !tab.isDestroyed()) {
+                tab.destroy();
+            }
             return true;
         } else {
             assert false

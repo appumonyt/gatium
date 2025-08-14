@@ -102,6 +102,12 @@
       depends_on: ["SensorExtraClasses"],
     },
     {
+      name: "AriaNotify",
+      permissions_policy_name: "aria-notify",
+      feature_default: "EnableForAll",
+      depends_on: ["AriaNotify"],
+    },
+    {
       name: "AttributionReporting",
       permissions_policy_name: "attribution-reporting",
       feature_default: "EnableForAll",
@@ -283,6 +289,11 @@
       name: "DeviceAttributes",
       permissions_policy_name: "device-attributes",
       depends_on: ["DeviceAttributes"],
+    },
+    {
+      name: "DigitalCredentialsCreate",
+      permissions_policy_name: "digital-credentials-create",
+      depends_on: ["WebIdentityDigitalCredentialsCreation"],
     },
     {
       name: "DigitalCredentialsGet",
@@ -615,5 +626,5 @@
       depends_on: ["AIWriterAPI"],
     },
   ],
-  // LINT.ThenChange(//third_party/blink/public/devtools_protocol/browser_protocol.pdl:PermissionsPolicyFeature)
+  // LINT.ThenChange(//third_party/blink/public/devtools_protocol/domains/Page.pdl:PermissionsPolicyFeature)
 }

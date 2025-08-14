@@ -8,23 +8,33 @@
 
 #include "base/functional/bind.h"
 #include "base/i18n/rtl.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "chrome/browser/ui/tabs/tab_model.h"
+#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/frame/multi_contents_drop_target_view.h"
+#include "chrome/browser/ui/views/tabs/dragging/drag_session_data.h"
+#include "chrome/browser/ui/views/tabs/dragging/test/mock_tab_drag_context.h"
 #include "content/public/common/drop_data.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/dragdrop/drag_drop_types.h"
+#include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/interaction/element_identifier.h"
+#include "ui/compositor/layer_tree_owner.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/views/view_class_properties.h"
 
 namespace {
 
-static constexpr gfx::Size kMultiContentsViewSize(500, 500);
+constexpr gfx::Size kMultiContentsViewSize(500, 500);
 
-static constexpr gfx::PointF kDragPointForStartDropTargetShow(1, 250);
-static constexpr gfx::PointF kDragPointForEndDropTargetShow(499, 250);
-static constexpr gfx::PointF kDragPointForHiddenTargets(250, 250);
+constexpr gfx::PointF kDragPointForStartDropTargetShow(1, 250);
+constexpr gfx::PointF kDragPointForEndDropTargetShow(499, 250);
+constexpr gfx::PointF kDragPointForHiddenTargets(250, 250);
+
+constexpr base::TimeDelta kShowTargetDelay = base::Milliseconds(1000);
 
 content::DropData ValidUrlDropData() {
   content::DropData valid_url_data;
@@ -38,12 +48,34 @@ void SetRTL(bool rtl) {
   ASSERT_EQ(rtl, base::i18n::IsRTL());
 }
 
-class MockDropDelegate : public MultiContentsDropTargetView::DropDelegate {
+class MockDropDelegate
+    : public MultiContentsViewDropTargetController::DropDelegate {
  public:
   MOCK_METHOD(void,
               HandleLinkDrop,
               (MultiContentsDropTargetView::DropSide, const std::vector<GURL>&),
               (override));
+  MOCK_METHOD(void,
+              HandleTabDrop,
+              (MultiContentsDropTargetView::DropSide,
+               TabDragDelegate::DragController&),
+              (override));
+};
+
+class MockTabDragController : public TabDragDelegate::DragController {
+ public:
+  MOCK_METHOD(std::unique_ptr<tabs::TabModel>,
+              DetachTabAtForInsertion,
+              (int drag_idx),
+              (override));
+  MOCK_METHOD(const DragSessionData&, GetSessionData, (), (const, override));
+};
+
+class MockTabSlotView : public TabSlotView {
+ public:
+  // TabSlotView's pure virtual methods:
+  MOCK_METHOD(ViewType, GetTabSlotViewType, (), (const, override));
+  MOCK_METHOD(TabSizeInfo, GetTabSizeInfo, (), (const, override));
 };
 
 class MultiContentsViewDropTargetControllerTest : public testing::Test {
@@ -52,14 +84,19 @@ class MultiContentsViewDropTargetControllerTest : public testing::Test {
   ~MultiContentsViewDropTargetControllerTest() override = default;
 
   void SetUp() override {
+    feature_list_.InitWithFeaturesAndParameters(
+        {{features::kSideBySide,
+          {{features::kSideBySideShowDropTargetDelay.name,
+            base::NumberToString(kShowTargetDelay.InMilliseconds()) + "ms"}}}},
+        {});
     SetRTL(false);
     multi_contents_view_ = std::make_unique<views::View>();
     drop_target_view_ = multi_contents_view_->AddChildView(
-        std::make_unique<MultiContentsDropTargetView>(drop_delegate_));
+        std::make_unique<MultiContentsDropTargetView>());
 
     drop_target_view_->SetVisible(false);
     controller_ = std::make_unique<MultiContentsViewDropTargetController>(
-        *drop_target_view_);
+        *drop_target_view_, drop_delegate_);
 
     multi_contents_view_->SetSize(kMultiContentsViewSize);
   }
@@ -76,14 +113,17 @@ class MultiContentsViewDropTargetControllerTest : public testing::Test {
 
   // Fast forwards by an arbitrary time to ensure timed events are executed.
   void FastForward(double progress = 1.0) {
-    task_environment_.FastForwardBy(base::Milliseconds(1000 * progress));
+    task_environment_.FastForwardBy(kShowTargetDelay * progress);
   }
 
   void DragURLTo(const gfx::PointF& point) {
     controller().OnWebContentsDragUpdate(ValidUrlDropData(), point, false);
   }
 
+  MockDropDelegate& drop_delegate() { return drop_delegate_; }
+
  private:
+  base::test::ScopedFeatureList feature_list_;
   MockDropDelegate drop_delegate_;
   std::unique_ptr<MultiContentsViewDropTargetController> controller_;
   std::unique_ptr<views::View> multi_contents_view_;
@@ -96,7 +136,7 @@ class MultiContentsViewDropTargetControllerTest : public testing::Test {
 // Tests that the start drop target is shown when a drag reaches enters the
 // "drop area" and a valid url is being dragged.
 TEST_F(MultiContentsViewDropTargetControllerTest,
-       OnWebContentsDragUpdate_ShowStartDropTarget) {
+       OnWebContentsDragUpdate_ShowAndHideStartDropTarget) {
   DragURLTo(kDragPointForStartDropTargetShow);
   EXPECT_FALSE(drop_target_view().GetVisible());
 
@@ -105,6 +145,11 @@ TEST_F(MultiContentsViewDropTargetControllerTest,
   ASSERT_TRUE(drop_target_view().side().has_value());
   EXPECT_EQ(drop_target_view().side().value(),
             MultiContentsDropTargetView::DropSide::START);
+
+  // Move the drag back to the center to hide the drop target.
+  DragURLTo(kDragPointForHiddenTargets);
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
 }
 
 // Tests that the end drop target is shown when a drag reaches enters the
@@ -185,6 +230,34 @@ TEST_F(MultiContentsViewDropTargetControllerTest,
   EXPECT_FALSE(drop_target_view().GetVisible());
 }
 
+// Tests that the drop target is not shown when a drag is started from a
+// tab that is already in a split view.
+TEST_F(MultiContentsViewDropTargetControllerTest,
+       OnWebContentsDragUpdate_HideDropTargetWhenInSplitView) {
+  controller().OnWebContentsDragUpdate(ValidUrlDropData(),
+                                       kDragPointForStartDropTargetShow, true);
+
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
+// Tests that the drop target is not shown when a drag is outside of the
+// contents view.
+TEST_F(MultiContentsViewDropTargetControllerTest,
+       OnWebContentsDragUpdate_HideDropTargetWhenDragIsOutOfBounds) {
+  controller().OnWebContentsDragUpdate(ValidUrlDropData(), gfx::PointF(-1, 250),
+                                       false);
+
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+
+  controller().OnWebContentsDragUpdate(ValidUrlDropData(), gfx::PointF(1000, 250),
+                                       false);
+
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
 // Tests that the drop target timer is cancelled when a drag is not in the
 // "drop area".
 TEST_F(MultiContentsViewDropTargetControllerTest,
@@ -205,6 +278,270 @@ TEST_F(MultiContentsViewDropTargetControllerTest, OnWebContentsDragExit) {
 
   controller().OnWebContentsDragExit();
   FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
+// Tests that the drop target is hidden when the drag ends.
+TEST_F(MultiContentsViewDropTargetControllerTest, OnWebContentsDragEnded) {
+  // First, show the drop target.
+  DragURLTo(kDragPointForStartDropTargetShow);
+  FastForward();
+  EXPECT_TRUE(drop_target_view().GetVisible());
+
+  // Ending the drag should hide it.
+  controller().OnWebContentsDragEnded();
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
+// Tests that the drop target is hidden when dragging more than one tab.
+TEST_F(MultiContentsViewDropTargetControllerTest,
+       OnTabDragUpdated_HidesTargetWhenDraggingMultipleTabs) {
+  MockTabDragController mock_tab_drag_controller;
+  DragSessionData session_data;
+  MockTabSlotView tab1;
+  MockTabSlotView tab2;
+  MockTabDragContext tab_drag_context;
+
+  session_data.tab_drag_data_ = {
+      TabDragData(&tab_drag_context, &tab1),
+      TabDragData(&tab_drag_context, &tab2),
+  };
+  session_data.tab_drag_data_[0].attached_view = &tab1;
+  session_data.tab_drag_data_[1].attached_view = &tab2;
+
+  EXPECT_CALL(tab1, GetTabSlotViewType)
+      .WillRepeatedly(testing::Return(TabSlotView::ViewType::kTab));
+  EXPECT_CALL(tab2, GetTabSlotViewType)
+      .WillRepeatedly(testing::Return(TabSlotView::ViewType::kTab));
+
+  // Simulate showing the drop target first.
+  DragURLTo(kDragPointForStartDropTargetShow);
+  FastForward();
+  EXPECT_TRUE(drop_target_view().GetVisible());
+
+  // Dragging multiple tabs should immediately hide it.
+  EXPECT_CALL(mock_tab_drag_controller, GetSessionData)
+      .WillRepeatedly(testing::ReturnRef(session_data));
+  controller().OnTabDragUpdated(
+      mock_tab_drag_controller,
+      gfx::ToRoundedPoint(kDragPointForStartDropTargetShow));
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
+// Tests that the drag updated event is handled correctly for a single tab.
+TEST_F(MultiContentsViewDropTargetControllerTest,
+       OnTabDragUpdated_ShowsAndHidesTargetWhenDraggingSingleTab) {
+  MockTabDragController mock_tab_drag_controller;
+  DragSessionData session_data;
+  MockTabSlotView tab1;
+  MockTabDragContext tab_drag_context;
+  session_data.tab_drag_data_ = {
+      TabDragData(&tab_drag_context, &tab1),
+  };
+  session_data.tab_drag_data_[0].attached_view = &tab1;
+
+  EXPECT_CALL(tab1, GetTabSlotViewType)
+      .WillRepeatedly(testing::Return(TabSlotView::ViewType::kTab));
+
+  EXPECT_CALL(mock_tab_drag_controller, GetSessionData)
+      .WillRepeatedly(testing::ReturnRef(session_data));
+
+  controller().OnTabDragUpdated(
+      mock_tab_drag_controller,
+      gfx::ToRoundedPoint(kDragPointForStartDropTargetShow));
+  FastForward();
+  EXPECT_TRUE(drop_target_view().GetVisible());
+  EXPECT_EQ(drop_target_view().side().value(),
+            MultiContentsDropTargetView::DropSide::START);
+
+  // Move the drag back to the center to hide the drop target.
+  controller().OnTabDragUpdated(
+      mock_tab_drag_controller,
+      gfx::ToRoundedPoint(kDragPointForHiddenTargets));
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
+// Tests that the drop target is hidden when the drag exits the view.
+TEST_F(MultiContentsViewDropTargetControllerTest, OnTabDragExited) {
+  // First, show the drop target.
+  DragURLTo(kDragPointForStartDropTargetShow);
+  FastForward();
+  EXPECT_TRUE(drop_target_view().GetVisible());
+
+  // Exiting the drag should hide it.
+  controller().OnTabDragExited();
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
+// Tests that the drop target is hidden when the drag ends.
+TEST_F(MultiContentsViewDropTargetControllerTest, OnTabDragEnded) {
+  // First, show the.
+  DragURLTo(kDragPointForStartDropTargetShow);
+  FastForward();
+  EXPECT_TRUE(drop_target_view().GetVisible());
+
+  // Ending the drag should hide it.
+  controller().OnTabDragEnded();
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
+// Tests that the drop target timer is cancelled when a tab drag is not in the
+// "drop area".
+TEST_F(MultiContentsViewDropTargetControllerTest,
+       OnTabDragUpdated_HideDropTargetOnOutOfBounds) {
+  MockTabDragController mock_tab_drag_controller;
+  DragSessionData session_data;
+  MockTabSlotView tab1;
+  MockTabDragContext tab_drag_context;
+  session_data.tab_drag_data_ = {
+      TabDragData(&tab_drag_context, &tab1),
+  };
+  session_data.tab_drag_data_[0].attached_view = &tab1;
+
+  EXPECT_CALL(tab1, GetTabSlotViewType)
+      .WillRepeatedly(testing::Return(TabSlotView::ViewType::kTab));
+
+  EXPECT_CALL(mock_tab_drag_controller, GetSessionData)
+      .WillRepeatedly(testing::ReturnRef(session_data));
+
+  controller().OnTabDragUpdated(
+      mock_tab_drag_controller,
+      gfx::ToRoundedPoint(kDragPointForStartDropTargetShow));
+  FastForward();
+  EXPECT_TRUE(drop_target_view().GetVisible());
+
+  controller().OnTabDragUpdated(
+      mock_tab_drag_controller,
+      gfx::ToRoundedPoint(kDragPointForHiddenTargets));
+  FastForward();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+}
+
+// Tests that CanDropTab returns true only when the drop target is visible.
+TEST_F(MultiContentsViewDropTargetControllerTest, CanDropTab) {
+  // Target is initially not visible.
+  EXPECT_FALSE(controller().CanDropTab());
+
+  // Show the drop target.
+  DragURLTo(kDragPointForEndDropTargetShow);
+  FastForward();
+  EXPECT_TRUE(drop_target_view().GetVisible());
+
+  // Now, CanDropTab should be true.
+  EXPECT_TRUE(controller().CanDropTab());
+}
+
+// Tests that the destruction callback is fired when the controller is
+// destroyed.
+TEST_F(MultiContentsViewDropTargetControllerTest, RegisterWillDestroyCallback) {
+  bool callback_fired = false;
+  auto subscription = controller().RegisterWillDestroyCallback(
+      base::BindOnce([](bool* fired) { *fired = true; }, &callback_fired));
+
+  EXPECT_FALSE(callback_fired);
+
+  // Resetting the controller unique_ptr will destroy it.
+  TearDown();
+
+  EXPECT_TRUE(callback_fired);
+}
+
+TEST_F(MultiContentsViewDropTargetControllerTest, HandleTabDrop) {
+  MockTabDragController mock_tab_drag_controller;
+  DragSessionData session_data;
+  MockTabSlotView tab1;
+  MockTabDragContext tab_drag_context;
+
+  // Show the drop target on the END side by simulating a single tab drag.
+  session_data.tab_drag_data_ = {
+      TabDragData(&tab_drag_context, &tab1),
+  };
+  session_data.tab_drag_data_[0].attached_view = &tab1;
+
+  EXPECT_CALL(tab1, GetTabSlotViewType)
+      .WillRepeatedly(testing::Return(TabSlotView::ViewType::kTab));
+
+  EXPECT_CALL(mock_tab_drag_controller, GetSessionData)
+      .WillRepeatedly(testing::ReturnRef(session_data));
+
+  controller().OnTabDragUpdated(
+      mock_tab_drag_controller,
+      gfx::ToRoundedPoint(kDragPointForEndDropTargetShow));
+  FastForward();
+  EXPECT_TRUE(drop_target_view().GetVisible());
+  ASSERT_EQ(drop_target_view().side().value(),
+            MultiContentsDropTargetView::DropSide::END);
+
+  // Expect the delegate's HandleTabDrop to be called with the END side.
+  EXPECT_CALL(
+      drop_delegate(),
+      HandleTabDrop(MultiContentsDropTargetView::DropSide::END, testing::_));
+
+  controller().HandleTabDrop(mock_tab_drag_controller);
+}
+
+TEST_F(MultiContentsViewDropTargetControllerTest, DragDelegateMethods) {
+  // GetDropFormats
+  int formats = 0;
+  std::set<ui::ClipboardFormatType> format_types;
+  EXPECT_TRUE(controller().GetDropFormats(&formats, &format_types));
+  EXPECT_EQ(ui::OSExchangeData::URL, formats);
+
+  // CanDrop
+  ui::OSExchangeData data;
+  data.SetURL(GURL("https://www.google.com"), u"Google");
+  EXPECT_TRUE(controller().CanDrop(data));
+
+  ui::OSExchangeData non_url_data;
+  non_url_data.SetString(u"Some random string");
+  EXPECT_FALSE(controller().CanDrop(non_url_data));
+
+  ui::OSExchangeData empty_url_data;
+  EXPECT_FALSE(controller().CanDrop(empty_url_data));
+
+  // OnDragUpdated
+  const ui::DropTargetEvent event(ui::OSExchangeData(), gfx::PointF(),
+                                  gfx::PointF(), ui::DragDropTypes::DRAG_LINK);
+  EXPECT_EQ(ui::DragDropTypes::DRAG_LINK, controller().OnDragUpdated(event));
+
+  // OnDragExited
+  drop_target_view().animation_for_testing().SetSlideDuration(base::Seconds(0));
+  drop_target_view().Show(MultiContentsDropTargetView::DropSide::START,
+                          MultiContentsDropTargetView::DropTargetState::kFull);
+  ASSERT_TRUE(drop_target_view().GetVisible());
+  controller().OnDragExited();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+  EXPECT_EQ(drop_target_view().animation_for_testing().GetCurrentValue(), 0);
+
+  // OnDragDone
+  drop_target_view().Show(MultiContentsDropTargetView::DropSide::START,
+                          MultiContentsDropTargetView::DropTargetState::kFull);
+  ASSERT_TRUE(drop_target_view().GetVisible());
+  controller().OnDragDone();
+  EXPECT_FALSE(drop_target_view().GetVisible());
+  EXPECT_EQ(drop_target_view().animation_for_testing().GetCurrentValue(), 0);
+
+  // GetDropCallback and DoDrop
+  drop_target_view().Show(MultiContentsDropTargetView::DropSide::START,
+                          MultiContentsDropTargetView::DropTargetState::kFull);
+  ASSERT_TRUE(drop_target_view().GetVisible());
+  const GURL url("https://www.google.com");
+  ui::OSExchangeData drop_data;
+  drop_data.SetURL(url, u"Google");
+  const ui::DropTargetEvent drop_event(drop_data, gfx::PointF(), gfx::PointF(),
+                                       ui::DragDropTypes::DRAG_LINK);
+  EXPECT_CALL(drop_delegate(),
+              HandleLinkDrop(MultiContentsDropTargetView::DropSide::START,
+                             testing::ElementsAre(url)));
+  views::View::DropCallback callback = controller().GetDropCallback(drop_event);
+  ui::mojom::DragOperation output_op = ui::mojom::DragOperation::kNone;
+  std::unique_ptr<ui::LayerTreeOwner> drag_image;
+  std::move(callback).Run(drop_event, output_op, std::move(drag_image));
   EXPECT_FALSE(drop_target_view().GetVisible());
 }
 

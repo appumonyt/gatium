@@ -14,17 +14,19 @@
 #include "base/containers/flat_map.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
+#include "chrome/browser/web_applications/icons/trusted_icon_filter.h"
 #include "chrome/browser/web_applications/scope_extension_info.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
+#include "chrome/browser/web_applications/web_app_icon_generator.h"
 #include "chrome/browser/web_applications/web_app_icon_operations.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
-// TODO(crbug.com/427565907): Remove dependency on install utils after all
-// functions have been migrated to this file.
 #include "chrome/browser/web_applications/web_app_install_utils.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "chrome/browser/web_applications/web_contents/web_app_data_retriever.h"
+#include "chrome/common/chrome_features.h"
 #include "components/services/app_service/public/cpp/icon_info.h"
 #include "components/services/app_service/public/cpp/protocol_handler_info.h"
 #include "components/services/app_service/public/cpp/share_target.h"
@@ -33,7 +35,6 @@
 #include "content/public/browser/web_contents.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom-data-view.h"
-#include "third_party/blink/public/mojom/manifest/manifest.mojom-forward.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/size.h"
@@ -366,6 +367,49 @@ void PopulateHomeTabIconsFromHomeTabManifestParams(
   web_app_info->tab_strip->home_tab = home_tab;
 }
 
+// Merges a `WebAppInstallInfo` instance obtained from parsing the web page
+// metadata into one that's obtained from the manifest.
+// It is the duty of the callsites to perform the necessary checks to ensure
+// that `from_info` and `to_info` is valid.
+void MergeFallbackInstallInfoIntoNewInfo(const WebAppInstallInfo& from_info,
+                                         WebAppInstallInfo* to_info,
+                                         bool force_override_name) {
+  // Merge fields from `from_info` onto `to_info` if required.
+  // `from` is generated from the `WebAppDataRetriever` and populates
+  // the following fields:
+  // - title
+  // - description
+  // - start_url
+  // - manifest_id
+  // - manifest_icons
+  // - mobile_capable
+  // Out of these, only `title`, `description`, `manifest_icons` and
+  // `mobile_capable` needs to be moved over to `to_info`. `start_url` and
+  // `manifest_id` has to be valid for the job to run.
+  if ((force_override_name && !from_info.title.empty()) ||
+      to_info->title.empty()) {
+    to_info->title = from_info.title;
+  }
+  if (to_info->description.empty()) {
+    to_info->description = from_info.description;
+  }
+  to_info->mobile_capable = from_info.mobile_capable;
+  if (to_info->manifest_icons.empty() && !from_info.manifest_icons.empty()) {
+    to_info->manifest_icons = from_info.manifest_icons;
+  }
+}
+
+void RecordIconUpdateMetrics(IconsDownloadedResult result,
+                             DownloadedIconsHttpResults icons_http_results) {
+  // TODO(crbug.com/40193545): Report `result` and `icons_http_results` in
+  // internals.
+  base::UmaHistogramEnumeration("WebApp.Icon.DownloadedResultOnUpdate", result);
+  RecordDownloadedIconHttpStatusCodes(
+      "WebApp.Icon.DownloadedHttpStatusCodeOnUpdate", icons_http_results);
+  RecordDownloadedIconsHttpResultsCodeClass(
+      "WebApp.Icon.HttpStatusCodeClassOnUpdate", result, icons_http_results);
+}
+
 }  // namespace
 
 ManifestToWebAppInstallInfoJob::~ManifestToWebAppInstallInfoJob() = default;
@@ -381,12 +425,22 @@ ManifestToWebAppInstallInfoJob::CreateAndStart(
     base::FunctionRef<void(IconUrlSizeSet&)> icon_url_modifications,
     base::Value::Dict& debug_data,
     WebAppInstallInfoCreationCallback creation_callback,
-    WebAppInstallInfoConstructOptions options) {
+    WebAppInstallInfoConstructOptions options,
+    std::optional<WebAppInstallInfo> fallback_info) {
   auto job = base::WrapUnique(new ManifestToWebAppInstallInfoJob(
       manifest, data_retriever, background_installation, install_source,
-      debug_data, std::move(creation_callback), options));
+      debug_data, std::move(creation_callback), options,
+      std::move(fallback_info)));
   job->Start(web_contents, icon_url_modifications);
   return job;
+}
+
+base::Value::Dict
+ManifestToWebAppInstallInfoJob::GetManifestToWebAppInfoGenerationErrors() {
+  if (!install_error_log_entry_.HasErrorDict()) {
+    return base::Value::Dict();
+  }
+  return install_error_log_entry_.TakeErrorDict();
 }
 
 ManifestToWebAppInstallInfoJob::ManifestToWebAppInstallInfoJob(
@@ -396,13 +450,15 @@ ManifestToWebAppInstallInfoJob::ManifestToWebAppInstallInfoJob(
     webapps::WebappInstallSource install_source,
     base::Value::Dict& debug_data,
     WebAppInstallInfoCreationCallback creation_callback,
-    WebAppInstallInfoConstructOptions options)
+    WebAppInstallInfoConstructOptions options,
+    std::optional<WebAppInstallInfo> fallback_info)
     : manifest_(manifest.Clone()),
       data_retriever_(data_retriever),
       install_error_log_entry_(background_installation, install_source),
       debug_data_(debug_data),
       creation_callback_(std::move(creation_callback)),
-      options_(options) {
+      options_(options),
+      fallback_info_(std::move(fallback_info)) {
   // These are the pre-requisites for constructing a WebAppInstallInfo from a
   // valid manifest id and start url.
   CHECK(manifest_->id.is_valid());
@@ -438,9 +494,17 @@ void ManifestToWebAppInstallInfoJob::Start(
   // First, populate the `install_info_` by parsing the fields provided in the
   // manifest.
   ParseManifestAndPopulateInfo();
+  if (fallback_info_) {
+    CHECK(install_info_);
+    MergeFallbackInstallInfoIntoNewInfo(fallback_info_.value(),
+                                        install_info_.get(),
+                                        options_.force_override_name);
+  }
 
   // Second, fetch icons, and populate them inside the `install_info_`. Exit
   // early if icon generation needs to be bypassed.
+  // Since the `trusted_icons` metadata is populated from the icons provided in
+  // the manifest, it is guaranteed to exist in `icon_urls_to_download`.
   IconUrlSizeSet icon_urls_to_download =
       GetValidIconUrlsToDownload(*install_info_.get());
   icon_url_modifications(icon_urls_to_download);
@@ -462,10 +526,9 @@ void ManifestToWebAppInstallInfoJob::Start(
     return;
   }
 
-  // TODO(crbug.com/427565907): Make the icon fetching options customizable.
   data_retriever_->GetIcons(
-      web_contents.get(), icon_urls_to_download, /*skip_page_favicons=*/true,
-      /*fail_all_if_any_fail=*/false,
+      web_contents.get(), icon_urls_to_download,
+      options_.download_page_favicons, options_.fail_all_if_any_fail,
       base::BindOnce(
           &ManifestToWebAppInstallInfoJob::OnIconsFetchedGetInstallInfo,
           weak_ptr_factory_.GetWeakPtr()));
@@ -508,11 +571,19 @@ void ManifestToWebAppInstallInfoJob::ParseManifestAndPopulateInfo() {
     install_info_->display_override = manifest_->display_override;
   }
 
-  UpdateWebAppInstallInfoIconsFromManifestIfNeeded(manifest_->icons,
-                                                   install_info_.get());
+  if (!options_.skip_primary_icon_download) {
+    UpdateWebAppInstallInfoIconsFromManifestIfNeeded(manifest_->icons,
+                                                     install_info_.get());
+    if (base::FeatureList::IsEnabled(features::kWebAppUsePrimaryIcon)) {
+      std::optional<apps::IconInfo> primary_icon_metadata =
+          GetTrustedIconsFromManifest(manifest_->icons);
+      if (primary_icon_metadata) {
+        install_info_->trusted_icons = {*primary_icon_metadata};
+      }
+    }
+  }
 
   // TODO(crbug.com/40185556): Confirm incoming icons to write to install_info_.
-  // TODO(crbug.com/427565907): Move from web_app_install_utils.cc to here.
   PopulateFileHandlerInfoFromManifest(
       manifest_->file_handlers, install_info_->scope, install_info_.get());
 
@@ -585,15 +656,29 @@ void ManifestToWebAppInstallInfoJob::OnIconsFetchedGetInstallInfo(
     IconsMap icons_map,
     DownloadedIconsHttpResults icons_http_results) {
   base::Value::Dict* icons_downloaded =
-      debug_data_->EnsureDict("icons_created");
+      debug_data_->EnsureDict("icons_retrieved");
   for (const auto& [url, bitmap_vector] : icons_map) {
     base::Value::List* sizes = icons_downloaded->EnsureList(url.spec());
     for (const SkBitmap& bitmap : bitmap_vector) {
       sizes->Append(bitmap.width());
     }
   }
+  debug_data_->Set("icon_download_result", base::ToString(result));
 
-  PopulateProductIcons(install_info_.get(), &icons_map);
+  // TODO(crbug.com/429929887): Return results via callback using a result
+  // struct/class.
+  if (options_.record_icon_results_on_update) {
+    RecordIconUpdateMetrics(result, icons_http_results);
+  }
+
+  // Bypass populating product icons, even generated ones, if icons have not
+  // been downloaded.
+  if (!options_.skip_primary_icon_download) {
+    PopulateProductIcons(install_info_.get(), &icons_map);
+    if (base::FeatureList::IsEnabled(features::kWebAppUsePrimaryIcon)) {
+      PopulateTrustedIconBitmaps(*install_info_.get(), icons_map);
+    }
+  }
   PopulateOtherIcons(install_info_.get(), icons_map);
   RecordDownloadedIconsResultAndHttpStatusCodes(result, icons_http_results);
   install_error_log_entry_.LogDownloadedIconsErrors(

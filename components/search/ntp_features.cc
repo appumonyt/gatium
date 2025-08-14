@@ -102,17 +102,6 @@ BASE_FEATURE(kNtpDummyModules,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-// If enabled, the Compose box will appear upon clicking the NTP Compose
-// entrypoint.
-BASE_FEATURE(kNtpSearchboxComposebox,
-             "NtpSearchboxComposebox",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-// If enabled, the Compose entrypoint will appear in the NTP Searchbox.
-BASE_FEATURE(kNtpSearchboxComposeEntrypoint,
-             "NtpSearchboxComposeEntrypoint",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // If enabled, Google Drive module will be shown.
 // This is a kill switch. Keep indefinitely.
 BASE_FEATURE(kNtpDriveModule,
@@ -314,7 +303,12 @@ BASE_FEATURE(kNtpOneGoogleBarAsyncBarParts,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // If enabled, a footer will show on the NTP.
-BASE_FEATURE(kNtpFooter, "NtpFooter", base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kNtpFooter, "NtpFooter", base::FEATURE_ENABLED_BY_DEFAULT);
+
+// If enabled, tab groups module will be shown.
+BASE_FEATURE(kNtpTabGroupsModule,
+             "kNtpTabGroupsModule",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 const char kNtpModuleIgnoredCriteriaThreshold[] =
     "NtpModuleIgnoredCriteriaThreshold";
@@ -362,6 +356,7 @@ const char kNtpMostRelevantTabResumptionModuleDataParam[] =
     "NtpMostRelevantTabResumptionModuleDataParam";
 const char kNtpMostRelevantTabResumptionModuleMaxVisitsParam[] =
     "NtpMostRelevantTabResumptionModuleMaxVisitsParam";
+const char kNtpTabGroupsModuleDataParam[] = "NtpTabGroupsModuleDataParam";
 const char kNtpTabResumptionModuleCategoriesBlocklistParam[] =
     "NtpTabResumptionModuleCategoriesBlocklistParam";
 const char kNtpTabResumptionModuleDismissalDurationParam[] =
@@ -467,10 +462,11 @@ const base::FeatureParam<int>
         "NtpMicrosoftFilesModuleMaxNonInsightsFilesForCombinedParam",
         4);
 
-const base::FeatureParam<int> kNtpSearchboxComposeEntrypointMaxAnimationsParam(
-    &ntp_features::kNtpSearchboxComposeEntrypoint,
-    "NtpSearchboxComposeEntrypointMaxAnimationsParam",
-    3);
+const base::FeatureParam<base::TimeDelta>
+    kNtpTabGroupsModuleWindowEndDeltaParam(
+        &ntp_features::kNtpTabGroupsModule,
+        "NtpTabGroupsModuleWindowEndDeltaParam",
+        base::Hours(12));
 
 base::TimeDelta GetModulesLoadTimeout() {
   std::string param_value = base::GetFieldTrialParamValueByFeature(
@@ -522,7 +518,4 @@ std::string GetMobilePromoTargetURL() {
   return (field_trial_url.empty()) ? kMobilePromoQRCodeURL : field_trial_url;
 }
 
-bool IsNtpComposeboxEnabled() {
-  return base::FeatureList::IsEnabled(ntp_features::kNtpSearchboxComposebox);
-}
 }  // namespace ntp_features

@@ -241,7 +241,7 @@ void EnableEnterpriseUrlFilteringPrefs() {
 
   config.additional_args.push_back(
       std::string("--mark_as_allowlisted_for_real_time=") + _safeURL1.spec());
-  config.relaunch_policy = NoForceRelaunchAndResetState;
+  config.relaunch_policy = ForceRelaunchByKilling;
   return config;
 }
 
@@ -1146,7 +1146,18 @@ void EnableEnterpriseUrlFilteringPrefs() {
 
 // Verifies that the Enteprise blocking interstitial is displayed for urls
 // blocked by Enterprise organizations.
+// TODO(crbug.com/429137228): Test is flaky on simulator. Re-enable the test.
+#if TARGET_OS_SIMULATOR
+#define MAYBE_testEnterpriseBlockingPage DISABLED_testEnterpriseBlockingPage
+#else
+#define MAYBE_testEnterpriseBlockingPage testEnterpriseBlockingPage
+#endif
 - (void)testEnterpriseBlockingPage {
+  // TODO(crbug.com/429137228): Test is flaky on iOS 18.2. Re-enable the test.
+  if (@available(iOS 18.2, *)) {
+    EARL_GREY_TEST_DISABLED(@"Fails on iOS 18.2.");
+  }
+
   EnableEnterpriseUrlFilteringPrefs();
 
   [ChromeEarlGrey loadURL:_safeURL1];

@@ -16,6 +16,7 @@
 @protocol ActivityServiceCommands;
 @protocol ApplicationCommands;
 @protocol BadgeViewVisibilityDelegate;
+@protocol IncognitoBadgeViewVisibilityDelegate;
 @protocol BrowserCoordinatorCommands;
 @protocol BWGCommands;
 @protocol ContextualPanelEntrypointVisibilityDelegate;
@@ -41,6 +42,9 @@ class Tracker;
 
 // Notifies the delegate about a tap on the Copy entry in the editing menu.
 - (void)locationBarCopyTapped;
+
+// Notifies the delegate about a tap on the Share entry in the editing menu.
+- (void)locationBarShareTapped;
 
 // Returns the target that location bar scribble events should be forwarded to.
 - (UIResponder<UITextInput>*)omniboxScribbleForwardingTarget;
@@ -140,6 +144,11 @@ class Tracker;
 // view of this view controller is initialized. This must only be called once.
 - (void)setEditView:(UIView<TextFieldViewContaining>*)editView;
 
+// Sets the incognito badge view to display the incognito badge. This must
+// be called only once and set before the view of this view controller is
+// initialized.
+- (void)setIncognitoBadgeView:(UIView*)incognitoBadgeView;
+
 // Sets the badge view to display badges. This must be set before the
 // view of this view controller is initialized. This must only be called once.
 - (void)setBadgeView:(UIView*)badgeView;
@@ -188,6 +197,10 @@ class Tracker;
 
 // Returns the badge view visibility delegate.
 - (id<BadgeViewVisibilityDelegate>)badgeViewVisibilityDelegate;
+
+// Returns the badge view visibility delegate.
+- (id<IncognitoBadgeViewVisibilityDelegate>)
+    incognitoBadgeViewVisibilityDelegate;
 
 // Returns the reader mode chip visibility delegate.
 - (id<ReaderModeChipVisibilityDelegate>)readerModeChipVisibilityDelegate;

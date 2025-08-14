@@ -15,11 +15,8 @@
 #include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
 #include "third_party/blink/renderer/platform/text/writing_mode.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "ui/gfx/geometry/outsets_f.h"
-
-namespace WTF {
-class String;
-}  // namespace WTF
 
 namespace blink {
 
@@ -167,12 +164,10 @@ struct CORE_EXPORT PhysicalBoxStrut {
                    LayoutUnit left)
       : top(top), right(right), bottom(bottom), left(left) {}
 
-  // Arguments are clamped to [LayoutUnix::Min(), LayoutUnit::Max()].
-  PhysicalBoxStrut(int t, int r, int b, int l)
-      : top(LayoutUnit(t)),
-        right(LayoutUnit(r)),
-        bottom(LayoutUnit(b)),
-        left(LayoutUnit(l)) {}
+  // Arguments are clamped to [LayoutUnit::Min(), LayoutUnit::Max()].
+  static PhysicalBoxStrut FromInts(int t, int r, int b, int l) {
+    return PhysicalBoxStrut(t, r, b, l);
+  }
 
   // Create a strut based on an inner rectangle positioned within an area.
   PhysicalBoxStrut(const PhysicalSize& outer_size,
@@ -291,6 +286,13 @@ struct CORE_EXPORT PhysicalBoxStrut {
   LayoutUnit right;
   LayoutUnit bottom;
   LayoutUnit left;
+
+ private:
+  PhysicalBoxStrut(int t, int r, int b, int l)
+      : top(LayoutUnit(t)),
+        right(LayoutUnit(r)),
+        bottom(LayoutUnit(b)),
+        left(LayoutUnit(l)) {}
 };
 
 inline PhysicalBoxStrut BoxStrut::ConvertToPhysical(

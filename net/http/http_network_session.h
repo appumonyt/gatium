@@ -13,7 +13,6 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "base/containers/flat_set.h"
@@ -26,7 +25,6 @@
 #include "base/threading/thread_checker.h"
 #include "base/values.h"
 #include "build/buildflag.h"
-#include "net/base/host_mapping_rules.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
 #include "net/http/http_auth_cache.h"
@@ -39,10 +37,6 @@
 #include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/ssl_client_session_cache.h"
 #include "net/third_party/quiche/src/quiche/http2/core/spdy_protocol.h"
-
-namespace base {
-class Value;
-}
 
 namespace net {
 
@@ -87,7 +81,6 @@ struct NET_EXPORT HttpNetworkSessionParams {
   HttpNetworkSessionParams(const HttpNetworkSessionParams& other);
   ~HttpNetworkSessionParams();
 
-  HostMappingRules host_mapping_rules;
   bool ignore_certificate_errors = false;
   uint16_t testing_fixed_http_port = 0;
   uint16_t testing_fixed_https_port = 0;

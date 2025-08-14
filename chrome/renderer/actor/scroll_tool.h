@@ -26,12 +26,14 @@ class ScrollTool : public ToolBase {
   ScrollTool(content::RenderFrame& frame,
              Journal::TaskId task_id,
              Journal& journal,
-             mojom::ScrollActionPtr action);
+             mojom::ScrollActionPtr action,
+             mojom::ToolTargetPtr target,
+             mojom::ObservedToolTargetPtr observed_target);
 
   ~ScrollTool() override;
 
   // actor::ToolBase
-  mojom::ActionResultPtr Execute() override;
+  void Execute(ToolFinishedCallback callback) override;
   std::string DebugString() const override;
   base::TimeDelta ExecutionObservationDelay() const override;
 

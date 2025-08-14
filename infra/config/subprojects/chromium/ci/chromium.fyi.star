@@ -3,27 +3,29 @@
 # found in the LICENSE file.
 """Definitions of builders in the chromium.fyi builder group."""
 
-load("//lib/branches.star", "branches")
-load("//lib/builder_config.star", "builder_config")
-load("//lib/builder_health_indicators.star", "health_spec")
-load("//lib/builders.star", "cpu", "os", "siso")
-load("//lib/ci.star", "ci")
-load("//lib/consoles.star", "consoles")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/html.star", "linkify")
-load("//lib/targets.star", "targets")
+load("@chromium-luci//branches.star", "branches")
+load("@chromium-luci//builder_config.star", "builder_config")
+load("@chromium-luci//builder_health_indicators.star", "health_spec")
+load("@chromium-luci//builders.star", "cpu", "os")
+load("@chromium-luci//ci.star", "ci")
+load("@chromium-luci//consoles.star", "consoles")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//html.star", "linkify")
+load("@chromium-luci//targets.star", "targets")
+load("//lib/ci_constants.star", "ci_constants")
+load("//lib/siso.star", "siso")
 load("//lib/xcode.star", "xcode")
 
 ci.defaults.set(
-    executable = ci.DEFAULT_EXECUTABLE,
+    executable = ci_constants.DEFAULT_EXECUTABLE,
     builder_group = "chromium.fyi",
-    pool = ci.DEFAULT_POOL,
+    pool = ci_constants.DEFAULT_POOL,
     cores = 8,
     execution_timeout = 10 * time.hour,
-    health_spec = health_spec.DEFAULT,
-    priority = ci.DEFAULT_FYI_PRIORITY,
-    service_account = ci.DEFAULT_SERVICE_ACCOUNT,
-    shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+    health_spec = health_spec.default(),
+    priority = ci_constants.DEFAULT_FYI_PRIORITY,
+    service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
+    shadow_service_account = ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
 )
@@ -114,7 +116,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -159,7 +160,6 @@ ci.builder(
             target_platform = builder_config.target_platform.ANDROID,
         ),
         android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -211,7 +211,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -251,7 +250,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -296,6 +294,9 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.CHROMEOS,
         ),
+    ),
+    builder_config_settings = builder_config.ci_settings(
+        retry_failed_shards = True,
     ),
     gn_args = gn_args.config(
         configs = [
@@ -375,7 +376,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.CHROMEOS,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -537,7 +537,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -578,7 +577,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -654,7 +652,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -704,7 +701,6 @@ ci.builder(
         android_config = builder_config.android_config(
             config = "base_config",
         ),
-        build_gs_bucket = "chromium-android-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -860,7 +856,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -943,17 +938,19 @@ fyi_ios_builder(
         chromium_config = builder_config.chromium_config(
             config = "chromium",
             apply_configs = ["mb"],
-            build_config = builder_config.build_config.DEBUG,
+            build_config = builder_config.build_config.RELEASE,
+            target_arch = builder_config.target_arch.ARM,
             target_bits = 64,
             target_platform = builder_config.target_platform.MAC,
         ),
     ),
     gn_args = gn_args.config(
         configs = [
-            "debug_builder",
+            "release_builder",
             "remoteexec",
             "mac",
             "arm64",
+            "minimal_symbols",
         ],
     ),
     targets = targets.bundle(
@@ -1052,7 +1049,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1165,7 +1161,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.MAC,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1236,7 +1231,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1438,6 +1432,52 @@ ci.builder(
     execution_timeout = 24 * time.hour,
 )
 
+# Temporary builder for testing changes to resultdb with structured test
+# id uploads.
+ci.builder(
+    name = "linux-structured-test-ids-rel-fyi",
+    description_html = (
+        "Run tests for checking changes to resultdb structured " +
+        "test id uploads."
+    ),
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(config = "chromium"),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = ["mb"],
+            build_config = builder_config.build_config.RELEASE,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.LINUX,
+        ),
+    ),
+    gn_args = gn_args.config(
+        configs = [
+            "release_builder",
+            "remoteexec",
+            "minimal_symbols",
+            "linux",
+            "x64",
+        ],
+    ),
+    targets = targets.bundle(
+        targets = [
+            "chromium_gtests",
+        ],
+        mixins = [
+            "linux-jammy",
+        ],
+    ),
+    os = os.LINUX_DEFAULT,
+    console_view_entry = consoles.console_view_entry(
+        category = "linux",
+        short_name = "lnx_RDB",
+    ),
+    contact_team_email = "chrome-browser-infra-team@google.com",
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
+)
+
 ci.builder(
     name = "linux-upload-perfetto",
     builder_spec = builder_config.builder_spec(
@@ -1449,7 +1489,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1492,7 +1531,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1542,7 +1580,6 @@ fyi_ios_builder(
             target_platform = builder_config.target_platform.IOS,
             host_platform = builder_config.host_platform.MAC,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1602,7 +1639,6 @@ fyi_ios_builder(
             target_platform = builder_config.target_platform.IOS,
             host_platform = builder_config.host_platform.MAC,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1617,9 +1653,25 @@ fyi_ios_builder(
         ],
     ),
     targets = targets.bundle(
+        targets = [
+            "tvos_rel_tests",
+        ],
         additional_compile_targets = [
+            "base_unittests",
             "content_shell",
+            "components_browsertests",
+            "components_unittests",
             "content_unittests",
+            "media_unittests",
+        ],
+        mixins = [
+            "expand-as-isolated-script",
+            "has_native_resultdb_integration",
+            "mac_default_arm64",
+            "mac_toolchain",
+            "out_dir_arg",
+            "xcode_16_beta",
+            "xctest",
         ],
     ),
     builderless = True,
@@ -1706,7 +1758,6 @@ fyi_ios_builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.IOS,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1761,7 +1812,6 @@ fyi_ios_builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.IOS,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1806,7 +1856,6 @@ fyi_ios_builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.IOS,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1827,7 +1876,7 @@ fyi_ios_builder(
         mixins = [
             "expand-as-isolated-script",
             "has_native_resultdb_integration",
-            "mac_15_arm64",
+            "mac_15_beta_arm64",
             "mac_toolchain",
             "out_dir_arg",
             "xcode_26_beta",
@@ -1863,7 +1912,6 @@ fyi_ios_builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.IOS,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1920,7 +1968,6 @@ fyi_ios_builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.IOS,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -1941,7 +1988,7 @@ fyi_ios_builder(
         mixins = [
             "expand-as-isolated-script",
             "has_native_resultdb_integration",
-            "mac_15_arm64",
+            "mac_15_beta_arm64",
             "mac_toolchain",
             "out_dir_arg",
             "xcode_26_beta",
@@ -1979,7 +2026,6 @@ fyi_ios_builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.IOS,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -2002,7 +2048,7 @@ fyi_ios_builder(
         mixins = [
             "expand-as-isolated-script",
             "has_native_resultdb_integration",
-            "mac_15_arm64",
+            "mac_15_beta_arm64",
             "mac_toolchain",
             "out_dir_arg",
             "xcode_26_beta",
@@ -2037,7 +2083,6 @@ fyi_mac_builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.MAC,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -2150,7 +2195,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -2255,7 +2299,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -2291,7 +2334,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -2330,7 +2372,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -2410,7 +2451,6 @@ ci.builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-win-archive",
     ),
     gn_args = gn_args.config(
         configs = [

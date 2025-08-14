@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/targets.star", "targets")
+load("@chromium-luci//targets.star", "targets")
 
 targets.tests.gtest_test(
     name = "absl_hardening_tests",
@@ -293,11 +293,6 @@ targets.tests.isolated_script_test(
 )
 
 targets.tests.gtest_test(
-    name = "blink_unit_tests",
-    binary = "blink_unittests",
-)
-
-targets.tests.gtest_test(
     name = "blink_unittests",
 )
 
@@ -564,13 +559,6 @@ targets.tests.gtest_test(
 
 targets.tests.isolated_script_test(
     name = "chrome_java_test_pagecontroller_junit_tests",
-)
-
-targets.tests.gtest_test(
-    name = "chrome_java_test_wpr_tests",
-    mixins = [
-        "skia_gold_test",
-    ],
 )
 
 targets.tests.isolated_script_test(
@@ -996,6 +984,10 @@ targets.tests.isolated_script_test(
 
 targets.tests.gtest_test(
     name = "device_unittests",
+)
+
+targets.tests.gtest_test(
+    name = "device_realtarget_browsertests",
 )
 
 targets.tests.gtest_test(
@@ -2000,10 +1992,6 @@ targets.tests.isolated_script_test(
 targets.tests.isolated_script_test(
     name = "passthrough_command_buffer_perftests",
     binary = "command_buffer_perftests",
-)
-
-targets.tests.isolated_script_test(
-    name = "password_check_junit_tests",
 )
 
 targets.tests.isolated_script_test(
@@ -3281,11 +3269,6 @@ targets.tests.gpu_telemetry_test(
 targets.tests.script_test(
     name = "webkit_lint",
     script = "blink_lint_expectations.py",
-)
-
-targets.tests.gtest_test(
-    name = "webkit_unit_tests",
-    binary = "blink_unittests",
 )
 
 targets.tests.isolated_script_test(

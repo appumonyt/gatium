@@ -4,8 +4,8 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/extensions/account_extension_tracker.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/sync/account_extension_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
@@ -33,8 +33,7 @@ void ShowUploadExtensionToAccountDialog(Browser* browser,
                                         const Extension& extension,
                                         base::OnceClosure accept_callback,
                                         base::OnceClosure cancel_callback) {
-  CHECK(base::FeatureList::IsEnabled(
-      switches::kEnableExtensionsExplicitBrowserSignin));
+  CHECK(switches::IsExtensionsExplicitBrowserSigninEnabled());
   CHECK(AccountExtensionTracker::Get(browser->profile())
             ->CanUploadAsAccountExtension(extension));
 

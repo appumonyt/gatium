@@ -213,7 +213,7 @@ ExtensionsToolbarContainer::~ExtensionsToolbarContainer() {
     widgets.push_back(anchored_widget.widget);
   }
   for (auto* widget : widgets) {
-    widget->Close();
+    widget->CloseNow();
   }
   // The widgets should close synchronously (resulting in OnWidgetClosing()),
   // so |anchored_widgets_| should now be empty.
@@ -471,6 +471,10 @@ bool ExtensionsToolbarContainer::ShouldForceVisibility(
 
 void ExtensionsToolbarContainer::UpdateIconVisibility(
     const std::string& extension_id) {
+  if (!GetWidget() || GetWidget()->IsClosed()) {
+    return;
+  }
+
   ToolbarActionView* const action_view = GetViewForId(extension_id);
   if (!action_view) {
     return;
@@ -904,7 +908,9 @@ void ExtensionsToolbarContainer::OnWidgetDestroying(views::Widget* widget) {
   iter->widget->RemoveObserver(this);
   const std::string extension_id = std::move(iter->extension_id);
   anchored_widgets_.erase(iter);
-  UpdateIconVisibility(extension_id);
+  if (GetWidget() && !GetWidget()->IsClosed()) {
+    UpdateIconVisibility(extension_id);
+  }
 }
 
 size_t ExtensionsToolbarContainer::WidthToIconCount(int x_offset) {
@@ -1001,12 +1007,13 @@ void ExtensionsToolbarContainer::OnMenuOpening() {
   // Record IPH usage, which should only be shown when any extension has access.
   if (GetExtensionsButton()->state() ==
       ExtensionsToolbarButton::State::kAnyExtensionHasAccess) {
-    browser_->window()->NotifyFeaturePromoFeatureUsed(
-        feature_engagement::kIPHExtensionsMenuFeature,
-        FeaturePromoFeatureUsedAction::kClosePromoIfPresent);
+    BrowserUserEducationInterface::From(browser_)
+        ->NotifyFeaturePromoFeatureUsed(
+            feature_engagement::kIPHExtensionsMenuFeature,
+            FeaturePromoFeatureUsedAction::kClosePromoIfPresent);
   } else {
     // Otherwise, just close the IPH if it's present.
-    browser_->window()->AbortFeaturePromo(
+    BrowserUserEducationInterface::From(browser_)->AbortFeaturePromo(
         feature_engagement::kIPHExtensionsMenuFeature);
   }
 

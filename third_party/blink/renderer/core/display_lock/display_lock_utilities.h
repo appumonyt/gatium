@@ -223,6 +223,10 @@ class CORE_EXPORT DisplayLockUtilities {
       const Node& node,
       DisplayLockActivationReason reason);
 
+  // Returns a list of the elements in a range and all of their flat tree
+  // ancestors.
+  static VectorOf<Element> InclusiveAncestorsOfRange(const Range& range);
+
   // Ancestor navigation functions.
 
   // Helpers for ancestor navigation to find locks.
@@ -306,12 +310,14 @@ class CORE_EXPORT DisplayLockUtilities {
 
   static bool IsAutoWithoutLayout(const LayoutObject& object);
 
+  struct RevealResult {
+    bool revealed_details = false;
+    bool revealed_hidden_until_found = false;
+  };
   // Walks up the ancestor chain and expands all elements with the
-  // hidden=until-found attribute found along by removing the hidden attribute.
-  // If any were expanded, returns true.
-  // This method may run script because of the synchronous events fired when
-  // removing the hidden attribute.
-  static bool RevealHiddenUntilFoundAncestors(const Node&);
+  // hidden=until-found attribute and closed <details> elements. If any were
+  // expanded, returns true in the corresponding field of RevealResult.
+  static RevealResult RevealAutoExpandableAncestors(const Node&);
 
   // This checks if the node is unlocked for sure, but can have false negatives.
   // In other words, if this returns true then the node is definitely not

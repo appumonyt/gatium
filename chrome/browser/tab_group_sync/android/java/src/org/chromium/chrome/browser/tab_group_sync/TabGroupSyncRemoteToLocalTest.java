@@ -74,7 +74,6 @@ public class TabGroupSyncRemoteToLocalTest {
         setUpUrlConstants();
         mHelper = new TabGroupSyncIntegrationTestHelper(mSyncTestRule);
         mSyncTestRule.setUpAccountAndEnableHistorySync();
-        SyncTestUtil.waitForHistorySyncEnabled();
         mHelper.assertSyncEntityCount(0);
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
@@ -219,14 +218,20 @@ public class TabGroupSyncRemoteToLocalTest {
                                 "Sync entity count does not match",
                                 entityCount,
                                 Matchers.equalTo(tabGroupCount + tabCount));
+                        int actualTabGroupCount =
+                                ThreadUtils.runOnUiThreadBlocking(
+                                        () -> mHelper.getTabGroupFilter().getTabGroupCount());
                         checkThat(
                                 "Tab group count does not match",
-                                mHelper.getTabGroupFilter().getTabGroupCount(),
+                                actualTabGroupCount,
                                 Matchers.equalTo(tabGroupCount));
                         // Tab count is one extra since we started with an NTP.
+                        int actualTabCount =
+                                ThreadUtils.runOnUiThreadBlocking(
+                                        () -> mHelper.getTabModel().getCount());
                         checkThat(
                                 "Tab model tab count does not match",
-                                mHelper.getTabModel().getCount(),
+                                actualTabCount,
                                 Matchers.equalTo(1 + tabCount));
                     } catch (Exception ex) {
                         throw new CriteriaNotSatisfiedException(ex);

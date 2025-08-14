@@ -84,14 +84,11 @@
 #include "third_party/blink/renderer/core/layout/inline/inline_cursor.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
-#include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
-#include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_result.h"
 #include "third_party/blink/renderer/core/layout/layout_utils.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
-#include "third_party/blink/renderer/core/layout/legacy_layout_tree_walking.h"
 #include "third_party/blink/renderer/core/layout/length_utils.h"
 #include "third_party/blink/renderer/core/layout/logical_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/measure_cache.h"
@@ -151,10 +148,7 @@ static constexpr int kAutoscrollBeltSizeBottom = 20;
 static const unsigned kBackgroundObscurationTestMaxDepth = 4;
 
 struct SameSizeAsLayoutBox : public LayoutBoxModelObject {
-  union {
-    DeprecatedLayoutPoint a;
-    PhysicalOffset b;
-  } frame_location_;
+  PhysicalOffset frame_location_;
   PhysicalSize frame_size_;
   PhysicalSize previous_size;
   MinMaxSizes intrinsic_logical_widths;
@@ -361,6 +355,16 @@ LayoutUnit MenuListIntrinsicInlineSize(const HTMLSelectElement& select,
     }
   }
 
+  if (select.IsMultiple()) {
+    // For <select multiple size=1>, we also need to account for the "x
+    // selected" text when 0, 2, or more options are selected. Only
+    // considering the max number of options is probably good enough.
+    max_option_width = std::max(
+        max_option_width,
+        ComputeTextWidth(select.MultipleOptionsSelectedText(select.length()),
+                         style));
+  }
+
   LayoutTheme& theme = LayoutTheme::GetTheme();
   int paddings = theme.PopupInternalPaddingStart(style) +
                  theme.PopupInternalPaddingEnd(box.GetFrame(), style);
@@ -457,13 +461,11 @@ void RecalcFragmentScrollableOverflow(RecalcScrollableOverflowResult& result,
 }  // namespace
 
 LayoutBoxRareData::LayoutBoxRareData()
-    : spanner_placeholder_(nullptr),
-      // TODO(rego): We should store these based on physical direction.
+    :  // TODO(rego): We should store these based on physical direction.
       has_override_containing_block_content_logical_width_(false),
       has_previous_content_box_rect_(false) {}
 
 void LayoutBoxRareData::Trace(Visitor* visitor) const {
-  visitor->Trace(spanner_placeholder_);
   visitor->Trace(layout_child_);
 }
 
@@ -485,15 +487,28 @@ LayoutBox::~LayoutBox() = default;
 
 PaintLayerType LayoutBox::LayerTypeRequired() const {
   NOT_DESTROYED();
-  if (IsStacked() || HasHiddenBackface() ||
-      (StyleRef().SpecifiesColumns() && !IsLayoutNGObject()))
+  if (IsStacked() || HasHiddenBackface()) {
     return kNormalPaintLayer;
+  }
 
   if (HasNonVisibleOverflow() && !IsLayoutReplaced()) {
     return kOverflowClipPaintLayer;
   }
 
   return kNoPaintLayer;
+}
+
+bool LayoutBox::TransformsChangeMayRequireLayout() const {
+  if (!RuntimeEnabledFeatures::CSSAnchorWithTransformsEnabled()) {
+    return false;
+  }
+
+  for (const PhysicalBoxFragment& fragment : PhysicalFragments()) {
+    if (fragment.HasAnchorQueryToPropagate()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void LayoutBox::WillBeDestroyed() {
@@ -667,20 +682,6 @@ void LayoutBox::StyleDidChange(StyleDifference diff,
   UpdateGridPositionAfterStyleChange(old_style);
 
   if (old_style) {
-    // Regular column content (i.e. non-spanners) have a hook into the flow
-    // thread machinery before (StyleWillChange()) and after (here in
-    // StyleDidChange()) the style has changed. Column spanners, on the other
-    // hand, only have a hook here. The LayoutMultiColumnSpannerPlaceholder code
-    // will do all the necessary things, including removing it as a spanner, if
-    // it should no longer be one. Therefore, make sure that we skip
-    // FlowThreadDescendantStyleDidChange() in such cases, as that might trigger
-    // a duplicate flow thread insertion notification, if the spanner no longer
-    // is a spanner.
-    if (LayoutMultiColumnSpannerPlaceholder* placeholder =
-            SpannerPlaceholder()) {
-      placeholder->LayoutObjectInFlowThreadStyleDidChange(old_style);
-    }
-
     UpdateScrollSnapMappingAfterStyleChange(*old_style);
 
     if (ShouldClipOverflowAlongEitherAxis()) {
@@ -691,6 +692,8 @@ void LayoutBox::StyleDidChange(StyleDifference diff,
       // For some controls, it depends on paddings.
       if (!old_style->BorderSizeEquals(new_style) ||
           diff.BorderRadiusChanged() ||
+          (diff.BorderShapeChanged() &&
+           (new_style.HasBorderShape() || old_style->HasBorderShape())) ||
           (HasControlClip() && !old_style->PaddingEqual(new_style))) {
         SetNeedsPaintPropertyUpdate();
       }
@@ -719,6 +722,11 @@ void LayoutBox::StyleDidChange(StyleDifference diff,
             old_style->BackgroundLayers().Clip()) {
       SetNeedsPaintPropertyUpdate();
     }
+  }
+
+  if (diff.TransformChanged() && TransformsChangeMayRequireLayout()) {
+    SetNeedsLayoutAndFullPaintInvalidation(
+        layout_invalidation_reason::kStyleChange);
   }
 
   // Update the script style map, from the new computed style.
@@ -1044,22 +1052,6 @@ LayoutUnit LayoutBox::ClientHeightWithTableSpecialBehavior() const {
   return ClientHeight();
 }
 
-LayoutUnit LayoutBox::OffsetWidth() const {
-  NOT_DESTROYED();
-  if (RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled()) {
-    return LayoutBoxModelObject::OffsetWidth();
-  }
-  return Size().width;
-}
-
-LayoutUnit LayoutBox::OffsetHeight() const {
-  NOT_DESTROYED();
-  if (RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled()) {
-    return LayoutBoxModelObject::OffsetHeight();
-  }
-  return Size().height;
-}
-
 bool LayoutBox::UsesOverlayScrollbars() const {
   NOT_DESTROYED();
   if (StyleRef().HasCustomScrollbarStyle(DynamicTo<Element>(GetNode()))) {
@@ -1120,7 +1112,7 @@ PhysicalBoxStrut LayoutBox::MarginBoxOutsets() const {
 
 LayoutBlock* LayoutBox::GetScrollMarkerGroup() {
   NOT_DESTROYED();
-  if (Style()->ScrollMarkerGroup() == EScrollMarkerGroup::kNone) {
+  if (Style()->ScrollMarkerGroupNone()) {
     return nullptr;
   }
   LayoutBox* content_box = ContentLayoutBox();
@@ -1156,30 +1148,20 @@ void LayoutBox::QuadsInAncestorInternal(Vector<gfx::QuadF>& quads,
                                         const LayoutBoxModelObject* ancestor,
                                         MapCoordinatesFlags mode) const {
   NOT_DESTROYED();
-  if (RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled()) {
-    const PhysicalBoxFragment* first_fragment = nullptr;
-    for (const PhysicalBoxFragment& fragment : PhysicalFragments()) {
-      // Calculate the offset relatively to the first fragment, which in turn
-      // will be mapped correctly to the ancestor.
-      PhysicalOffset offset;
-      if (!first_fragment) {
-        first_fragment = &fragment;
-      } else {
-        offset = fragment.OffsetFromRootFragmentationContext() -
-                 first_fragment->OffsetFromRootFragmentationContext();
-      }
-      PhysicalRect rect(offset, fragment.Size());
-      quads.push_back(LocalRectToAncestorQuad(rect, ancestor, mode));
+  const PhysicalBoxFragment* first_fragment = nullptr;
+  for (const PhysicalBoxFragment& fragment : PhysicalFragments()) {
+    // Calculate the offset relatively to the first fragment, which in turn
+    // will be mapped correctly to the ancestor.
+    PhysicalOffset offset;
+    if (!first_fragment) {
+      first_fragment = &fragment;
+    } else {
+      offset = fragment.OffsetFromRootFragmentationContext() -
+               first_fragment->OffsetFromRootFragmentationContext();
     }
-    return;
+    PhysicalRect rect(offset, fragment.Size());
+    quads.push_back(LocalRectToAncestorQuad(rect, ancestor, mode));
   }
-
-  if (LayoutFlowThread* flow_thread = FlowThreadContainingBlock()) {
-    flow_thread->QuadsInAncestorForDescendant(*this, quads, ancestor, mode);
-    return;
-  }
-  quads.push_back(
-      LocalRectToAncestorQuad(PhysicalBorderBoxRect(), ancestor, mode));
 }
 
 gfx::RectF LayoutBox::LocalBoundingBoxRectForAccessibility() const {
@@ -1227,20 +1209,6 @@ void LayoutBox::UpdateAfterLayout() {
     ClearNeedsLayoutWithFullPaintInvalidation();
   } else {
     ClearNeedsLayout();
-  }
-
-  if (auto* block_flow = DynamicTo<LayoutBlockFlow>(this)) {
-    // TODO(crbug.com/371802475): Get rid of this. The special anonymous objects
-    // created (but not really used anymore) for multicol layout are not laid
-    // out, and need to be cleared manually, to avoid DCHECK failures.
-    if (LayoutMultiColumnFlowThread* flow_thread =
-            block_flow->MultiColumnFlowThread()) {
-      for (LayoutBox* column_box = flow_thread->FirstMultiColumnBox();
-           column_box; column_box = column_box->NextSiblingMultiColumnBox()) {
-        column_box->ClearNeedsLayout();
-      }
-      flow_thread->ClearNeedsLayout();
-    }
   }
 
   // We should notify the display lock that we've done layout on self, and if
@@ -1368,7 +1336,8 @@ LayoutUnit LayoutBox::DefaultIntrinsicContentInlineSize() const {
   return kIndefiniteSize;
 }
 
-LayoutUnit LayoutBox::DefaultIntrinsicContentBlockSize() const {
+LayoutUnit LayoutBox::DefaultIntrinsicContentBlockSize(
+    bool children_have_geometry) const {
   NOT_DESTROYED();
 
   auto effective_appearance = StyleRef().EffectiveAppearance();
@@ -1384,14 +1353,16 @@ LayoutUnit LayoutBox::DefaultIntrinsicContentBlockSize() const {
     return kIndefiniteSize;
   }
   if (const auto* select = DynamicTo<HTMLSelectElement>(GetNode())) {
-    if (!select->UsesMenuList()) {
-      // TODO(crbug.com/357649033): Consider not doing this when in base
-      // appearance mode by using a presentational style for the size attribute
-      // instead.
-      return ListBoxItemBlockSize(*select, *this) * select->ListBoxSize() -
-             ComputeLogicalScrollbars().BlockSum();
-    } else if (effective_appearance != AppearanceValue::kBaseSelect) {
-      return MenuListIntrinsicBlockSize(*select, *this);
+    if (effective_appearance != AppearanceValue::kBaseSelect) {
+      if (!select->UsesMenuList()) {
+        if (!children_have_geometry) {
+          return kIndefiniteSize;
+        }
+        return ListBoxItemBlockSize(*select, *this) * select->ListBoxSize() -
+               ComputeLogicalScrollbars().BlockSum();
+      } else {
+        return MenuListIntrinsicBlockSize(*select, *this);
+      }
     }
   }
   if (IsTextField()) {
@@ -1862,8 +1833,7 @@ bool LayoutBox::MapVisualRectToContainer(
     transform.PostTranslate(offset.left, offset.top);
   }
 
-  bool has_perspective = container_object && container_object->HasLayer() &&
-                         container_object->StyleRef().HasPerspective();
+  bool has_perspective = container_object && container_object->HasPerspective();
   if (has_perspective && container_object != NearestAncestorForElement()) {
     has_perspective = false;
 
@@ -2100,7 +2070,7 @@ bool LayoutBox::HitTestChildren(HitTestResult& result,
 
     PhysicalOffset child_accumulated_offset = accumulated_offset;
     if (auto* box = DynamicTo<LayoutBox>(child))
-      child_accumulated_offset += box->PhysicalLocation(this);
+      child_accumulated_offset += box->PhysicalLocation();
 
     if (child->NodeAtPoint(result, hit_test_location, child_accumulated_offset,
                            phase))
@@ -2717,7 +2687,7 @@ void LayoutBox::SetLayoutResult(const LayoutResult* result, wtf_size_t index) {
   const auto& box_fragment =
       To<PhysicalBoxFragment>(result->GetPhysicalFragment());
 
-  if (index != WTF::kNotFound && layout_results_.size() > index) {
+  if (index != kNotFound && layout_results_.size() > index) {
     if (layout_results_.size() > index + 1) {
       // If we have reached the end, remove surplus results from previous
       // layout.
@@ -2881,15 +2851,6 @@ void LayoutBox::CheckMayHaveFragmentItems() const {
 void LayoutBox::InvalidateCachedGeometry() {
   NOT_DESTROYED();
   SetHasValidCachedGeometry(false);
-  if (auto* block_flow = DynamicTo<LayoutBlockFlow>(this)) {
-    if (auto* flow_thread = block_flow->MultiColumnFlowThread()) {
-      flow_thread->SetHasValidCachedGeometry(false);
-      for (auto* sibling = flow_thread->NextSiblingBox(); sibling;
-           sibling = sibling->NextSiblingBox()) {
-        sibling->SetHasValidCachedGeometry(false);
-      }
-    }
-  }
 }
 
 // static
@@ -2978,21 +2939,6 @@ const FragmentData* LayoutBox::FragmentDataFromPhysicalFragment(
   return &FragmentList().at(BoxFragmentIndex(physical_fragment));
 }
 
-void LayoutBox::SetSpannerPlaceholder(
-    LayoutMultiColumnSpannerPlaceholder& placeholder) {
-  NOT_DESTROYED();
-  // Not expected to change directly from one spanner to another.
-  CHECK(!rare_data_ || !rare_data_->spanner_placeholder_);
-  EnsureRareData().spanner_placeholder_ = &placeholder;
-}
-
-void LayoutBox::ClearSpannerPlaceholder() {
-  NOT_DESTROYED();
-  if (!rare_data_)
-    return;
-  rare_data_->spanner_placeholder_ = nullptr;
-}
-
 bool LayoutBox::IsValidColumnSpanner(const ComputedStyle& style) const {
   NOT_DESTROYED();
   // Note that this function may be called in many circumstances, such as before
@@ -3000,9 +2946,6 @@ bool LayoutBox::IsValidColumnSpanner(const ComputedStyle& style) const {
   // containing block. Be careful.
   if (style.GetColumnSpan() != EColumnSpan::kAll) {
     return false;
-  }
-  if (!RuntimeEnabledFeatures::FlowThreadLessEnabled()) {
-    return SpannerPlaceholder();
   }
 
   if (!Parent() || !IsInsideMulticol()) {
@@ -3092,12 +3035,7 @@ bool LayoutBox::MapToVisualRectInAncestorSpaceInternal(
   if (!container)
     return true;
 
-  PhysicalOffset container_offset;
-  if (auto* box = DynamicTo<LayoutBox>(container)) {
-    container_offset += PhysicalLocation(box);
-  } else {
-    container_offset += PhysicalLocation();
-  }
+  PhysicalOffset container_offset = PhysicalLocation();
 
   if (IsStickyPositioned()) {
     container_offset += StickyPositionOffset();
@@ -3821,7 +3759,6 @@ PhysicalBoxStrut LayoutBox::BorderOutsetsForClipping() const {
 
 PhysicalRect LayoutBox::VisualOverflowRect() const {
   NOT_DESTROYED();
-  DCHECK(!IsLayoutMultiColumnSet());
   if (!VisualOverflowIsSet())
     return PhysicalBorderBoxRect();
 
@@ -4571,14 +4508,9 @@ WritingModeConverter LayoutBox::CreateWritingModeConverter() const {
                               Size());
 }
 
-PhysicalOffset LayoutBox::PhysicalLocation(
-    const LayoutBox* location_container) const {
+PhysicalOffset LayoutBox::PhysicalLocation() const {
   NOT_DESTROYED();
-  if (RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled()) {
-    return frame_location_.physical_offset;
-  }
-  return DeprecatedPhysicalLocationInternal(
-      location_container ? location_container : LocationContainer());
+  return frame_location_;
 }
 
 PhysicalRect LayoutBox::BoundingBoxRelativeToFirstFragment() const {
@@ -4610,9 +4542,6 @@ PhysicalRect LayoutBox::BoundingBoxRelativeToFirstFragment() const {
 
 bool LayoutBox::IsReadingFlowContainer() const {
   NOT_DESTROYED();
-  if (!RuntimeEnabledFeatures::CSSReadingFlowEnabled()) {
-    return false;
-  }
   const ComputedStyle& style = StyleRef();
   switch (style.ReadingFlow()) {
     case EReadingFlow::kNormal:

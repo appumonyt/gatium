@@ -66,9 +66,6 @@ void AssertURLIs(const GURL& expectedURL) {
 // loaded. Instead, do an additional wait for the internal PDF class to appear
 // in the view hierarchy.
 void WaitforPDFExtensionView() {
-  // TODO(crbug.com/424744794): Code below was added as a speculative fix. That
-  // code is now skipped on iOS26, consider adding a long term fix in case
-  // tests become flaky without that logic.
   if (@available(iOS 26, *)) {
     [ChromeEarlGrey waitForPageToFinishLoading];
     return;
@@ -424,7 +421,13 @@ std::unique_ptr<net::test_server::HttpResponse> CreateHttpResponse(
 
 // Tests that the header is shown when loading an error page in a native view
 // even if fullscreen was enabled previously.
-- (void)testShowHeaderOnErrorPage {
+// TODO(crbug.com/437072563): Test flaky on device.
+#if !TARGET_IPHONE_SIMULATOR
+#define MAYBE_testShowHeaderOnErrorPage DISABLED_testShowHeaderOnErrorPage
+#else
+#define MAYBE_testShowHeaderOnErrorPage testShowHeaderOnErrorPage
+#endif
+- (void)MAYBE_testShowHeaderOnErrorPage {
   GURL errorURL = ErrorPageResponseProvider::GetDnsFailureUrl();
 
   self.testServer->RegisterRequestHandler(base::BindRepeating(

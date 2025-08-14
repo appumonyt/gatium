@@ -142,9 +142,11 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
     // and updates the primary blob journal, and kicks off the async writing
     // of the blob files. In case of crash/rollback, the journal indicates what
     // files should be cleaned up.
-    // The callback will be called eventually on success or failure, or
-    // immediately if phase one is complete due to lack of any blobs to write.
-    Status CommitPhaseOne(BlobWriteCallback callback) override;
+    // The blob write callback will be called eventually on success or failure,
+    // or immediately if phase one is complete due to lack of any blobs to
+    // write. The `serialize_fsa_handle` callback is not used.
+    Status CommitPhaseOne(BlobWriteCallback callback,
+                          SerializeFsaCallback serialize_fsa_handle) override;
     // CommitPhaseTwo is called once the blob files (if any) have been written
     // to disk, and commits the actual transaction to the backing store,
     // including blob journal updates, then deletes any blob files deleted
@@ -219,7 +221,11 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
         int64_t index_id,
         const blink::IndexedDBKeyRange& key_range,
         blink::mojom::IDBCursorDirection) override;
-    blink::mojom::IDBValuePtr BuildMojoValue(IndexedDBValue value) override;
+
+    // `deserialize_fsa_handle` is not used in this implementation.
+    blink::mojom::IDBValuePtr BuildMojoValue(
+        IndexedDBValue value,
+        DeserializeFsaCallback deserialize_fsa_handle) override;
 
     Status PutExternalObjectsIfNeeded(const std::string& object_store_data_key,
                                       std::vector<IndexedDBExternalObject>*);
@@ -365,6 +371,8 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
     StatusOr<bool> Continue(const blink::IndexedDBKey& key,
                             const blink::IndexedDBKey& primary_key) override;
     StatusOr<bool> Advance(uint32_t count) override;
+    void SavePosition() override;
+    bool TryResetToLastSavedPosition() override;
 
     StatusOr<bool> Continue(const blink::IndexedDBKey& key,
                             const blink::IndexedDBKey& primary_key,
@@ -375,9 +383,6 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
     Cursor(base::WeakPtr<Transaction> transaction,
            int64_t database_id,
            const CursorOptions& cursor_options);
-
-    explicit Cursor(const Cursor* other,
-                    std::unique_ptr<TransactionalLevelDBIterator> iterator);
 
     // May return nullptr.
     static std::unique_ptr<TransactionalLevelDBIterator> CloneIterator(
@@ -405,7 +410,6 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
     const CursorOptions cursor_options_;
     std::unique_ptr<TransactionalLevelDBIterator> iterator_;
     blink::IndexedDBKey current_key_;
-    RecordIdentifier record_identifier_;
 
    private:
     enum class ContinueResult { DONE, OUT_OF_BOUNDS };
@@ -424,6 +428,10 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
         IteratorState state);
 
     int tombstones_count_ = 0;
+    // `iterator_` and `current_key_` are saved when `SavePosition()` is called.
+    std::optional<std::tuple<std::unique_ptr<TransactionalLevelDBIterator>,
+                             blink::IndexedDBKey>>
+        saved_members_;
     base::WeakPtrFactory<Cursor> weak_factory_{this};
   };
 
@@ -475,6 +483,7 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
                                const std::string& message);
 
   // BackingStore:
+  bool CanOpportunisticallyClose() const override;
   void TearDown(base::WaitableEvent* signal_on_destruction) override;
   void InvalidateBlobReferences() override;
   void StartPreCloseTasks(base::OnceClosure on_done) override;
@@ -485,7 +494,8 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
   uintptr_t GetIdentifierForMemoryDump() override;
   void FlushForTesting() override;
 
-  StatusOr<std::vector<std::u16string>> GetDatabaseNames() override;
+  StatusOr<bool> DatabaseExists(std::u16string_view database_name) override;
+
   StatusOr<std::vector<blink::mojom::IDBNameAndVersionPtr>>
   GetDatabaseNamesAndVersions() override;
 
@@ -558,6 +568,8 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
   // Fills in metadata for the database specified by `metadata->name` by reading
   // from disk. If no database is found, `metadata->id` will remain null.
   Status ReadMetadataForDatabaseName(DatabaseMetadata& metadata);
+
+  StatusOr<std::vector<std::u16string>> GetDatabaseNames();
 
   // LevelDBCleanupScheduler::Delegate:
   // This function updates the next run timestamp for the

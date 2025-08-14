@@ -7,6 +7,7 @@
 # non-pixel tests here.
 
 AccessCodeCastDialogBrowserTest.*
+ActorUiDomNodeGeometryBrowserTest.*
 AddNewAddressProfileTest.*
 AppInfoDialogBrowserTest.*
 AppMenuBrowserTest*.InvokeUi_*
@@ -36,6 +37,7 @@ CryptoModulePasswordDialogTest.*
 *DataControlsDialogUiTest.*
 DeepScanningFailureModalDialogTest.*
 DiscountBubbleViewBrowserTest.*
+DiceMigrationServicePixelBrowserTest.*
 *DiceWebSigninInterceptionBubblePixelTest.InvokeUi_*
 *DiceWebSigninInterceptionBubbleV1SyncPromoPixelTest.InvokeUi_*
 *DiceWebSigninInterceptionBubbleV2PixelTest.InvokeUi_*
@@ -87,7 +89,6 @@ PageActionPixelTestShowChipReduced.*
 PageInfoBubbleViewAboutThisSiteDialogBrowserTest.*
 PageInfoBubbleViewDialogBrowserTest.*
 PageInfoBubbleViewPrivacySandboxDialogBrowserTest.*
-PageInfoBubbleViewHistoryDialogBrowserTest.*
 PageInfoBubbleViewCookiesSubpageBrowserTest.*
 PageInfoBubbleViewIsolatedWebAppBrowserTest.*
 PageInfoBubbleViewMerchantTrustDialogBrowserTest.*
@@ -147,6 +148,7 @@ SplitTabButtonInteractiveTest.ButtonUpdatesOnSplit
 SyncConfirmationUIDialogPixelTest.*
 SyncConfirmationUIWindowPixelTest.*
 SyncPassphraseDialogBrowserTest.*
+TabDialogManagerPixelTest.*
 TabGroupEditorBubbleViewDialogBrowserTest.*
 TabGroupShortcutsInteractiveTest.Screenshot*
 TabHoverCardBubbleViewDialogBrowserTest.*
@@ -155,8 +157,11 @@ TabSearchBubbleUIBrowserTest.*
 TranslateBubbleVisualTest.InvokeUi_*
 UpdateRecommendedDialogTest.*
 *WatermarkBrowserTest.*
-*WatermarkDisabledBrowserTest.*
+*WatermarkTestPageBrowserTest.*
+*WatermarkTestPageDynamicBrowserTest.*
 WebAppConfirmViewBrowserTest.*
+WebAppMenuBrowserTest.*
+WebAppUpdateReviewDialog.*
 ZoomBubbleDialogTest.*
 
 # To temporarily disable a test, add it here with a leading '-', like this:

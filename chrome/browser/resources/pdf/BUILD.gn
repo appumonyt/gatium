@@ -14,6 +14,7 @@ build_webui("build") {
     "index.css",
     "index.html",
     "index_print.html",
+    "pdf_embedder.css",
   ]
   if (enable_ink) {
     static_files += [ "ink/index.html" ]
@@ -141,6 +142,17 @@ build_webui("build") {
     ]
   }
 
+  if (enable_pdf_save_to_drive) {
+    ts_files += [
+      "elements/circular_progress_ring.html.ts",
+      "elements/circular_progress_ring.ts",
+      "elements/viewer_save_to_drive_bubble.html.ts",
+      "elements/viewer_save_to_drive_bubble.ts",
+      "elements/viewer_save_to_drive_controls.html.ts",
+      "elements/viewer_save_to_drive_controls.ts",
+    ]
+  }
+
   css_files = [
     "elements/pdf_shared.css",
     "elements/shared_vars.css",
@@ -148,11 +160,11 @@ build_webui("build") {
     "elements/viewer_attachment_bar.css",
     "elements/viewer_bookmark.css",
     "elements/viewer_document_outline.css",
-    "elements/viewer_download_controls.css",
     "elements/viewer_page_selector.css",
     "elements/viewer_password_dialog.css",
     "elements/viewer_pdf_sidenav.css",
     "elements/viewer_properties_dialog.css",
+    "elements/viewer_save_controls_shared.css",
     "elements/viewer_thumbnail.css",
     "elements/viewer_thumbnail_bar.css",
     "elements/viewer_toolbar.css",
@@ -182,6 +194,14 @@ build_webui("build") {
       "elements/viewer_side_panel.css",
       "elements/viewer_text_bottom_toolbar.css",
       "elements/viewer_text_side_panel.css",
+    ]
+  }
+
+  if (enable_pdf_save_to_drive) {
+    css_files += [
+      "elements/circular_progress_ring.css",
+      "elements/viewer_save_to_drive_bubble.css",
+      "elements/viewer_save_to_drive_controls.css",
     ]
   }
 

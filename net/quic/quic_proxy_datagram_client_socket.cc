@@ -2,17 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "net/quic/quic_proxy_datagram_client_socket.h"
 
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/types/expected.h"
+#include "base/types/expected_macros.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
 #include "net/base/proxy_chain.h"
@@ -176,7 +174,7 @@ void QuicProxyDatagramClientSocket::OnHttp3Datagram(
       CHECK(read_buf_ != nullptr);
       CHECK(read_buf_len_ > 0);
 
-      std::memcpy(read_buf_->data(), http_payload.data(), http_payload.size());
+      read_buf_->span().copy_prefix_from(base::as_byte_span(http_payload));
       result = bytes_read;
     }
 
@@ -284,7 +282,7 @@ int QuicProxyDatagramClientSocket::Read(IOBuffer* buf,
     if (datagram.size() > static_cast<std::size_t>(buf_len)) {
       result = ERR_MSG_TOO_BIG;
     } else {
-      std::memcpy(buf->data(), datagram.data(), datagram.size());
+      buf->span().copy_prefix_from(base::as_byte_span(datagram));
       result = bytes_read;
     }
     datagrams_.pop();
@@ -384,12 +382,20 @@ int QuicProxyDatagramClientSocket::DoSendRequest() {
   request_.extra_headers.MergeFrom(authorization_headers);
 
   if (proxy_delegate_) {
-    HttpRequestHeaders proxy_delegate_headers;
-    int result = proxy_delegate_->OnBeforeTunnelRequest(
-        proxy_chain(), proxy_chain_index(), &proxy_delegate_headers);
-    if (result < 0) {
-      return result;
-    }
+    ASSIGN_OR_RETURN(HttpRequestHeaders proxy_delegate_headers,
+                     proxy_delegate_->OnBeforeTunnelRequest(
+                         proxy_chain_, proxy_chain_index()),
+                     [](const auto& e) {
+                       // ProxyDelegate::OnBeforeTunnelRequest cannot block on
+                       // IO.
+                       CHECK_NE(ERR_IO_PENDING, e);
+                       // Success should always be reported via a base::expected
+                       // containing an HttpRequestHeaders, see
+                       // ProxyDelegate::OnBeforeTunnelRequest.
+                       CHECK_NE(OK, e);
+                       return e;
+                     });
+
     request_.extra_headers.MergeFrom(proxy_delegate_headers);
   }
 

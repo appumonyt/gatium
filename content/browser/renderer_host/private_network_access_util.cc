@@ -34,33 +34,89 @@ enum class FeatureState {
 };
 
 FeatureState FeatureStateForContext(RequestContext request_context) {
-  switch (request_context) {
-    case RequestContext::kSubresource:
-      return FeatureState::kEnabled;
-    case RequestContext::kWorker:
-      if (!base::FeatureList::IsEnabled(
-              features::kPrivateNetworkAccessForWorkers)) {
-        return FeatureState::kDisabled;
-      }
+  if (base::FeatureList::IsEnabled(
+          network::features::kLocalNetworkAccessChecks)) {
+    switch (request_context) {
+      case RequestContext::kSubresource:
+        return FeatureState::kEnabled;
 
-      if (base::FeatureList::IsEnabled(
-              features::kPrivateNetworkAccessForWorkersWarningOnly)) {
-        return FeatureState::kWarningOnly;
-      }
+      case RequestContext::kWorker:
+        if (!base::FeatureList::IsEnabled(
+                features::kLocalNetworkAccessForWorkers)) {
+          return FeatureState::kDisabled;
+        }
+        if (base::FeatureList::IsEnabled(
+                features::kLocalNetworkAccessForWorkersWarningOnly)) {
+          return FeatureState::kWarningOnly;
+        }
+        return FeatureState::kEnabled;
 
-      return FeatureState::kEnabled;
-    case RequestContext::kNavigation:
-      if (!base::FeatureList::IsEnabled(
-              features::kPrivateNetworkAccessForNavigations)) {
-        return FeatureState::kDisabled;
-      }
+      case RequestContext::kSubframeNavigation:
+        if (!base::FeatureList::IsEnabled(
+                features::kLocalNetworkAccessForSubframeNavigations)) {
+          return FeatureState::kDisabled;
+        }
+        if (base::FeatureList::IsEnabled(
+                features::
+                    kLocalNetworkAccessForSubframeNavigationsWarningOnly)) {
+          return FeatureState::kWarningOnly;
+        }
+        return FeatureState::kEnabled;
 
-      if (base::FeatureList::IsEnabled(
-              features::kPrivateNetworkAccessForNavigationsWarningOnly)) {
-        return FeatureState::kWarningOnly;
-      }
+      case RequestContext::kFencedFrameNavigation:
+        if (!base::FeatureList::IsEnabled(
+                features::kLocalNetworkAccessForFencedFrameNavigations)) {
+          return FeatureState::kDisabled;
+        }
+        if (base::FeatureList::IsEnabled(
+                features::
+                    kLocalNetworkAccessForFencedFrameNavigationsWarningOnly)) {
+          return FeatureState::kWarningOnly;
+        }
+        return FeatureState::kEnabled;
 
-      return FeatureState::kEnabled;
+      case RequestContext::kMainFrameNavigation:
+        if (!base::FeatureList::IsEnabled(
+                features::kLocalNetworkAccessForNavigations)) {
+          return FeatureState::kDisabled;
+        }
+        if (base::FeatureList::IsEnabled(
+                features::kLocalNetworkAccessForNavigationsWarningOnly)) {
+          return FeatureState::kWarningOnly;
+        }
+        return FeatureState::kEnabled;
+    }
+  } else {
+    switch (request_context) {
+      case RequestContext::kSubresource:
+        return FeatureState::kEnabled;
+      case RequestContext::kWorker:
+        if (!base::FeatureList::IsEnabled(
+                features::kPrivateNetworkAccessForWorkers)) {
+          return FeatureState::kDisabled;
+        }
+
+        if (base::FeatureList::IsEnabled(
+                features::kPrivateNetworkAccessForWorkersWarningOnly)) {
+          return FeatureState::kWarningOnly;
+        }
+
+        return FeatureState::kEnabled;
+      case RequestContext::kMainFrameNavigation:
+      case RequestContext::kSubframeNavigation:
+      case RequestContext::kFencedFrameNavigation:
+        if (!base::FeatureList::IsEnabled(
+                features::kPrivateNetworkAccessForNavigations)) {
+          return FeatureState::kDisabled;
+        }
+
+        if (base::FeatureList::IsEnabled(
+                features::kPrivateNetworkAccessForNavigationsWarningOnly)) {
+          return FeatureState::kWarningOnly;
+        }
+
+        return FeatureState::kEnabled;
+    }
   }
 }
 
@@ -72,14 +128,11 @@ Policy DerivePolicyForNonSecureContext(
   if (local_network_access_checks_enabled) {
     // LNA blocks all local network access requests coming from non-secure
     // contexts.
-    // See:
-    // https://github.com/explainers-by-googlers/local-network-access?tab=readme-ov-file#integration-with-fetch
-    //
-    // TODO(crbug.com/395895368): figure out how this interacts with https
-    // upgrades.
-    return network::features::kLocalNetworkAccessChecksWarn.Get()
-               ? Policy::kPermissionWarn
-               : Policy::kBlock;
+    // See: https://wicg.github.io/local-network-access/
+    if (network::features::kLocalNetworkAccessChecksWarn.Get()) {
+      return Policy::kPermissionWarn;
+    }
+    return Policy::kBlock;
   }
 
   switch (ip_address_space) {
@@ -91,8 +144,8 @@ Policy DerivePolicyForNonSecureContext(
                  features::kBlockInsecurePrivateNetworkRequestsFromUnknown)
                  ? Policy::kBlock
                  : Policy::kAllow;
-    case AddressSpace::kPrivate:
-      // Requests from the non secure contexts in the `private` address space
+    case AddressSpace::kLocal:
+      // Requests from the non secure contexts in the `local` address space
       // to localhost are blocked only if the right feature is enabled.
       // This is controlled separately because private network websites face
       // additional hurdles compared to public websites. See crbug.com/1234044.
@@ -119,8 +172,7 @@ Policy DerivePolicyForNonSecureContext(
 Policy DerivePolicyForSecureContext(AddressSpace ip_address_space,
                                     bool local_network_access_checks_enabled) {
   if (local_network_access_checks_enabled) {
-    // See:
-    // https://github.com/explainers-by-googlers/local-network-access?tab=readme-ov-file#permission-prompts
+    // See: https://wicg.github.io/local-network-access/
     return network::features::kLocalNetworkAccessChecksWarn.Get()
                ? Policy::kPermissionWarn
                : Policy::kPermissionBlock;
@@ -128,6 +180,7 @@ Policy DerivePolicyForSecureContext(AddressSpace ip_address_space,
 
   // The goal is to eliminate occurrences of this case as much as possible,
   // before removing this special case.
+  // TODO(crbug.com/395895368): Decide if we need this exception for LNA.
   if (ip_address_space == AddressSpace::kUnknown) {
     return Policy::kAllow;
   }
@@ -145,7 +198,9 @@ Policy DerivePolicyForSecureContext(AddressSpace ip_address_space,
   return Policy::kAllow;
 }
 
-Policy ApplyFeatureStateToPolicy(FeatureState feature_state, Policy policy) {
+Policy ApplyFeatureStateToPolicy(FeatureState feature_state,
+                                 bool local_network_access_checks_enabled,
+                                 Policy policy) {
   switch (feature_state) {
     // Feature disabled: allow all requests.
     case FeatureState::kDisabled:
@@ -155,9 +210,12 @@ Policy ApplyFeatureStateToPolicy(FeatureState feature_state, Policy policy) {
     case FeatureState::kWarningOnly:
       switch (policy) {
         case Policy::kBlock:
-          return Policy::kWarn;
+          return local_network_access_checks_enabled ? Policy::kPermissionWarn
+                                                     : Policy::kWarn;
         case Policy::kPreflightBlock:
           return Policy::kPreflightWarn;
+        case Policy::kPermissionBlock:
+          return Policy::kPermissionWarn;
         default:
           return policy;
       }
@@ -171,6 +229,7 @@ Policy ApplyFeatureStateToPolicy(FeatureState feature_state, Policy policy) {
 Policy DerivePrivateNetworkRequestPolicy(
     AddressSpace ip_address_space,
     bool is_web_secure_context,
+    bool allow_on_non_secure_context,
     RequestContext private_network_request_context) {
   // Disable PNA checks entirely when running with `--disable-web-security`.
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -184,26 +243,27 @@ Policy DerivePrivateNetworkRequestPolicy(
   FeatureState feature_state =
       FeatureStateForContext(private_network_request_context);
 
+  // For LNA, if allow_on_non_secure_context is true, derive the policy as if it
+  // is a secure context.
   Policy policy =
-      is_web_secure_context
+      is_web_secure_context || (local_network_access_checks_enabled &&
+                                allow_on_non_secure_context)
           ? DerivePolicyForSecureContext(ip_address_space,
                                          local_network_access_checks_enabled)
           : DerivePolicyForNonSecureContext(
                 ip_address_space, local_network_access_checks_enabled);
 
-  if (local_network_access_checks_enabled) {
-    return policy;
-  } else {
-    return ApplyFeatureStateToPolicy(feature_state, policy);
-  }
+  return ApplyFeatureStateToPolicy(feature_state,
+                                   local_network_access_checks_enabled, policy);
 }
 
 Policy DerivePrivateNetworkRequestPolicy(
     const PolicyContainerPolicies& policies,
     RequestContext private_network_request_context) {
-  return DerivePrivateNetworkRequestPolicy(policies.ip_address_space,
-                                           policies.is_web_secure_context,
-                                           private_network_request_context);
+  return DerivePrivateNetworkRequestPolicy(
+      policies.ip_address_space, policies.is_web_secure_context,
+      policies.allow_non_secure_local_network_access,
+      private_network_request_context);
 }
 
 network::mojom::ClientSecurityStatePtr DeriveClientSecurityState(

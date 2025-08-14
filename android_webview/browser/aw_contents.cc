@@ -42,7 +42,7 @@
 #include "android_webview/common/aw_switches.h"
 #include "android_webview/common/devtools_instrumentation.h"
 #include "android_webview/common/mojom/frame.mojom.h"
-#include "base/android/build_info.h"
+#include "base/android/apk_info.h"
 #include "base/android/callback_android.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
@@ -101,6 +101,7 @@
 #include "content/public/browser/page.h"
 #include "content/public/browser/preload_pipeline_info.h"
 #include "content/public/browser/preloading.h"
+#include "content/public/browser/prerender_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -819,8 +820,8 @@ void AwContents::GrantRequestStorageAccessIfOriginIsAppDefined(
   asset_link_handler_->CheckDigitalAssetLinkRelationshipForAndroidApp(
       top_level_origin, kRelationship,
       std::vector<std::string>{
-          base::android::BuildInfo::GetInstance()->host_signing_cert_sha256()},
-      base::android::BuildInfo::GetInstance()->host_package_name(),
+          base::android::apk_info::host_signing_cert_sha256()},
+      base::android::apk_info::host_package_name(),
       base::BindOnce(
           [](base::TimeTicks time_requested, PermissionCallback callback,
              content_relationship_verification::RelationshipCheckResult
@@ -1585,7 +1586,8 @@ jint AwContents::StartPrerendering(
               /*planned_max_preloading_type=*/content::PreloadingType::
                   kPrerender),
           /*preloading_attempt=*/nullptr, /*url_match_predicate=*/{},
-          /*prerender_navigation_handle_callback=*/{});
+          /*prerender_navigation_handle_callback=*/{},
+          /*allow_reuse=*/false);
 
   int32_t handle_id = -1;
   if (prerender_handle) {

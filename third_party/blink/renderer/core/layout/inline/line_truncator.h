@@ -43,6 +43,8 @@ class CORE_EXPORT LineTruncator final {
  private:
   const ComputedStyle& EllipsisStyle() const;
 
+  String ComputeEllipsisText() const;
+
   // Initialize four ellipsis_*_ data members.
   void SetupEllipsis();
 
@@ -50,7 +52,7 @@ class CORE_EXPORT LineTruncator final {
   LayoutUnit PlaceEllipsisNextTo(LogicalLineItems* line_box,
                                  LogicalLineItem* ellipsized_child);
 
-  static constexpr wtf_size_t kDidNotAddChild = WTF::kNotFound;
+  static constexpr wtf_size_t kDidNotAddChild = kNotFound;
   // Add a child with truncated text of (*line_box)[source_index].
   // This function returns the index of the new child.
   // If the truncated text is empty, kDidNotAddChild is returned.

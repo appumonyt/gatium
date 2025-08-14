@@ -15,22 +15,23 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
-#include "content/browser/webid/fedcm_accounts_fetcher.h"
-#include "content/browser/webid/fedcm_idp_registration_handler.h"
+#include "base/trace_event/trace_event.h"
+#include "content/browser/webid/accounts_fetcher.h"
+#include "content/browser/webid/delegation/federated_sd_jwt_handler.h"
 #include "content/browser/webid/fedcm_metrics.h"
 #include "content/browser/webid/fedcm_url_computations.h"
-#include "content/browser/webid/federated_sd_jwt_handler.h"
 #include "content/browser/webid/identity_provider_info.h"
 #include "content/browser/webid/identity_registry.h"
 #include "content/browser/webid/identity_registry_delegate.h"
 #include "content/browser/webid/idp_network_request_manager.h"
+#include "content/browser/webid/idp_registration_handler.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/document_service.h"
-#include "content/public/browser/federated_auth_autofill_source.h"
-#include "content/public/browser/federated_identity_api_permission_context_delegate.h"
-#include "content/public/browser/federated_identity_permission_context_delegate.h"
-#include "content/public/browser/identity_request_dialog_controller.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/webid/federated_auth_autofill_source.h"
+#include "content/public/browser/webid/federated_identity_api_permission_context_delegate.h"
+#include "content/public/browser/webid/federated_identity_permission_context_delegate.h"
+#include "content/public/browser/webid/identity_request_dialog_controller.h"
 #include "third_party/blink/public/mojom/credentialmanagement/credential_manager.mojom.h"
 #include "third_party/blink/public/mojom/webid/federated_auth_request.mojom.h"
 #include "url/gurl.h"
@@ -45,7 +46,7 @@ class RenderFrameHost;
 
 using blink::mojom::IdentityProviderGetParametersPtr;
 using IdentityProviderDataPtr = scoped_refptr<content::IdentityProviderData>;
-using IdentityProviderGetInfo = FedCmAccountsFetcher::IdentityProviderGetInfo;
+using IdentityProviderGetInfo = webid::AccountsFetcher::IdentityProviderGetInfo;
 using IdentityRequestAccountPtr =
     scoped_refptr<content::IdentityRequestAccount>;
 using MediationRequirement = ::password_manager::CredentialMediationRequirement;
@@ -314,6 +315,14 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
       std::vector<blink::mojom::IdentityProviderRequestOptionsPtr>& providers);
 
   void MaybeShowAccountsDialog();
+  void OnShouldShowAccountsPassiveDialogResult(
+      bool did_succeed_for_at_least_one_idp,
+      bool should_show);
+  // To be called immediately after ShowAccountsDialog for correct devtools
+  // integration and metrics reporting.
+  // `did_succeed_for_at_least_one_idp` needs to be passed as a parameter
+  // because `fetch_data_` has been cleared at this point.
+  void AfterAccountsDialogShown(bool did_succeed_for_at_least_one_idp);
   void ShowModalDialog(DialogType dialog_type,
                        const GURL& idp_config_url,
                        const GURL& url_to_show);
@@ -427,7 +436,7 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
   void OnIdpRegistrationConfigFetched(
       RegisterIdPCallback callback,
       const GURL& idp,
-      std::vector<FedCmConfigFetcher::FetchResult> fetch_results);
+      std::vector<webid::ConfigFetcher::FetchResult> fetch_results);
   void OnRegisterIdPPermissionResponse(RegisterIdPCallback callback,
                                        const GURL& idp,
                                        bool accepted);
@@ -514,11 +523,12 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
 
   OnFederatedTokenReceivedCallback token_received_callback_for_autofill_;
 
-  std::unique_ptr<FedCmAccountsFetcher> fedcm_accounts_fetcher_;
+  std::unique_ptr<webid::AccountsFetcher> fedcm_accounts_fetcher_;
 
   std::unique_ptr<FederatedSdJwtHandler> federated_sdjwt_handler_;
 
-  std::unique_ptr<FedCmIdpRegistrationHandler> fedcm_idp_registration_handler_;
+  std::unique_ptr<webid::IdpRegistrationHandler>
+      fedcm_idp_registration_handler_;
 
   // Set of pending user info requests.
   base::flat_set<std::unique_ptr<FederatedAuthUserInfoRequest>>
@@ -588,9 +598,6 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
   // information to use it during the entire the active flow.
   bool had_transient_user_activation_{false};
 
-  // Whether we have shown any UI during this flow.
-  bool did_show_ui_{false};
-
   // Keeps track of the state of the use other account flow. Is std::nullopt
   // when the flow is not active.
   std::optional<FedCmUseOtherAccountResult> use_other_account_account_result_;
@@ -601,6 +608,8 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
   // Keeps track of the state of the verifying dialog. Is std::nullopt when the
   // verifying dialog has not been shown.
   std::optional<FedCmVerifyingDialogResult> verifying_dialog_result_;
+
+  perfetto::NamedTrack perfetto_track_;
 
   base::WeakPtrFactory<FederatedAuthRequestImpl> weak_ptr_factory_{this};
 };

@@ -8,6 +8,7 @@ import android.app.Activity;
 import android.hardware.display.DisplayManager;
 import android.util.Pair;
 
+import androidx.annotation.IntDef;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
@@ -20,6 +21,8 @@ import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabModelObserver;
 import org.chromium.components.messages.MessageDispatcher;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -31,6 +34,8 @@ import java.util.List;
  */
 @NullMarked
 public abstract class MultiInstanceManager {
+    public static final int INVALID_TASK_ID = -1; // Defined in android.app.ActivityTaskManager.
+
     /** Should be called when multi-instance mode is started. */
     public static void onMultiInstanceModeStarted() {
         // When a second instance is created, the merged instance task id should be cleared.
@@ -85,12 +90,12 @@ public abstract class MultiInstanceManager {
     public abstract void maybeMergeTabs();
 
     /**
-     * Open a new instance of the ChromeTabbedActivity window and move the specified tab from
+     * Open a new instance of the ChromeTabbedActivity window and move the specified tabs from
      * existing instance to the new one.
      *
-     * @param tab Tab that is to be moved to a new Chrome instance.
+     * @param tabs Tabs that are to be moved to a new Chrome instance.
      */
-    public void moveTabToNewWindow(Tab tab) {
+    public void moveTabsToNewWindow(List<Tab> tabs) {
         // Not implemented
     }
 
@@ -105,13 +110,24 @@ public abstract class MultiInstanceManager {
     }
 
     /**
-     * Move the specified tab to the current instance of the ChromeTabbedActivity window.
+     * Move the specified tabs to the current instance of the ChromeTabbedActivity window.
      *
      * @param activity Activity of the Chrome Window in which the tab is to be moved.
-     * @param tab Tab that is to be moved to the current instance.
+     * @param tabs The list of tabs that is to be moved to the current instance.
      * @param atIndex Tab position index in the destination window instance.
      */
-    public void moveTabToWindow(Activity activity, Tab tab, int atIndex) {
+    public void moveTabsToWindow(@Nullable Activity activity, List<Tab> tabs, int atIndex) {
+        // Not implemented
+    }
+
+    /**
+     * Move the specified tabs to the specified instance of the ChromeTabbedActivity window.
+     *
+     * @param info {@link InstanceInfo} describing the destination window.
+     * @param tabs The list of tabs that is to be moved to the current instance.
+     * @param atIndex Tab position index in the destination window instance.
+     */
+    public void moveTabsToWindow(InstanceInfo info, List<Tab> tabs, int atIndex) {
         // Not implemented
     }
 
@@ -123,17 +139,29 @@ public abstract class MultiInstanceManager {
      * @param atIndex Tab position index in the destination window instance.
      */
     public void moveTabGroupToWindow(
-            Activity activity, TabGroupMetadata tabGroupMetadata, int atIndex) {
+            @Nullable Activity activity, TabGroupMetadata tabGroupMetadata, int atIndex) {
         // Not implemented
     }
 
     /**
-     * If there's only one window currently, moves {@param tab} to a new window. Otherwise, opens a
-     * dialog to select which window to move {@param tab} to.
+     * Move an entire tab group to the specified instance of the ChromeTabbedActivity window.
      *
-     * @param tab The tab to move.
+     * @param info {@link InstanceInfo} describing the destination window.
+     * @param tabGroupMetadata The object containing the metadata of the tab group.
+     * @param atIndex Tab position index in the destination window instance.
      */
-    public void moveTabToOtherWindow(Tab tab) {
+    public void moveTabGroupToWindow(
+            InstanceInfo info, TabGroupMetadata tabGroupMetadata, int atIndex) {
+        // Not implemented
+    }
+
+    /**
+     * If there's only one window currently, moves {@param tabs} to a new window. Otherwise, opens a
+     * dialog to select which window to move {@param tabs} to.
+     *
+     * @param tabs The list of tabs to move.
+     */
+    public void moveTabsToOtherWindow(List<Tab> tabs) {
         // Not implemented
     }
 
@@ -152,6 +180,14 @@ public abstract class MultiInstanceManager {
      *     newly launched.
      */
     public List<InstanceInfo> getInstanceInfo() {
+        return getInstanceInfo(PersistedInstanceType.ANY);
+    }
+
+    /**
+     * @return List of {@link InstanceInfo} structs with {@link PersistedInstanceType} {@param type}
+     *     for an activity that can be switched to, or newly launched.
+     */
+    public List<InstanceInfo> getInstanceInfo(@PersistedInstanceType int type) {
         return Collections.emptyList();
     }
 
@@ -237,4 +273,16 @@ public abstract class MultiInstanceManager {
 
     public abstract void setTabModelObserverForTesting(
             TabModelSelectorTabModelObserver tabModelObserver);
+
+    @IntDef({
+        PersistedInstanceType.ANY,
+        PersistedInstanceType.ACTIVE,
+        PersistedInstanceType.INACTIVE
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface PersistedInstanceType {
+        int ANY = 0;
+        int ACTIVE = 1;
+        int INACTIVE = 2;
+    }
 }

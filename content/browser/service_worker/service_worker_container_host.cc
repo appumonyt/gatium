@@ -27,6 +27,7 @@
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/origin_util.h"
+#include "ipc/constants.mojom.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -160,9 +161,9 @@ void ServiceWorkerContainerHostForClient::Register(
   }
 
   int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN2(
+  TRACE_EVENT_BEGIN(
       "ServiceWorker", "ServiceWorkerContainerHost::Register",
-      TRACE_ID_WITH_SCOPE("ServiceWorkerContainerHost::Register", trace_id),
+      perfetto::NamedTrack("ServiceWorkerContainerHost::Register", trace_id),
       "Scope", options->scope.spec(), "Script URL", script_url.spec());
 
   // Wrap the callback with default invoke before passing it, since
@@ -185,13 +186,13 @@ void ServiceWorkerContainerHostForClient::Register(
   // it's possible the RenderFrameHost has already been destroyed due to IPC
   // ordering.
   GlobalRenderFrameHostId global_frame_id(ChildProcessHost::kInvalidUniqueID,
-                                          MSG_ROUTING_NONE);
+                                          IPC::mojom::kRoutingIdNone);
   if (service_worker_client().IsContainerForWindowClient()) {
     // TODO(crbug.com/40364838): Validate that it is acceptable to have an
     // invalid global_frame_id for worker cases.
     global_frame_id = service_worker_client().GetRenderFrameHostId();
     DCHECK(global_frame_id.child_id != ChildProcessHost::kInvalidUniqueID);
-    DCHECK(global_frame_id.frame_routing_id != MSG_ROUTING_NONE);
+    DCHECK(global_frame_id.frame_routing_id != IPC::mojom::kRoutingIdNone);
   }
 
   // Registrations could come from different origins when "disable-web-security"
@@ -233,10 +234,10 @@ void ServiceWorkerContainerHostForClient::GetRegistration(
   }
 
   int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN1(
+  TRACE_EVENT_BEGIN(
       "ServiceWorker", "ServiceWorkerContainerHost::GetRegistration",
-      TRACE_ID_WITH_SCOPE("ServiceWorkerContainerHost::GetRegistration",
-                          trace_id),
+      perfetto::NamedTrack("ServiceWorkerContainerHost::GetRegistration",
+                           trace_id),
       "Client URL", client_url.spec());
 
   // The client_url may be cross-origin if "disable-web-security" is active,
@@ -274,10 +275,10 @@ void ServiceWorkerContainerHostForClient::GetRegistrations(
   }
 
   int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
+  TRACE_EVENT_BEGIN(
       "ServiceWorker", "ServiceWorkerContainerHost::GetRegistrations",
-      TRACE_ID_WITH_SCOPE("ServiceWorkerContainerHost::GetRegistrations",
-                          trace_id));
+      perfetto::NamedTrack("ServiceWorkerContainerHost::GetRegistrations",
+                           trace_id));
   context()->registry().GetRegistrationsForStorageKey(
       service_worker_client().key(),
       base::BindOnce(
@@ -298,9 +299,9 @@ void ServiceWorkerContainerHostForClient::GetRegistrationForReady(
     return;
   }
 
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
-      "ServiceWorker", "ServiceWorkerContainerHost::GetRegistrationForReady",
-      TRACE_ID_LOCAL(this));
+  TRACE_EVENT_BEGIN("ServiceWorker",
+                    "ServiceWorkerContainerHost::GetRegistrationForReady",
+                    perfetto::Track::FromPointer(this));
   DCHECK(!get_ready_callback_);
   get_ready_callback_ =
       std::make_unique<GetRegistrationForReadyCallback>(std::move(callback));
@@ -848,9 +849,9 @@ void ServiceWorkerContainerHostForClient::ReturnRegistrationForReadyIfNeeded() {
       service_worker_client().MatchRegistration();
   if (!registration || !registration->active_version())
     return;
-  TRACE_EVENT_NESTABLE_ASYNC_END1(
-      "ServiceWorker", "ServiceWorkerContainerHost::GetRegistrationForReady",
-      TRACE_ID_LOCAL(this), "Registration ID", registration->id());
+  // ServiceWorkerContainerHost::GetRegistrationForReady
+  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
+                  "Registration ID", registration->id());
   if (!context()) {
     // Here no need to run or destroy |get_ready_callback_|, which will destroy
     // together with |receiver_| when |this| destroys.
@@ -884,9 +885,10 @@ void ServiceWorkerContainerHostForClient::RegistrationComplete(
     int64_t registration_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  TRACE_EVENT_NESTABLE_ASYNC_END2(
-      "ServiceWorker", "ServiceWorkerContainerHost::Register",
-      TRACE_ID_WITH_SCOPE("ServiceWorkerContainerHost::Register", trace_id),
+  // ServiceWorkerContainerHost::Register
+  TRACE_EVENT_END(
+      "ServiceWorker",
+      perfetto::NamedTrack("ServiceWorkerContainerHost::Register", trace_id),
       "Status", blink::ServiceWorkerStatusToString(status), "Registration ID",
       registration_id);
 
@@ -946,10 +948,11 @@ void ServiceWorkerContainerHostForClient::GetRegistrationComplete(
     scoped_refptr<ServiceWorkerRegistration> registration) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  TRACE_EVENT_NESTABLE_ASYNC_END2(
-      "ServiceWorker", "ServiceWorkerContainerHost::GetRegistration",
-      TRACE_ID_WITH_SCOPE("ServiceWorkerContainerHost::GetRegistration",
-                          trace_id),
+  // ServiceWorkerContainerHost::GetRegistration
+  TRACE_EVENT_END(
+      "ServiceWorker",
+      perfetto::NamedTrack("ServiceWorkerContainerHost::GetRegistration",
+                           trace_id),
       "Status", blink::ServiceWorkerStatusToString(status), "Registration ID",
       registration ? registration->id()
                    : blink::mojom::kInvalidServiceWorkerRegistrationId);
@@ -997,11 +1000,11 @@ void ServiceWorkerContainerHostForClient::GetRegistrationsComplete(
         registrations) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  TRACE_EVENT_NESTABLE_ASYNC_END1(
-      "ServiceWorker", "ServiceWorkerContainerHost::GetRegistrations",
-      TRACE_ID_WITH_SCOPE("ServiceWorkerContainerHost::GetRegistrations",
-                          trace_id),
-      "Status", blink::ServiceWorkerStatusToString(status));
+  // ServiceWorkerContainerHost::GetRegistrations
+  TRACE_EVENT_END("ServiceWorker",
+                  perfetto::NamedTrack(
+                      "ServiceWorkerContainerHost::GetRegistrations", trace_id),
+                  "Status", blink::ServiceWorkerStatusToString(status));
 
   if (!context()) {
     std::move(callback).Run(

@@ -20,7 +20,7 @@
 #import "components/enterprise/connectors/core/realtime_reporting_test_environment.h"
 #import "components/password_manager/core/browser/features/password_features.h"
 #import "components/password_manager/core/common/password_manager_features.h"
-#import "components/plus_addresses/features.h"
+#import "components/plus_addresses/core/common/features.h"
 #import "components/policy/core/common/policy_loader_ios_constants.h"
 #import "components/strings/grit/components_strings.h"
 #import "components/sync/base/features.h"
@@ -164,6 +164,8 @@ void TypeUsernameAndPasswordOnUFF(NSString* username,
 
 // Taps on the login button in UFF for logging in.
 void LoginOnUff() {
+  [ChromeEarlGrey
+      waitForUIElementToAppearWithMatcher:chrome_test_util::WebViewMatcher()];
   [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
       performAction:chrome_test_util::TapWebElementWithId("login_btn")];
 }
@@ -247,7 +249,8 @@ void LoginOnUff() {
     config.relaunch_policy = ForceRelaunchByKilling;
   }
 
-  if ([self isRunningTest:@selector(testPasswordBreachEventReported)]) {
+  if ([self
+          isRunningTest:@selector(DISABLED_testPasswordBreachEventReported)]) {
     config.features_enabled.push_back(
         password_manager::features::kMarkAllCredentialsAsLeaked);
   }
@@ -288,9 +291,10 @@ void LoginOnUff() {
 }
 
 - (std::optional<std::string_view>)enterpriseReportingEventForTest {
-  if ([self isRunningTest:@selector(testLoginEventReported)]) {
+  if ([self isRunningTest:@selector(FLAKY_testLoginEventReported)]) {
     return "loginEvent";
-  } else if ([self isRunningTest:@selector(testPasswordBreachEventReported)]) {
+  } else if ([self isRunningTest:@selector
+                   (DISABLED_testPasswordBreachEventReported)]) {
     return "passwordBreachEvent";
   }
   return std::nullopt;
@@ -455,6 +459,8 @@ void LoginOnUff() {
   [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
       performAction:chrome_test_util::TapWebElementWithId(kFormPassword)];
 
+  [ChromeEarlGrey
+      waitForUIElementToAppearWithMatcher:chrome_test_util::WebViewMatcher()];
   [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
       performAction:chrome_test_util::TapWebElementWithId("submit_button")];
 
@@ -803,8 +809,9 @@ void LoginOnUff() {
                                 password:passwordValue];
 }
 
+// TODO(crbug.com/428877349): Re-enable after fixing the test flakiness.
 // Tests that a login event is reported to an enterprise connector.
-- (void)testLoginEventReported {
+- (void)FLAKY_testLoginEventReported {
   [self loadLoginPage];
 
   // Simulate login.
@@ -835,7 +842,8 @@ void LoginOnUff() {
 }
 
 // Tests that a password breach event is reported to an enterprise connector.
-- (void)testPasswordBreachEventReported {
+// TODO(crbug.com/429140546): flaky on chromium/ci/ios-simulator-noncq.
+- (void)DISABLED_testPasswordBreachEventReported {
   [self loadLoginPage];
 
   // Simulate login.

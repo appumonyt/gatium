@@ -2,16 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/browser/enterprise/connectors/connectors_service.h"
 
 #include <memory>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/json/json_reader.h"
 #include "base/path_service.h"
 #include "build/build_config.h"
@@ -317,7 +313,8 @@ class ConnectorsServiceAnalysisProfileBrowserTest
   bool enhanced_fields_enabled() { return std::get<2>(GetParam()); }
 
   bool is_cloud() {
-    return strcmp(settings_value(), kNormalCloudAnalysisSettingsPref) == 0;
+    return UNSAFE_TODO(
+               strcmp(settings_value(), kNormalCloudAnalysisSettingsPref)) == 0;
   }
 
   // Returns the Value the "normal" reporting workflow uses to validate that it
@@ -388,18 +385,11 @@ class ConnectorsServiceAnalysisProfileBrowserTest
     ASSERT_EQ(includes_device_info,
               metadata.has_device() && metadata.device().has_client_id());
     if (includes_device_info) {
-      // The device DM token should only be populated when reporting is set at
-      // the device level, aka not the profile level.
-      if (profile_reporting) {
-        ASSERT_FALSE(metadata.device().has_dm_token());
-      } else {
-        ASSERT_TRUE(metadata.device().has_dm_token());
-        ASSERT_EQ(metadata.device().dm_token(), kFakeBrowserDMToken);
-        ASSERT_TRUE(
-            reporting_metadata.FindStringByDottedPath("device.dmToken"));
-        ASSERT_EQ(metadata.device().dm_token(),
-                  *reporting_metadata.FindStringByDottedPath("device.dmToken"));
-      }
+      ASSERT_TRUE(metadata.device().has_dm_token());
+      ASSERT_EQ(metadata.device().dm_token(), kFakeBrowserDMToken);
+      ASSERT_TRUE(reporting_metadata.FindStringByDottedPath("device.dmToken"));
+      ASSERT_EQ(metadata.device().dm_token(),
+                *reporting_metadata.FindStringByDottedPath("device.dmToken"));
 
 #if !BUILDFLAG(IS_CHROMEOS)
       ASSERT_TRUE(metadata.device().has_client_id());

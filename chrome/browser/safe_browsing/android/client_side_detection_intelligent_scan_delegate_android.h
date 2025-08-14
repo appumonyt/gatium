@@ -5,7 +5,10 @@
 #ifndef CHROME_BROWSER_SAFE_BROWSING_ANDROID_CLIENT_SIDE_DETECTION_INTELLIGENT_SCAN_DELEGATE_ANDROID_H_
 #define CHROME_BROWSER_SAFE_BROWSING_ANDROID_CLIENT_SIDE_DETECTION_INTELLIGENT_SCAN_DELEGATE_ANDROID_H_
 
+#include "base/memory/raw_ref.h"
 #include "components/safe_browsing/content/browser/client_side_detection_host.h"
+
+class PrefService;
 
 namespace safe_browsing {
 
@@ -15,7 +18,7 @@ namespace safe_browsing {
 class ClientSideDetectionIntelligentScanDelegateAndroid
     : public ClientSideDetectionHost::IntelligentScanDelegate {
  public:
-  ClientSideDetectionIntelligentScanDelegateAndroid() = default;
+  explicit ClientSideDetectionIntelligentScanDelegateAndroid(PrefService& pref);
   ~ClientSideDetectionIntelligentScanDelegateAndroid() override = default;
 
   ClientSideDetectionIntelligentScanDelegateAndroid(
@@ -28,9 +31,12 @@ class ClientSideDetectionIntelligentScanDelegateAndroid
   bool IsOnDeviceModelAvailable(bool log_failed_eligibility_reason) override;
   void InquireOnDeviceModel(std::string rendered_texts,
                             InquireOnDeviceModelDoneCallback callback) override;
-  void ResetOnDeviceSession(bool inquiry_complete) override;
-  void StartListeningToOnDeviceModelUpdate() override;
-  void StopListeningToOnDeviceModelUpdate() override;
+  bool ResetOnDeviceSession() override;
+  bool ShouldShowScamWarning(
+      std::optional<IntelligentScanVerdict> verdict) override;
+
+ private:
+  const raw_ref<PrefService> pref_;
 };
 
 }  // namespace safe_browsing

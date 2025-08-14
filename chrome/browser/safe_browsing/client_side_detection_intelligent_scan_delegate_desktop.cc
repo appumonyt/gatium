@@ -36,11 +36,6 @@ void LogOnDeviceModelDownloadSuccess(bool success) {
                             success);
 }
 
-void LogOnDeviceModelSessionAliveOnNewRequest(bool is_alive) {
-  base::UmaHistogramBoolean(
-      "SBClientPhishing.OnDeviceModelSessionAliveOnNewRequest", is_alive);
-}
-
 void LogOnDeviceModelSessionCreationSuccess(bool success) {
   base::UmaHistogramBoolean(
       "SBClientPhishing.OnDeviceModelSessionCreationSuccess", success);
@@ -74,7 +69,16 @@ ClientSideDetectionIntelligentScanDelegateDesktop::
     ClientSideDetectionIntelligentScanDelegateDesktop(
         PrefService& pref,
         OptimizationGuideKeyedService* opt_guide)
-    : pref_(pref), opt_guide_(opt_guide) {}
+    : pref_(pref), opt_guide_(opt_guide) {
+  pref_change_registrar_.Init(&pref);
+  pref_change_registrar_.Add(
+      prefs::kSafeBrowsingEnhanced,
+      base::BindRepeating(
+          &ClientSideDetectionIntelligentScanDelegateDesktop::OnPrefsUpdated,
+          base::Unretained(this)));
+  //  Do an initial check of the prefs.
+  OnPrefsUpdated();
+}
 
 ClientSideDetectionIntelligentScanDelegateDesktop::
     ~ClientSideDetectionIntelligentScanDelegateDesktop() = default;
@@ -108,24 +112,61 @@ bool ClientSideDetectionIntelligentScanDelegateDesktop::
   return on_device_model_available_;
 }
 
+bool ClientSideDetectionIntelligentScanDelegateDesktop::ShouldShowScamWarning(
+    std::optional<IntelligentScanVerdict> verdict) {
+  if (!verdict.has_value() ||
+      *verdict ==
+          IntelligentScanVerdict::INTELLIGENT_SCAN_VERDICT_UNSPECIFIED ||
+      *verdict == IntelligentScanVerdict::INTELLIGENT_SCAN_VERDICT_SAFE) {
+    return false;
+  }
+
+  return (base::FeatureList::IsEnabled(
+              kClientSideDetectionShowScamVerdictWarning) &&
+          *verdict == IntelligentScanVerdict::SCAM_EXPERIMENT_VERDICT_1) ||
+         (base::FeatureList::IsEnabled(
+              kClientSideDetectionShowLlamaScamVerdictWarning) &&
+          *verdict == IntelligentScanVerdict::SCAM_EXPERIMENT_VERDICT_2) ||
+         ((base::FeatureList::IsEnabled(
+               kClientSideDetectionShowScamVerdictWarning) ||
+           base::FeatureList::IsEnabled(
+               kClientSideDetectionShowLlamaScamVerdictWarning)) &&
+          *verdict ==
+              IntelligentScanVerdict::SCAM_EXPERIMENT_CATCH_ALL_ENFORCEMENT);
+}
+
+void ClientSideDetectionIntelligentScanDelegateDesktop::OnPrefsUpdated() {
+  if (base::FeatureList::IsEnabled(kClientSideDetectionKillswitch)) {
+    return;
+  }
+  bool is_feature_enabled =
+      base::FeatureList::IsEnabled(
+          kClientSideDetectionBrandAndIntentForScamDetection) ||
+      base::FeatureList::IsEnabled(
+          kClientSideDetectionLlamaForcedTriggerInfoForScamDetection);
+  if (IsEnhancedProtectionEnabled(*pref_) && is_feature_enabled) {
+    StartListeningToOnDeviceModelUpdate();
+  } else {
+    StopListeningToOnDeviceModelUpdate();
+  }
+}
+
 void ClientSideDetectionIntelligentScanDelegateDesktop::InquireOnDeviceModel(
     std::string rendered_texts,
     InquireOnDeviceModelDoneCallback callback) {
   // We have checked the model availability prior to calling this function, but
   // we want to check one last time before creating a session.
   if (!IsOnDeviceModelAvailable(/*log_failed_eligibility_reason=*/false)) {
-    std::move(callback).Run(std::nullopt);
+    ClientSideDetectionHost::IntelligentScanDelegate::IntelligentScanResult
+        intelligent_scan_result;
+    intelligent_scan_result.execution_success = false;
+    std::move(callback).Run(intelligent_scan_result);
     return;
   }
 
-  // Close off the previous session if session's model execution from a previous
-  // call into InquireOnDeviceModel is still happening.
-  if (session_) {
-    LogOnDeviceModelSessionAliveOnNewRequest(true);
-    session_.reset();
-  } else {
-    LogOnDeviceModelSessionAliveOnNewRequest(false);
-  }
+  // The caller of this function is responsible for calling ResetOnDeviceSession
+  // before calling this function again.
+  CHECK(!session_);
 
   base::TimeTicks session_creation_start_time = base::TimeTicks::Now();
 
@@ -133,7 +174,10 @@ void ClientSideDetectionIntelligentScanDelegateDesktop::InquireOnDeviceModel(
 
   if (!session_) {
     LogOnDeviceModelSessionCreationSuccess(false);
-    std::move(callback).Run(std::nullopt);
+    ClientSideDetectionHost::IntelligentScanDelegate::IntelligentScanResult
+        intelligent_scan_result;
+    intelligent_scan_result.execution_success = false;
+    std::move(callback).Run(intelligent_scan_result);
     return;
   }
 
@@ -156,11 +200,30 @@ void ClientSideDetectionIntelligentScanDelegateDesktop::InquireOnDeviceModel(
 
 void ClientSideDetectionIntelligentScanDelegateDesktop::ModelExecutionCallback(
     optimization_guide::OptimizationGuideModelStreamingExecutionResult result) {
+  ClientSideDetectionHost::IntelligentScanDelegate::IntelligentScanResult
+      intelligent_scan_result;
+  if (result.execution_info &&
+      result.execution_info->has_on_device_model_execution_info() &&
+      result.execution_info->on_device_model_execution_info()
+          .has_model_versions() &&
+      result.execution_info->on_device_model_execution_info()
+          .model_versions()
+          .has_on_device_model_service_version()) {
+    intelligent_scan_result.model_version =
+        result.execution_info->on_device_model_execution_info()
+            .model_versions()
+            .on_device_model_service_version()
+            .model_adaptation_version();
+  } else {
+    intelligent_scan_result.model_version = -1;
+  }
+
   if (!result.response.has_value()) {
     LogOnDeviceModelExecutionSuccessAndTime(/*success=*/false,
                                             session_execution_start_time_);
     if (inquire_on_device_model_callback_) {
-      std::move(inquire_on_device_model_callback_).Run(std::nullopt);
+      intelligent_scan_result.execution_success = false;
+      std::move(inquire_on_device_model_callback_).Run(intelligent_scan_result);
     }
     return;
   }
@@ -181,41 +244,34 @@ void ClientSideDetectionIntelligentScanDelegateDesktop::ModelExecutionCallback(
   if (!scam_detection_response) {
     LogOnDeviceModelExecutionParse(false);
     if (inquire_on_device_model_callback_) {
-      std::move(inquire_on_device_model_callback_).Run(std::nullopt);
+      intelligent_scan_result.execution_success = false;
+      std::move(inquire_on_device_model_callback_).Run(intelligent_scan_result);
     }
     return;
   }
 
   LogOnDeviceModelExecutionParse(true);
 
-  ResetOnDeviceSession(/*inquiry_complete=*/true);
+  // Reset session immediately so that future inference is not affected by the
+  // old context.
+  ResetOnDeviceSession();
 
   LogOnDeviceModelCallbackStateOnSuccessfulResponse(
       !!inquire_on_device_model_callback_);
   if (inquire_on_device_model_callback_) {
-    ClientSideDetectionHost::IntelligentScanDelegate::IntelligentScanResult
-        intelligent_scan_result;
     intelligent_scan_result.brand = scam_detection_response->brand();
     intelligent_scan_result.intent = scam_detection_response->intent();
+    intelligent_scan_result.execution_success = true;
     std::move(inquire_on_device_model_callback_).Run(intelligent_scan_result);
   }
 }
 
-void ClientSideDetectionIntelligentScanDelegateDesktop::ResetOnDeviceSession(
-    bool inquiry_complete) {
-  // Because of the use of DeleteSoon below, we can't guarantee that session_
-  // is still available when the callback is invoked.
+bool ClientSideDetectionIntelligentScanDelegateDesktop::ResetOnDeviceSession() {
+  bool did_reset_session = !!session_;
   if (session_) {
-    // Reset session immediately so that future inference is not affected by the
-    // old context.
-    // TODO(crbug.com/380928557): Call session_.reset() directly once
-    // crbug.com/384774788 is fixed.
-    content::GetUIThreadTaskRunner({})->DeleteSoon(FROM_HERE,
-                                                   std::move(session_));
-    if (!inquiry_complete) {
-      LogOnDeviceModelSessionAliveOnNewRequest(true);
-    }
+    session_.reset();
   }
+  return did_reset_session;
 }
 
 void ClientSideDetectionIntelligentScanDelegateDesktop::
@@ -239,9 +295,7 @@ void ClientSideDetectionIntelligentScanDelegateDesktop::
 void ClientSideDetectionIntelligentScanDelegateDesktop::
     StopListeningToOnDeviceModelUpdate() {
   on_device_model_available_ = false;
-  if (session_) {
-    session_.reset();
-  }
+  ResetOnDeviceSession();
   if (!observing_on_device_model_availability_) {
     return;
   }
@@ -253,6 +307,7 @@ void ClientSideDetectionIntelligentScanDelegateDesktop::
 
 void ClientSideDetectionIntelligentScanDelegateDesktop::Shutdown() {
   StopListeningToOnDeviceModelUpdate();
+  pref_change_registrar_.RemoveAll();
 }
 
 void ClientSideDetectionIntelligentScanDelegateDesktop::
@@ -305,5 +360,4 @@ ClientSideDetectionIntelligentScanDelegateDesktop::GetModelExecutorSession() {
       optimization_guide::ModelBasedCapabilityKey::kScamDetection,
       config_params);
 }
-
 }  // namespace safe_browsing

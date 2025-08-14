@@ -38,7 +38,6 @@
 #include "chrome/browser/page_load_metrics/observers/protocol_page_load_metrics_observer.h"
 #include "chrome/browser/page_load_metrics/observers/scheme_page_load_metrics_observer.h"
 #include "chrome/browser/page_load_metrics/observers/security_state_page_load_metrics_observer.h"
-#include "chrome/browser/page_load_metrics/observers/service_worker_page_load_metrics_observer.h"
 #include "chrome/browser/page_load_metrics/observers/signed_exchange_page_load_metrics_observer.h"
 #include "chrome/browser/page_load_metrics/observers/tab_strip_page_load_metrics_observer.h"
 #include "chrome/browser/page_load_metrics/observers/third_party_cookie_deprecation_page_load_metrics_observer.h"
@@ -78,6 +77,7 @@
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "chrome/browser/page_load_metrics/observers/serp_page_load_metrics_observer.h"
 #include "extensions/common/constants.h"
 #endif
 
@@ -186,8 +186,6 @@ void PageLoadMetricsEmbedder::RegisterObservers(
     tracker->AddObserver(
         std::make_unique<OptimizationGuidePageLoadMetricsObserver>());
     tracker->AddObserver(
-        std::make_unique<ServiceWorkerPageLoadMetricsObserver>());
-    tracker->AddObserver(
         std::make_unique<SignedExchangePageLoadMetricsObserver>());
     tracker->AddObserver(
         std::make_unique<HttpsEngagementPageLoadMetricsObserver>(
@@ -248,6 +246,9 @@ void PageLoadMetricsEmbedder::RegisterObservers(
   tracker->AddObserver(
       SecurityStatePageLoadMetricsObserver::MaybeCreateForProfile(
           web_contents()->GetBrowserContext()));
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  tracker->AddObserver(std::make_unique<SerpPageLoadMetricsObserver>());
+#endif
   tracker->AddObserver(
       std::make_unique<PageAnchorsMetricsObserver>(tracker->GetWebContents()));
   std::unique_ptr<TranslatePageLoadMetricsObserver> translate_observer =
@@ -325,7 +326,6 @@ void InitializePageLoadMetricsForWebContents(
     content::WebContents* web_contents) {
   // Change this method? consider to modify the peer in
   // android_webview/browser/page_load_metrics/page_load_metrics_initialize.cc
-  // weblayer/browser/page_load_metrics_initialize.cc
   // as well.
   page_load_metrics::MetricsWebContentsObserver::CreateForWebContents(
       web_contents, std::make_unique<PageLoadMetricsEmbedder>(web_contents));

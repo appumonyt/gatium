@@ -32,7 +32,6 @@ bool IsSystemWebUIHost(std::string_view host) {
       kChromeUIAccountMigrationWelcomeHost,
       kChromeUIAddSupervisionHost,
       kChromeUIAppInstallDialogHost,
-      kChromeUIAssistantOptInHost,
       kChromeUIBluetoothPairingHost,
       kChromeUIBorealisCreditsHost,
       kChromeUIBorealisInstallerHost,
@@ -83,6 +82,7 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUIChromeURLsHost,
       kChromeUIComponentsHost,
       commerce::kChromeUICommerceInternalsHost,
+      kChromeUIConnectorsInternalsHost,
       kChromeUICrashesHost,
       kChromeUICreditsHost,
 #if BUILDFLAG(IS_CHROMEOS) && !defined(OFFICIAL_BUILD)
@@ -190,11 +190,6 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUISysInternalsHost,
       kChromeUIInternetConfigDialogHost,
       kChromeUIInternetDetailDialogHost,
-      kChromeUIAssistantOptInHost,
-#endif
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
-      kChromeUIConnectorsInternalsHost,
 #endif
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_DESKTOP_ANDROID)
@@ -224,6 +219,9 @@ base::span<const base::cstring_view> ChromeURLHosts() {
 #if BUILDFLAG(IS_CHROMEOS)
       kChromeUIDlpInternalsHost,
 #endif  // BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_ANDROID)
+      kChromeUIWebuiBrowserHost,
+#endif  // !BUILDFLAG(IS_ANDROID)
   });
 
   return base::span(kChromeURLHosts);

@@ -73,7 +73,6 @@
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 #include "chrome/browser/enterprise/browser_management/management_service_factory.h"
 #include "chrome/browser/ui/ui_features.h"
-#include "chrome/test/base/scoped_testing_local_state.h"
 #include "components/policy/core/common/management/scoped_management_service_override_for_testing.h"
 #endif
 
@@ -183,9 +182,12 @@ class MockPage : public side_panel::mojom::CustomizeChromePage {
   MOCK_METHOD(void,
               NtpManagedByNameUpdated,
               (const std::string&, const std::string&));
-  MOCK_METHOD(void,
-              SetFooterSettings,
-              (bool visible, bool disable, bool extension_policy_enabled));
+  MOCK_METHOD(
+      void,
+      SetFooterSettings,
+      (bool visible,
+       bool extension_policy_enabled,
+       side_panel::mojom::ManagementNoticeStatePtr management_notice_state));
 
   mojo::Receiver<side_panel::mojom::CustomizeChromePage> receiver_{this};
 };
@@ -310,10 +312,10 @@ class CustomizeChromePageHandlerTest : public testing::Test {
     EXPECT_EQ(handler_.get(), ntp_background_service_observer_);
     EXPECT_EQ(handler_.get(), ntp_custom_background_service_observer_);
 
-    browser_window_ = std::make_unique<TestBrowserWindow>();
+    auto browser_window = std::make_unique<TestBrowserWindow>();
     Browser::CreateParams browser_params(profile_.get(), true);
     browser_params.type = Browser::TYPE_NORMAL;
-    browser_params.window = browser_window_.get();
+    browser_params.window = browser_window.release();
     browser_ = Browser::DeprecatedCreateOwnedForTesting(browser_params);
 
     application_locale_storage_->Set("foo");
@@ -325,7 +327,6 @@ class CustomizeChromePageHandlerTest : public testing::Test {
   void TearDown() override {
     browser_->tab_strip_model()->CloseAllTabs();
     browser_.reset();
-    browser_window_.reset();
     test_url_loader_factory_.ClearResponses();
   }
 
@@ -347,13 +348,6 @@ class CustomizeChromePageHandlerTest : public testing::Test {
   base::UserActionTester& user_action_tester() { return user_action_tester_; }
 
  protected:
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-  // ScopedTestingLocalState must be instantiated before constructing
-  // CustmizeChromePageHandler as the handler registers observers on local state
-  // during construction.
-  ScopedTestingLocalState scoped_testing_local_state_{
-      TestingBrowserProcess::GetGlobal()};
-#endif
   // NOTE: The initialization order of these members matters.
   content::BrowserTaskEnvironment task_environment_;
   network::TestURLLoaderFactory test_url_loader_factory_;
@@ -368,7 +362,6 @@ class CustomizeChromePageHandlerTest : public testing::Test {
   raw_ptr<MockThemeService> mock_theme_service_;
   base::test::ScopedFeatureList scoped_feature_list_;
   std::unique_ptr<Browser> browser_;
-  std::unique_ptr<TestBrowserWindow> browser_window_;
   base::HistogramTester histogram_tester_;
   base::UserActionTester user_action_tester_;
   base::MockRepeatingCallback<void(const GURL& gurl)> mock_open_url_callback_;
@@ -885,89 +878,6 @@ TEST_F(CustomizeChromePageHandlerTest, UpdateScrollToSection) {
 
   EXPECT_EQ(side_panel::mojom::CustomizeChromeSection::kAppearance, section);
 }
-
-TEST_F(CustomizeChromePageHandlerTest, SetFooterVisible_True) {
-  bool visible = true;
-  EXPECT_CALL(mock_page_, SetFooterSettings)
-      .Times(2)
-      .WillRepeatedly(SaveArg<0>(&visible));
-
-  profile().GetPrefs()->SetBoolean(prefs::kNtpFooterVisible, false);
-  mock_page_.FlushForTesting();
-  EXPECT_FALSE(visible);
-
-  handler().SetFooterVisible(true);
-  mock_page_.FlushForTesting();
-
-  EXPECT_TRUE(visible);
-  EXPECT_TRUE(profile().GetPrefs()->GetBoolean(prefs::kNtpFooterVisible));
-}
-
-TEST_F(CustomizeChromePageHandlerTest, SetFooterVisible_False) {
-  bool visible = false;
-  EXPECT_CALL(mock_page_, SetFooterSettings)
-      .Times(2)
-      .WillRepeatedly(SaveArg<0>(&visible));
-
-  profile().GetPrefs()->SetBoolean(prefs::kNtpFooterVisible, true);
-  mock_page_.FlushForTesting();
-  EXPECT_TRUE(visible);
-
-  handler().SetFooterVisible(false);
-  mock_page_.FlushForTesting();
-
-  EXPECT_FALSE(visible);
-  EXPECT_FALSE(profile().GetPrefs()->GetBoolean(prefs::kNtpFooterVisible));
-}
-
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-// TSAN hangs on RunUntilIdle() in SetUp().
-#if defined(THREAD_SANITIZER)
-#define MAYBE_SetFooterSettings DISABLED_SetFooterSettings
-#else
-#define MAYBE_SetFooterSettings SetFooterSettings
-#endif
-TEST_F(CustomizeChromePageHandlerTest, MAYBE_SetFooterSettings) {
-  // To trigger the footer's managed state, we need to enable the relevant flag
-  // and set the management authority to a value that indicates the browser is
-  // managed.
-  scoped_feature_list_.InitWithFeatures(
-      {features::kEnterpriseBadgingForNtpFooter}, {});
-  policy::ScopedManagementServiceOverrideForTesting browser_management(
-      policy::ManagementServiceFactory::GetForProfile(browser_->profile()),
-      policy::EnterpriseManagementAuthority::CLOUD_DOMAIN);
-
-  bool managed = true;
-  EXPECT_CALL(mock_page_, SetFooterSettings)
-      .Times(2)
-      .WillRepeatedly(SaveArg<1>(&managed));
-
-  g_browser_process->local_state()->SetBoolean(
-      prefs::kNTPFooterManagementNoticeEnabled, false);
-  mock_page_.FlushForTesting();
-  EXPECT_FALSE(managed);
-
-  g_browser_process->local_state()->SetBoolean(
-      prefs::kNTPFooterManagementNoticeEnabled, true);
-  mock_page_.FlushForTesting();
-  EXPECT_TRUE(managed);
-
-  bool extension_policy_enabled = false;
-  EXPECT_CALL(mock_page_, SetFooterSettings)
-      .Times(2)
-      .WillRepeatedly(SaveArg<2>(&extension_policy_enabled));
-
-  profile().GetPrefs()->SetBoolean(prefs::kNTPFooterExtensionAttributionEnabled,
-                                   true);
-  mock_page_.FlushForTesting();
-  EXPECT_TRUE(extension_policy_enabled);
-
-  profile().GetPrefs()->SetBoolean(prefs::kNTPFooterExtensionAttributionEnabled,
-                                   false);
-  mock_page_.FlushForTesting();
-  EXPECT_FALSE(extension_policy_enabled);
-}
-#endif
 
 class CustomizeChromePageHandlerWallpaperSearchTest
     : public CustomizeChromePageHandlerTest,

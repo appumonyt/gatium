@@ -2044,11 +2044,14 @@ CSSValue* ComputedStyleUtils::ValueForGridTrackList(
   const bool is_for_columns = direction == kForColumns;
   const ComputedGridTrackList& computed_grid_track_list =
       is_for_columns ? style.GridTemplateColumns() : style.GridTemplateRows();
+  const bool is_masonry = style.IsDisplayMasonryBox();
+  // TODO(almaher): Update this in some way for Masonry (perhaps make
+  // LayoutMasonry a subclass of LayoutGrid).
   const auto* grid = DynamicTo<LayoutGrid>(layout_object);
 
   // Handle the 'none' case.
   bool is_track_list_empty =
-      !computed_grid_track_list.track_list.RepeaterCount();
+      !computed_grid_track_list.GetTrackList().RepeaterCount();
   if (grid && is_track_list_empty) {
     // For grids we should consider every listed track, whether implicitly or
     // explicitly created. Empty grids have a sole grid line per axis.
@@ -2080,8 +2083,15 @@ CSSValue* ComputedStyleUtils::ValueForGridTrackList(
   }
 
   wtf_size_t auto_repeat_insertion_point =
-      computed_grid_track_list.auto_repeat_insertion_point;
-  const GridTrackList& ng_track_list = computed_grid_track_list.track_list;
+      computed_grid_track_list.GetAutoRepeatInsertionPoint();
+  const GridTrackList& track_list = computed_grid_track_list.GetTrackList();
+
+  // Treat repeat(auto-fill, <intrinsic-track-size>) as none in Grid.
+  //
+  // TODO(almaher): Change this depending on if we allow this syntax in Grid.
+  if (!is_masonry && track_list.HasIntrinsicSizedRepeater()) {
+    return CSSIdentifierValue::Create(CSSValueID::kNone);
+  }
 
   // "Note: In general, resolved values are the computed values, except for a
   // small list of legacy 2.1 properties. However, compatibility with early
@@ -2093,6 +2103,9 @@ CSSValue* ComputedStyleUtils::ValueForGridTrackList(
   // Default to the used value if it's a layout grid, unless
   // `force_computed_value` is set (which is used for `grid-template`). Non
   // layout-grids will always report the computed value.
+  //
+  // TODO(almaher): Consider if we should force repeat(auto-fill,
+  // <intrinsic-track-size>) to the computed value instead of used value.
   if (grid && !force_computed_value) {
     // The number of auto repeat tracks. For 'repeat(auto-fill, [x][y])' this
     // will be 2, regardless of what auto-fill computes to. For subgrids, use
@@ -2100,7 +2113,7 @@ CSSValue* ComputedStyleUtils::ValueForGridTrackList(
     // standalone grids, this will be the number of track sizes, as this can
     // can differ from the count on the track definition.
     wtf_size_t auto_repeat_track_list_length =
-        ng_track_list.AutoRepeatTrackCount();
+        track_list.AutoRepeatTrackCount();
 
     // Standalone grids will report the track sizes in the computed style
     // string, so base the start and end indices on it.
@@ -2118,8 +2131,8 @@ CSSValue* ComputedStyleUtils::ValueForGridTrackList(
     // specifying track sizes in pixels (if it's a standalone grid), and
     // expanding the repeat() notation.
     OrderedNamedLinesCollectorInGridLayout collector(
-        computed_grid_track_list.ordered_named_grid_lines,
-        computed_grid_track_list.auto_repeat_ordered_named_grid_lines,
+        computed_grid_track_list.GetOrderedNamedGridLines(),
+        computed_grid_track_list.GetOrderedAutoRepeatNamedGridLines(),
         auto_repeat_insertion_point,
         grid->AutoRepeatCountForDirection(direction),
         auto_repeat_track_list_length, is_subgrid);
@@ -2144,10 +2157,10 @@ CSSValue* ComputedStyleUtils::ValueForGridTrackList(
   }
 
   OrderedNamedLinesCollector collector(
-      computed_grid_track_list.ordered_named_grid_lines,
-      computed_grid_track_list.auto_repeat_ordered_named_grid_lines,
+      computed_grid_track_list.GetOrderedNamedGridLines(),
+      computed_grid_track_list.GetOrderedAutoRepeatNamedGridLines(),
       is_subgrid_specified, !!grid);
-  PopulateGridTrackListComputedValues(list, collector, ng_track_list, style);
+  PopulateGridTrackListComputedValues(list, collector, track_list, style);
   return list;
 }
 
@@ -2184,10 +2197,14 @@ CSSValue* ComputedStyleUtils::ValueForGridPosition(
 }
 
 CSSValue* ComputedStyleUtils::ValueForItemTolerance(
-    const std::optional<Length>& slack_length,
+    const ItemTolerance& item_tolerance,
     const ComputedStyle& style) {
-  return slack_length ? ZoomAdjustedPixelValueForLength(*slack_length, style)
-                      : CSSIdentifierValue::Create(CSSValueID::kNormal);
+  if (item_tolerance.IsNormal()) {
+    return CSSIdentifierValue::Create(CSSValueID::kNormal);
+  } else if (item_tolerance.IsInfinite()) {
+    return CSSIdentifierValue::Create(CSSValueID::kInfinite);
+  }
+  return ZoomAdjustedPixelValueForLength(item_tolerance.GetLength(), style);
 }
 
 static bool IsSVGObjectWithWidthAndHeight(const LayoutObject& layout_object) {
@@ -2238,7 +2255,6 @@ CSSValue* ComputedStyleUtils::RenderTextDecorationFlagsToCSSValue(
       break;
   }
 
-  // Blink value is ignored.
   CSSValueList* list = CSSValueList::CreateSpaceSeparated();
   if (EnumHasFlags(text_decoration, TextDecorationLine::kUnderline)) {
     list->Append(*CSSIdentifierValue::Create(CSSValueID::kUnderline));
@@ -2248,6 +2264,11 @@ CSSValue* ComputedStyleUtils::RenderTextDecorationFlagsToCSSValue(
   }
   if (EnumHasFlags(text_decoration, TextDecorationLine::kLineThrough)) {
     list->Append(*CSSIdentifierValue::Create(CSSValueID::kLineThrough));
+  }
+  if (RuntimeEnabledFeatures::
+          CssTextDecorationLineBlinkSerializationEnabled() &&
+      EnumHasFlags(text_decoration, TextDecorationLine::kBlink)) {
+    list->Append(*CSSIdentifierValue::Create(CSSValueID::kBlink));
   }
 
   if (!list->length()) {
@@ -2280,6 +2301,19 @@ CSSValue* ComputedStyleUtils::ValueForTextDecorationSkipInk(
     return CSSIdentifierValue::Create(CSSValueID::kNone);
   }
   return CSSIdentifierValue::Create(CSSValueID::kAuto);
+}
+
+CSSValue* ComputedStyleUtils::ValueForTextOverflow(
+    const TextOverflowData& text_overflow,
+    const ComputedStyle& style) {
+  switch (text_overflow.GetType()) {
+    case TextOverflowData::Type::kClip:
+      return CSSIdentifierValue::Create(CSSValueID::kClip);
+    case TextOverflowData::Type::kEllipsis:
+      return CSSIdentifierValue::Create(CSSValueID::kEllipsis);
+    case TextOverflowData::Type::kString:
+      return MakeGarbageCollected<CSSStringValue>(text_overflow.StringValue());
+  }
 }
 
 CSSValue* ComputedStyleUtils::TouchActionFlagsToCSSValue(
@@ -2515,7 +2549,7 @@ CSSValue* ComputedStyleUtils::ValueForAnimationRange(
   if (offset->name != TimelineOffset::NamedRange::kNone) {
     list->Append(*MakeGarbageCollected<CSSIdentifierValue>(offset->name));
   }
-  if (offset->offset != default_offset) {
+  if (offset->offset != default_offset || list->length() == 0u) {
     list->Append(*ComputedStyleUtils::ZoomAdjustedPixelValueForLength(
         offset->offset, style));
   }
@@ -2524,7 +2558,6 @@ CSSValue* ComputedStyleUtils::ValueForAnimationRange(
 
 CSSValue* ComputedStyleUtils::ValueForAnimationRangeList(
     const Vector<std::optional<TimelineOffset>>& range_list,
-    const CSSAnimationData* animation_data,
     const ComputedStyle& style,
     const Length& default_offset) {
   return CreateAnimationValueList(range_list, &ValueForAnimationRange, style,
@@ -2539,7 +2572,7 @@ CSSValue* ComputedStyleUtils::ValueForAnimationRangeStartList(
           ? animation_data->RangeStartList()
           : Vector<std::optional<TimelineOffset>>{CSSAnimationData::
                                                       InitialRangeStart()},
-      animation_data, style, Length::Percent(0.0));
+      style, Length::Percent(0.0));
 }
 
 CSSValue* ComputedStyleUtils::ValueForAnimationRangeEndList(
@@ -2550,29 +2583,7 @@ CSSValue* ComputedStyleUtils::ValueForAnimationRangeEndList(
           ? animation_data->RangeEndList()
           : Vector<std::optional<TimelineOffset>>{CSSAnimationData::
                                                       InitialRangeEnd()},
-      animation_data, style, Length::Percent(100.0));
-}
-
-CSSValue* ComputedStyleUtils::ValueForAnimationTriggerRangeStartList(
-    const CSSAnimationData* animation_data,
-    const ComputedStyle& style) {
-  return ValueForAnimationRangeList(
-      animation_data
-          ? animation_data->TriggerRangeStartList()
-          : Vector<std::optional<
-                TimelineOffset>>{CSSAnimationData::InitialTriggerRangeStart()},
-      animation_data, style, Length::Percent(0.0));
-}
-
-CSSValue* ComputedStyleUtils::ValueForAnimationTriggerRangeEndList(
-    const CSSAnimationData* animation_data,
-    const ComputedStyle& style) {
-  return ValueForAnimationRangeList(
-      animation_data
-          ? animation_data->TriggerRangeEndList()
-          : Vector<std::optional<TimelineOffset>>{CSSAnimationData::
-                                                      InitialTriggerRangeEnd()},
-      animation_data, style, Length::Percent(100.0));
+      style, Length::Percent(100.0));
 }
 
 CSSValue* ComputedStyleUtils::ValueForAnimationRangeOrAuto(
@@ -2586,35 +2597,12 @@ CSSValue* ComputedStyleUtils::ValueForAnimationRangeOrAuto(
                                 default_offset);
 }
 
-CSSValue* ComputedStyleUtils::ValueForAnimationTriggerExitRangeList(
+CSSValue* ComputedStyleUtils::ValueForTimelineTriggerExitRangeList(
     const Vector<TimelineOffsetOrAuto>& range_list,
-    const CSSAnimationData* animation_data,
     const ComputedStyle& style,
     const Length& default_offset) {
   return CreateAnimationValueList(range_list, &ValueForAnimationRangeOrAuto,
                                   style, default_offset);
-}
-
-CSSValue* ComputedStyleUtils::ValueForAnimationTriggerExitRangeStartList(
-    const CSSAnimationData* animation_data,
-    const ComputedStyle& style) {
-  return ValueForAnimationTriggerExitRangeList(
-      animation_data
-          ? animation_data->TriggerExitRangeStartList()
-          : Vector<TimelineOffsetOrAuto>{CSSAnimationData::
-                                             InitialTriggerExitRangeStart()},
-      animation_data, style, Length::Percent(0.0));
-}
-
-CSSValue* ComputedStyleUtils::ValueForAnimationTriggerExitRangeEndList(
-    const CSSAnimationData* animation_data,
-    const ComputedStyle& style) {
-  return ValueForAnimationTriggerExitRangeList(
-      animation_data
-          ? animation_data->TriggerExitRangeEndList()
-          : Vector<TimelineOffsetOrAuto>{CSSAnimationData::
-                                             InitialTriggerExitRangeEnd()},
-      animation_data, style, Length::Percent(100.0));
 }
 
 CSSValue* ComputedStyleUtils::ValueForAnimationTimingFunction(
@@ -2774,22 +2762,67 @@ CSSValue* ComputedStyleUtils::ValueForAnimationTriggerBehavior(
 }
 
 CSSValue* ComputedStyleUtils::ValueForAnimationTriggerBehaviorList(
-    const CSSAnimationData* animation_data) {
-  return CreateAnimationValueList(
-      animation_data
-          ? animation_data->TriggerBehaviorList()
-          : Vector<EAnimationTriggerBehavior>{CSSAnimationData::
-                                                  InitialTriggerBehavior()},
-      &ValueForAnimationTriggerBehavior);
+    const Vector<EAnimationTriggerBehavior>& behavior_list) {
+  return CreateAnimationValueList(behavior_list,
+                                  &ValueForAnimationTriggerBehavior);
 }
 
-CSSValue* ComputedStyleUtils::ValueForAnimationTriggerTimelineList(
+CSSValue* ComputedStyleUtils::ValueForTimelineTriggerRangeStartList(
+    const CSSAnimationData* animation_data,
+    const ComputedStyle& style) {
+  return ValueForAnimationRangeList(
+      animation_data
+          ? animation_data->TimelineTriggerRangeStartList()
+          : Vector<std::optional<
+                TimelineOffset>>{CSSAnimationData::
+                                     InitialTimelineTriggerRangeStart()},
+      style, Length::Percent(0.0));
+}
+
+CSSValue* ComputedStyleUtils::ValueForTimelineTriggerRangeEndList(
+    const CSSAnimationData* animation_data,
+    const ComputedStyle& style) {
+  return ValueForAnimationRangeList(
+      animation_data
+          ? animation_data->TimelineTriggerRangeEndList()
+          : Vector<std::optional<
+                TimelineOffset>>{CSSAnimationData::
+                                     InitialTimelineTriggerRangeEnd()},
+      style, Length::Percent(100.0));
+}
+
+CSSValue* ComputedStyleUtils::ValueForTimelineTriggerExitRangeStartList(
+    const CSSAnimationData* animation_data,
+    const ComputedStyle& style) {
+  return ValueForTimelineTriggerExitRangeList(
+      animation_data
+          ? animation_data->TimelineTriggerExitRangeStartList()
+          : Vector<
+                TimelineOffsetOrAuto>{CSSAnimationData::
+                                          InitialTimelineTriggerExitRangeStart()},
+      style, Length::Percent(0.0));
+}
+
+CSSValue* ComputedStyleUtils::ValueForTimelineTriggerExitRangeEndList(
+    const CSSAnimationData* animation_data,
+    const ComputedStyle& style) {
+  return ValueForTimelineTriggerExitRangeList(
+      animation_data
+          ? animation_data->TimelineTriggerExitRangeEndList()
+          : Vector<
+                TimelineOffsetOrAuto>{CSSAnimationData::
+                                          InitialTimelineTriggerExitRangeEnd()},
+      style, Length::Percent(100.0));
+}
+
+CSSValue* ComputedStyleUtils::ValueForTimelineTriggerTimelineList(
     const CSSAnimationData* animation_data,
     const ComputedStyle& style) {
   return CreateAnimationValueList(
       animation_data
-          ? animation_data->TriggerTimelineList()
-          : Vector<StyleTimeline>{CSSAnimationData::InitialTriggerTimeline()},
+          ? animation_data->TimelineTriggerTimelineList()
+          : Vector<StyleTimeline>{CSSAnimationData::
+                                      InitialTimelineTriggerTimeline()},
       &ValueForAnimationTimeline, style);
 }
 
@@ -3467,14 +3500,15 @@ CSSValueList* ComputedStyleUtils::ValueForBorderRadiusShorthand(
 }
 
 CSSValue* ComputedStyleUtils::StrokeDashArrayToCSSValueList(
-    const SVGDashArray& dashes,
+    const SVGDashArray* dashes,
     const ComputedStyle& style) {
-  if (dashes.data.empty()) {
+  if (!dashes) {
     return CSSIdentifierValue::Create(CSSValueID::kNone);
   }
+  DCHECK(!dashes->empty());
 
   CSSValueList* list = CSSValueList::CreateCommaSeparated();
-  for (const Length& dash_length : dashes.data) {
+  for (const Length& dash_length : *dashes) {
     list->Append(*ZoomAdjustedPixelValueForLength(dash_length, style));
   }
 
@@ -4819,6 +4853,43 @@ CSSValue* ComputedStyleUtils::ValueForFitText(const ComputedStyle& style,
     list->Append(*ZoomAdjustedPixelValue(*size, style));
   }
   return list;
+}
+
+CSSValueList* ComputedStyleUtils::ValuesForMasonryShorthand(
+    const StylePropertyShorthand& shorthand,
+    const ComputedStyle& style,
+    const LayoutObject* layout_object,
+    bool allow_visited_style,
+    CSSValuePhase value_phase) {
+  const CSSValue* template_area_values =
+      shorthand.properties()[0]->CSSValueFromComputedStyle(
+          style, layout_object, allow_visited_style, value_phase);
+  DCHECK(template_area_values);
+  // Note: `shorthand.properties()[1]` is intentionally not used here because it
+  // always refers to `grid-template-columns`.
+  // Instead, we use `GetCSSPropertyGridTemplateColumns()` or
+  // `GetCSSPropertyGridTemplateRows()` depending on the `masonry-direction`,
+  // since `grid-template-rows` is not listed in the `masonry` shorthand
+  // property.
+  const CSSValue* masonry_direction_values =
+      shorthand.properties()[2]->CSSValueFromComputedStyle(
+          style, layout_object, allow_visited_style, value_phase);
+  DCHECK(masonry_direction_values);
+  const CSSValue* masonry_template_tracks_values =
+      CSSOMUtils::IsMasonryColumnDirectionValue(masonry_direction_values)
+          ? GetCSSPropertyGridTemplateColumns().CSSValueFromComputedStyle(
+                style, layout_object, allow_visited_style, value_phase)
+          : GetCSSPropertyGridTemplateRows().CSSValueFromComputedStyle(
+                style, layout_object, allow_visited_style, value_phase);
+  DCHECK(masonry_template_tracks_values);
+  const CSSValue* masonry_fill_values =
+      shorthand.properties()[3]->CSSValueFromComputedStyle(
+          style, layout_object, allow_visited_style, value_phase);
+  DCHECK(masonry_fill_values);
+
+  return CSSOMUtils::ComputedValueForMasonryShorthand(
+      masonry_template_tracks_values, template_area_values,
+      masonry_direction_values, masonry_fill_values);
 }
 
 }  // namespace blink

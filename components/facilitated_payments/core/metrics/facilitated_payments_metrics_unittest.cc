@@ -39,6 +39,8 @@ std::string GetSchemeString(PaymentLinkValidator::Scheme scheme) {
     case PaymentLinkValidator::Scheme::kPromptPay:
       // TODO(crbug.com/427319124): Add tests for kPromptPay when adding metrics.
       NOTREACHED();
+    case PaymentLinkValidator::Scheme::kMomo:
+      return "Momo";
     case PaymentLinkValidator::Scheme::kInvalid:
       NOTREACHED();
   }
@@ -185,6 +187,78 @@ TEST(FacilitatedPaymentsMetricsTest, LogPixTransactionResultAndLatency) {
   }
 }
 
+TEST(FacilitatedPaymentsMetricsTest, LogPixAccountLinkingPromptShown) {
+  base::HistogramTester histogram_tester;
+
+  LogPixAccountLinkingPromptShown();
+
+  histogram_tester.ExpectUniqueSample(
+      "FacilitatedPayments.Pix.AccountLinking.PromptShown",
+      /*sample=*/true,
+      /*expected_bucket_count=*/1);
+}
+
+TEST(FacilitatedPaymentsMetricsTest, LogPixAccountLinkingPromptAccepted) {
+  base::HistogramTester histogram_tester;
+
+  LogPixAccountLinkingPromptAccepted();
+
+  histogram_tester.ExpectUniqueSample(
+      "FacilitatedPayments.Pix.AccountLinking.PromptAccepted",
+      /*sample=*/true,
+      /*expected_bucket_count=*/1);
+}
+
+class FacilitatedPaymentsMetricsPixAccountLinkingFlowExitedReasonTest
+    : public testing::TestWithParam<PixAccountLinkingFlowExitedReason> {};
+
+TEST_P(FacilitatedPaymentsMetricsPixAccountLinkingFlowExitedReasonTest,
+       LogPixAccountLinkingFlowExitedReason) {
+  base::HistogramTester histogram_tester;
+
+  LogPixAccountLinkingFlowExitedReason(GetParam());
+
+  histogram_tester.ExpectUniqueSample(
+      "FacilitatedPayments.Pix.AccountLinking.FlowExitedReason",
+      /*sample=*/GetParam(),
+      /*expected_bucket_count=*/1);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FacilitatedPaymentsMetricsTest,
+    FacilitatedPaymentsMetricsPixAccountLinkingFlowExitedReasonTest,
+    testing::Values(
+        PixAccountLinkingFlowExitedReason::kScreenNotShown,
+        PixAccountLinkingFlowExitedReason::kScreenClosedNotByUser,
+        PixAccountLinkingFlowExitedReason::kScreenClosedByUser,
+        PixAccountLinkingFlowExitedReason::kUserDeclined,
+        PixAccountLinkingFlowExitedReason::kWalletNotInstalled,
+        PixAccountLinkingFlowExitedReason::kWalletVersionNotSupported,
+        PixAccountLinkingFlowExitedReason::kUserOptedOut,
+        PixAccountLinkingFlowExitedReason::kNoScreenlockOrBiometricSetup,
+        PixAccountLinkingFlowExitedReason::kServerSideIneligible,
+        PixAccountLinkingFlowExitedReason::kTabIsNotActive,
+        PixAccountLinkingFlowExitedReason::kUserSwitchedWebsite));
+
+TEST(FacilitatedPaymentsMetricsTest,
+     LogGetDetailsForCreatePaymentInstrumentResultAndLatency) {
+  base::HistogramTester histogram_tester;
+
+  LogGetDetailsForCreatePaymentInstrumentResultAndLatency(
+      true, base::Milliseconds(10));
+
+  histogram_tester.ExpectUniqueSample(
+      "FacilitatedPayments.Pix.AccountLinking."
+      "GetDetailsForCreatePaymentInstrument.Result",
+      /*sample=*/true,
+      /*expected_bucket_count=*/1);
+  histogram_tester.ExpectUniqueSample(
+      "FacilitatedPayments.Pix.AccountLinking."
+      "GetDetailsForCreatePaymentInstrument.Latency",
+      /*sample=*/10,
+      /*expected_bucket_count=*/1);
+}
+
 TEST(FacilitatedPaymentsMetricsTest,
      LogEwalletInitiatePurchaseActionResultAndLatency_DeviceBound) {
   for (PurchaseActionResult result :
@@ -293,7 +367,8 @@ INSTANTIATE_TEST_SUITE_P(
                         EwalletFlowExitedReason::kMaxStrikes),
         testing::Values(PaymentLinkValidator::Scheme::kDuitNow,
                         PaymentLinkValidator::Scheme::kShopeePay,
-                        PaymentLinkValidator::Scheme::kTngd)));
+                        PaymentLinkValidator::Scheme::kTngd,
+                        PaymentLinkValidator::Scheme::kMomo)));
 
 class FacilitatedPaymentsMetricsPixExitedReasonTest
     : public testing::TestWithParam<PixFlowExitedReason> {};
@@ -325,7 +400,8 @@ INSTANTIATE_TEST_SUITE_P(
                     PixFlowExitedReason::kUserLoggedOut,
                     PixFlowExitedReason::kFopSelectorClosedNotByUser,
                     PixFlowExitedReason::kFopSelectorClosedByUser,
-                    PixFlowExitedReason::kAutofillPaymentMethodsDisabled));
+                    PixFlowExitedReason::kAutofillPaymentMethodsDisabled,
+                    PixFlowExitedReason::kMerchantNotAllowlisted));
 
 class FacilitatedPaymentsMetricsUkmTest : public testing::Test {
  public:
@@ -362,7 +438,8 @@ TEST_F(FacilitatedPaymentsMetricsUkmTest, LogEwalletFopSelectorShownUkm) {
   for (PaymentLinkValidator::Scheme scheme :
        {PaymentLinkValidator::Scheme::kDuitNow,
         PaymentLinkValidator::Scheme::kShopeePay,
-        PaymentLinkValidator::Scheme::kTngd}) {
+        PaymentLinkValidator::Scheme::kTngd,
+        PaymentLinkValidator::Scheme::kMomo}) {
     LogEwalletFopSelectorShownUkm(ukm::UkmRecorder::GetNewSourceID(), scheme);
 
     auto ukm_entries = ukm_recorder_.GetEntries(
@@ -408,7 +485,8 @@ TEST_F(FacilitatedPaymentsMetricsUkmTest, LogEwalletFopSelectorResult) {
     for (PaymentLinkValidator::Scheme scheme :
          {PaymentLinkValidator::Scheme::kDuitNow,
           PaymentLinkValidator::Scheme::kShopeePay,
-          PaymentLinkValidator::Scheme::kTngd}) {
+          PaymentLinkValidator::Scheme::kTngd,
+          PaymentLinkValidator::Scheme::kMomo}) {
       LogEwalletFopSelectorResultUkm(
           accepted, ukm::UkmRecorder::GetNewSourceID(), scheme);
 
@@ -484,7 +562,8 @@ INSTANTIATE_TEST_SUITE_P(
                                      FacilitatedPaymentsType::kPix),
                      testing::Values(PaymentLinkValidator::Scheme::kDuitNow,
                                      PaymentLinkValidator::Scheme::kShopeePay,
-                                     PaymentLinkValidator::Scheme::kTngd)));
+                                     PaymentLinkValidator::Scheme::kTngd,
+                                     PaymentLinkValidator::Scheme::kMomo)));
 
 TEST_P(FacilitatedPaymentsMetricsParameterizedTest,
        LogApiAvailabilityCheckResultAndLatency_Success) {
@@ -763,7 +842,8 @@ INSTANTIATE_TEST_SUITE_P(
                                      FacilitatedPaymentsType::kPix),
                      testing::Values(PaymentLinkValidator::Scheme::kDuitNow,
                                      PaymentLinkValidator::Scheme::kShopeePay,
-                                     PaymentLinkValidator::Scheme::kTngd),
+                                     PaymentLinkValidator::Scheme::kTngd,
+                                     PaymentLinkValidator::Scheme::kMomo),
                      testing::Values(UiState::kFopSelector,
                                      UiState::kProgressScreen,
                                      UiState::kErrorScreen)));

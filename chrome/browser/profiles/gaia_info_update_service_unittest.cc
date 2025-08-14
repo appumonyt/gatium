@@ -54,8 +54,8 @@
 
 #if BUILDFLAG(ENABLE_GLIC)
 #include "chrome/browser/background/startup_launch_manager.h"
-#include "chrome/browser/glic/glic_enabling.h"
 #include "chrome/browser/glic/glic_pref_names.h"
+#include "chrome/browser/glic/public/glic_enabling.h"
 #endif
 
 using signin::constants::kNoHostedDomainFound;
@@ -78,7 +78,7 @@ AccountInfo GetValidAccountInfo(std::string email,
   account_info.locale = email;
   account_info.picture_url = "example.com";
   AccountCapabilitiesTestMutator(&account_info.capabilities)
-      .set_is_subject_to_enterprise_policies(hosted_domain !=
+      .set_is_subject_to_enterprise_features(hosted_domain !=
                                              kNoHostedDomainFound);
   return account_info;
 }

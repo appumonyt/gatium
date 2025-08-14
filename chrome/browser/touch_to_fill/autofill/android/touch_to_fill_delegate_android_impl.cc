@@ -71,7 +71,7 @@ bool IsFillingPerfect(const FormStructure& form) {
 bool IsFormPrefilled(const FormStructure& form) {
   return std::ranges::any_of(form.fields(),
                              [](const std::unique_ptr<AutofillField>& field) {
-                               return field->Type().GetStorableType() ==
+                               return field->Type().GetCreditCardType() ==
                                           FieldType::CREDIT_CARD_NUMBER &&
                                       !SanitizedFieldIsEmpty(field->value());
                              });
@@ -142,11 +142,13 @@ TouchToFillDelegateAndroidImpl::DryRun(FormGlobalId form_id,
     return {TriggerOutcome::kCannotShowAutofillUi, {}};
   }
 
-  if (field->Type().group() == FieldTypeGroup::kIban) {
+  if (field->Type().GetGroups().contains(FieldTypeGroup::kIban)) {
     return DryRunForIban();
-  } else if (field->Type().group() == FieldTypeGroup::kCreditCard) {
+  } else if (field->Type().GetGroups().contains(FieldTypeGroup::kCreditCard)) {
     return DryRunForCreditCard(*field, *form);
-  } else if (field->Type().group() == FieldTypeGroup::kLoyaltyCard) {
+  } else if (field->Type().GetGroups().contains(FieldTypeGroup::kLoyaltyCard) ||
+             field->Type().GetLoyaltyCardType() ==
+                 EMAIL_OR_LOYALTY_MEMBERSHIP_ID) {
     return DryRunForLoyaltyCard();
   }
 
@@ -186,7 +188,7 @@ TouchToFillDelegateAndroidImpl::DryRunForCreditCard(const AutofillField& field,
   // TODO(crbug.com/40227496): `*field` must contain the updated field
   // information.
   std::vector<CreditCard> cards_to_suggest = GetTouchToFillCardsToSuggest(
-      manager_->client(), field, field.Type().GetStorableType());
+      manager_->client(), field, field.Type().GetCreditCardType());
   return cards_to_suggest.empty()
              ? DryRunResult(TriggerOutcome::kNoValidPaymentMethods, {})
              : DryRunResult(TriggerOutcome::kShown,
@@ -208,7 +210,8 @@ TouchToFillDelegateAndroidImpl::DryRunForLoyaltyCard() {
       manager_->client().GetLastCommittedPrimaryMainFrameURL();
   if (std::ranges::any_of(
           loyalty_cards, [&current_domain](const LoyaltyCard& loyalty_card) {
-            return loyalty_card.HasMatchingMerchantDomain(current_domain);
+            return loyalty_card.GetAffiliationCategory(current_domain) ==
+                   LoyaltyCard::AffiliationCategory::kAffiliated;
           })) {
     return DryRunResult(TriggerOutcome::kShown, loyalty_cards);
   }
@@ -388,13 +391,18 @@ void TouchToFillDelegateAndroidImpl::IbanSuggestionSelected(
 }
 
 void TouchToFillDelegateAndroidImpl::LoyaltyCardSuggestionSelected(
-    const std::string& loyalty_card_number) {
+    const LoyaltyCard& loyalty_card) {
   HideTouchToFill();
 
   manager_->FillOrPreviewField(
       mojom::ActionPersistence::kFill, mojom::FieldActionType::kReplaceAll,
-      query_form_, query_field_, base::UTF8ToUTF16(loyalty_card_number),
+      query_form_, query_field_,
+      base::UTF8ToUTF16(loyalty_card.loyalty_card_number()),
       SuggestionType::kLoyaltyCardEntry, LOYALTY_MEMBERSHIP_ID);
+  ValuablesDataManager* vdm = manager_->client().GetValuablesDataManager();
+  CHECK(vdm);
+  manager_->LogAndRecordLoyaltyCardFill(loyalty_card, query_form_.global_id(),
+                                        query_field_.global_id());
 }
 
 void TouchToFillDelegateAndroidImpl::OnDismissed(bool dismissed_by_user) {
@@ -413,11 +421,11 @@ void TouchToFillDelegateAndroidImpl::LogTriggerOutcomeMetrics(
   }
   const FormStructure* form = manager_->FindCachedFormById(form_id);
   const AutofillField* field = form ? form->GetFieldById(field_id) : nullptr;
-  FieldTypeGroup group =
-      field ? field->Type().group() : FieldTypeGroup::kNoGroup;
-  if (group == FieldTypeGroup::kIban) {
+  const FieldTypeGroupSet groups =
+      field ? field->Type().GetGroups() : FieldTypeGroupSet{};
+  if (groups.contains(FieldTypeGroup::kIban)) {
     base::UmaHistogramEnumeration(kUmaTouchToFillIbanTriggerOutcome, outcome);
-  } else if (group == FieldTypeGroup::kLoyaltyCard) {
+  } else if (groups.contains(FieldTypeGroup::kLoyaltyCard)) {
     base::UmaHistogramEnumeration(kUmaTouchToFillLoyaltyCardTriggerOutcome,
                                   outcome);
   } else {

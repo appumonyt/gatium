@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include <stddef.h>
 #include <stdint.h>
 
@@ -45,6 +40,7 @@
 #include "base/test/with_feature_override.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
+#include "base/values.h"
 #include "build/build_config.h"
 #include "components/services/storage/public/mojom/cache_storage_control.mojom.h"
 #include "components/ukm/test_ukm_recorder.h"
@@ -3321,7 +3317,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerURLLoaderThrottleTest,
   // Extract the headers.
   EvalJsResult result = EvalJs(shell()->web_contents()->GetPrimaryMainFrame(),
                                "document.body.textContent");
-  ASSERT_TRUE(result.error.empty());
+  ASSERT_TRUE(result.is_ok());
   std::optional<base::Value> parsed_result =
       base::JSONReader::Read(result.ExtractString());
   ASSERT_TRUE(parsed_result);
@@ -7671,6 +7667,7 @@ class ServiceWorkerSyntheticResponseBrowserTest
   }
 
  protected:
+  base::HistogramTester& histogram_tester() { return histogram_tester_; }
   std::unique_ptr<MockContentBrowserClient> mock_content_browser_client;
 
  private:
@@ -7686,44 +7683,56 @@ class ServiceWorkerSyntheticResponseBrowserTest
 
           const bool is_slow =
               base::Contains(request.GetURL().query(), "server_slow");
-          auto http_response =
-              is_slow ? std::make_unique<net::test_server::DelayedHttpResponse>(
-                            base::Seconds(2))
-                      : std::make_unique<net::test_server::BasicHttpResponse>();
 
-          // Set opt-in header.
-          constexpr std::string_view kOptInHeaderName =
-              "Service-Worker-Synthetic-Response";
-          constexpr std::string_view kOptInHeaderValue = "?1";
-          http_response->AddCustomHeader(kOptInHeaderName, kOptInHeaderValue);
+          std::string headers =
+              "HTTP/1.1 200 OK\r\n"
+              "Connection: close\r\n"
+              "Content-Type: text/html\r\n"
+              "Service-Worker-Synthetic-Response: ?1\r\n"
+              "Date: Fri, 27 Jun 2025 10:50:00 JST\r\n"
+              "Test-Duplicated-Header: x\r\n";
 
-          if (base::Contains(request.GetURL().query(), "echo=foo")) {
-            http_response->set_content("[SyntheticResponse] foo");
-          } else if (base::Contains(request.GetURL().query(), "echo=bar")) {
-            http_response->set_content("[SyntheticResponse] bar");
+          if (base::Contains(request.GetURL().query(),
+                             "header_mismatch_with_duplicated_header")) {
+            headers +=
+                "Test-Duplicated-Header: y, z\r\n"
+                "Test-Duplicated-Header: x\r\n";
           } else if (base::Contains(request.GetURL().query(),
-                                    "inline_script_without_csp")) {
-            http_response->set_content(
-                "<script>window.is_inline_script_executed=true;</script>");
-          } else if (base::Contains(request.GetURL().query(),
-                                    "inline_script_with_csp")) {
-            http_response->set_content_type("text/html");
-            http_response->set_content(
-                "<meta http-equiv=\"Content-Security-Policy\" "
-                "content=\"script-src 'nonce-jDHFShrQe4XmmH47DWyhaQ'\" />"
-                "<script "
-                "nonce=\"jDHFShrQe4XmmH47DWyhaQ\">window.is_inline_script_"
-                "executed=true;</script>");
-          } else {
-            http_response->set_content(is_slow
-                                           ? "[SyntheticResponse] "
-                                             "Slow response from the network"
-                                           : "[SyntheticResponse] "
-                                             "Response from the network");
+                                    "header_mismatch")) {
+            headers += "X-Inconsistent-Header: ?1\r\n";
           }
 
-          http_response->set_code(net::HTTP_OK);
-          return http_response;
+          std::string content;
+          if (base::Contains(request.GetURL().query(), "echo=foo")) {
+            content = "[SyntheticResponse] foo";
+          } else if (base::Contains(request.GetURL().query(), "echo=bar")) {
+            content = "[SyntheticResponse] bar";
+          } else if (base::Contains(request.GetURL().query(),
+                                    "inline_script_without_csp")) {
+            content = "<script>window.is_inline_script_executed=true;</script>";
+          } else if (base::Contains(request.GetURL().query(),
+                                    "inline_script_with_csp")) {
+            content =
+                "<meta http-equiv=\"Content-Security-Policy\" "
+                "content=\"script-src 'nonce-jDHFShrQe4XmmH47DWyhaQ'\" />"
+                "<script nonce=\"jDHFShrQe4XmmH47DWyhaQ\">"
+                "window.is_inline_script_executed=true;</script>";
+          } else {
+            content = is_slow ? "[SyntheticResponse] "
+                                "Slow response from the network"
+                              : "[SyntheticResponse] "
+                                "Response from the network";
+          }
+
+          if (is_slow) {
+            base::PlatformThread::Sleep(base::Seconds(2));
+          }
+
+          // Use `RawHttpResponse` instead of `BasicHttpResponse`, since
+          // `BasicHttpResponse` automatically sets `Content-Length` header to
+          // the response, which makes header always insonsistent in tests.
+          return std::make_unique<net::test_server::RawHttpResponse>(headers,
+                                                                     content);
         }));
   }
 
@@ -7731,6 +7740,7 @@ class ServiceWorkerSyntheticResponseBrowserTest
   base::test::ScopedFeatureList feature_list_;
   GURL allowed_url_;
   ContentMockCertVerifier mock_cert_verifier_;
+  base::HistogramTester histogram_tester_;
 };
 
 IN_PROC_BROWSER_TEST_F(ServiceWorkerSyntheticResponseBrowserTest,
@@ -7795,6 +7805,11 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerSyntheticResponseBrowserTest,
   EXPECT_TRUE(ExecJs(shell()->web_contents()->GetPrimaryMainFrame(),
                      "Math.ceil(performance.getEntriesByType('navigation')[0]."
                      "responseStart) >= 2000"));
+  histogram_tester().ExpectBucketCount(
+      "ServiceWorker.SyntheticResponse.Eligibility",
+      static_cast<int>(ServiceWorkerMetrics::SyntheticResponseEligibility::
+                           kNotEligibleByNoHeaderStored),
+      1);
 
   // The second navigation. The browser should have stored the response header
   // from the previous navigation, and receive the response header locally.
@@ -7808,6 +7823,11 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerSyntheticResponseBrowserTest,
   EXPECT_TRUE(ExecJs(shell()->web_contents()->GetPrimaryMainFrame(),
                      "Math.ceil(performance.getEntriesByType('navigation')[0]."
                      "responseStart) < 2000"));
+  histogram_tester().ExpectBucketCount(
+      "ServiceWorker.SyntheticResponse.Eligibility",
+      static_cast<int>(
+          ServiceWorkerMetrics::SyntheticResponseEligibility::kEligible),
+      1);
 }
 
 IN_PROC_BROWSER_TEST_F(ServiceWorkerSyntheticResponseBrowserTest,
@@ -7826,8 +7846,9 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerSyntheticResponseBrowserTest,
       https_server()->GetURL(
           kHostname,
           base::StrCat({kTargetPath, "foo&inline_script_without_csp"}))));
-  EXPECT_EQ(nullptr, EvalJs(shell()->web_contents()->GetPrimaryMainFrame(),
-                            "window.is_inline_script_executed"));
+  EXPECT_EQ(base::Value(),
+            EvalJs(shell()->web_contents()->GetPrimaryMainFrame(),
+                   "window.is_inline_script_executed"));
 
   // The third navigation. Synthetic response is enabled, inline scripts are
   // allowed after the script-src update in <meta> tag.
@@ -7837,6 +7858,77 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerSyntheticResponseBrowserTest,
                    base::StrCat({kTargetPath, "foo&inline_script_with_csp"}))));
   EXPECT_EQ(true, EvalJs(shell()->web_contents()->GetPrimaryMainFrame(),
                          "window.is_inline_script_executed"));
+}
+
+IN_PROC_BROWSER_TEST_F(ServiceWorkerSyntheticResponseBrowserTest,
+                       HeaderMismatch) {
+  mock_content_browser_client = std::make_unique<MockContentBrowserClient>();
+  // Navigate and store the response header.
+  EXPECT_TRUE(NavigateToURL(
+      shell(),
+      https_server()->GetURL(
+          kHostname, base::StrCat({kTargetPath, "foo&echo=foo&server_slow"}))));
+  EXPECT_EQ("[SyntheticResponse] foo", GetInnerText());
+  // Without SyntheticResponse, `responseStart` is 2000ms due to the server
+  // delay.
+  EXPECT_TRUE(ExecJs(shell()->web_contents()->GetPrimaryMainFrame(),
+                     "Math.ceil(performance.getEntriesByType('navigation')[0]."
+                     "responseStart) >= 2000"));
+
+  // The second navigation. Headers stored in local and the network are not
+  // consistent. If the header mismatch is detected, the browser reloads the
+  // page.
+  NavigateToURLBlockUntilNavigationsComplete(
+      web_contents(),
+      https_server()->GetURL(
+          kHostname,
+          base::StrCat(
+              {kTargetPath, "foo&echo=bar&server_slow&header_mismatch"})),
+      /*number_of_navigations=*/2, /*ignore_uncommitted_navigations=*/false);
+  EXPECT_EQ("[SyntheticResponse] bar", GetInnerText());
+  // After the reload, synthetic response is not enabled. `responseStart` is
+  // 2000ms due to the server delay.
+  EXPECT_TRUE(ExecJs(shell()->web_contents()->GetPrimaryMainFrame(),
+                     "Math.ceil(performance.getEntriesByType('navigation')[0]."
+                     "responseStart) >= 2000"));
+  histogram_tester().ExpectBucketCount(
+      "ServiceWorker.SyntheticResponse.Eligibility",
+      static_cast<int>(ServiceWorkerMetrics::SyntheticResponseEligibility::
+                           kNotEligibleByReload),
+      1);
+}
+
+IN_PROC_BROWSER_TEST_F(ServiceWorkerSyntheticResponseBrowserTest,
+                       HeaderMismatch_DuplicatedHeader) {
+  mock_content_browser_client = std::make_unique<MockContentBrowserClient>();
+  // Navigate and store the response header.
+  EXPECT_TRUE(NavigateToURL(
+      shell(),
+      https_server()->GetURL(
+          kHostname, base::StrCat({kTargetPath, "foo&echo=foo&server_slow"}))));
+  EXPECT_EQ("[SyntheticResponse] foo", GetInnerText());
+  // Without SyntheticResponse, `responseStart` is 2000ms due to the server
+  // delay.
+  EXPECT_TRUE(ExecJs(shell()->web_contents()->GetPrimaryMainFrame(),
+                     "Math.ceil(performance.getEntriesByType('navigation')[0]."
+                     "responseStart) >= 2000"));
+
+  // The second navigation. Headers stored in local and the network are not
+  // consistent by duplicated headers. If the header mismatch is detected, the
+  // browser reloads the page.
+  NavigateToURLBlockUntilNavigationsComplete(
+      web_contents(),
+      https_server()->GetURL(kHostname,
+                             base::StrCat({kTargetPath,
+                                           "foo&echo=bar&server_slow&header_"
+                                           "mismatch_with_duplicated_header"})),
+      /*number_of_navigations=*/2, /*ignore_uncommitted_navigations=*/false);
+  EXPECT_EQ("[SyntheticResponse] bar", GetInnerText());
+  // After the reload, synthetic response is not enabled. `responseStart` is
+  // 2000ms due to the server delay.
+  EXPECT_TRUE(ExecJs(shell()->web_contents()->GetPrimaryMainFrame(),
+                     "Math.ceil(performance.getEntriesByType('navigation')[0]."
+                     "responseStart) >= 2000"));
 }
 
 }  // namespace content

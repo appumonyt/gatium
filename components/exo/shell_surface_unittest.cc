@@ -19,7 +19,6 @@
 #include "ash/public/cpp/test/shell_test_api.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/shell.h"
-#include "ash/test/test_widget_builder.h"
 #include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/overview/overview_test_util.h"
 #include "ash/wm/resize_shadow.h"
@@ -50,6 +49,7 @@
 #include "components/exo/test/test_security_delegate.h"
 #include "components/exo/window_properties.h"
 #include "components/exo/wm_helper.h"
+#include "components/viz/common/resources/shared_image_format.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -81,6 +81,7 @@
 #include "ui/gfx/geometry/rrect_f.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/test/test_widget_builder.h"
 #include "ui/views/widget/any_widget_observer.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/caption_button_layout_constants.h"
@@ -91,7 +92,7 @@
 
 namespace exo {
 
-const gfx::BufferFormat kOpaqueFormat = gfx::BufferFormat::RGBX_8888;
+const viz::SharedImageFormat kOpaqueFormat = viz::SinglePlaneFormat::kRGBX_8888;
 
 using ShellSurfaceTest = test::ExoTestBase;
 
@@ -2857,7 +2858,7 @@ TEST_F(ShellSurfaceTest, DragMaximizedWindow) {
 TEST_F(ShellSurfaceTest, CaptionWithPopup) {
   constexpr gfx::Size kBufferSize(256, 256);
   auto shell_surface = test::ShellSurfaceBuilder(kBufferSize)
-                           .SetRootBufferFormat(kOpaqueFormat)
+                           .SetRootFormat(kOpaqueFormat)
                            .SetFrame(SurfaceFrameType::NORMAL)
                            .BuildShellSurface();
   auto* surface = shell_surface->root_surface();
@@ -3649,7 +3650,7 @@ TEST_F(ShellSurfaceTest, Overlay) {
   EXPECT_EQ(textfield_ptr->GetText(), u"x");
   EXPECT_EQ(textfield_ptr->GetSelectedText(), u"x");
 
-  auto* widget = ash::TestWidgetBuilder()
+  auto* widget = views::test::TestWidgetBuilder()
                      .SetBounds(gfx::Rect(200, 200))
                      .BuildOwnedByNativeWidget();
   ASSERT_TRUE(widget->IsActive());
@@ -4751,11 +4752,11 @@ TEST_F(ShellSurfaceTest, DisplayLayoutConfigurationUpdatesSurfaceOrigin) {
 TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
   std::unique_ptr<ShellSurface> shell_surface1 =
       test::ShellSurfaceBuilder({256, 256})
-          .SetRootBufferFormat(kOpaqueFormat)
+          .SetRootFormat(kOpaqueFormat)
           .BuildShellSurface();
   std::unique_ptr<ShellSurface> shell_surface2 =
       test::ShellSurfaceBuilder({256, 256})
-          .SetRootBufferFormat(kOpaqueFormat)
+          .SetRootFormat(kOpaqueFormat)
           .BuildShellSurface();
   auto* surface1 = shell_surface1->root_surface();
   auto* surface2 = shell_surface2->root_surface();

@@ -175,18 +175,14 @@
 #include "ui/gfx/geometry/point.h"
 #endif
 
-namespace WTF {
+namespace blink {
 
 template <>
-struct CrossThreadCopier<blink::WebFrameWidgetImpl::PromiseCallbacks>
+struct CrossThreadCopier<WebFrameWidgetImpl::PromiseCallbacks>
     : public CrossThreadCopierByValuePassThrough<
-          blink::WebFrameWidgetImpl::PromiseCallbacks> {
+          WebFrameWidgetImpl::PromiseCallbacks> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -454,6 +450,12 @@ void WebFrameWidgetImpl::Close(DetachReason detach_reason) {
   // prevent delaying the navigation commit, as releasing the LayerTreeView
   // resources blocks on the compositor thread.
   bool delay_release =
+#if BUILDFLAG(IS_ANDROID)
+      // Don't delay if synchronous compositing is enabled, since it doesn't
+      // expect async deletion.
+      !Platform::Current()
+           ->IsSynchronousCompositingEnabledForAndroidWebView() &&
+#endif
       (base::FeatureList::IsEnabled(
            blink::features::kDelayLayerTreeViewDeletionOnLocalSwap) &&
        detach_reason == DetachReason::kNavigation);
@@ -628,8 +630,8 @@ void WebFrameWidgetImpl::DragTargetDrop(const WebDragData& web_drag_data,
   DragData drag_data(current_drag_data_.Get(),
                      ViewportToRootFrame(point_in_viewport), screen_point,
                      operations_allowed_, web_drag_data.ForceDefaultAction());
-  GetPage()->GetDragController().PerformDrag(&drag_data,
-                                             *local_root_->GetFrame());
+  GetPage()->GetDragController().PerformDrag(
+      &drag_data, *local_root_->GetFrame(), drag_operation_);
 }
 
 void WebFrameWidgetImpl::DragSourceEndedAt(const gfx::PointF& point_in_viewport,
@@ -841,9 +843,19 @@ void WebFrameWidgetImpl::BindWidgetCompositor(
 void WebFrameWidgetImpl::BindInputTargetClient(
     mojo::PendingReceiver<viz::mojom::blink::InputTargetClient> receiver) {
   // Both Browser and Viz attempts to bind this interface. There can be at max
-  // two remotes one for each Browser and Viz, so this check ensures we are not
-  // going past the 2 limit.
-  CHECK_LT(input_target_receivers_.size(), 2u);
+  // two remotes one for each Browser and Viz.
+  // Note: In some cases where GPU restarts due to a crash, there might be a
+  // race between BindInputTargetClient call from the new GPU process and the
+  // renderer running the disconnect handlers on input_target_receivers_ for the
+  // destroyed GPU process, implying there may be 3 receivers transiently. See
+  // crbug.com/424109284 for more details.
+  if (input_target_receivers_.size() >= 2) {
+    // TODO(424109284): Cleanup after investigation.
+    SCOPED_CRASH_KEY_STRING64(
+        "crbug424109284", "receivers_size",
+        base::NumberToString(input_target_receivers_.size()));
+    base::debug::DumpWithoutCrashing();
+  }
   input_target_receivers_.Add(
       std::move(receiver),
       local_root_->GetTaskRunner(TaskType::kInternalInputBlocking));
@@ -947,11 +959,13 @@ WebInputEventResult WebFrameWidgetImpl::HandleKeyEvent(
   // not the page.
   scoped_refptr<WebPagePopupImpl> page_popup = View()->GetPagePopup();
   if (page_popup) {
-    page_popup->HandleKeyEvent(event);
+    WebInputEventResult result = page_popup->HandleKeyEvent(event);
     if (event.GetType() == WebInputEvent::Type::kRawKeyDown) {
       suppress_next_keypress_event_ = true;
     }
-    return WebInputEventResult::kHandledSystem;
+    return RuntimeEnabledFeatures::PagePopupCopyPasteEnabled()
+               ? result
+               : WebInputEventResult::kHandledSystem;
   }
 
   auto* frame = DynamicTo<LocalFrame>(FocusedCoreFrame());
@@ -1410,44 +1424,6 @@ void WebFrameWidgetImpl::SendOverscrollEventFromImplSide(
   }
 }
 
-void WebFrameWidgetImpl::SendEndOfScrollEventsDeprecated(
-    bool affects_outer_viewport,
-    bool affects_inner_viewport,
-    cc::ElementId scroll_latched_element_id) {
-  Node* target_node = View()->FindNodeFromScrollableCompositorElementId(
-      scroll_latched_element_id);
-  if (!target_node) {
-    return;
-  }
-  if (ScrollableArea* scrollable_area =
-          ScrollableArea::GetForScrolling(target_node->GetLayoutBox())) {
-    scrollable_area->UpdateSnappedTargetsAndEnqueueScrollSnapChange();
-    scrollable_area->SetImplSnapStrategy(nullptr);
-  }
-
-  if (auto* viewport_position_tracker =
-          AnchorElementViewportPositionTracker::MaybeGetOrCreateFor(
-              target_node->GetDocument())) {
-    viewport_position_tracker->OnScrollEnd();
-  }
-
-  if (RuntimeEnabledFeatures::ScrollEndEventsEnabled()) {
-    Node* document_node = View()->MainFrameImpl()
-                              ? View()->MainFrameImpl()->GetDocument()
-                              : nullptr;
-    if (affects_inner_viewport) {
-      target_node->GetDocument().EnqueueVisualViewportScrollEndEvent();
-    }
-    // A scroll gesture that causes the browser controls to show/hide would be
-    // associated with the document but may not have actually caused the
-    // document/outer viewport to scroll. In this case the document should
-    // not receive a scrollend event.
-    if (affects_outer_viewport || target_node != document_node) {
-      target_node->GetDocument().EnqueueScrollEndEventForNode(target_node);
-    }
-  }
-}
-
 void WebFrameWidgetImpl::SendEndOfScrollEvents(
     const cc::CompositorCommitData& commit_data) {
   HeapHashSet<Member<AnchorElementViewportPositionTracker>> handled_trackers;
@@ -1472,12 +1448,10 @@ void WebFrameWidgetImpl::SendEndOfScrollEvents(
       scrollable_area->SetImplSnapStrategy(nullptr);
     }
 
-    if (RuntimeEnabledFeatures::ScrollEndEventsEnabled()) {
-      if (GetPage()->GetVisualViewport().GetScrollElementId() == id) {
-        target_node->GetDocument().EnqueueVisualViewportScrollEndEvent();
-      } else {
-        target_node->GetDocument().EnqueueScrollEndEventForNode(target_node);
-      }
+    if (GetPage()->GetVisualViewport().GetScrollElementId() == id) {
+      target_node->GetDocument().EnqueueVisualViewportScrollEndEvent();
+    } else {
+      target_node->GetDocument().EnqueueScrollEndEventForNode(target_node);
     }
   }
 }
@@ -1536,25 +1510,8 @@ void WebFrameWidgetImpl::UpdateCompositorScrollState(
     NotifyLatchedScrollMarkerGroup(commit_data);
   }
 
-  // TODO(bokan): If a scroll ended and a new one began in the same Blink frame
-  // (e.g. during a long running main thread task), this will erroneously
-  // dispatch the scroll end to the latter (still-scrolling) element.
-  // https://crbug.com/1116780.
-  // With MultiImplyOnlyScrollAnimations support, a non-latched scroll
-  // container might have finished its snap animation, so we don't check that we
-  // have a latched id.
-  if (::features::MultiImplOnlyScrollAnimationsSupported()) {
-    if (commit_data.scroll_end_data.done_containers.size()) {
-      SendEndOfScrollEvents(commit_data);
-    }
-  } else {
-    if (commit_data.scroll_latched_element_id != cc::ElementId() &&
-        commit_data.scroll_end_data.scroll_gesture_did_end) {
-      SendEndOfScrollEventsDeprecated(
-          commit_data.scroll_end_data.gesture_affects_outer_viewport_scroll,
-          commit_data.scroll_end_data.gesture_affects_inner_viewport_scroll,
-          commit_data.scroll_latched_element_id);
-    }
+  if (commit_data.scroll_end_data.done_containers.size()) {
+    SendEndOfScrollEvents(commit_data);
   }
 }
 
@@ -3438,11 +3395,6 @@ void WebFrameWidgetImpl::PresentationCallbackForMeaningfulLayout(
   // callback was requested and when it was resolved by the compositor.
   if (local_root_)
     local_root_->ViewImpl()->DidFirstVisuallyNonEmptyPaint();
-
-  base::TimeTicks first_paint_time =
-      first_paint_details.presentation_feedback.timestamp;
-  if (widget_base_)
-    widget_base_->DidFirstVisuallyNonEmptyPaint(first_paint_time);
 }
 
 void WebFrameWidgetImpl::RequestAnimationAfterDelay(
@@ -4389,6 +4341,12 @@ void WebFrameWidgetImpl::SetEditableSelectionOffsets(int32_t start,
 
 void WebFrameWidgetImpl::ExecuteEditCommand(const String& command,
                                             const String& value) {
+  scoped_refptr<WebPagePopupImpl> page_popup = View()->GetPagePopup();
+  if (RuntimeEnabledFeatures::PagePopupCopyPasteEnabled() && page_popup) {
+    page_popup->ExecuteEditCommand(command, value);
+    return;
+  }
+
   WebLocalFrame* focused_frame = FocusedWebLocalFrameInWidget();
   if (!focused_frame)
     return;
@@ -4881,7 +4839,8 @@ bool WebFrameWidgetImpl::UpdateScreenRects(
 }
 
 void WebFrameWidgetImpl::EnqueueMoveEvent() {
-  if (!RuntimeEnabledFeatures::WindowOnMoveEventEnabled()) {
+  if (!RuntimeEnabledFeatures::
+          DesktopPWAsAdditionalWindowingControlsEnabled()) {
     return;
   }
 
@@ -5392,6 +5351,11 @@ void WebFrameWidgetImpl::DispatchNonBlockingEventForTesting(
 void WebFrameWidgetImpl::SetBrowserControlsTopHeightOverride(
     std::optional<float> height) {
   browser_controls_top_height_override_ = height;
+}
+
+void WebFrameWidgetImpl::OnFirstContentfulPaint(
+    const base::TimeTicks& first_paint_time) {
+  widget_base_->OnFirstContentfulPaint(first_paint_time);
 }
 
 }  // namespace blink

@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/notimplemented.h"
 #include "base/strings/string_number_conversions.h"
 
 namespace tabs_api::testing {
@@ -24,6 +25,10 @@ TabRendererData ToyTabStripModelAdapter::GetTabRendererData(int index) const {
   return TabRendererData();
 }
 
+const ui::ColorProvider& ToyTabStripModelAdapter::GetColorProvider() const {
+  return color_provider_;
+}
+
 void ToyTabStripModelAdapter::CloseTab(size_t idx) {
   tab_strip_->CloseTab(idx);
 }
@@ -39,33 +44,48 @@ void ToyTabStripModelAdapter::ActivateTab(size_t idx) {
 }
 
 void ToyTabStripModelAdapter::MoveTab(tabs::TabHandle handle,
-                                      Position position) {
+                                      const Position& position) {
   tab_strip_->MoveTab(handle, position.index());
 }
 
-mojom::TabCollectionContainerPtr
-ToyTabStripModelAdapter::GetTabStripTopology() {
-  auto tab_collection = tabs_api::mojom::TabCollection::New();
-  tab_collection->id =
-      tabs_api::NodeId(tabs_api::NodeId::Type::kCollection, "0");
-  tab_collection->collection_type =
-      tabs_api::mojom::TabCollection::CollectionType::kTabStrip;
+void ToyTabStripModelAdapter::MoveCollection(const NodeId& id,
+                                             const Position& position) {
+  // TODO(crbug.com/412709271): Integrate with the toy tabstrip to move a
+  // collection.
+  NOTIMPLEMENTED();
+  return;
+}
 
-  auto result = tabs_api::mojom::TabCollectionContainer::New();
-  result->collection = std::move(tab_collection);
+mojom::ContainerPtr ToyTabStripModelAdapter::GetTabStripTopology() {
+  auto mojo_tab_strip = tabs_api::mojom::TabStrip::New();
+  mojo_tab_strip->id =
+      tabs_api::NodeId(tabs_api::NodeId::Type::kCollection, "0");
+
+  auto result = tabs_api::mojom::Container::New();
+  result->data = tabs_api::mojom::Data::NewTabStrip(std::move(mojo_tab_strip));
 
   std::vector<tabs::TabHandle> tabs = tab_strip_->GetTabs();
   for (auto& handle : tabs) {
     auto tab = tabs_api::mojom::Tab::New();
     tab->id = tabs_api::NodeId(tabs_api::NodeId::Type::kContent,
                                base::NumberToString(handle.raw_value()));
-    auto tab_container = tabs_api::mojom::TabContainer::New();
-    tab_container->tab = std::move(tab);
-    auto element =
-        tabs_api::mojom::Container::NewTabContainer(std::move(tab_container));
-    result->elements.push_back(std::move(element));
+    auto child_container = tabs_api::mojom::Container::New();
+    child_container->data = tabs_api::mojom::Data::NewTab(std::move(tab));
+    result->children.push_back(std::move(child_container));
   }
   return result;
+}
+
+std::optional<const tab_groups::TabGroupId>
+ToyTabStripModelAdapter::FindGroupIdFor(
+    const tabs::TabCollection::Handle& collection_handle) {
+  return tab_strip_->GetGroupIdFor(collection_handle);
+}
+
+void ToyTabStripModelAdapter::UpdateTabGroupVisuals(
+    const tab_groups::TabGroupId& group,
+    const tab_groups::TabGroupVisualData& visual_data) {
+  tab_strip_->UpdateGroupVisuals(group, visual_data);
 }
 
 }  // namespace tabs_api::testing

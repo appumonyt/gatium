@@ -31,7 +31,6 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -793,10 +792,9 @@ class OperatorCatchSubscribeDelegate final
           Observable::from(script_state_, mapped_value.ToChecked(),
                            PassThroughException(script_state_->GetIsolate()));
       if (try_catch.HasCaught()) {
-        ApplyContextToException(
-            script_state_, try_catch.Exception(),
-            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
-                             "catch"));
+        ApplyContextToException(script_state_, try_catch.Exception(),
+                                v8::ExceptionContext::kOperation, "Observable",
+                                "catch");
         outer_subscriber_->error(
             script_state_,
             ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
@@ -1281,10 +1279,9 @@ class OperatorSwitchMapSubscribeDelegate final
           Observable::from(script_state_, mapped_value.ToChecked(),
                            PassThroughException(script_state_->GetIsolate()));
       if (try_catch.HasCaught()) {
-        ApplyContextToException(
-            script_state_, try_catch.Exception(),
-            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
-                             "map"));
+        ApplyContextToException(script_state_, try_catch.Exception(),
+                                v8::ExceptionContext::kOperation, "Observable",
+                                "map");
         outer_subscriber_->error(
             script_state_,
             ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
@@ -1514,10 +1511,9 @@ class OperatorFlatMapSubscribeDelegate final
           Observable::from(script_state_, mapped_value.ToChecked(),
                            PassThroughException(script_state_->GetIsolate()));
       if (try_catch.HasCaught()) {
-        ApplyContextToException(
-            script_state_, try_catch.Exception(),
-            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
-                             "flatMap"));
+        ApplyContextToException(script_state_, try_catch.Exception(),
+                                v8::ExceptionContext::kOperation, "Observable",
+                                "flatMap");
         outer_subscriber_->error(
             script_state_,
             ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
@@ -1604,7 +1600,7 @@ class OperatorFlatMapSubscribeDelegate final
     // this). These values are queued and processed one-by-one; they each get
     // passed into `mapper_`.
     //
-    // TODO(crbug.com/40282760): This should be a `WTF::Deque` or `HeapDeque`,
+    // TODO(crbug.com/40282760): This should be a `blink::Deque` or `HeapDeque`,
     // but neither support holding a `ScriptValue` type at the moment. This
     // needs some investigation, so we can avoid using `HeapVector` here, which
     // has O(n) performance when removing values from the front.
@@ -1776,10 +1772,9 @@ class OperatorFromAsyncIterableSubscribeDelegate final
 
         // Set |nextPromise| to a promise rejected with |nextRecord|'s
         // [[Value]].
-        ApplyContextToException(
-            script_state_, try_catch.Exception(),
-            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
-                             "from"));
+        ApplyContextToException(script_state_, try_catch.Exception(),
+                                v8::ExceptionContext::kOperation, "Observable",
+                                "from");
         next_promise =
             ScriptPromise<IDLAny>::Reject(script_state, try_catch.Exception());
       } else {
@@ -2056,10 +2051,9 @@ class OperatorFromIterableSubscribeDelegate final
         v8::Local<v8::Value> type_error = V8ThrowException::CreateTypeError(
             script_state->GetIsolate(),
             "@@iterator must not be undefined or null");
-        ApplyContextToException(
-            script_state_, type_error,
-            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
-                             "subscribe"));
+        ApplyContextToException(script_state_, type_error,
+                                v8::ExceptionContext::kOperation, "Observable",
+                                "subscribe");
         subscriber->error(script_state,
                           ScriptValue(script_state->GetIsolate(), type_error));
         return;
@@ -2587,7 +2581,6 @@ Observable::Observable(ExecutionContext* execution_context,
       subscribe_callback_(subscribe_callback) {
   DCHECK(subscribe_callback_);
   DCHECK(!subscribe_delegate_);
-  DCHECK(RuntimeEnabledFeatures::ObservableAPIEnabled(execution_context));
 }
 
 Observable::Observable(ExecutionContext* execution_context,
@@ -2596,7 +2589,6 @@ Observable::Observable(ExecutionContext* execution_context,
       subscribe_delegate_(subscribe_delegate) {
   DCHECK(!subscribe_callback_);
   DCHECK(subscribe_delegate_);
-  DCHECK(RuntimeEnabledFeatures::ObservableAPIEnabled(execution_context));
 }
 
 void Observable::subscribe(ScriptState* script_state,

@@ -34,7 +34,7 @@ chromium-metrics-reviews@google.com.
 </variants>
 
 <histogram name="MessagePumpEpoll.WatchedFileDescriptors"
-    units="FileDescriptors" expires_after="2025-12-07">
+    units="FileDescriptors" expires_after="2026-02-09">
   <owner>mthiesse@chromium.org</owner>
   <owner>lizeb@chromium.org</owner>
   <summary>
@@ -42,6 +42,25 @@ chromium-metrics-reviews@google.com.
     Sampled periodically every minute for each thread with an epoll message
     pump.
   </summary>
+</histogram>
+
+<histogram name="Scheduling.ContendedLockAcquisitionTime.BaseLock.{ThreadName}"
+    units="microseconds" expires_after="2026-07-01">
+  <owner>anandrv@google.com</owner>
+  <owner>clank-performance-team@google.com</owner>
+  <summary>
+    The time it takes to acquire a contended base::Lock on {ThreadName}. This is
+    recorded with probability 1/1000 when acquisitiion of the lock is likely to
+    cause the thread to wait in the kernel.
+
+    Note: The metric is reported for only clients with high-resolution clocks (a
+    subset of Windows clients won't report it, see the
+    Windows.HasHighResolutionTimeTicks histogram).
+  </summary>
+  <token key="ThreadName">
+    <variant name="CrBrowserMain" summary="the browser main thread"/>
+    <variant name="CrRendererMain" summary="the renderer main thread"/>
+  </token>
 </histogram>
 
 <histogram name="Scheduling.DBusSchedQoS.PidReusedOnSetProcessState"
@@ -144,7 +163,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Scheduling.SchedQoS.SetProcessStateError" enum="QoSErrorType"
-    expires_after="2025-11-09">
+    expires_after="2026-01-11">
   <owner>kawasin@google.com</owner>
   <owner>joelaf@google.com</owner>
   <summary>
@@ -154,7 +173,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Scheduling.SchedQoS.SetThreadStateError" enum="QoSErrorType"
-    expires_after="2025-11-09">
+    expires_after="2026-01-11">
   <owner>kawasin@google.com</owner>
   <owner>joelaf@google.com</owner>
   <summary>
@@ -258,7 +277,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Scheduling.ThreadController.ActiveIntervalOnCpuPercentage.Short.{NamedThread}"
-    units="%" expires_after="2025-11-02">
+    units="%" expires_after="2026-01-04">
   <owner>olivierli@google.com</owner>
   <owner>etienneb@google.com</owner>
   <summary>

@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/browser/extensions/api/runtime/chrome_runtime_api_delegate.h"
 
 #include <memory>
@@ -14,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
@@ -45,6 +41,10 @@
 #include "chromeos/components/kiosk/kiosk_utils.h"
 #include "chromeos/dbus/power/power_manager_client.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
+#endif
+
+#if BUILDFLAG(IS_WIN)
+#include "base/win/windows_version.h"
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -315,55 +315,70 @@ void ChromeRuntimeAPIDelegate::OpenURL(const GURL& uninstall_url) {
 #endif
 }
 
+// Helper function for GetPlatformInfo(). nacl_arch is deprecated, so
+// please do not add any new values here.
+extensions::api::runtime::PlatformNaclArch GetPlatformInfoNaClArch() {
+#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_64)
+  return extensions::api::runtime::PlatformNaclArch::kX86_64;
+#elif BUILDFLAG(IS_WIN)
+  return base::win::OSInfo::GetInstance()->IsWowX86OnAMD64()
+             ? extensions::api::runtime::PlatformNaclArch::kX86_64
+             : extensions::api::runtime::PlatformNaclArch::kX86_32;
+#else
+  return extensions::api::runtime::PlatformNaclArch::kX86_32;
+#endif
+#elif defined(ARCH_CPU_ARM_FAMILY)
+  return extensions::api::runtime::PlatformNaclArch::kArm;
+#elif defined(ARCH_CPU_MIPSEL)
+  return extensions::api::runtime::PlatformNaclArch::kMips;
+#elif defined(ARCH_CPU_MIPS64EL)
+  return extensions::api::runtime::PlatformNaclArch::kMips64;
+#else
+  // NOTE: Other architectures did not support extensions at the time
+  // of NaCl removal.
+  return extensions::api::runtime::PlatformNaclArch::kNone;
+#endif
+}
+
 bool ChromeRuntimeAPIDelegate::GetPlatformInfo(PlatformInfo* info) {
   const char* os = update_client::UpdateQueryParams::GetOS();
-  if (strcmp(os, "mac") == 0) {
+  if (UNSAFE_TODO(strcmp(os, "mac")) == 0) {
     info->os = extensions::api::runtime::PlatformOs::kMac;
-  } else if (strcmp(os, "win") == 0) {
+  } else if (UNSAFE_TODO(strcmp(os, "win")) == 0) {
     info->os = extensions::api::runtime::PlatformOs::kWin;
-  } else if (strcmp(os, "cros") == 0) {
+  } else if (UNSAFE_TODO(strcmp(os, "cros")) == 0) {
     info->os = extensions::api::runtime::PlatformOs::kCros;
-  } else if (strcmp(os, "linux") == 0) {
+  } else if (UNSAFE_TODO(strcmp(os, "linux")) == 0) {
     info->os = extensions::api::runtime::PlatformOs::kLinux;
-  } else if (strcmp(os, "openbsd") == 0) {
+  } else if (UNSAFE_TODO(strcmp(os, "openbsd")) == 0) {
     info->os = extensions::api::runtime::PlatformOs::kOpenbsd;
-  } else if (strcmp(os, "android") == 0) {
+  } else if (UNSAFE_TODO(strcmp(os, "android")) == 0) {
     info->os = extensions::api::runtime::PlatformOs::kAndroid;
   } else {
     NOTREACHED() << "Platform not supported: " << os;
   }
 
   const char* arch = update_client::UpdateQueryParams::GetArch();
-  if (strcmp(arch, "arm") == 0) {
+  if (UNSAFE_TODO(strcmp(arch, "arm")) == 0) {
     info->arch = extensions::api::runtime::PlatformArch::kArm;
-  } else if (strcmp(arch, "arm64") == 0) {
+  } else if (UNSAFE_TODO(strcmp(arch, "arm64")) == 0) {
     info->arch = extensions::api::runtime::PlatformArch::kArm64;
-  } else if (strcmp(arch, "x86") == 0) {
+  } else if (UNSAFE_TODO(strcmp(arch, "x86")) == 0) {
     info->arch = extensions::api::runtime::PlatformArch::kX86_32;
-  } else if (strcmp(arch, "x64") == 0) {
+  } else if (UNSAFE_TODO(strcmp(arch, "x64")) == 0) {
     info->arch = extensions::api::runtime::PlatformArch::kX86_64;
-  } else if (strcmp(arch, "mipsel") == 0) {
+  } else if (UNSAFE_TODO(strcmp(arch, "mipsel")) == 0) {
     info->arch = extensions::api::runtime::PlatformArch::kMips;
-  } else if (strcmp(arch, "mips64el") == 0) {
+  } else if (UNSAFE_TODO(strcmp(arch, "mips64el")) == 0) {
     info->arch = extensions::api::runtime::PlatformArch::kMips64;
+  } else if (UNSAFE_TODO(strcmp(arch, "riscv64")) == 0) {
+    info->arch = extensions::api::runtime::PlatformArch::kRiscv64;
   } else {
     NOTREACHED();
   }
 
-  const char* nacl_arch = update_client::UpdateQueryParams::GetNaclArch();
-  if (strcmp(nacl_arch, "arm") == 0) {
-    info->nacl_arch = extensions::api::runtime::PlatformNaclArch::kArm;
-  } else if (strcmp(nacl_arch, "x86-32") == 0) {
-    info->nacl_arch = extensions::api::runtime::PlatformNaclArch::kX86_32;
-  } else if (strcmp(nacl_arch, "x86-64") == 0) {
-    info->nacl_arch = extensions::api::runtime::PlatformNaclArch::kX86_64;
-  } else if (strcmp(nacl_arch, "mips32") == 0) {
-    info->nacl_arch = extensions::api::runtime::PlatformNaclArch::kMips;
-  } else if (strcmp(nacl_arch, "mips64") == 0) {
-    info->nacl_arch = extensions::api::runtime::PlatformNaclArch::kMips64;
-  } else {
-    NOTREACHED();
-  }
+  info->nacl_arch = GetPlatformInfoNaClArch();
 
   return true;
 }

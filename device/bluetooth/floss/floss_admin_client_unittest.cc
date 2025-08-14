@@ -2,17 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "device/bluetooth/floss/floss_admin_client.h"
 
 #include <map>
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
+#include "base/containers/to_vector.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
@@ -185,16 +182,14 @@ class FlossAdminClientTest : public testing::Test,
                      ::dbus::ObjectProxy::ResponseOrErrorCallback* cb) {
           dbus::MessageReader reader(method_call);
           dbus::MessageReader array_reader(nullptr);
-          const uint8_t* buf;
-          size_t sz;
+          base::span<const uint8_t> buf;
 
           EXPECT_TRUE(reader.PopArray(&array_reader));
 
-          for (auto* uuid_in_bytes : kTestUuidInBytes) {
-            EXPECT_TRUE(array_reader.PopArrayOfBytes(&buf, &sz));
-            EXPECT_EQ(sz, kUUIDSize);
-            EXPECT_EQ(std::vector<uint8_t>(uuid_in_bytes, uuid_in_bytes + sz),
-                      std::vector<uint8_t>(buf, buf + sz));
+          for (const auto& uuid_in_bytes : kTestUuidInBytes) {
+            EXPECT_TRUE(array_reader.PopArrayOfBytes(&buf));
+            EXPECT_EQ(buf.size(), kUUIDSize);
+            EXPECT_EQ(buf, uuid_in_bytes);
           }
           EXPECT_FALSE(reader.HasMoreData());
           EXPECT_FALSE(array_reader.HasMoreData());
@@ -208,6 +203,30 @@ class FlossAdminClientTest : public testing::Test,
 
     client_->SetAllowedServices(
         base::BindLambdaForTesting([](DBusResult<Void> ret) {}), kTestUuidStr);
+  }
+
+  void TestSetSimpleSecurePairingEnabled() {
+    // Expected call to SetSimpleSecurePairingEnabled
+    EXPECT_CALL(*object_proxy_.get(),
+                DoCallMethodWithErrorResponse(
+                    HasMemberOf(admin::kSetSimpleSecurePairingEnabled), _, _))
+        .WillOnce([](::dbus::MethodCall* method_call, int timeout_ms,
+                     ::dbus::ObjectProxy::ResponseOrErrorCallback* cb) {
+          dbus::MessageReader reader(method_call);
+          bool enable;
+
+          EXPECT_TRUE(reader.PopBool(&enable));
+          EXPECT_TRUE(enable);
+
+          // Create a fake response with uint32_t return value.
+          auto response = ::dbus::Response::CreateEmpty();
+          dbus::MessageWriter writer(response.get());
+          writer.AppendUint32(kTestCallbackId);
+          std::move(*cb).Run(response.get(), /*err=*/nullptr);
+        });
+
+    client_->SetSimpleSecurePairingEnabled(
+        base::BindLambdaForTesting([](DBusResult<Void> ret) {}), true);
   }
 
   int adapter_index_ = 5;
@@ -239,5 +258,22 @@ TEST_F(FlossAdminClientTest, TestSetServiceAllowlistBeforeInit) {
 TEST_F(FlossAdminClientTest, TestSetServiceAllowlistAfterInit) {
   TestInit();
   TestSetServiceAllowlist();
+}
+
+TEST_F(FlossAdminClientTest, TestSetSimpleSecurePairingEnabledAfterInit) {
+  TestInit();
+  TestSetSimpleSecurePairingEnabled();
+}
+
+TEST_F(FlossAdminClientTest, TestSetMultiplePolicyAfterInit) {
+  TestInit();
+  TestSetServiceAllowlist();
+  TestSetSimpleSecurePairingEnabled();
+}
+
+TEST_F(FlossAdminClientTest, TestSetMultiplePolicyBeforeInit) {
+  TestSetServiceAllowlist();
+  TestSetSimpleSecurePairingEnabled();
+  TestInit();
 }
 }  // namespace floss

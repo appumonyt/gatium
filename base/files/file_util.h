@@ -94,9 +94,7 @@ MakeAbsoluteFilePathNoResolveSymbolicLinks(const FilePath& input);
 BASE_EXPORT int64_t ComputeDirectorySize(const FilePath& root_path);
 
 // Deletes the given path, whether it's a file or a directory.
-// If it's a directory, it's perfectly happy to delete all of the directory's
-// contents, but it will not recursively delete subdirectories and their
-// contents.
+// Directories will only be successfully deleted if empty.
 // Returns true if successful, false otherwise. It is considered successful to
 // attempt to delete a file that does not exist.
 //
@@ -730,6 +728,19 @@ BASE_EXPORT int GetMaximumPathComponentLength(const base::FilePath& path);
 // you intend to create executable shmem segments so this function can find
 // an appropriate location.
 BASE_EXPORT bool GetShmemTempDir(bool executable, FilePath* path);
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
+// Resolves this FilePath to a content URI if it represents a virtual
+// document path or is already a content URI. Returns std::nullopt otherwise.
+BASE_EXPORT std::optional<FilePath> ResolveToContentUri(const FilePath& path);
+
+// Resolves this FilePath to a virtual document path if it's a content URI
+// representing a document tree or is already a virtual document path. Returns
+// std::nullopt otherwise.
+BASE_EXPORT std::optional<FilePath> ResolveToVirtualDocumentPath(
+    const FilePath& path);
+
 #endif
 
 // Internal --------------------------------------------------------------------

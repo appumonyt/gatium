@@ -25,14 +25,6 @@ animationRangeStart
 animationTimeline
 animationTimingFunction
 animationTrigger
-animationTriggerBehavior
-animationTriggerExitRange
-animationTriggerExitRangeEnd
-animationTriggerExitRangeStart
-animationTriggerRange
-animationTriggerRangeEnd
-animationTriggerRangeStart
-animationTriggerTimeline
 appRegion
 appearance
 ascentOverride
@@ -163,6 +155,7 @@ containerName
 containerType
 content
 contentVisibility
+continue
 cornerBlockEndShape
 cornerBlockStartShape
 cornerBottomLeftShape
@@ -239,7 +232,7 @@ fontVariationSettings
 fontWeight
 forcedColorAdjust
 gap
-gapRulePaintOrder
+gapRuleOverlap
 getPropertyPriority
 getPropertyValue
 grid
@@ -325,6 +318,7 @@ maskPosition
 maskRepeat
 maskSize
 maskType
+masonry
 masonryDirection
 masonryFill
 masonryFlow
@@ -334,6 +328,7 @@ mathStyle
 maxBlockSize
 maxHeight
 maxInlineSize
+maxLines
 maxWidth
 minBlockSize
 minHeight
@@ -535,6 +530,14 @@ textWrap
 textWrapMode
 textWrapStyle
 timelineScope
+timelineTrigger
+timelineTriggerBehavior
+timelineTriggerExitRangeEnd
+timelineTriggerExitRangeStart
+timelineTriggerName
+timelineTriggerRangeEnd
+timelineTriggerRangeStart
+timelineTriggerTimeline
 top
 touchAction
 transform

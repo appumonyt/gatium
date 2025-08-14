@@ -58,7 +58,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_timing.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/background_response_processor.h"
-#include "third_party/blink/renderer/platform/loader/unencoded_digest.h"
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
@@ -90,8 +89,8 @@ void GetSharedBufferMemoryDump(SharedBuffer* buffer,
   WebMemoryAllocatorDump* dump =
       memory_dump->CreateMemoryAllocatorDump(StrCat({dump_prefix, dump_name}));
   dump->AddScalar("size", "bytes", dump_size);
-  memory_dump->AddSuballocation(
-      dump->Guid(), String(WTF::Partitions::kAllocatedObjectPoolName));
+  memory_dump->AddSuballocation(dump->Guid(),
+                                String(Partitions::kAllocatedObjectPoolName));
 }
 
 // These response headers are not copied from a revalidated response to the
@@ -200,9 +199,9 @@ void Resource::CheckResourceIntegrity() {
   // Otherwise, fall through to validating SRI.
   const FeatureContext* feature_context =
       loader_ ? loader_->GetFeatureContext() : nullptr;
-  auto unencoded_digest = GetResponse().UnencodedDigest(feature_context);
-  if (unencoded_digest.has_value() && !unencoded_digest->DoesMatch(Data())) {
-    DCHECK(RuntimeEnabledFeatures::UnencodedDigestEnabled(feature_context));
+  if (RuntimeEnabledFeatures::UnencodedDigestEnabled(feature_context) &&
+      !SubresourceIntegrity::CheckUnencodedDigests(
+          GetResponse().GetUnencodedDigests(), Data())) {
     integrity_disposition_ =
         ResourceIntegrityDisposition::kFailedUnencodedDigest;
     integrity_report_.AddConsoleErrorMessage(StrCat(
@@ -337,9 +336,8 @@ void Resource::TriggerNotificationForFinishObservers(
           std::move(finish_observers_));
   finish_observers_.clear();
 
-  task_runner->PostTask(
-      FROM_HERE,
-      WTF::BindOnce(&NotifyFinishObservers, WrapPersistent(new_collections)));
+  task_runner->PostTask(FROM_HERE, BindOnce(&NotifyFinishObservers,
+                                            WrapPersistent(new_collections)));
 
   DidRemoveClientOrObserver();
 }
@@ -403,8 +401,8 @@ void Resource::FinishAsError(const ResourceError& error,
   // So if this is an immediate failure (i.e., before NotifyStartLoad()),
   // post a task if the Resource::Type supports it.
   if (failed_during_start && !NeedsSynchronousCacheHit(GetType(), options_)) {
-    task_runner->PostTask(FROM_HERE, WTF::BindOnce(&Resource::NotifyFinished,
-                                                   WrapWeakPersistent(this)));
+    task_runner->PostTask(FROM_HERE, BindOnce(&Resource::NotifyFinished,
+                                              WrapWeakPersistent(this)));
   } else {
     NotifyFinished();
   }
@@ -427,10 +425,7 @@ AtomicString Resource::HttpContentType() const {
 }
 
 bool Resource::ForceIntegrityChecks() const {
-  const FeatureContext* feature_context =
-      loader_ ? loader_->GetFeatureContext() : nullptr;
-  return IsLinkPreload() ||
-         GetResponse().UnencodedDigest(feature_context).has_value();
+  return IsLinkPreload() || !GetResponse().GetUnencodedDigests().empty();
 }
 
 bool Resource::MustRefetchDueToIntegrityMetadata(
@@ -668,10 +663,9 @@ void Resource::AddClient(ResourceClient* client,
       !NeedsSynchronousCacheHit(GetType(), options_)) {
     clients_awaiting_callback_.insert(client);
     if (!async_finish_pending_clients_task_.IsActive()) {
-      async_finish_pending_clients_task_ =
-          PostCancellableTask(*task_runner, FROM_HERE,
-                              WTF::BindOnce(&Resource::FinishPendingClients,
-                                            WrapWeakPersistent(this)));
+      async_finish_pending_clients_task_ = PostCancellableTask(
+          *task_runner, FROM_HERE,
+          BindOnce(&Resource::FinishPendingClients, WrapWeakPersistent(this)));
     }
     return;
   }
@@ -944,7 +938,7 @@ void Resource::OnMemoryDump(WebMemoryDumpLevelOfDetail level_of_detail,
     while (ResourceClient* client = walker3.Next())
       client_names.push_back(StrCat({"(finished) ", client->DebugName()}));
     std::sort(client_names.begin(), client_names.end(),
-              WTF::CodeUnitCompareLessThan);
+              CodeUnitCompareLessThan);
 
     StringBuilder builder;
     for (wtf_size_t i = 0;
@@ -967,8 +961,8 @@ void Resource::OnMemoryDump(WebMemoryDumpLevelOfDetail level_of_detail,
   WebMemoryAllocatorDump* overhead_dump =
       memory_dump->CreateMemoryAllocatorDump(overhead_name);
   overhead_dump->AddScalar("size", "bytes", OverheadSize());
-  memory_dump->AddSuballocation(
-      overhead_dump->Guid(), String(WTF::Partitions::kAllocatedObjectPoolName));
+  memory_dump->AddSuballocation(overhead_dump->Guid(),
+                                String(Partitions::kAllocatedObjectPoolName));
 }
 
 String Resource::GetMemoryDumpName() const {
@@ -1017,6 +1011,7 @@ void Resource::RevalidationFailed() {
   integrity_report_.Clear();
   DestroyDecodedDataForFailedRevalidation();
   revalidation_status_ = RevalidationStatus::kNoRevalidatingOrFailed;
+  memory_cache_hit_count_ = 0;
 }
 
 void Resource::MarkAsPreload() {
@@ -1297,6 +1292,7 @@ void Resource::SetIsAdResource() {
 
 void Resource::UpdateMemoryCacheLastAccessedTime() {
   memory_cache_last_accessed_ = base::TimeTicks::Now();
+  IncrementMemoryCacheHitCount();
 }
 
 std::unique_ptr<BackgroundResponseProcessorFactory>

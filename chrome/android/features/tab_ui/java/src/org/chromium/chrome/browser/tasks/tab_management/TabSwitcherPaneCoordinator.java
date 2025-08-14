@@ -60,6 +60,7 @@ import org.chromium.chrome.browser.tab_ui.TabSwitcherCustomViewManager;
 import org.chromium.chrome.browser.tab_ui.TabSwitcherGroupSuggestionService;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabList;
+import org.chromium.chrome.browser.tasks.tab_management.PriceWelcomeMessageController.PriceMessageUpdateObserver;
 import org.chromium.chrome.browser.tasks.tab_management.TabGridContextMenuCoordinator.ShowTabListEditor;
 import org.chromium.chrome.browser.tasks.tab_management.TabGridDialogMediator.DialogController;
 import org.chromium.chrome.browser.tasks.tab_management.TabGridItemLongPressOrchestrator.CancelLongPressTabItemEventListener;
@@ -86,6 +87,7 @@ import org.chromium.ui.util.XrUtils;
 import org.chromium.ui.widget.ViewRectProvider;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /** Coordinator for a {@link TabSwitcherPaneBase}'s UI. */
@@ -116,7 +118,10 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
                 public void onRestoreAllAppendedMessage() {
                     updateBottomPadding();
                 }
+            };
 
+    private final PriceMessageUpdateObserver mPriceMessageUpdateObserver =
+            new PriceMessageUpdateObserver() {
                 @Override
                 public void onShowPriceWelcomeMessage() {
                     updateBottomPadding();
@@ -375,7 +380,8 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
                                     : Resources.ID_NULL,
                             onTabGroupCreation,
                             /* allowDragAndDrop= */ true,
-                            tabSwitcherDragHandler);
+                            tabSwitcherDragHandler,
+                            /* undoBarExplicitTrigger= */ null);
             mTabListCoordinator = tabListCoordinator;
             tabListCoordinator.setOnLongPressTabItemEventListener(mLongPressItemEventListener);
 
@@ -494,6 +500,11 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
         mTabListCoordinator.removeDragObserver(mDragObserver);
         mDragObserver = null;
         mMessageManager.removeObserver(mMessageUpdateObserver);
+        PriceWelcomeMessageController priceWelcomeMessageController =
+                getPriceWelcomeMessageController();
+        if (priceWelcomeMessageController != null) {
+            priceWelcomeMessageController.removeObserver(mPriceMessageUpdateObserver);
+        }
         mMessageManager.unbind(mTabListCoordinator);
         mMediator.destroy();
         mTabListCoordinator.onDestroy();
@@ -757,24 +768,43 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
 
     private void onTabSwitcherShown() {
         if (ChromeFeatureList.sTabSwitcherGroupSuggestionsAndroid.isEnabled()) {
-            assert mTabSwitcherGroupSuggestionService != null;
-            if (ChromeFeatureList.sTabSwitcherGroupSuggestionsTestModeAndroid.isEnabled()) {
-                mTabSwitcherGroupSuggestionService.forceTabGroupSuggestion();
-            } else {
-                mTabSwitcherGroupSuggestionService.maybeShowSuggestions();
-            }
+            showGroupSuggestionsAfterAnimations();
         }
 
         mTabListCoordinator.attachEmptyView();
     }
 
-    private @Nullable View getTabGridDialogAnimationSourceView(int tabId) {
+    private void showGroupSuggestionsAfterAnimations() {
+        mIsAnimatingSupplier.addSyncObserver(
+                new Callback<>() {
+                    @Override
+                    public void onResult(Boolean result) {
+                        if (!Objects.equals(result, false)) return;
+
+                        assert mTabSwitcherGroupSuggestionService != null;
+                        if (ChromeFeatureList.sTabSwitcherGroupSuggestionsTestModeAndroid
+                                .isEnabled()) {
+                            mTabSwitcherGroupSuggestionService.forceTabGroupSuggestion();
+                        } else {
+                            mTabSwitcherGroupSuggestionService.maybeShowSuggestions();
+                        }
+                        mIsAnimatingSupplier.removeObserver(this);
+                    }
+                });
+    }
+
+    private @Nullable View getTabGridDialogAnimationSourceView(Token tabGroupId) {
         // Returning null causes the animation to be a fade.
         // Do so if we are animating to show or hide the HubLayout or this is a low end device.
         if (mIsAnimatingSupplier.get() || SysUtils.isLowEndDevice()) return null;
 
+        TabGroupModelFilter filter = mTabGroupModelFilterSupplier.get();
+        assumeNonNull(filter);
+        int tabId = filter.getGroupLastShownTabId(tabGroupId);
+        if (tabId == Tab.INVALID_TAB_ID) return null;
+
         TabListCoordinator coordinator = mTabListCoordinator;
-        int index = coordinator.getTabIndexFromTabId(tabId);
+        int index = coordinator.getIndexForTabIdWithRelatedTabs(tabId);
         ViewHolder sourceViewHolder =
                 coordinator.getContainerView().findViewHolderForAdapterPosition(index);
         // TODO(crbug.com/41479135): This is band-aid fix that will show basic fade-in/fade-out
@@ -785,6 +815,8 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
     }
 
     private void onVisibilityChanged(boolean visible) {
+        PriceWelcomeMessageController priceWelcomeMessageController =
+                getPriceWelcomeMessageController();
         if (visible) {
             mMessageManager.bind(
                     mTabListCoordinator,
@@ -792,10 +824,16 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
                     /* priceWelcomeMessageReviewActionProvider= */ mMediator,
                     (tabId) -> mMediator.onTabSelecting(tabId, false));
             mMessageManager.addObserver(mMessageUpdateObserver);
+            if (priceWelcomeMessageController != null) {
+                priceWelcomeMessageController.addObserver(mPriceMessageUpdateObserver);
+            }
             updateBottomPadding();
             mTabListCoordinator.prepareTabSwitcherPaneView();
         } else {
             mMessageManager.removeObserver(mMessageUpdateObserver);
+            if (priceWelcomeMessageController != null) {
+                priceWelcomeMessageController.removeObserver(mPriceMessageUpdateObserver);
+            }
             mMessageManager.unbind(mTabListCoordinator);
             updateBottomPadding();
             mTabListCoordinator.postHiding();
@@ -811,7 +849,7 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
     }
 
     private PriceWelcomeMessageController getPriceWelcomeMessageController() {
-        return mMessageManager;
+        return mMessageManager.getPriceWelcomeMessageController();
     }
 
     private @Nullable CancelLongPressTabItemEventListener onLongPressOnTabCard(

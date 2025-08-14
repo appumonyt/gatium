@@ -34,12 +34,15 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/intent_picker_tab_helper.h"
+#include "chrome/browser/ui/user_education/browser_user_education_interface.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/browser/ui/web_applications/web_app_dialog_utils.h"
 #include "chrome/browser/ui/web_applications/web_app_dialogs.h"
 #include "chrome/browser/ui/web_applications/web_app_launch_utils.h"
 #include "chrome/browser/ui/web_applications/web_app_metrics.h"
 #include "chrome/browser/ui/web_applications/web_app_run_on_os_login_notification.h"
+#include "chrome/browser/user_education/user_education_service.h"
+#include "chrome/browser/user_education/user_education_service_factory.h"
 #include "chrome/browser/web_applications/web_app_callback_app_identity.h"
 #include "chrome/browser/web_applications/web_app_command_scheduler.h"
 #include "chrome/browser/web_applications/web_app_icon_manager.h"
@@ -162,6 +165,14 @@ void ShowNonclosableAppToast(const web_app::WebAppRegistrar& registrar,
 // static
 std::unique_ptr<WebAppUiManager> WebAppUiManager::Create(Profile* profile) {
   return std::make_unique<WebAppUiManagerImpl>(profile);
+}
+
+// static
+void WebAppUiManager::TriggerInstallNotSupportedDialog(
+    content::WebContents* web_contents,
+    Profile* profile,
+    base::OnceClosure callback) {
+  ShowInstallNotSupportedDialog(web_contents, profile, std::move(callback));
 }
 
 WebAppUiManagerImpl::WebAppUiManagerImpl(Profile* profile)
@@ -367,12 +378,6 @@ void WebAppUiManagerImpl::LaunchWebApp(apps::AppLaunchParams params,
                           std::move(callback));
 }
 
-void WebAppUiManagerImpl::WaitForFirstRunService(
-    Profile& profile,
-    FirstRunServiceCompletedCallback callback) {
-  std::move(callback).Run(/*success=*/true);
-}
-
 #if BUILDFLAG(IS_CHROMEOS)
 void WebAppUiManagerImpl::MigrateLauncherState(
     const webapps::AppId& from_app_id,
@@ -450,9 +455,10 @@ void WebAppUiManagerImpl::TriggerLaunchDialogForBackgroundInstall(
     const webapps::AppId& app_id,
     Profile* profile,
     const std::string& app_name,
+    const SkBitmap& icon,
     WebInstallAppLaunchAcceptanceCallback callback) {
   ShowWebInstallAppLaunchDialog(initiating_web_contents, app_id, profile,
-                                app_name, std::move(callback));
+                                app_name, icon, std::move(callback));
 }
 
 void WebAppUiManagerImpl::PresentUserUninstallDialog(
@@ -495,9 +501,11 @@ void WebAppUiManagerImpl::PresentUserUninstallDialog(
   WebAppProvider* provider = WebAppProvider::GetForWebApps(profile_);
   CHECK(provider);
 
-  provider->icon_manager().ReadIcons(
-      app_id, IconPurpose::ANY,
-      provider->registrar_unsafe().GetAppDownloadedIconSizesAny(app_id),
+  provider->icon_manager().ReadTrustedIconsWithFallbackToManifestIcons(
+      app_id,
+      provider->registrar_unsafe().GetAppTrustedIconSizesFallbackToUntrusted(
+          app_id),
+      IconPurpose::ANY,
       base::BindOnce(&WebAppUiManagerImpl::OnIconsReadForUninstall,
                      weak_ptr_factory_.GetWeakPtr(), app_id, uninstall_source,
                      parent_window, std::move(parent_window_tracker),
@@ -574,7 +582,7 @@ void WebAppUiManagerImpl::MaybeShowIPHPromoForAppsLaunchedViaLinkCapturing(
     return;
   }
 
-  const Browser* app_browser =
+  Browser* const app_browser =
       browser ? browser : AppBrowserController::FindForWebApp(*profile, app_id);
   if (!app_browser) {
     return;
@@ -805,7 +813,7 @@ const base::Feature& GetPromoFeatureEngagementFromBrowser(
 }
 
 void WebAppUiManagerImpl::ShowIPHPromoForAppsLaunchedViaLinkCapturing(
-    const Browser* browser,
+    Browser* browser,
     const webapps::AppId& app_id,
     bool is_activated) {
   if (!is_activated) {
@@ -825,7 +833,8 @@ void WebAppUiManagerImpl::ShowIPHPromoForAppsLaunchedViaLinkCapturing(
         }
       });
 
-  browser->window()->MaybeShowFeaturePromo(std::move(promo_params));
+  BrowserUserEducationInterface::From(browser)->MaybeShowFeaturePromo(
+      std::move(promo_params));
 
   // This is only needed for IPH bubbles that are anchored to a tab in a
   // browser. App browsers don't require this logic since tab switching and
@@ -843,15 +852,15 @@ void WebAppUiManagerImpl::ShowIPHPromoForAppsLaunchedViaLinkCapturing(
 }
 
 void WebAppUiManagerImpl::OnIPHPromoResponseForLinkCapturing(
-    const Browser* browser,
+    Browser* browser,
     const webapps::AppId& app_id) {
   if (!browser) {
     return;
   }
 
   const auto* const feature_promo_controller =
-      browser->window()->GetFeaturePromoController(
-          base::PassKey<WebAppUiManagerImpl>());
+      UserEducationServiceFactory::GetForBrowserContext(browser->GetProfile())
+          ->GetFeaturePromoController(base::PassKey<WebAppUiManagerImpl>());
   if (!feature_promo_controller) {
     return;
   }
@@ -883,13 +892,14 @@ void WebAppUiManagerImpl::OnIPHPromoResponseForLinkCapturing(
   }
 }
 
-void WebAppUiManagerImpl::OnTabChangedDuringIph(const Browser* browser) {
+void WebAppUiManagerImpl::OnTabChangedDuringIph(Browser* browser) {
   const auto& feature =
       feature_engagement::kIPHDesktopPWAsLinkCapturingLaunchAppInTab;
-  if (browser->window()->IsFeaturePromoQueued(feature)) {
-    browser->window()->AbortFeaturePromo(feature);
-  } else if (browser->window()->IsFeaturePromoActive(feature)) {
-    browser->window()->NotifyFeaturePromoFeatureUsed(
+  auto* const user_education = BrowserUserEducationInterface::From(browser);
+  if (user_education->IsFeaturePromoQueued(feature)) {
+    user_education->AbortFeaturePromo(feature);
+  } else if (user_education->IsFeaturePromoActive(feature)) {
+    user_education->NotifyFeaturePromoFeatureUsed(
         feature, FeaturePromoFeatureUsedAction::kClosePromoIfPresent);
   }
 }

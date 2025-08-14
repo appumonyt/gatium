@@ -35,8 +35,8 @@
 #include "services/service_manager/public/cpp/interface_provider.h"
 
 #if BUILDFLAG(ENABLE_GLIC)
-#include "chrome/browser/glic/glic_enabling.h"
-#include "chrome/browser/glic/glic_keyed_service.h"
+#include "chrome/browser/glic/public/glic_enabling.h"
+#include "chrome/browser/glic/public/glic_keyed_service.h"
 #endif
 
 @interface ChromeRenderWidgetHostViewMacDelegate () <HistorySwiperDelegate>

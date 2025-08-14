@@ -19,8 +19,8 @@
 #include "chrome/browser/extensions/api/settings_private/generated_prefs.h"
 #include "chrome/browser/extensions/api/settings_private/generated_prefs_factory.h"
 #include "chrome/browser/extensions/settings_api_helpers.h"
-#include "chrome/browser/glic/glic_enabling.h"
 #include "chrome/browser/glic/glic_pref_names.h"
+#include "chrome/browser/glic/public/glic_enabling.h"
 #include "chrome/browser/metrics/profile_pref_names.h"
 #include "chrome/browser/nearby_sharing/common/nearby_share_prefs.h"
 #include "chrome/browser/password_manager/generated_password_leak_detection_pref.h"
@@ -199,6 +199,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
   (*s_allowlist)[autofill::prefs::kAutofillBnplEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[autofill::prefs::kAutofillAiOptInStatus] =
       settings_api::PrefType::kBoolean;
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS)
@@ -1106,7 +1108,11 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[arc::prefs::kArcVisibleExternalStorages] =
       settings_api::PrefType::kList;
+  (*s_allowlist)[ash::prefs::kPowerOptimizedChargingStrategy] =
+      settings_api::PrefType::kNumber;
   (*s_allowlist)[ash::prefs::kPowerAdaptiveChargingEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[ash::prefs::kPowerChargeLimitEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[ash::prefs::kPowerBatterySaver] =
       settings_api::PrefType::kBoolean;
@@ -1285,9 +1291,6 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
   (*s_allowlist)
       [optimization_guide::prefs::kHistorySearchEnterprisePolicyAllowed] =
           settings_api::PrefType::kNumber;
-  (*s_allowlist)[optimization_guide::prefs::
-                     kPasswordChangeSubmissionEnterprisePolicyAllowed] =
-      settings_api::PrefType::kNumber;
   (*s_allowlist)[optimization_guide::prefs::
                      kProductSpecificationsEnterprisePolicyAllowed] =
       settings_api::PrefType::kNumber;

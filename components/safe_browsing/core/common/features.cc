@@ -38,13 +38,17 @@ BASE_FEATURE(kBundledSecuritySettings,
              "BundledSecuritySettings",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kClientSideDetectionAcceptHCAllowlist,
-             "ClientSideDetectionAcceptHCAllowlist",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kClientSideDetectionBrandAndIntentForScamDetection,
              "ClientSideDetectionBrandAndIntentForScamDetection",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kClientSideDetectionClipboardCopyApi,
+             "ClientSideDetectionClipboardCopyApi",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+const base::FeatureParam<double> kCSDClipboardCopyApiHCAcceptanceRate{
+    &kClientSideDetectionClipboardCopyApi, "HCAcceptanceRate",
+    /*default_value=*/0.0};
 
 BASE_FEATURE(kClientSideDetectionDebuggingMetadataCache,
              "ClientSideDetectionDebuggingMetadataCache",
@@ -86,6 +90,12 @@ BASE_FEATURE(kClientSideDetectionSamplePing,
              "ClientSideDetectionSamplePing",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kClientSideDetectionSendIntelligentScanInfoAndroid,
+             "ClientSideDetectionSendIntelligentScanInfoAndroid",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
+
 BASE_FEATURE(kClientSideDetectionShowLlamaScamVerdictWarning,
              "ClientSideDetectionShowLlamaScamVerdictWarning",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -93,6 +103,14 @@ BASE_FEATURE(kClientSideDetectionShowLlamaScamVerdictWarning,
 BASE_FEATURE(kClientSideDetectionShowScamVerdictWarning,
              "ClientSideDetectionShowScamVerdictWarning",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kClientSideDetectionRetryLimit,
+             "ClientSideDetectionRetryLimit",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+constexpr base::FeatureParam<int> kClientSideDetectionRetryLimitTime{
+    &kClientSideDetectionRetryLimit, /*name=*/"RetryTimeMax",
+    /*default_value=*/15};
 
 BASE_FEATURE(kClientSideDetectionVibrationApi,
              "ClientSideDetectionVibrationApi",
@@ -125,10 +143,6 @@ BASE_FEATURE(kDlpRegionalizedEndpoints,
              "DlpRegionalizedEndpoints",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kDownloadsPageReferrerUrl,
-             "DownloadsPageReferrerUrl",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kDownloadWarningSurvey,
              "DownloadWarningSurvey",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -142,7 +156,11 @@ constexpr base::FeatureParam<int> kDownloadWarningSurveyIgnoreDelaySeconds{
 
 BASE_FEATURE(kEnhancedFieldsForSecOps,
              "EnhancedFieldsForSecOps",
+#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT);
+#else
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 BASE_FEATURE(kEnhancedSafeBrowsingPromo,
              "EnhancedSafeBrowsingPromo",
@@ -155,7 +173,7 @@ BASE_FEATURE(kEnhancedSafeBrowsingPromo,
 
 BASE_FEATURE(kEnterpriseFileSystemAccessDeepScan,
              "EnterpriseFileSystemAccessDeepScan",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnterprisePasswordReuseUiRefresh,
              "EnterprisePasswordReuseUiRefresh",
@@ -180,15 +198,6 @@ BASE_FEATURE(kExtensionTelemetryDeclarativeNetRequestActionSignal,
 BASE_FEATURE(kExtensionTelemetryFileDataForCommandLineExtensions,
              "SafeBrowsingExtensionTelemetryFileDataForCommandLineExtensions",
              base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kExtensionTelemetryForEnterprise,
-             "SafeBrowsingExtensionTelemetryForEnterprise",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-constexpr base::FeatureParam<int>
-    kExtensionTelemetryEnterpriseReportingIntervalSeconds{
-        &kExtensionTelemetryForEnterprise, "EnterpriseReportingIntervalSeconds",
-        /*default_value=*/300};
 
 BASE_FEATURE(kExternalAppRedirectTelemetry,
              "SafeBrowsingExternalAppRedirectTelemetry",
@@ -230,7 +239,7 @@ constexpr base::FeatureParam<int> kHashPrefixRealTimeLookupsSampleRate{
 
 BASE_FEATURE(kLocalIpAddressInEvents,
              "LocalIpAddressInEvents",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kLocalListsUseSBv5,
              "SafeBrowsingLocalListsUseSBv5",
@@ -261,7 +270,7 @@ constexpr base::FeatureParam<std::string>
 
 BASE_FEATURE(kNotificationTelemetry,
              "NotificationTelemetry",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kRedWarningSurvey,
              "RedWarningSurvey",
@@ -362,7 +371,6 @@ base::Value::List GetFeatureStatusList() {
       &kEnhancedSafeBrowsingPromo,
       &kEnterprisePasswordReuseUiRefresh,
       &kExtensionTelemetryDeclarativeNetRequestActionSignal,
-      &kExtensionTelemetryForEnterprise,
       &kExternalAppRedirectTelemetry,
       &kHashPrefixRealTimeLookups,
       &kLocalIpAddressInEvents,

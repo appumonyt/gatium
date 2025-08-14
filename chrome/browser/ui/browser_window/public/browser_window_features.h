@@ -7,9 +7,10 @@
 
 #include <memory>
 
-#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "chrome/common/buildflags.h"
+#include "extensions/buildflags/buildflags.h"
+#include "ui/base/unowned_user_data/user_data_factory.h"
 
 #if BUILDFLAG(ENABLE_GLIC)
 namespace glic {
@@ -18,35 +19,55 @@ class GlicIphController;
 }  // namespace glic
 #endif
 
+class ActorOverlayWindowController;
+
+class ActorBorderViewController;
+class BookmarkBarController;
 class BookmarksSidePanelCoordinator;
+class BreadcrumbManagerBrowserAgent;
 class Browser;
+class BrowserActions;
+class BrowserContentSettingBubbleModelDelegate;
+class BrowserElements;
 class BrowserInstantController;
+class BrowserLiveTabContext;
 class BrowserLocationBarModelDelegate;
 class BrowserSyncedWindowDelegate;
+class BrowserUserEducationInterface;
 class BrowserView;
 class BrowserWindowInterface;
 class ChromeLabsCoordinator;
+class ColorProviderBrowserHelper;
+class CommentsSidePanelCoordinator;
+class ContentsBorderController;
 class CookieControlsBubbleCoordinator;
+class DataSharingBubbleController;
 class DesktopBrowserWindowCapabilities;
-class DownloadToolbarUIController;
+class DevtoolsUIController;
 class ExclusiveAccessManager;
 class FindBarController;
+class HistoryClustersSidePanelCoordinator;
 class HistorySidePanelCoordinator;
 class IncognitoClearBrowsingDataDialogCoordinator;
+class ImmersiveModeController;
 class LocationBarModel;
 class MemorySaverOptInIPHController;
+class PinnedToolbarActionsController;
 class ProfileMenuCoordinator;
 class ReadingListSidePanelCoordinator;
+class RecentActivityBubbleCoordinator;
 class SidePanelCoordinator;
 class SidePanelUI;
 class SigninViewController;
 class TabMenuModelDelegate;
 class TabSearchToolbarButtonController;
+class TabListBridge;
 class TabStripModel;
 class TabStripServiceRegister;
 class ToastController;
 class ToastService;
 class TranslateBubbleController;
+class UpgradeNotificationController;
 
 #if BUILDFLAG(IS_WIN)
 class WindowsTaskbarIconUpdater;
@@ -56,17 +77,36 @@ class WindowsTaskbarIconUpdater;
 namespace pdf::infobar {
 class PdfInfoBarController;
 }  // namespace pdf::infobar
+namespace default_browser {
+class PinInfoBarController;
+}  // namespace default_browser
 #endif
+
+#if !BUILDFLAG(IS_CHROMEOS)
+class DownloadToolbarUIController;
+#endif
+
+#if defined(USE_AURA)
+class OverscrollPrefManager;
+#endif  // defined(USE_AURA)
 
 namespace extensions {
 class BrowserExtensionWindowController;
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+class ExtensionBrowserWindowHelper;
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 class ExtensionSidePanelManager;
 class Mv2DisabledDialogController;
 }  // namespace extensions
 
 namespace tabs {
 class TabDeclutterController;
+class VerticalTabStripStateController;
 }  // namespace tabs
+
+namespace chrome {
+class BrowserCommandController;
+}  // namespace chrome
 
 namespace commerce {
 class ProductSpecificationsEntryPointController;
@@ -74,7 +114,12 @@ class ProductSpecificationsEntryPointController;
 
 namespace tabs {
 class GlicNudgeController;
-}
+class GlicActorTaskIconController;
+}  // namespace tabs
+
+namespace enterprise_data_protection {
+class DataProtectionUIController;
+}  // namespace enterprise_data_protection
 
 namespace tab_groups {
 class DeletionDialogController;
@@ -111,22 +156,24 @@ namespace split_tabs {
 class SplitTabScrimController;
 }  // namespace split_tabs
 
+namespace web_app {
+class AppBrowserController;
+}  // namespace web_app
+
 // This class owns the core controllers for features that are scoped to a given
-// browser window on desktop. It can be subclassed by tests to perform
-// dependency injection.
+// browser window on desktop.
+//
+// To inject alternative versions of features or mocks for testing, make your
+// feature compatible with `UnownedUserDataHost` and then use
+// `GetUserDataFactoryForTesting()` to inject your test-specific feature
+// object(s).
 class BrowserWindowFeatures {
  public:
-  static std::unique_ptr<BrowserWindowFeatures> CreateBrowserWindowFeatures();
-  virtual ~BrowserWindowFeatures();
+  BrowserWindowFeatures();
+  ~BrowserWindowFeatures();
 
   BrowserWindowFeatures(const BrowserWindowFeatures&) = delete;
   BrowserWindowFeatures& operator=(const BrowserWindowFeatures&) = delete;
-
-  // Call this method to stub out BrowserWindowFeatures for tests.
-  using BrowserWindowFeaturesFactory =
-      base::RepeatingCallback<std::unique_ptr<BrowserWindowFeatures>()>;
-  static void ReplaceBrowserWindowFeaturesForTesting(
-      BrowserWindowFeaturesFactory factory);
 
   // Called exactly once to initialize features. This is called prior to
   // instantiating BrowserView, to allow the view hierarchy to depend on state
@@ -145,6 +192,20 @@ class BrowserWindowFeatures {
   void TearDownPreBrowserWindowDestruction();
 
   // Public accessors for features:
+  web_app::AppBrowserController* app_browser_controller() {
+    return app_browser_controller_.get();
+  }
+
+  const web_app::AppBrowserController* app_browser_controller() const {
+    return app_browser_controller_.get();
+  }
+
+  BrowserActions* browser_actions() { return browser_actions_.get(); }
+
+  chrome::BrowserCommandController* browser_command_controller() {
+    return browser_command_controller_.get();
+  }
+
   extensions::Mv2DisabledDialogController*
   mv2_disabled_dialog_controller_for_testing() {
     return mv2_disabled_dialog_controller_.get();
@@ -166,9 +227,20 @@ class BrowserWindowFeatures {
     return bookmarks_side_panel_coordinator_.get();
   }
 
+  CommentsSidePanelCoordinator* comments_side_panel_coordinator() {
+    return comments_side_panel_coordinator_.get();
+  }
+
+  PinnedToolbarActionsController* pinned_toolbar_actions_controller() {
+    return pinned_toolbar_actions_controller_.get();
+  }
+
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
   pdf::infobar::PdfInfoBarController* pdf_infobar_controller() {
     return pdf_infobar_controller_.get();
+  }
+  default_browser::PinInfoBarController* pin_infobar_controller() {
+    return pin_infobar_controller_.get();
   }
 #endif
 
@@ -196,6 +268,10 @@ class BrowserWindowFeatures {
     return tab_declutter_controller_.get();
   }
 
+  tabs::VerticalTabStripStateController* vertical_tab_strip_state_controller() {
+    return vertical_tab_strip_state_controller_.get();
+  }
+
   tabs::GlicNudgeController* glic_nudge_controller() {
     return glic_nudge_controller_.get();
   }
@@ -221,9 +297,11 @@ class BrowserWindowFeatures {
     return extension_side_panel_manager_.get();
   }
 
+#if !BUILDFLAG(IS_CHROMEOS)
   DownloadToolbarUIController* download_toolbar_ui_controller() {
     return download_toolbar_ui_controller_.get();
   }
+#endif
 
   tab_groups::MostRecentSharedTabUpdateStore*
   most_recent_shared_tab_update_store() {
@@ -263,10 +341,6 @@ class BrowserWindowFeatures {
     return tab_group_deletion_dialog_controller_.get();
   }
 
-  extensions::BrowserExtensionWindowController* extension_window_controller() {
-    return extension_window_controller_.get();
-  }
-
   SigninViewController* signin_view_controller() {
     return signin_view_controller_.get();
   }
@@ -295,8 +369,16 @@ class BrowserWindowFeatures {
     return new_tab_footer_controller_.get();
   }
 
+  DevtoolsUIController* devtools_ui_controller() {
+    return devtools_ui_controller_.get();
+  }
+
   split_tabs::SplitTabScrimController* split_tab_scrim_controller() {
     return split_tab_scrim_controller_.get();
+  }
+
+  ContentsBorderController* contents_border_controller() {
+    return contents_border_controller_.get();
   }
 
   ProfileMenuCoordinator* profile_menu_coordinator() {
@@ -308,6 +390,12 @@ class BrowserWindowFeatures {
     return incognito_clear_browsing_data_dialog_coordinator_.get();
   }
 
+#if defined(USE_AURA)
+  OverscrollPrefManager* overscroll_pref_manager() {
+    return overscroll_pref_manager_.get();
+  }
+#endif  // defined(USE_AURA)
+
   // Get the FindBarController for this browser window, creating it if it does
   // not yet exist.
   FindBarController* GetFindBarController();
@@ -315,24 +403,63 @@ class BrowserWindowFeatures {
   // Returns true if a FindBarController exists for this browser window.
   bool HasFindBarController() const;
 
+  DataSharingBubbleController* data_sharing_bubble_controller() {
+    return data_sharing_bubble_controller_.get();
+  }
+
   ExclusiveAccessManager* exclusive_access_manager() {
     return exclusive_access_manager_.get();
   }
 
- protected:
-  BrowserWindowFeatures();
+  HistoryClustersSidePanelCoordinator*
+  history_clusters_side_panel_coordinator() {
+    return history_clusters_side_panel_coordinator_.get();
+  }
 
-  // Override these methods to stub out individual feature controllers for
-  // testing. e.g.
-  // virtual std::unique_ptr<FooFeature> CreateFooFeature();
+  ImmersiveModeController* immersive_mode_controller() {
+    return immersive_mode_controller_.get();
+  }
+  const ImmersiveModeController* immersive_mode_controller() const {
+    return immersive_mode_controller_.get();
+  }
+
+  UpgradeNotificationController* upgrade_notification_controller() {
+    return upgrade_notification_controller_.get();
+  }
+
+  BrowserContentSettingBubbleModelDelegate*
+  content_setting_bubble_model_delegate() {
+    return content_setting_bubble_model_delegate_.get();
+  }
+
+  BrowserLiveTabContext* live_tab_context() { return live_tab_context_.get(); }
+
+  static ui::UserDataFactoryWithOwner<BrowserWindowInterface>&
+  GetUserDataFactoryForTesting();
 
  private:
+  static ui::UserDataFactoryWithOwner<BrowserWindowInterface>&
+  GetUserDataFactory();
+
   // A collection of features specific to desktop versions of Chrome.
   std::unique_ptr<DesktopBrowserWindowCapabilities>
       desktop_browser_window_capabilities_;
 
   // Features that are per-browser window will each have a controller. e.g.
   // std::unique_ptr<FooFeature> foo_feature_;
+
+  // Helper which handles bookmark app specific browser configuration.
+  // This must be initialized before |command_controller_| to ensure the correct
+  // set of commands are enabled.
+  std::unique_ptr<web_app::AppBrowserController> app_browser_controller_;
+
+  std::unique_ptr<BrowserActions> browser_actions_;
+
+  std::unique_ptr<chrome::BrowserCommandController> browser_command_controller_;
+
+  std::unique_ptr<BrowserElements> browser_elements_;
+
+  std::unique_ptr<BookmarkBarController> bookmark_bar_controller_;
 
   std::unique_ptr<BrowserInstantController> instant_controller_;
 
@@ -343,6 +470,8 @@ class BrowserWindowFeatures {
 
   std::unique_ptr<commerce::ProductSpecificationsEntryPointController>
       product_specifications_entry_point_controller_;
+
+  std::unique_ptr<ImmersiveModeController> immersive_mode_controller_;
 
   std::unique_ptr<ExclusiveAccessManager> exclusive_access_manager_;
 
@@ -357,6 +486,9 @@ class BrowserWindowFeatures {
 
   std::unique_ptr<tabs::TabDeclutterController> tab_declutter_controller_;
 
+  std::unique_ptr<tabs::VerticalTabStripStateController>
+      vertical_tab_strip_state_controller_;
+
   std::unique_ptr<MemorySaverOptInIPHController>
       memory_saver_opt_in_iph_controller_;
 
@@ -365,8 +497,17 @@ class BrowserWindowFeatures {
   std::unique_ptr<BookmarksSidePanelCoordinator>
       bookmarks_side_panel_coordinator_;
 
+  std::unique_ptr<CommentsSidePanelCoordinator>
+      comments_side_panel_coordinator_;
+
+  std::unique_ptr<PinnedToolbarActionsController>
+      pinned_toolbar_actions_controller_;
+
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
   std::unique_ptr<pdf::infobar::PdfInfoBarController> pdf_infobar_controller_;
+
+  std::unique_ptr<default_browser::PinInfoBarController>
+      pin_infobar_controller_;
 #endif
 
   std::unique_ptr<SidePanelCoordinator> side_panel_coordinator_;
@@ -384,9 +525,19 @@ class BrowserWindowFeatures {
 
   std::unique_ptr<media_router::CastBrowserController> cast_browser_controller_;
 
+#if !BUILDFLAG(IS_CHROMEOS)
   std::unique_ptr<DownloadToolbarUIController> download_toolbar_ui_controller_;
+#endif
+
+  std::unique_ptr<ActorOverlayWindowController>
+      actor_overlay_window_controller_;
+
+  std::unique_ptr<ActorBorderViewController> actor_border_view_controller_;
 
   std::unique_ptr<tabs::GlicNudgeController> glic_nudge_controller_;
+
+  std::unique_ptr<tabs::GlicActorTaskIconController>
+      glic_actor_task_icon_controller_;
 
 #if BUILDFLAG(ENABLE_GLIC)
   std::unique_ptr<glic::GlicButtonController> glic_button_controller_;
@@ -428,16 +579,24 @@ class BrowserWindowFeatures {
   std::unique_ptr<new_tab_footer::NewTabFooterController>
       new_tab_footer_controller_;
 
+  std::unique_ptr<DevtoolsUIController> devtools_ui_controller_;
+
+  std::unique_ptr<enterprise_data_protection::DataProtectionUIController>
+      data_protection_ui_controller_;
+
   std::unique_ptr<ReadingListSidePanelCoordinator>
       reading_list_side_panel_coordinator_;
-
-  std::unique_ptr<extensions::BrowserExtensionWindowController>
-      extension_window_controller_;
 
   std::unique_ptr<ProfileMenuCoordinator> profile_menu_coordinator_;
 
   std::unique_ptr<IncognitoClearBrowsingDataDialogCoordinator>
       incognito_clear_browsing_data_dialog_coordinator_;
+
+#if defined(USE_AURA)
+  std::unique_ptr<OverscrollPrefManager> overscroll_pref_manager_;
+#endif  // defined(USE_AURA)
+
+  std::unique_ptr<ColorProviderBrowserHelper> color_provider_browser_helper_;
 
   // This is an experimental API that interacts with the TabStripModel.
   std::unique_ptr<TabStripServiceRegister> tab_strip_service_;
@@ -446,15 +605,52 @@ class BrowserWindowFeatures {
   // non-NULL, it may or may not be visible.
   std::unique_ptr<FindBarController> find_bar_controller_;
 
+  std::unique_ptr<DataSharingBubbleController> data_sharing_bubble_controller_;
+
+  std::unique_ptr<TabListBridge> tab_list_bridge_;
+
+  // Note: Depends on TabListBridge, so should come after it in the member list.
+  std::unique_ptr<extensions::BrowserExtensionWindowController>
+      extension_window_controller_;
+
+  std::unique_ptr<HistoryClustersSidePanelCoordinator>
+      history_clusters_side_panel_coordinator_;
+
+  std::unique_ptr<UpgradeNotificationController>
+      upgrade_notification_controller_;
+
+  // Helper which implements the ContentSettingBubbleModel interface.
+  std::unique_ptr<BrowserContentSettingBubbleModelDelegate>
+      content_setting_bubble_model_delegate_;
+
+  // Helper which implements the LiveTabContext interface.
+  std::unique_ptr<BrowserLiveTabContext> live_tab_context_;
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  std::unique_ptr<extensions::ExtensionBrowserWindowHelper>
+      extension_browser_window_helper_;
+#endif
+
+  // Listens for browser-related breadcrumb events to be added to crash reports.
+  std::unique_ptr<BreadcrumbManagerBrowserAgent>
+      breadcrumb_manager_browser_agent_;
+
   // TODO(crbug.com/423956131): Remove this.
   raw_ptr<BrowserWindowInterface> browser_ = nullptr;
 
   std::unique_ptr<split_tabs::SplitTabScrimController>
       split_tab_scrim_controller_;
 
+  std::unique_ptr<RecentActivityBubbleCoordinator>
+      recent_activity_bubble_coordinator_;
+
+  std::unique_ptr<ContentsBorderController> contents_border_controller_;
+
 #if BUILDFLAG(IS_WIN)
   std::unique_ptr<WindowsTaskbarIconUpdater> windows_taskbar_icon_updater_;
 #endif
+
+  std::unique_ptr<BrowserUserEducationInterface> user_education_;
 };
 
 #endif  // CHROME_BROWSER_UI_BROWSER_WINDOW_PUBLIC_BROWSER_WINDOW_FEATURES_H_

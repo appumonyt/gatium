@@ -42,20 +42,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-// Some tests use methods that are not implemented in SQLBackend. Therefore,
-// this macro is used to skip such tests.
-// TODO(crbug.com/422065015): Remove this macro once such methods are
-// implemented.
-#if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
-#define SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED()                                 \
-  if (GetParam() == BackendToTest::kSql) {                                    \
-    LOG(INFO) << "Skipping test for SQL backend as it's not implemented yet"; \
-    return;                                                                   \
-  }
-#else
-#define SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED()
-#endif
-
 using net::test::IsError;
 using net::test::IsOk;
 
@@ -107,7 +93,9 @@ class DiskCacheEntryTest : public DiskCacheTestWithCache {
   void PartialSparseEntry();
   void SparseInvalidArg();
   void SparseClipEnd(int64_t max_index, bool expected_unsupported);
+  void CacheGiantEntry();
   bool SimpleCacheMakeBadChecksumEntry(const std::string& key, int data_size);
+  void EvictOldEntries();
   bool SimpleCacheThirdStreamFileExists(const char* key);
   void SyncDoomEntry(const char* key);
   void CreateEntryWithHeaderBodyAndSideData(const std::string& key,
@@ -380,7 +368,6 @@ void DiskCacheEntryTest::InternalAsyncIO() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, InternalAsyncIO) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   InternalAsyncIO();
 }
@@ -575,7 +562,6 @@ void DiskCacheEntryTest::ExternalAsyncIO() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, ExternalAsyncIO) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   ExternalAsyncIO();
 }
@@ -995,7 +981,6 @@ TEST_F(DiskCacheEntryTest, ZeroLengthIONoBuffer) {
 }
 
 TEST_P(DiskCacheGenericEntryTest, ReadDataWithNegativeOffset) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
 
   std::string key("the first key");
@@ -1418,7 +1403,6 @@ void DiskCacheEntryTest::DoomNormalEntry() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, DoomEntry) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   DoomNormalEntry();
 }
@@ -1642,7 +1626,6 @@ void DiskCacheEntryTest::BasicSparseIO() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, BasicSparseIO) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   BasicSparseIO();
 }
@@ -1668,7 +1651,6 @@ void DiskCacheEntryTest::HugeSparseIO() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, HugeSparseIO) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   HugeSparseIO();
 }
@@ -1697,7 +1679,6 @@ void DiskCacheEntryTest::LargeOffsetSparseIO() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, LargeOffsetSparseIO) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   // The test only works on SimpleCache and Memory Cache now since other backend
   // does not support 2GB+ offset for 32 bits architecture.
   // TODO(crbug.com/391398191): Expand the test target to all cache backend.
@@ -1788,13 +1769,11 @@ void DiskCacheEntryTest::GetAvailableRangeTest() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, GetAvailableRange) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   GetAvailableRangeTest();
 }
 
 TEST_P(DiskCacheGenericEntryTest, GetAvailableRangeForLargeOffset) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   // The test only works on SimpleCache and Memory Cache now since other backend
   // does not support 2GB+ offset for 32 bits architecture.
   // TODO(crbug.com/391398191): Expand the test target to all cache backend.
@@ -2216,7 +2195,6 @@ void DiskCacheEntryTest::UpdateSparseEntry() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, UpdateSparseEntry) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   UpdateSparseEntry();
 }
@@ -2277,7 +2255,6 @@ void DiskCacheEntryTest::DoomSparseEntry() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, DoomSparseEntry) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   if (backend_to_test() == BackendToTest::kBlockfile) {
     UseCurrentThread();
   }
@@ -2445,7 +2422,6 @@ void DiskCacheEntryTest::PartialSparseEntry() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, PartialSparseEntry) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   PartialSparseEntry();
 }
@@ -2485,7 +2461,6 @@ void DiskCacheEntryTest::SparseInvalidArg() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, SparseInvalidArg) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
   SparseInvalidArg();
 }
@@ -2532,7 +2507,6 @@ void DiskCacheEntryTest::SparseClipEnd(int64_t max_index,
 }
 
 TEST_P(DiskCacheGenericEntryTest, SparseClipEnd) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   InitCache();
 
   // Blockfile refuses to deal with sparse indices over 64GiB.
@@ -2773,13 +2747,12 @@ TEST_F(DiskCacheEntryTest, KeySanityCheck3) {
   entry->Close();
 }
 
-TEST_F(DiskCacheEntryTest, SimpleCacheGiantEntry) {
+void DiskCacheEntryTest::CacheGiantEntry() {
   const int kBufSize = 32 * 1024;
   auto buffer = CacheTestCreateAndFillBuffer(kBufSize, false);
 
-  // Make sure SimpleCache can write up to 5MiB entry even with a 20MiB cache
-  // size that Android WebView uses at the time of this test's writing.
-  SetBackendToTest(BackendToTest::kSimple);
+  // Make sure SimpleCache/SqlCache can write up to 5MiB entry even with a 20MiB
+  // cache size that Android WebView uses at the time of this test's writing.
   SetMaxSize(20 * 1024 * 1024);
   InitCache();
 
@@ -2806,6 +2779,156 @@ TEST_F(DiskCacheEntryTest, SimpleCacheGiantEntry) {
                         kBufSize, true /* truncate */));
     entry2->Close();
   }
+}
+
+TEST_F(DiskCacheEntryTest, SimpleCacheGiantEntry) {
+  SetBackendToTest(BackendToTest::kSimple);
+  CacheGiantEntry();
+}
+
+#if !BUILDFLAG(IS_WIN)
+// This test is too slow on Windows which ends up with Timeout.
+// Writing to a large offset can be slow on some filesystems if they don't
+// efficiently support sparse files.
+TEST_F(DiskCacheEntryTest, SimpleCacheLargeOffsetIO) {
+  SetBackendToTest(BackendToTest::kSimple);
+  SetMaxSize(100LL * 1024 * 1024 * 1024);
+  InitCache();
+
+  std::string key("the first key");
+  disk_cache::Entry* entry;
+  ASSERT_THAT(CreateEntry(key, &entry), IsOk());
+
+  // Write 4 MB so that we cover multiple entries.
+  static constexpr int kSize = 4 * 1024 * 1024;
+
+  auto buf_1 = CacheTestCreateAndFillBuffer(kSize, false);
+  auto buf_2 = base::MakeRefCounted<net::IOBufferWithSize>(kSize);
+
+  // Write data from 4GB - 2MB to 4GB + 2MB.
+  constexpr int64_t kOffset = 4LL * 1024 * 1024 * 1024 - 2 * 1024 * 1024;
+
+  net::TestCompletionCallback cb;
+
+  int ret = entry->WriteData(0, 0, buf_1.get(), kSize, cb.callback(), false);
+  EXPECT_EQ(kSize, cb.GetResult(ret));
+
+  ret = entry->ReadData(0, 0, buf_2.get(), kSize, cb.callback());
+
+  ASSERT_EQ(kSize, cb.GetResult(ret));
+  EXPECT_EQ(buf_1->first(kSize), buf_2->span());
+
+  entry->Close();
+  ASSERT_THAT(OpenEntry(key, &entry), IsOk());
+
+  ret = entry->WriteData(1, kOffset, buf_1.get(), kSize, cb.callback(), false);
+  EXPECT_EQ(kSize, cb.GetResult(ret));
+  EXPECT_EQ(kOffset + kSize, entry->GetDataSize(1));
+
+  entry->Close();
+  ASSERT_THAT(OpenEntry(key, &entry), IsOk());
+
+  buf_2 = base::MakeRefCounted<net::IOBufferWithSize>(kSize);
+  ret = entry->ReadData(0, 0, buf_2.get(), kSize, cb.callback());
+
+  ASSERT_EQ(kSize, cb.GetResult(ret));
+  EXPECT_EQ(buf_1->first(kSize), buf_2->span());
+
+  buf_2 = base::MakeRefCounted<net::IOBufferWithSize>(kSize);
+  ret = entry->ReadData(1, kOffset, buf_2.get(), kSize, cb.callback());
+
+  ASSERT_EQ(kSize, cb.GetResult(ret));
+  EXPECT_EQ(buf_1->first(kSize), buf_2->span());
+
+  entry->Close();
+}
+#endif  // !BUILDFLAG(IS_WIN)
+
+TEST_F(DiskCacheEntryTest, SimpleCacheInvalidLargeOffsetWriteToStream0) {
+  SetBackendToTest(BackendToTest::kSimple);
+  SetMaxSize(100LL * 1024 * 1024 * 1024);
+  InitCache();
+
+  std::string key("the first key");
+  disk_cache::Entry* entry;
+  ASSERT_THAT(CreateEntry(key, &entry), IsOk());
+
+  // Write 4 MB so that we cover multiple entries.
+  static constexpr int kSize = 4 * 1024 * 1024;
+
+  auto buf_1 = CacheTestCreateAndFillBuffer(kSize, false);
+
+  // Write data from 4GB - 2MB to 4GB + 2MB.
+  constexpr int64_t kOffset = 4LL * 1024 * 1024 * 1024 - 2 * 1024 * 1024;
+
+  // Stream 0 data size limitation is int32_t max. If we pass something which
+  // exceeds the limitation, it should fail.
+  EXPECT_EQ(net::ERR_INVALID_ARGUMENT,
+            entry->WriteData(0, kOffset, buf_1.get(), kSize,
+                             net::CompletionOnceCallback(), false));
+  entry->Close();
+}
+
+TEST_P(DiskCacheGenericEntryTest, InvalidLargeOffsetWrite) {
+  // SimpleCache supports large offset.
+  if (backend_to_test() == BackendToTest::kSimple) {
+    return;
+  }
+
+  InitCache();
+  std::string key("the first key");
+  disk_cache::Entry* entry;
+  ASSERT_THAT(CreateEntry(key, &entry), IsOk());
+
+  // Write 4 MB.
+  static constexpr size_t kSize = 4 * 1024 * 1024;
+  auto buf_1 = CacheTestCreateAndFillBuffer(kSize, false);
+
+  // Try to write data from 4GB - 2MB to 4GB + 2MB.
+  constexpr int64_t offset =
+      static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1;
+
+  for (int i = 0; i < SupportedStreamCount(); ++i) {
+    EXPECT_EQ(net::ERR_INVALID_ARGUMENT,
+              entry->WriteData(i, offset, buf_1.get(), kSize,
+                               net::CompletionOnceCallback(), false));
+  }
+
+  entry->Close();
+}
+
+TEST_P(DiskCacheGenericEntryTest, InvalidLargeOffsetRead) {
+  // SimpleCache supports large offset.
+  if (backend_to_test() == BackendToTest::kSimple) {
+    return;
+  }
+
+  InitCache();
+  std::string key("the first key");
+  disk_cache::Entry* entry;
+  ASSERT_THAT(CreateEntry(key, &entry), IsOk());
+
+  // Write 4 MB.
+  static constexpr size_t kSize = 4 * 1024 * 1024;
+  auto buf_1 = CacheTestCreateAndFillBuffer(kSize, false);
+  auto buf_2 = base::MakeRefCounted<net::IOBufferWithSize>(kSize);
+
+  net::TestCompletionCallback cb;
+
+  int ret = entry->WriteData(0, 0, buf_1.get(), kSize, cb.callback(), false);
+  EXPECT_EQ(kSize, cb.GetResult(ret));
+
+  // Try to read data from 4GB - 2MB to 4GB + 2MB.
+  constexpr int64_t offset =
+      static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1;
+
+  for (int i = 0; i < SupportedStreamCount(); ++i) {
+    EXPECT_EQ(net::ERR_INVALID_ARGUMENT,
+              entry->ReadData(i, offset, buf_2.get(), kSize,
+                              net::CompletionOnceCallback()));
+  }
+
+  entry->Close();
 }
 
 TEST_F(DiskCacheEntryTest, SimpleCacheReadWriteDestroyBuffer) {
@@ -3763,14 +3886,13 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOptimisticCreateFailsOnOpen) {
 }
 
 // Tests that old entries are evicted while new entries remain in the index.
-// This test relies on non-mandatory properties of the simple Cache Backend:
+// This test relies on non-mandatory properties of the Simple and SQL Backend:
 // LRU eviction, specific values of high-watermark and low-watermark etc.
 // When changing the eviction algorithm, the test will have to be re-engineered.
-TEST_F(DiskCacheEntryTest, SimpleCacheEvictOldEntries) {
+void DiskCacheEntryTest::EvictOldEntries() {
   const int kMaxSize = 200 * 1024;
   const int kWriteSize = kMaxSize / 10;
   const int kNumExtraEntries = 12;
-  SetBackendToTest(BackendToTest::kSimple);
   SetMaxSize(kMaxSize);
   InitCache();
 
@@ -3809,6 +3931,131 @@ TEST_F(DiskCacheEntryTest, SimpleCacheEvictOldEntries) {
         << "Should not have evicted fresh entry " << entry_no;
     entry->Close();
   }
+}
+
+TEST_F(DiskCacheEntryTest, SimpleCacheEvictOldEntries) {
+  SetBackendToTest(BackendToTest::kSimple);
+  EvictOldEntries();
+}
+
+// Tests that OnExternalCacheHit correctly updates an entry's last-used time,
+// preventing it from being evicted.
+TEST_P(DiskCacheGenericEntryTest, OnExternalCacheHit) {
+  const int kMaxSize = 2 * 1024 * 1024;
+  const int kWriteSize = kMaxSize / 10;
+  const int kNumExtraEntries = 12;
+  SetMaxSize(kMaxSize);
+  InitCache();
+
+  auto buffer = CacheTestCreateAndFillBuffer(kWriteSize, false);
+
+  disk_cache::Entry* entry;
+
+  // Create two initial entries. `key1` will be repeatedly "hit" to keep it
+  // fresh, while `key2` will be allowed to become old.
+  std::string key1("the first key");
+  ASSERT_THAT(CreateEntry(key1, &entry), IsOk());
+  EXPECT_EQ(kWriteSize,
+            WriteData(entry, 1, 0, buffer.get(), kWriteSize, false));
+  entry->Close();
+  AddDelay();
+
+  std::string key2("the second key");
+  ASSERT_THAT(CreateEntry(key2, &entry), IsOk());
+  EXPECT_EQ(kWriteSize,
+            WriteData(entry, 1, 0, buffer.get(), kWriteSize, false));
+  entry->Close();
+  AddDelay();
+
+  // Create a series of new entries to fill up the cache and trigger eviction.
+  // Before each new entry, call OnExternalCacheHit for `key1` to update its
+  // last-used time.
+  std::string key3("the key prefix");
+  for (int i = 0; i < kNumExtraEntries; i++) {
+    cache_->OnExternalCacheHit(key1);
+    AddDelay();
+    ASSERT_THAT(CreateEntry(key3 + base::NumberToString(i), &entry), IsOk());
+    ScopedEntryPtr entry_closer(entry);
+    EXPECT_EQ(kWriteSize,
+              WriteData(entry, 1, 0, buffer.get(), kWriteSize, false));
+  }
+
+  // `key1` should still be in the cache because it was repeatedly "hit".
+  ASSERT_EQ(net::OK, OpenEntry(key1, &entry))
+      << "Should not have evicted the first entry";
+  entry->Close();
+
+  // `key2` should have been evicted because it became the least recently used.
+  ASSERT_NE(net::OK, OpenEntry(key2, &entry))
+      << "Should have evicted the second entry";
+
+  // The most recently created entry should also still be in the cache.
+  ASSERT_EQ(
+      net::OK,
+      OpenEntry(key3 + base::NumberToString(kNumExtraEntries - 1), &entry))
+      << "Should not have evicted the most recent entry";
+  entry->Close();
+}
+
+// Tests that OnExternalCacheHit works correctly for an entry that is currently
+// active (i.e., has an open handle).
+TEST_P(DiskCacheGenericEntryTest, OnExternalCacheHitActiveEntry) {
+  const int kMaxSize = 2 * 1024 * 1024;
+  const int kWriteSize = kMaxSize / 10;
+  const int kNumExtraEntries = 12;
+  SetMaxSize(kMaxSize);
+  InitCache();
+
+  auto buffer = CacheTestCreateAndFillBuffer(kWriteSize, false);
+
+  disk_cache::Entry* first_entry;
+
+  // Create an entry for `key1` and keep it open.
+  std::string key1("the first key");
+  ASSERT_THAT(CreateEntry(key1, &first_entry), IsOk());
+  EXPECT_EQ(kWriteSize,
+            WriteData(first_entry, 1, 0, buffer.get(), kWriteSize, false));
+  AddDelay();
+
+  // Create a second entry and close it.
+  disk_cache::Entry* entry;
+  std::string key2("the second key");
+  ASSERT_THAT(CreateEntry(key2, &entry), IsOk());
+  EXPECT_EQ(kWriteSize,
+            WriteData(entry, 1, 0, buffer.get(), kWriteSize, false));
+  entry->Close();
+  AddDelay();
+
+  // Create new entries to trigger eviction. Before each creation, "hit" the
+  // active entry for `key1`.
+  std::string key3("the key prefix");
+  for (int i = 0; i < kNumExtraEntries; i++) {
+    cache_->OnExternalCacheHit(key1);
+    AddDelay();
+    ASSERT_THAT(CreateEntry(key3 + base::NumberToString(i), &entry), IsOk());
+    ScopedEntryPtr entry_closer(entry);
+    EXPECT_EQ(kWriteSize,
+              WriteData(entry, 1, 0, buffer.get(), kWriteSize, false));
+  }
+
+  // Close the active entry for `key1`.
+  first_entry->Close();
+
+  // `key1` should still be present because it was repeatedly "hit".
+  ASSERT_EQ(net::OK, OpenEntry(key1, &entry))
+      << "Should not have evicted the first entry";
+  entry->Close();
+
+  // `key2` should have been evicted.
+  ASSERT_NE(net::OK, OpenEntry(key2, &entry))
+      << "Should have evicted the second entry";
+
+  // The most recent entry should also be present.
+  ASSERT_EQ(
+      net::OK,
+      OpenEntry(key3 + base::NumberToString(kNumExtraEntries - 1), &entry))
+      << "Should not have evicted the most recent entry";
+  entry->Close();
 }
 
 // Tests that if a read and a following in-flight truncate are both in progress
@@ -4113,7 +4360,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheStream1SizeChanges) {
                          base::File::FLAG_READ | base::File::FLAG_OPEN);
   ASSERT_TRUE(entry_file0.IsValid());
 
-  auto data_size = std::to_array<int32_t>({kSize, stream1_size, 0});
+  auto data_size = std::to_array<int64_t>({kSize, stream1_size, 0});
   int sparse_data_size = 0;
   disk_cache::SimpleEntryStat entry_stat(base::Time::Now(), data_size,
                                          sparse_data_size);
@@ -4247,6 +4494,8 @@ void DiskCacheEntryTest::UseAfterBackendDestruction() {
   WriteData(entry, 1, 0, buffer.get(), kSize, false);
   ReadData(entry, 1, 0, buffer.get(), kSize);
   WriteSparseData(entry, 20000, buffer.get(), kSize);
+  int64_t start;
+  GetAvailableRange(entry, 0, 100, &start);
 
   entry->Close();
 }
@@ -5138,7 +5387,6 @@ void DiskCacheEntryTest::SparseOffset64Bit() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, SparseOffset64Bit) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   // https://crbug.com/946436 is the memory backend version.
   InitCache();
   SparseOffset64Bit();
@@ -5248,7 +5496,6 @@ void DiskCacheEntryTest::SparseReadLength0() {
 }
 
 TEST_P(DiskCacheGenericEntryTest, SparseReadLength0) {
-  SKIP_IF_SQL_BACKEND_NOT_IMPLEMENTED();
   // https://crbug.com/392690731 is the simple backend bug.
   InitCache();
   SparseReadLength0();
@@ -5281,6 +5528,38 @@ TEST_F(DiskCacheEntryTest, BlockFileKeyLenCalc) {
                    kFirstBlockPortion + 3 * kOtherBlocksPortion));
   EXPECT_EQ(kFirstBlockPortion + 3 * kOtherBlocksPortion,
             disk_cache::kMaxInternalKeyLength + 1);
+}
+
+// nullptr is only acceptable to pass to WriteData with writes of length 0;
+// everything else should fail explicitly.
+TEST_P(DiskCacheGenericEntryTest, WriteDataNulBuf) {
+  InitCache();
+
+  disk_cache::Entry* entry = nullptr;
+  ASSERT_THAT(CreateEntry("key", &entry), IsOk());
+  ASSERT_TRUE(entry != nullptr);
+
+  const int kSize = 10;
+  auto buffer = CacheTestCreateAndFillBuffer(kSize, /*no_nulls=*/false);
+
+  for (int stream = 0; stream < SupportedStreamCount(); ++stream) {
+    EXPECT_EQ(net::ERR_INVALID_ARGUMENT,
+              WriteData(entry, stream, /*offset=*/0,
+                        /*buf=*/nullptr, kSize, /*truncate=*/false));
+    EXPECT_EQ(net::ERR_INVALID_ARGUMENT,
+              WriteData(entry, stream, /*offset=*/0,
+                        /*buf=*/nullptr, kSize, /*truncate=*/true));
+
+    // Make sure that buf=nullptr, len=0 can truncate right.
+    EXPECT_EQ(kSize,
+              WriteData(entry, stream, /*offset=*/0,
+                        /*buf=*/buffer.get(), kSize, /*truncate=*/false));
+    EXPECT_EQ(kSize, entry->GetDataSize(stream));
+    EXPECT_EQ(0, WriteData(entry, stream, /*offset=*/0,
+                           /*buf=*/nullptr, /*=*/0, /*truncate=*/true));
+    EXPECT_EQ(0, entry->GetDataSize(stream));
+  }
+  entry->Close();
 }
 
 class DiskCacheSimplePrefetchTest : public DiskCacheEntryTest {
@@ -5678,6 +5957,20 @@ TEST_F(DiskCacheSimpleAppCachePrefetchTest, LargeFullSmallSpeculative) {
   histogram_tester.ExpectUniqueSample("SimpleCache.App.SyncOpenPrefetchMode",
                                       disk_cache::OPEN_PREFETCH_FULL, 1);
 }
+
+#if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
+
+TEST_F(DiskCacheEntryTest, SqlCacheGiantEntry) {
+  SetBackendToTest(BackendToTest::kSql);
+  CacheGiantEntry();
+}
+
+TEST_F(DiskCacheEntryTest, SqlCacheEvictOldEntries) {
+  SetBackendToTest(BackendToTest::kSql);
+  EvictOldEntries();
+}
+
+#endif  // ENABLE_DISK_CACHE_SQL_BACKEND
 
 INSTANTIATE_TEST_SUITE_P(
     /* no name */,

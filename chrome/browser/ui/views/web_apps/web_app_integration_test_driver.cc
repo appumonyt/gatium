@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/browser/ui/views/web_apps/web_app_integration_test_driver.h"
 
 #include <cstddef>
@@ -20,6 +15,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/flat_map.h"
@@ -57,12 +53,14 @@
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_actions.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "chrome/browser/ui/intent_picker_tab_helper.h"
+#include "chrome/browser/ui/page_action/page_action_icon_type.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/startup/web_app_startup_utils.h"
 #include "chrome/browser/ui/ui_features.h"
@@ -167,6 +165,7 @@
 #include "ui/views/test/dialog_test.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_interactive_uitest_utils.h"
 #include "ui/webui/resources/cr_components/app_management/app_management.mojom-forward.h"
 #include "url/gurl.h"
 
@@ -1353,10 +1352,23 @@ void WebAppIntegrationTestDriver::InstallOmniboxIcon(InstallableSite site) {
       web_app::SetDontCloseOnDeactivateForTesting();
 
   BrowserAddedWaiter browser_added_waiter;
+  views::test::PropertyWaiter(
+      base::BindRepeating(&views::View::GetVisible,
+                          base::Unretained(pwa_install_view())),
+      /*expected_value=*/true)
+      .Wait();
   ASSERT_TRUE(pwa_install_view()->GetVisible());
   WebAppTestInstallWithOsHooksObserver install_observer(profile());
   install_observer.BeginListening();
-  pwa_install_view()->ExecuteForTesting();
+  if (IsPageActionMigrated(PageActionIconType::kPwaInstall)) {
+    actions::ActionManager::Get()
+        .FindAction(kActionInstallPwa,
+                    browser()->GetActions()->root_action_item())
+        ->InvokeAction();
+  } else {
+    browser()->window()->ExecutePageActionIconForTesting(
+        PageActionIconType::kPwaInstall);
+  }
 
   WaitForAndAcceptInstallDialogForSite(InstallableSiteToSite(site));
 
@@ -1502,11 +1514,11 @@ void WebAppIntegrationTestDriver::InstallSubApp(
       content::EvalJs(web_contents, script);
 
   if (option == SubAppInstallDialogOptions::kUserDeny) {
-    EXPECT_FALSE(add_result.error.empty());
+    EXPECT_FALSE(add_result.is_ok());
   } else {
     base::Value::Dict expected_output;
     expected_output.Set(sub_url, "success");
-    EXPECT_EQ(expected_output, add_result.value);
+    EXPECT_EQ(expected_output, add_result);
   }
 
   AfterStateChangeAction();
@@ -1522,11 +1534,9 @@ void WebAppIntegrationTestDriver::RemoveSubApp(Site parent_app, Site sub_app) {
       << "No open tab or window for the parent app was found.";
   std::string sub_url = GetRelativeSubAppPath(sub_app);
 
-  const base::Value& remove_result =
-      content::EvalJs(
-          web_contents,
-          content::JsReplace("navigator.subApps.remove([$1])", sub_url))
-          .value;
+  const content::EvalJsResult remove_result = content::EvalJs(
+      web_contents,
+      content::JsReplace("navigator.subApps.remove([$1])", sub_url));
 
   base::Value::Dict expected_output;
   expected_output.Set(sub_url, "success");
@@ -3232,7 +3242,7 @@ void WebAppIntegrationTestDriver::CheckFilesLoadedInSite(
       }
 
       base::Value::List test_content_list =
-          EvalJs(web_contents, "launchFinishedPromise").ExtractList();
+          EvalJs(web_contents, "launchFinishedPromise").TakeValue().TakeList();
       for (const auto& test_content : test_content_list) {
         if (base::EndsWith(url_str, kFooHandler)) {
           found_foo_files.push_back(test_content.GetString());
@@ -3262,6 +3272,11 @@ void WebAppIntegrationTestDriver::CheckInstallIconShown() {
         webapps::TestAppBannerManagerDesktop::FromWebContents(web_contents);
     app_banner_manager->WaitForInstallableCheck();
   }
+  views::test::PropertyWaiter(
+      base::BindRepeating(&views::View::GetVisible,
+                          base::Unretained(pwa_install_view())),
+      /*expected_value=*/true)
+      .Wait();
   EXPECT_TRUE(pwa_install_view()->GetVisible());
   AfterStateCheckAction();
 }
@@ -3790,10 +3805,10 @@ void WebAppIntegrationTestDriver::CheckHasSubApp(Site parent_app,
 
   std::string sub_app_url = GetRelativeSubAppPath(sub_app);
 
-  const base::Value& list_result =
-      content::EvalJs(web_contents, "navigator.subApps.list()").value;
+  const content::EvalJsResult list_result =
+      content::EvalJs(web_contents, "navigator.subApps.list()");
 
-  const base::Value::Dict& list_result_dict = list_result.GetDict();
+  const base::Value::Dict& list_result_dict = list_result.ExtractDict();
 
   // Check that list() contained the sub_app_url key.
   EXPECT_NE(nullptr, list_result_dict.FindDict(sub_app_url));
@@ -3814,10 +3829,10 @@ void WebAppIntegrationTestDriver::CheckNotHasSubApp(Site parent_app,
 
   std::string sub_app_url = GetRelativeSubAppPath(sub_app);
 
-  const base::Value& list_result =
-      content::EvalJs(web_contents, "navigator.subApps.list()").value;
+  const content::EvalJsResult list_result =
+      content::EvalJs(web_contents, "navigator.subApps.list()");
 
-  const base::Value::Dict& list_result_dict = list_result.GetDict();
+  const base::Value::Dict& list_result_dict = list_result.ExtractDict();
 
   // Check that list() did not contain the sub_app_url key.
   EXPECT_EQ(nullptr, list_result_dict.FindDict(sub_app_url));
@@ -3835,8 +3850,8 @@ void WebAppIntegrationTestDriver::CheckNoSubApps(Site parent_app) {
   ASSERT_TRUE(web_contents)
       << "No open tab or window for the parent app was found.";
 
-  const base::Value& result =
-      content::EvalJs(web_contents, "navigator.subApps.list()").value;
+  const content::EvalJsResult result =
+      content::EvalJs(web_contents, "navigator.subApps.list()");
 
   // Check that list() returned an empty dictionary.
   EXPECT_EQ(base::Value(base::Value::Type::DICT), result);
@@ -4021,7 +4036,7 @@ void WebAppIntegrationTestDriver::AfterStateChangeAction() {
 }
 
 bool WebAppIntegrationTestDriver::BeforeStateCheckAction(const char* function) {
-  CHECK(strstr(function, "Check") != nullptr) << function;
+  UNSAFE_TODO(CHECK(strstr(function, "Check") != nullptr)) << function;
   if (testing::Test::HasFatalFailure() && !in_tear_down_) {
     return false;
   }
@@ -4715,21 +4730,20 @@ std::vector<Profile*> WebAppIntegrationTestDriver::GetAllProfiles() {
   return profiles;
 }
 
-PageActionIconView* WebAppIntegrationTestDriver::pwa_install_view() {
-  PageActionIconView* pwa_install_view =
+IconLabelBubbleView* WebAppIntegrationTestDriver::pwa_install_view() {
+  IconLabelBubbleView* pwa_install_view =
       BrowserView::GetBrowserViewForBrowser(browser())
           ->toolbar_button_provider()
-          ->GetPageActionIconView(PageActionIconType::kPwaInstall);
+          ->GetPageActionView(kActionInstallPwa);
   CHECK(pwa_install_view);
   return pwa_install_view;
 }
 
 views::Button* WebAppIntegrationTestDriver::intent_chip_view() {
   if (IsPageActionMigrated(PageActionIconType::kIntentPicker)) {
-    page_actions::PageActionView* intent_chip_button =
-        BrowserView::GetBrowserViewForBrowser(browser())
-            ->toolbar_button_provider()
-            ->GetPageActionView(kActionShowIntentPicker);
+    auto* intent_chip_button = BrowserView::GetBrowserViewForBrowser(browser())
+                                   ->toolbar_button_provider()
+                                   ->GetPageActionView(kActionShowIntentPicker);
     CHECK(intent_chip_button);
     return intent_chip_button;
   }

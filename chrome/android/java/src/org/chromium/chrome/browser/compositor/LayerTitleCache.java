@@ -4,6 +4,8 @@
 
 package org.chromium.chrome.browser.compositor;
 
+import static org.chromium.build.NullUtil.assumeNonNull;
+
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
@@ -18,12 +20,15 @@ import org.jni_zero.JNINamespace;
 import org.jni_zero.NativeMethods;
 
 import org.chromium.base.Token;
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.compositor.layouts.content.TitleBitmapFactory;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabFavicon;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
+import org.chromium.chrome.browser.tabmodel.TabGroupTitleUtils;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiThemeProvider;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiThemeUtil;
@@ -45,9 +50,10 @@ import java.util.Map;
  * cached title textures.
  */
 @JNINamespace("android")
+@NullMarked
 public class LayerTitleCache {
     private final Context mContext;
-    private TabModelSelector mTabModelSelector;
+    private final TabModelSelector mTabModelSelector;
 
     private final SparseArray<FaviconTitle> mTabTitles = new SparseArray<>();
     private final Map<Token, Title> mGroupTitles = new HashMap<>();
@@ -64,7 +70,7 @@ public class LayerTitleCache {
     private long mNativeLayerTitleCache;
     private final ResourceManager mResourceManager;
 
-    private FaviconHelper mFaviconHelper;
+    private @Nullable FaviconHelper mFaviconHelper;
     private final DefaultFaviconHelper mDefaultFaviconHelper;
 
     /** Responsible for building titles on light themes or standard tabs. */
@@ -77,10 +83,17 @@ public class LayerTitleCache {
      * @param context The Android {@link Context}.
      * @param resourceManager The manager for static resources to be used by native layers.
      * @param tabStripHeightPx The height of the tab strip in pixels.
+     * @param tabModelSelector The {@link TabModelSelector} to retrieve {@link TabGroupModelFilter}
+     *     and get {@link Tab} by id.
      */
-    public LayerTitleCache(Context context, ResourceManager resourceManager, int tabStripHeightPx) {
+    public LayerTitleCache(
+            Context context,
+            ResourceManager resourceManager,
+            int tabStripHeightPx,
+            TabModelSelector tabModelSelector) {
         mContext = context;
         mResourceManager = resourceManager;
+        mTabModelSelector = tabModelSelector;
         Resources res = context.getResources();
         final int fadeWidthPx = res.getDimensionPixelOffset(R.dimen.border_texture_title_fade);
         final int faviconStartPaddingPx =
@@ -107,7 +120,7 @@ public class LayerTitleCache {
         mNativeLayerTitleCache =
                 LayerTitleCacheJni.get()
                         .init(
-                                LayerTitleCache.this,
+                                this,
                                 fadeWidthPx,
                                 faviconStartPaddingPx,
                                 faviconEndPaddingPx,
@@ -131,10 +144,6 @@ public class LayerTitleCache {
         if (mNativeLayerTitleCache == 0) return;
         LayerTitleCacheJni.get().destroy(mNativeLayerTitleCache);
         mNativeLayerTitleCache = 0;
-    }
-
-    public void setTabModelSelector(TabModelSelector tabModelSelector) {
-        mTabModelSelector = tabModelSelector;
     }
 
     @CalledByNative
@@ -161,8 +170,7 @@ public class LayerTitleCache {
         } else {
             mTabBubbles.remove(tabId);
         }
-        LayerTitleCacheJni.get()
-                .updateTabBubble(mNativeLayerTitleCache, LayerTitleCache.this, tabId, showBubble);
+        LayerTitleCacheJni.get().updateTabBubble(mNativeLayerTitleCache, tabId, showBubble);
     }
 
     public String getUpdatedTitle(Tab tab, String defaultTitle) {
@@ -208,7 +216,6 @@ public class LayerTitleCache {
             LayerTitleCacheJni.get()
                     .updateLayer(
                             mNativeLayerTitleCache,
-                            LayerTitleCache.this,
                             tabId,
                             title.getTitleResId(),
                             title.getFaviconResId(),
@@ -227,13 +234,15 @@ public class LayerTitleCache {
                 mTabModelSelector
                         .getTabGroupModelFilterProvider()
                         .getTabGroupModelFilter(incognito);
+        assumeNonNull(filter);
         if (!filter.tabGroupExists(groupId)) return;
 
-        String titleString = filter.getTabGroupTitle(filter.getRootIdFromTabGroupId(groupId));
+        String titleString = TabGroupTitleUtils.getDisplayableTitle(mContext, filter, groupId);
         getUpdatedGroupTitle(groupId, titleString, incognito);
     }
 
-    public String getUpdatedGroupTitle(Token groupId, String titleString, boolean incognito) {
+    public @Nullable String getUpdatedGroupTitle(
+            Token groupId, @Nullable String titleString, boolean incognito) {
         if (TextUtils.isEmpty(titleString)) return null;
 
         getUpdatedGroupTitleInternal(groupId, titleString, incognito);
@@ -254,6 +263,7 @@ public class LayerTitleCache {
 
         TabGroupModelFilter filter =
                 mTabModelSelector.getTabGroupModelFilterProvider().getCurrentTabGroupModelFilter();
+        assert filter != null;
         Bitmap titleBitmap =
                 titleBitmapFactory.getGroupTitleBitmap(filter, mContext, groupId, titleString);
         if (titleBitmap == null) return;
@@ -274,7 +284,6 @@ public class LayerTitleCache {
             LayerTitleCacheJni.get()
                     .updateGroupLayer(
                             mNativeLayerTitleCache,
-                            LayerTitleCache.this,
                             groupId,
                             title.getTitleResId(),
                             avatarResource == null ? Resources.ID_NULL : avatarResId,
@@ -342,7 +351,7 @@ public class LayerTitleCache {
         return originalFavicon;
     }
 
-    private ViewResourceAdapter getResourceAdapterFromLoader(int resId) {
+    private @Nullable ViewResourceAdapter getResourceAdapterFromLoader(int resId) {
         DynamicResourceLoader dynamicResourceLoader = mResourceManager.getDynamicResourceLoader();
         return (ViewResourceAdapter) dynamicResourceLoader.getResource(resId);
     }
@@ -391,12 +400,7 @@ public class LayerTitleCache {
 
         if (mNativeLayerTitleCache != 0) {
             LayerTitleCacheJni.get()
-                    .updateIcon(
-                            mNativeLayerTitleCache,
-                            LayerTitleCache.this,
-                            tabId,
-                            title.getFaviconResId(),
-                            showBubble);
+                    .updateIcon(mNativeLayerTitleCache, tabId, title.getFaviconResId(), showBubble);
         }
     }
 
@@ -409,7 +413,6 @@ public class LayerTitleCache {
         LayerTitleCacheJni.get()
                 .updateLayer(
                         mNativeLayerTitleCache,
-                        LayerTitleCache.this,
                         tabId,
                         Resources.ID_NULL,
                         Resources.ID_NULL,
@@ -418,7 +421,7 @@ public class LayerTitleCache {
                         false);
     }
 
-    public void removeGroupTitle(Token groupId) {
+    public void removeGroupTitle(@Nullable Token groupId) {
         Title title = mGroupTitles.get(groupId);
         if (title == null) return;
         title.unregister();
@@ -427,7 +430,6 @@ public class LayerTitleCache {
         LayerTitleCacheJni.get()
                 .updateGroupLayer(
                         mNativeLayerTitleCache,
-                        LayerTitleCache.this,
                         groupId,
                         Resources.ID_NULL,
                         Resources.ID_NULL,
@@ -448,7 +450,7 @@ public class LayerTitleCache {
 
         public Title() {}
 
-        public void set(Bitmap titleBitmap) {
+        public void set(@Nullable Bitmap titleBitmap) {
             mTitle.setBitmap(titleBitmap);
         }
 
@@ -477,7 +479,10 @@ public class LayerTitleCache {
 
         public FaviconTitle() {}
 
-        public void set(Bitmap titleBitmap, Bitmap faviconBitmap, boolean expectUpdateFromHistory) {
+        public void set(
+                @Nullable Bitmap titleBitmap,
+                @Nullable Bitmap faviconBitmap,
+                boolean expectUpdateFromHistory) {
             set(titleBitmap);
             mFavicon.setBitmap(faviconBitmap);
             mExpectUpdateFromHistory = expectUpdateFromHistory;
@@ -512,7 +517,7 @@ public class LayerTitleCache {
     @NativeMethods
     interface Natives {
         long init(
-                LayerTitleCache caller,
+                LayerTitleCache self,
                 int fadeWidth,
                 int faviconStartPadding,
                 int faviconEndPadding,
@@ -529,7 +534,6 @@ public class LayerTitleCache {
 
         void updateLayer(
                 long nativeLayerTitleCache,
-                LayerTitleCache caller,
                 int tabId,
                 int titleResId,
                 int faviconResId,
@@ -539,8 +543,7 @@ public class LayerTitleCache {
 
         void updateGroupLayer(
                 long nativeLayerTitleCache,
-                LayerTitleCache caller,
-                Token groupId,
+                @Nullable Token groupId,
                 int titleResId,
                 int avatarResId,
                 int avatarPadding,
@@ -548,13 +551,8 @@ public class LayerTitleCache {
                 boolean isRtl);
 
         void updateIcon(
-                long nativeLayerTitleCache,
-                LayerTitleCache caller,
-                int tabId,
-                int faviconResId,
-                boolean showBubble);
+                long nativeLayerTitleCache, int tabId, int faviconResId, boolean showBubble);
 
-        void updateTabBubble(
-                long nativeLayerTitleCache, LayerTitleCache caller, int tabId, boolean showBubble);
+        void updateTabBubble(long nativeLayerTitleCache, int tabId, boolean showBubble);
     }
 }

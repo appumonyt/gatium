@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "android_webview/browser/gfx/aw_draw_fn_impl.h"
 
 #include <utility>
 
 #include "android_webview/browser/gfx/aw_vulkan_context_provider.h"
-#include "base/android/build_info.h"
+#include "base/android/android_info.h"
+#include "base/compiler_specific.h"
 #include "base/trace_event/trace_event.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -151,7 +147,7 @@ HardwareRendererDrawParams CreateHRDrawParams(T* params,
                     std::size(hr_params.transform),
                 "transform size mismatch");
   for (size_t i = 0; i < std::size(hr_params.transform); ++i) {
-    hr_params.transform[i] = params->transform[i];
+    UNSAFE_TODO(hr_params.transform[i]) = UNSAFE_TODO(params->transform[i]);
   }
 
   return hr_params;
@@ -178,8 +174,8 @@ sk_sp<SkColorSpace> CreateColorSpace(T* params) {
   skcms_Matrix3x3 to_xyz;
   static_assert(sizeof(to_xyz.vals) == sizeof(params->color_space_toXYZD50),
                 "Color space matrix sizes do not match");
-  memcpy(&to_xyz.vals[0][0], &params->color_space_toXYZD50[0],
-         sizeof(to_xyz.vals));
+  UNSAFE_TODO(memcpy(&to_xyz.vals[0][0], &params->color_space_toXYZD50[0],
+                     sizeof(to_xyz.vals)));
   return SkColorSpace::MakeRGB(transfer_fn, to_xyz);
 }
 
@@ -232,25 +228,19 @@ AwDrawFnImpl::AwDrawFnImpl()
 
 AwDrawFnImpl::~AwDrawFnImpl() = default;
 
-void AwDrawFnImpl::ReleaseHandle(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+void AwDrawFnImpl::ReleaseHandle(JNIEnv* env) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   --g_instance_count;
   render_thread_manager_.RemoveFromCompositorFrameProducerOnUI();
   g_draw_fn_function_table->release_functor(functor_handle_);
 }
 
-jint AwDrawFnImpl::GetFunctorHandle(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+jint AwDrawFnImpl::GetFunctorHandle(JNIEnv* env) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return functor_handle_;
 }
 
-jlong AwDrawFnImpl::GetCompositorFrameConsumer(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+jlong AwDrawFnImpl::GetCompositorFrameConsumer(JNIEnv* env) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return reinterpret_cast<intptr_t>(GetCompositorFrameConsumer());
 }
@@ -307,8 +297,8 @@ void AwDrawFnImpl::DrawVk(AwDrawFn_DrawVkParams* params) {
   // GrVkSecondaryCBDrawContext currently does not expect or support R8 format
   // so just skip these draw calls before Android side is fixed.
   if (params->format == VK_FORMAT_R8_UNORM &&
-      base::android::BuildInfo::GetInstance()->sdk_int() ==
-          base::android::SDK_VERSION_S) {
+      base::android::android_info::sdk_int() ==
+          base::android::android_info::SDK_VERSION_S) {
     skip_next_post_draw_vk_ = true;
     return;
   }

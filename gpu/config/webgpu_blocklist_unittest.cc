@@ -11,7 +11,7 @@
 #include "ui/gl/buildflags.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/android_info.h"
 #endif
 
 namespace gpu {
@@ -33,8 +33,6 @@ class WebGPUBlocklistTest : public testing::Test {};
 // Android-specific restrictions.
 
 TEST_F(WebGPUBlocklistTest, BlockAndroidVendorId) {
-  const auto* build_info = base::android::BuildInfo::GetInstance();
-
   WGPUAdapterInfo info1 = {};
   info1.vendorID = 0x13B5;
 
@@ -44,8 +42,12 @@ TEST_F(WebGPUBlocklistTest, BlockAndroidVendorId) {
   WGPUAdapterInfo info3 = {};
   info3.vendorID = 0x8086;
 
-  if (build_info->sdk_int() < base::android::SDK_VERSION_S) {
-    // If the Android version is R or lower everything should be blocked.
+  if (base::android::android_info::sdk_int() <
+      base::android::android_info::SDK_VERSION_S) {
+    // If the Android version is R or lower, the Vulkan backend should be
+    // blocked.
+    info1.backendType = info2.backendType = info3.backendType =
+        WGPUBackendType_Vulkan;
     EXPECT_TRUE(IsWebGPUAdapterBlocklisted(info1));
     EXPECT_TRUE(IsWebGPUAdapterBlocklisted(info2));
     EXPECT_TRUE(IsWebGPUAdapterBlocklisted(info3));

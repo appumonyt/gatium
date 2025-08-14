@@ -403,6 +403,17 @@
       },
     },
   },
+  'gpu_win11_intel_arc_140v_experimental': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'display_attached': '1',
+        'gpu': '8086:64a0',
+        'os': 'Windows-11',
+        'pool': 'chromium.tests.gpu.experimental',
+      },
+    },
+  },
   'has_native_resultdb_integration': {
     'resultdb': {
       'enable': True,
@@ -488,7 +499,7 @@
     'swarming': {
       'dimensions': {
         'gpu': '8086:4680-23.2.1',
-        'os': 'Ubuntu-22.04.4',
+        'os': 'Ubuntu-22.04',
         'display_attached': '1',
         'pool': 'chromium.tests.gpu',
       },
@@ -677,7 +688,7 @@
         {
           'cipd_package': 'infra/tools/mac_toolchain/${platform}',
           'location': '.',
-          'revision': 'git_revision:a18b7d95d26f3c6bf9591978b19cf0ca8268ac7d',
+          'revision': 'git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab',
         },
       ],
     },
@@ -718,9 +729,9 @@
       'cros_test_max_in_shard': 20
     },
   },
-  'skylab-50-tests-per-shard': {
+  'skylab-40-tests-per-shard': {
     'skylab': {
-      'cros_test_max_in_shard': 50
+      'cros_test_max_in_shard': 40
     },
   },
   'skylab-shards-20': {
@@ -756,6 +767,12 @@
       '--stop-ui',
       '--gtest_filter="VaapiTest.*"',
     ],
+  },
+  'very_limited_capacity_bot': {
+    'fail_if_unused': False,
+    'swarming': {
+      'expiration': 43200,
+    },
   },
   'win-arm64': {
     'swarming': {
@@ -865,6 +882,17 @@
         'display_attached': '1',
         'gpu': '1002:7480-32.0.12033.1030',
         'os': 'Windows-11-26100',
+        'pool': 'chromium.tests.gpu',
+      },
+    },
+  },
+  'win11_nvidia_rtx_4070_super_experimental': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'display_attached': '1',
+        'gpu': '10de:2783-32.0.15.8088',
+        'os': 'Windows-11',
         'pool': 'chromium.tests.gpu',
       },
     },

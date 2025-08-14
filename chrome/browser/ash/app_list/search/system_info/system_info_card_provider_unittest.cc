@@ -35,7 +35,6 @@
 #include "chromeos/ash/components/system_info/system_info_util.h"
 #include "chromeos/ash/experiences/arc/session/arc_service_manager.h"
 #include "chromeos/ash/services/cros_healthd/public/cpp/fake_cros_healthd.h"
-#include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd_probe.mojom-forward.h"
 #include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd_probe.mojom.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
 #include "chromeos/dbus/power_manager/power_supply_properties.pb.h"
@@ -866,8 +865,9 @@ TEST_F(SystemInfoCardProviderTest, Storage) {
   int64_t rounded_total_size = ash::settings::RoundByteSize(total_bytes);
 
   int64_t in_use_bytes = rounded_total_size - available_bytes;
-  std::u16string in_use_size = ui::FormatBytes(in_use_bytes);
-  std::u16string total_size = ui::FormatBytes(rounded_total_size);
+  std::u16string in_use_size = ui::FormatBytes(base::ByteCount(in_use_bytes));
+  std::u16string total_size =
+      ui::FormatBytes(base::ByteCount(rounded_total_size));
   std::u16string result_description = base::StrCat(
       {u"Storage ", in_use_size, u" in use | ", total_size, u" total"});
 

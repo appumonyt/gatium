@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "net/dns/dns_transaction.h"
 
 #include <stdint.h>
@@ -21,6 +16,7 @@
 #include <vector>
 
 #include "base/base64url.h"
+#include "base/compiler_specific.h"
 #include "base/containers/circular_deque.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
@@ -524,8 +520,8 @@ class URLRequestMockDohJob : public URLRequestJob, public AsyncSocket {
   int ReadRawData(IOBuffer* buf, int buf_size) override {
     if (!data_provider_)
       return ERR_FAILED;
-    if (leftover_data_len_ > 0) {
-      int rv = DoBufferCopy(leftover_data_, leftover_data_len_, buf, buf_size);
+    if (!leftover_data_.empty()) {
+      int rv = DoBufferCopy(leftover_data_, buf, buf_size);
       return rv;
     }
 
@@ -542,8 +538,7 @@ class URLRequestMockDohJob : public URLRequestJob, public AsyncSocket {
       pending_buf_size_ = buf_size;
       return ERR_IO_PENDING;
     }
-    return DoBufferCopy(read.data.data(), static_cast<int>(read.data.length()),
-                        buf, buf_size);
+    return DoBufferCopy(base::span(read.data), buf, buf_size);
   }
 
   void GetResponseInfo(HttpResponseInfo* info) override {
@@ -567,9 +562,8 @@ class URLRequestMockDohJob : public URLRequestJob, public AsyncSocket {
     EXPECT_NE(data.result, ERR_IO_PENDING);
     if (data.result < 0)
       return ReadRawDataComplete(data.result);
-    ReadRawDataComplete(DoBufferCopy(data.data.data(),
-                                     static_cast<int>(data.data.length()),
-                                     pending_buf_, pending_buf_size_));
+    ReadRawDataComplete(
+        DoBufferCopy(base::span(data.data), pending_buf_, pending_buf_size_));
   }
   void OnWriteComplete(int rv) override {}
   void OnConnectComplete(const MockConnect& data) override {}
@@ -584,23 +578,21 @@ class URLRequestMockDohJob : public URLRequestJob, public AsyncSocket {
     NotifyHeadersComplete();
   }
 
-  int DoBufferCopy(const char* data,
-                   int data_len,
-                   IOBuffer* buf,
-                   int buf_size) {
-    if (data_len > buf_size) {
-      std::copy(data, data + buf_size, buf->data());
-      leftover_data_ = data + buf_size;
-      leftover_data_len_ = data_len - buf_size;
+  int DoBufferCopy(base::span<const char> data, IOBuffer* buf, int buf_size) {
+    size_t sz_buf_size = base::checked_cast<size_t>(buf_size);
+    if (data.size() > sz_buf_size) {
+      // Note: data here may be `leftover_data_` or a totally different span.
+      auto read_keep_pair = data.split_at(sz_buf_size);
+      leftover_data_ = read_keep_pair.second;
+      buf->span().copy_prefix_from(base::as_bytes(read_keep_pair.first));
       return buf_size;
     }
-    std::copy(data, data + data_len, buf->data());
-    return data_len;
+    buf->span().copy_prefix_from(base::as_bytes(data));
+    return data.size();
   }
 
   const int content_length_ = 0;
-  const char* leftover_data_;
-  int leftover_data_len_ = 0;
+  base::raw_span<const char> leftover_data_;
   raw_ptr<SocketDataProvider> data_provider_;
   const ResponseModifierCallback response_modifier_;
   const UrlRequestStartedCallback on_start_;
@@ -801,10 +793,10 @@ class DnsTransactionTestBase : public testing::Test {
 
   // Checks if the sockets were connected in the order matching the indices in
   // |servers|.
-  void CheckServerOrder(const size_t* servers, size_t num_attempts) {
-    ASSERT_EQ(num_attempts, socket_factory_->remote_endpoints_.size());
+  void CheckServerOrder(base::span<const size_t> servers) {
+    ASSERT_EQ(servers.size(), socket_factory_->remote_endpoints_.size());
     auto num_insecure_nameservers = session_->config().nameservers.size();
-    for (size_t i = 0; i < num_attempts; ++i) {
+    for (size_t i = 0; i < servers.size(); ++i) {
       if (servers[i] < num_insecure_nameservers) {
         // Check insecure server match.
         EXPECT_EQ(
@@ -1339,7 +1331,7 @@ TEST_F(DnsTransactionTestWithMockTime, ServerFallbackAndRotate) {
       2,
       1,
   };
-  CheckServerOrder(kOrder, std::size(kOrder));
+  CheckServerOrder(kOrder);
 }
 
 TEST_F(DnsTransactionTest, SuffixSearchAboveNdots) {
@@ -1369,7 +1361,7 @@ TEST_F(DnsTransactionTest, SuffixSearchAboveNdots) {
 
   // Also check if suffix search causes server rotation.
   size_t kOrder0[] = {0, 1, 0, 1};
-  CheckServerOrder(kOrder0, std::size(kOrder0));
+  CheckServerOrder(kOrder0);
 }
 
 TEST_F(DnsTransactionTest, SuffixSearchBelowNdots) {
@@ -1996,7 +1988,7 @@ TEST_F(DnsTransactionTest, HttpsMarkHttpsBad) {
     EXPECT_EQ(doh_itr->GetNextAttemptIndex(), 1u);
   }
   size_t kOrder0[] = {1, 2, 3};
-  CheckServerOrder(kOrder0, std::size(kOrder0));
+  CheckServerOrder(kOrder0);
 
   helper1.StartTransaction(transaction_factory_.get(), kT0HostName, kT0Qtype,
                            true /* secure */, resolve_context_.get());
@@ -2027,7 +2019,7 @@ TEST_F(DnsTransactionTest, HttpsMarkHttpsBad) {
       1, 2, 3, /* transaction0 */
       3, 1, 2  /* transaction1 */
   };
-  CheckServerOrder(kOrder1, std::size(kOrder1));
+  CheckServerOrder(kOrder1);
 }
 
 TEST_F(DnsTransactionTest, HttpsPostFailThenHTTPFallback) {
@@ -2045,7 +2037,7 @@ TEST_F(DnsTransactionTest, HttpsPostFailThenHTTPFallback) {
                            true /* secure */, resolve_context_.get());
   helper0.RunUntilComplete();
   size_t kOrder0[] = {1, 2};
-  CheckServerOrder(kOrder0, std::size(kOrder0));
+  CheckServerOrder(kOrder0);
 }
 
 TEST_F(DnsTransactionTest, HttpsPostFailTwice) {
@@ -2065,7 +2057,7 @@ TEST_F(DnsTransactionTest, HttpsPostFailTwice) {
                            true /* secure */, resolve_context_.get());
   helper0.RunUntilComplete();
   size_t kOrder0[] = {1, 2};
-  CheckServerOrder(kOrder0, std::size(kOrder0));
+  CheckServerOrder(kOrder0);
 }
 
 TEST_F(DnsTransactionTest, HttpsNotAvailableThenHttpFallback) {
@@ -2094,7 +2086,7 @@ TEST_F(DnsTransactionTest, HttpsNotAvailableThenHttpFallback) {
                            true /* secure */, resolve_context_.get());
   helper0.RunUntilComplete();
   size_t kOrder0[] = {2};
-  CheckServerOrder(kOrder0, std::size(kOrder0));
+  CheckServerOrder(kOrder0);
   {
     std::unique_ptr<DnsServerIterator> doh_itr =
         resolve_context_->GetDohIterator(
@@ -2139,7 +2131,7 @@ TEST_F(DnsTransactionTest, HttpsFailureThenNotAvailable_Automatic) {
   // Expect fallback not attempted because other servers not available in
   // AUTOMATIC mode until they have recorded a success.
   size_t kOrder0[] = {1};
-  CheckServerOrder(kOrder0, std::size(kOrder0));
+  CheckServerOrder(kOrder0);
 
   {
     std::unique_ptr<DnsServerIterator> doh_itr =
@@ -2199,7 +2191,7 @@ TEST_F(DnsTransactionTest, HttpsFailureThenNotAvailable_Secure) {
   // Expect fallback to attempt all servers because SECURE mode does not require
   // server availability.
   size_t kOrder0[] = {1, 2, 3};
-  CheckServerOrder(kOrder0, std::size(kOrder0));
+  CheckServerOrder(kOrder0);
 
   // Expect server 0 to be preferred due to least recent failure.
   {

@@ -33,6 +33,7 @@
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_node_id_forward.h"
 #include "ui/accessibility/ax_serializable_tree.h"
+#include "ui/accessibility/ax_tree_id.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -359,6 +360,38 @@ TEST_F(ReadAnythingAppControllerTest, OnDeviceLocked_OnlyLogsIfSpeechPlaying) {
       ReadAloudAppModel::kSpeechStopSourceHistogramName,
       ReadAloudAppModel::ReadAloudStopSource::kLockChromeosDevice, 1);
 }
+
+TEST_F(ReadAnythingAppControllerTest, OnDeviceLocked_LogsWordsSeen) {
+  base::HistogramTester histogram_tester;
+  controller().UpdateWordsSeen(123);
+  controller().OnDeviceLocked();
+
+  histogram_tester.ExpectUniqueSample(
+      ReadAnythingAppController::kWordsSeenHistogramName, 123, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnDeviceLocked_ResetsWordsSeen) {
+  controller().UpdateWordsSeen(123);
+  controller().OnDeviceLocked();
+
+  EXPECT_EQ(0, model().words_seen());
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnDeviceLocked_LogsWordsHeard) {
+  base::HistogramTester histogram_tester;
+  controller().UpdateWordsHeard(123);
+  controller().OnDeviceLocked();
+
+  histogram_tester.ExpectUniqueSample(
+      ReadAnythingAppController::kWordsHeardHistogramName, 123, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnDeviceLocked_ResetsWordsHeard) {
+  controller().UpdateWordsHeard(123);
+  controller().OnDeviceLocked();
+
+  EXPECT_EQ(0, model().words_heard());
+}
 #endif
 
 TEST_F(ReadAnythingAppControllerTest, OnIsAudioCurrentlyPlayingChanged) {
@@ -388,6 +421,38 @@ TEST_F(ReadAnythingAppControllerTest,
       ReadAloudAppModel::ReadAloudStopSource::kCloseReadingMode, 1);
 }
 
+TEST_F(ReadAnythingAppControllerTest, OnReadingModeHidden_LogsWordsSeen) {
+  base::HistogramTester histogram_tester;
+  controller().UpdateWordsSeen(123);
+  controller().OnReadingModeHidden();
+
+  histogram_tester.ExpectUniqueSample(
+      ReadAnythingAppController::kWordsSeenHistogramName, 123, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnReadingModeHidden_ResetsWordsSeen) {
+  controller().UpdateWordsSeen(123);
+  controller().OnReadingModeHidden();
+
+  EXPECT_EQ(0, model().words_seen());
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnReadingModeHidden_LogsWordsHeard) {
+  base::HistogramTester histogram_tester;
+  controller().UpdateWordsHeard(123);
+  controller().OnReadingModeHidden();
+
+  histogram_tester.ExpectUniqueSample(
+      ReadAnythingAppController::kWordsHeardHistogramName, 123, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnReadingModeHidden_ResetsWordsHeard) {
+  controller().UpdateWordsHeard(123);
+  controller().OnReadingModeHidden();
+
+  EXPECT_EQ(0, model().words_heard());
+}
+
 TEST_F(ReadAnythingAppControllerTest, OnTabWillDetach_OnlyLogsIfSpeechPlaying) {
   read_aloud_model().SetSpeechPlaying(false);
   base::HistogramTester histogram_tester;
@@ -405,6 +470,38 @@ TEST_F(ReadAnythingAppControllerTest, OnTabWillDetach_OnlyLogsIfSpeechPlaying) {
   histogram_tester.ExpectUniqueSample(
       ReadAloudAppModel::kSpeechStopSourceHistogramName,
       ReadAloudAppModel::ReadAloudStopSource::kCloseTabOrWindow, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnTabWillDetach_LogsWordsSeen) {
+  base::HistogramTester histogram_tester;
+  controller().UpdateWordsSeen(123456);
+  controller().OnTabWillDetach();
+
+  histogram_tester.ExpectUniqueSample(
+      ReadAnythingAppController::kWordsSeenHistogramName, 123456, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnTabWillDetach_ResetsWordsSeen) {
+  controller().UpdateWordsSeen(123);
+  controller().OnTabWillDetach();
+
+  EXPECT_EQ(0, model().words_seen());
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnTabWillDetach_LogsWordsHeard) {
+  base::HistogramTester histogram_tester;
+  controller().UpdateWordsHeard(1357);
+  controller().OnTabWillDetach();
+
+  histogram_tester.ExpectUniqueSample(
+      ReadAnythingAppController::kWordsHeardHistogramName, 1357, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnTabWillDetach_ResetsWordsHeard) {
+  controller().UpdateWordsHeard(2468);
+  controller().OnTabWillDetach();
+
+  EXPECT_EQ(0, model().words_heard());
 }
 
 TEST_F(ReadAnythingAppControllerTest, OnUrlInformationSet_LogsReload) {
@@ -1042,39 +1139,6 @@ TEST_F(ReadAnythingAppControllerTest, GetAltText_Unset) {
   controller().OnAXTreeDistilled(tree_id_, {});
   EXPECT_EQ(img, controller().GetHtmlTag(2));
   EXPECT_EQ("", controller().GetAltText(2));
-}
-
-TEST_F(ReadAnythingAppControllerTest, GetImageDataUrl) {
-  std::string img = "img";
-  std::string img_data =
-      "data:image/"
-      "png;base64,"
-      "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAADElEQVQImWNgoBMAAABpAAFE"
-      "I8ARAAAAAElFTkSuQmCC";
-  ui::AXNodeData img_node;
-  img_node.id = 2;
-  img_node.AddStringAttribute(ax::mojom::StringAttribute::kHtmlTag, img);
-  img_node.AddStringAttribute(ax::mojom::StringAttribute::kImageDataUrl,
-                              img_data);
-
-  SendUpdateWithNodes({std::move(img_node)});
-
-  controller().OnAXTreeDistilled(tree_id_, {});
-  EXPECT_EQ(img, controller().GetHtmlTag(2));
-  EXPECT_EQ(img_data, controller().GetImageDataUrl(2));
-}
-
-TEST_F(ReadAnythingAppControllerTest, GetImageDataUrl_Unset) {
-  std::string img = "img";
-  ui::AXNodeData img_node;
-  img_node.id = 2;
-  img_node.AddStringAttribute(ax::mojom::StringAttribute::kHtmlTag, img);
-
-  SendUpdateWithNodes({std::move(img_node)});
-
-  controller().OnAXTreeDistilled(tree_id_, {});
-  EXPECT_EQ(img, controller().GetHtmlTag(2));
-  EXPECT_EQ("", controller().GetImageDataUrl(2));
 }
 
 TEST_F(ReadAnythingAppControllerTest, GetTextContent_NoSelection) {
@@ -1985,7 +2049,7 @@ TEST_F(ReadAnythingAppControllerTest, RequestImageDataUrl) {
       line_spacing, letter_spacing, font_name, font_size, links_enabled,
       images_enabled, color, speech_rate, std::move(voices),
       std::move(languages_enabled_in_pref), highlight_granularity);
-  controller().RequestImageDataUrl(ax_node_id);
+  controller().RequestImageData(ax_node_id);
   page_handler_.FlushForTesting();
   Mock::VerifyAndClearExpectations(distiller_);
 }
@@ -2136,6 +2200,31 @@ TEST_F(ReadAnythingAppControllerTest, OnCollapseSelection) {
   EXPECT_CALL(page_handler_, OnCollapseSelection()).Times(1);
   controller().OnCollapseSelection();
   Mock::VerifyAndClearExpectations(distiller_);
+}
+
+TEST_F(ReadAnythingAppControllerTest, DrawSelection_ResetsReadAloudState) {
+  ui::AXNodeData node1 = test::TextNode(/* id= */ 2, u"Not like you- ");
+  ui::AXNodeData node2 =
+      test::TextNode(/* id= */ 3, u" you lost your nerve, you lost the game.");
+  SendUpdateWithNodes({std::move(node1), std::move(node2)});
+
+  // Initialize read aloud state.
+  controller().InitAXPositionWithNode(2);
+  EXPECT_TRUE(controller().IsSpeechTreeInitialized());
+
+  // Create a selection from node 2-3. This will trigger DrawSelection.
+  ui::AXTreeUpdate update;
+  test::SetUpdateTreeID(&update, tree_id_);
+  update.has_tree_data = true;
+  update.tree_data.sel_anchor_object_id = 2;
+  update.tree_data.sel_focus_object_id = 3;
+  update.tree_data.sel_anchor_offset = 1;
+  update.tree_data.sel_focus_offset = 3;
+  update.tree_data.sel_is_backward = false;
+  AccessibilityEventReceived({std::move(update)});
+
+  // After a selection, the read aloud state should be reset.
+  EXPECT_FALSE(controller().IsSpeechTreeInitialized());
 }
 
 TEST_F(ReadAnythingAppControllerTest,
@@ -3800,6 +3889,144 @@ TEST_F(ReadAnythingAppControllerTest,
       controller().GetDependencyParserModelForTesting();
 
   EXPECT_FALSE(model.IsAvailable());
+}
+
+TEST_F(ReadAnythingAppControllerTest,
+       OnStringAttributeChanged_ImageSrcChange_RequestsImageData) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kReadAnythingImagesViaAlgorithm);
+
+  // Create an image node with a placeholder "data:" URL, mimicking a
+  // lazy-loaded image.
+  static constexpr ui::AXNodeID kImageNodeId = 2;
+  std::string placeholder_src = "data:image/svg+xml,...";
+  ui::AXNodeData image_node = test::ImageNode(kImageNodeId, placeholder_src);
+  SendUpdateAndDistillNodes({std::move(image_node)});
+
+  // Now update with the actual image url.
+  std::string final_src = "https://example.com/real_image.png";
+  ui::AXNodeData updated_image_node = test::ImageNode(kImageNodeId, final_src);
+  SendUpdateAndDistillNodes({std::move(updated_image_node)});
+
+  EXPECT_CALL(page_handler_, OnImageDataRequested(tree_id_, kImageNodeId))
+      .Times(2);
+}
+
+TEST_F(ReadAnythingAppControllerTest,
+       OnStringAttributeChanged_NonImageNode_DoesNothing) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kReadAnythingImagesViaAlgorithm);
+
+  static constexpr ui::AXNodeID kLinkNodeId = 2;
+  std::string placeholder_url = "data:image/svg+xml,...";
+  ui::AXNodeData link_node = test::LinkNode(kLinkNodeId, placeholder_url);
+  SendUpdateAndDistillNodes({std::move(link_node)});
+
+  std::string final_url = "https://example.com/real_image.png";
+  ui::AXNodeData updated_link_node = test::LinkNode(kLinkNodeId, final_url);
+  SendUpdateAndDistillNodes({std::move(updated_link_node)});
+
+  EXPECT_CALL(page_handler_, OnImageDataRequested).Times(0);
+}
+
+TEST_F(ReadAnythingAppControllerTest,
+       OnStringAttributeChanged_ImageFlagDisabled_DoesNothing) {
+  static constexpr ui::AXNodeID kImageNodeId = 2;
+  std::string placeholder_src = "data:image/svg+xml,...";
+  ui::AXNodeData image_node = test::ImageNode(kImageNodeId, placeholder_src);
+  SendUpdateAndDistillNodes({std::move(image_node)});
+  std::string final_src = "https://example.com/real_image.png";
+  ui::AXNodeData updated_image_node = test::ImageNode(kImageNodeId, final_src);
+  SendUpdateAndDistillNodes({std::move(updated_image_node)});
+
+  EXPECT_CALL(page_handler_, OnImageDataRequested).Times(0);
+}
+
+TEST_F(ReadAnythingAppControllerTest, UpdateWordsSeen_ReplacesWordsSeen) {
+  controller().UpdateWordsSeen(123);
+  EXPECT_EQ(123, model().words_seen());
+  controller().UpdateWordsSeen(54);
+  EXPECT_EQ(54, model().words_seen());
+  controller().UpdateWordsSeen(746);
+  EXPECT_EQ(746, model().words_seen());
+}
+
+TEST_F(ReadAnythingAppControllerTest, UpdateWordsHeard_ReplacesWordsHeard) {
+  controller().UpdateWordsHeard(123);
+  EXPECT_EQ(123, model().words_heard());
+  controller().UpdateWordsHeard(54);
+  EXPECT_EQ(54, model().words_heard());
+  controller().UpdateWordsHeard(746);
+  EXPECT_EQ(746, model().words_heard());
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnActiveAXTreeIDChanged_LogsWordsSeen) {
+  base::HistogramTester histogram_tester;
+  auto const id = ui::AXTreeID::CreateNewAXTreeID();
+  controller().UpdateWordsSeen(2468);
+
+  controller().OnActiveAXTreeIDChanged(id, ukm::kInvalidSourceId, false);
+
+  histogram_tester.ExpectUniqueSample(
+      ReadAnythingAppController::kWordsSeenHistogramName, 2468, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest,
+       OnActiveAXTreeIDChanged_NoPreviousTree_DoesNotLogWordsSeen) {
+  auto const id = ui::AXTreeID::CreateNewAXTreeID();
+  controller().OnActiveAXTreeIDChanged(ui::AXTreeIDUnknown(),
+                                       ukm::kInvalidSourceId, false);
+  controller().UpdateWordsSeen(2468);
+
+  base::HistogramTester histogram_tester;
+  controller().OnActiveAXTreeIDChanged(id, ukm::kInvalidSourceId, false);
+
+  histogram_tester.ExpectTotalCount(
+      ReadAnythingAppController::kWordsSeenHistogramName, 0);
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnActiveAXTreeIDChanged_ResetsWordsSeen) {
+  auto const id = ui::AXTreeID::CreateNewAXTreeID();
+
+  controller().UpdateWordsSeen(123);
+  controller().OnActiveAXTreeIDChanged(id, ukm::kInvalidSourceId, false);
+
+  EXPECT_EQ(0, model().words_seen());
+}
+
+TEST_F(ReadAnythingAppControllerTest, OnActiveAXTreeIDChanged_LogsWordsHeard) {
+  base::HistogramTester histogram_tester;
+  auto const id = ui::AXTreeID::CreateNewAXTreeID();
+  controller().UpdateWordsHeard(2468);
+
+  controller().OnActiveAXTreeIDChanged(id, ukm::kInvalidSourceId, false);
+
+  histogram_tester.ExpectUniqueSample(
+      ReadAnythingAppController::kWordsHeardHistogramName, 2468, 1);
+}
+
+TEST_F(ReadAnythingAppControllerTest,
+       OnActiveAXTreeIDChanged_NoPreviousTree_DoesNotLogWordsHeard) {
+  auto const id = ui::AXTreeID::CreateNewAXTreeID();
+  controller().OnActiveAXTreeIDChanged(ui::AXTreeIDUnknown(),
+                                       ukm::kInvalidSourceId, false);
+  controller().UpdateWordsHeard(2468);
+
+  base::HistogramTester histogram_tester;
+  controller().OnActiveAXTreeIDChanged(id, ukm::kInvalidSourceId, false);
+
+  histogram_tester.ExpectTotalCount(
+      ReadAnythingAppController::kWordsHeardHistogramName, 0);
+}
+
+TEST_F(ReadAnythingAppControllerTest,
+       OnActiveAXTreeIDChanged_ResetsWordsHeard) {
+  auto const id = ui::AXTreeID::CreateNewAXTreeID();
+
+  controller().UpdateWordsHeard(123);
+  controller().OnActiveAXTreeIDChanged(id, ukm::kInvalidSourceId, false);
+
+  EXPECT_EQ(0, model().words_heard());
 }
 
 class ReadAnythingAppControllerScreen2xDataCollectionModeTest

@@ -2731,6 +2731,7 @@ interface FontFace
     getter style
     getter unicodeRange
     getter variant
+    getter variationSettings
     getter weight
     method constructor
     method load
@@ -2745,6 +2746,7 @@ interface FontFace
     setter style
     setter unicodeRange
     setter variant
+    setter variationSettings
     setter weight
 interface FontFaceSetLoadEvent : Event
     attribute @@toStringTag
@@ -4932,6 +4934,7 @@ interface HighlightRegistry
     method forEach
     method get
     method has
+    method highlightsFromPoint
     method keys
     method set
     method values
@@ -5001,6 +5004,7 @@ interface IDBIndex
     method get
     method getAll
     method getAllKeys
+    method getAllRecords
     method getKey
     method openCursor
     method openKeyCursor
@@ -5034,6 +5038,7 @@ interface IDBObjectStore
     method get
     method getAll
     method getAllKeys
+    method getAllRecords
     method getKey
     method index
     method openCursor
@@ -5047,6 +5052,12 @@ interface IDBOpenDBRequest : IDBRequest
     method constructor
     setter onblocked
     setter onupgradeneeded
+interface IDBRecord
+    attribute @@toStringTag
+    getter key
+    getter primaryKey
+    getter value
+    method constructor
 interface IDBRequest : EventTarget
     attribute @@toStringTag
     getter error
@@ -6810,6 +6821,10 @@ interface PerformanceResourceTiming : PerformanceEntry
     getter secureConnectionStart
     getter serverTiming
     getter transferSize
+    getter workerCacheLookupStart
+    getter workerFinalSourceType
+    getter workerMatchedSourceType
+    getter workerRouterEvaluationStart
     getter workerStart
     method constructor
     method toJSON
@@ -9425,6 +9440,7 @@ interface ToggleEvent : Event
     attribute @@toStringTag
     getter newState
     getter oldState
+    getter source
     method constructor
 interface Touch
     attribute @@toStringTag

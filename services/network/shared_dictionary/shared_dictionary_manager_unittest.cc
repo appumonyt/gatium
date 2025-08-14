@@ -21,7 +21,7 @@
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
-#include "crypto/secure_hash.h"
+#include "crypto/hash.h"
 #include "net/base/hash_value.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
@@ -390,7 +390,7 @@ TEST_P(SharedDictionaryManagerTest,
   std::unique_ptr<SharedDictionaryManager> manager =
       CreateSharedDictionaryManager();
 
-  base::MemoryPressureListener::SimulatePressureNotification(
+  base::MemoryPressureListener::SimulatePressureNotificationAsync(
       base::MemoryPressureListener::MemoryPressureLevel::
           MEMORY_PRESSURE_LEVEL_MODERATE);
   task_environment_.RunUntilIdle();
@@ -423,7 +423,7 @@ TEST_P(SharedDictionaryManagerTest,
   std::unique_ptr<SharedDictionaryManager> manager =
       CreateSharedDictionaryManager();
 
-  base::MemoryPressureListener::SimulatePressureNotification(
+  base::MemoryPressureListener::SimulatePressureNotificationAsync(
       base::MemoryPressureListener::MemoryPressureLevel::
           MEMORY_PRESSURE_LEVEL_CRITICAL);
   task_environment_.RunUntilIdle();
@@ -470,7 +470,7 @@ TEST_P(SharedDictionaryManagerTest,
 
   storage.reset();
 
-  base::MemoryPressureListener::SimulatePressureNotification(
+  base::MemoryPressureListener::SimulatePressureNotificationAsync(
       base::MemoryPressureListener::MemoryPressureLevel::
           MEMORY_PRESSURE_LEVEL_MODERATE);
   task_environment_.RunUntilIdle();
@@ -503,7 +503,7 @@ TEST_P(SharedDictionaryManagerTest,
 
   storage.reset();
 
-  base::MemoryPressureListener::SimulatePressureNotification(
+  base::MemoryPressureListener::SimulatePressureNotificationAsync(
       base::MemoryPressureListener::MemoryPressureLevel::
           MEMORY_PRESSURE_LEVEL_CRITICAL);
   task_environment_.RunUntilIdle();
@@ -1107,12 +1107,11 @@ TEST_P(SharedDictionaryManagerTest, WriteAndReadDictionary) {
                   {data1, data2});
 
   // Calculate the hash.
-  std::unique_ptr<crypto::SecureHash> secure_hash =
-      crypto::SecureHash::Create(crypto::SecureHash::SHA256);
-  secure_hash->Update(data1.c_str(), data1.size());
-  secure_hash->Update(data2.c_str(), data2.size());
+  crypto::hash::Hasher hasher(crypto::hash::kSha256);
+  hasher.Update(data1);
+  hasher.Update(data2);
   net::SHA256HashValue sha256;
-  secure_hash->Finish(sha256);
+  hasher.Finish(sha256);
 
   if (GetManagerType() == TestManagerType::kOnDisk) {
     FlushCacheTasks();

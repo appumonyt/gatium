@@ -146,7 +146,9 @@ public class TabListEditorManager {
                             mModalDialogManager,
                             mDesktopWindowStateManager,
                             mEdgeToEdgeSupplier,
-                            CreationMode.FULL_SCREEN);
+                            CreationMode.FULL_SCREEN,
+                            /* undoBarExplicitTrigger= */ null,
+                            /* componentName= */ null);
             mControllerSupplier.set(mTabListEditorCoordinator.getController());
         }
     }

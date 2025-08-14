@@ -26,10 +26,8 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "components/prefs/pref_service.h"
 #include "components/signin/public/base/gaia_id_hash.h"
 #include "components/signin/public/base/signin_metrics.h"
-#include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
@@ -67,10 +65,11 @@
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/device_info.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
+#include "components/password_manager/core/browser/split_stores_and_local_upm.h"
 #include "components/sync/android/jni_headers/ExplicitPassphrasePlatformClient_jni.h"
 #include "components/sync/android/sync_service_android_bridge.h"
 #include "components/sync/engine/nigori/nigori.h"
@@ -239,11 +238,6 @@ SyncServiceImpl::SyncServiceImpl(InitParams init_params)
   // If Sync is disabled via command line flag, then SyncServiceImpl
   // shouldn't be instantiated.
   DCHECK(IsSyncAllowedByFlag());
-
-  sync_prefs_.SetPasswordSyncAllowed(sync_client_->IsPasswordSyncAllowed());
-  // base::Unretained() is safe, `this` outlives `sync_client_`.
-  sync_client_->SetPasswordSyncAllowedChangeCb(base::BindRepeating(
-      &SyncServiceImpl::OnPasswordSyncAllowedChanged, base::Unretained(this)));
 
   sync_stopped_reporter_ = std::make_unique<SyncStoppedReporter>(
       sync_service_url_, MakeUserAgentForSync(channel_), url_loader_factory_);
@@ -844,33 +838,25 @@ SyncService::TransportState SyncServiceImpl::GetTransportState() const {
 
 SyncService::UserActionableError SyncServiceImpl::GetUserActionableError()
     const {
-  const GoogleServiceAuthError auth_error = GetAuthError();
-  DCHECK(!auth_error.IsTransientError());
-
-  switch (auth_error.state()) {
-    case GoogleServiceAuthError::NONE:
-      break;
-    case GoogleServiceAuthError::SERVICE_UNAVAILABLE:
-    case GoogleServiceAuthError::CONNECTION_FAILED:
-    case GoogleServiceAuthError::REQUEST_CANCELED:
-    case GoogleServiceAuthError::CHALLENGE_RESPONSE_REQUIRED:
-      // Transient errors aren't reachable.
-      NOTREACHED();
-    case GoogleServiceAuthError::SERVICE_ERROR:
-    case GoogleServiceAuthError::SCOPE_LIMITED_UNRECOVERABLE_ERROR:
-    case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
-      return UserActionableError::kSignInNeedsUpdate;
-    case GoogleServiceAuthError::USER_NOT_SIGNED_UP:
-    case GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE:
-      // Not shown to the user.
-      // TODO(crbug.com/40890809): It looks like desktop code in
-      // chrome/browser/sync/sync_ui_util.cc does display this to the user.
-      break;
-    // Conventional value for counting the states, never used.
-    case GoogleServiceAuthError::NUM_STATES:
-      NOTREACHED();
+#if !BUILDFLAG(IS_IOS)
+  if (HasSyncConsent()) {
+    if (!GetUserSettings()->IsInitialSyncFeatureSetupComplete()) {
+      return UserActionableError::kNeedsSettingsConfirmation;
+    }
+    // RequiresClientUpgrade() is unrecoverable, but is treated separately
+    // below.
+    if (HasUnrecoverableError() && !RequiresClientUpgrade()) {
+      return UserActionableError::kUnrecoverableError;
+    }
   }
+#endif  // !BUILDFLAG(IS_IOS)
 
+  if (GetAuthError().state() != GoogleServiceAuthError::NONE) {
+    return UserActionableError::kSignInNeedsUpdate;
+  }
+  if (RequiresClientUpgrade()) {
+    return UserActionableError::kNeedsClientUpgrade;
+  }
   if (user_settings_->IsPassphraseRequiredForPreferredDataTypes()) {
     return UserActionableError::kNeedsPassphrase;
   }
@@ -886,6 +872,14 @@ SyncService::UserActionableError SyncServiceImpl::GetUserActionableError()
                : UserActionableError::
                      kTrustedVaultRecoverabilityDegradedForPasswords;
   }
+
+#if BUILDFLAG(IS_ANDROID)
+  if (user_settings_->GetSelectedTypes().Has(UserSelectableType::kPasswords) &&
+      password_manager::IsGmsCoreUpdateRequired()) {
+    return UserActionableError::kNeedsUPMBackendUpgrade;
+  }
+#endif  // BUILDFLAG(IS_ANDROID)
+
   return UserActionableError::kNone;
 }
 
@@ -1174,10 +1168,6 @@ void SyncServiceImpl::OnConfigureDone(
   DCHECK(!user_settings_->IsPassphraseRequiredForPreferredDataTypes() ||
          user_settings_->IsEncryptedDatatypePreferred());
 
-  if (result.sync_mode == SyncMode::kFull) {
-    sync_prefs_.SetFirstSyncCompletedInFullSyncMode();
-  }
-
   DVLOG(2) << "Notify observers OnConfigureDone";
   NotifyObservers();
 
@@ -1333,7 +1323,7 @@ void SyncServiceImpl::PassphraseTypeChanged(PassphraseType passphrase_type) {
   if (!sync_prefs_.GetCachedPassphraseType().has_value() &&
       IsExplicitPassphrase(passphrase_type) &&
       GetSyncAccountStateForPrefs() ==
-          SyncPrefs::SyncAccountState::kSignedInNotSyncing &&
+          SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent &&
       sync_prefs_.DoesTypeHaveDefaultValueForAccount(
           UserSelectableType::kAutofill, GetAccountInfo().gaia) &&
       base::FeatureList::IsEnabled(kReplaceSyncPromosWithSignInPromos)) {
@@ -1376,8 +1366,9 @@ SyncPrefs::SyncAccountState SyncServiceImpl::GetSyncAccountStateForPrefs()
   }
   // This doesn't check IsSyncFeatureEnabled() so it covers the case of advanced
   // sync setup, where IsInitialSyncFeatureSetupComplete() is not true yet.
-  return HasSyncConsent() ? SyncPrefs::SyncAccountState::kSyncing
-                          : SyncPrefs::SyncAccountState::kSignedInNotSyncing;
+  return HasSyncConsent()
+             ? SyncPrefs::SyncAccountState::kSyncing
+             : SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent;
 }
 
 CoreAccountInfo SyncServiceImpl::GetSyncAccountInfoForPrefs() const {
@@ -1608,8 +1599,6 @@ void SyncServiceImpl::ConfigureDataTypeManager(
 
   ConfigureContext configure_context;
   configure_context.authenticated_gaia_id = GetAccountInfo().gaia;
-  configure_context.previously_syncing_gaia_id_info =
-      DeterminePreviouslySyncingGaiaIdInfoForMetrics();
   configure_context.cache_guid = engine_->GetCacheGuid();
   configure_context.sync_mode = SyncMode::kFull;
   configure_context.reason = reason;
@@ -2004,11 +1993,6 @@ SyncService::DataTypeDownloadStatus SyncServiceImpl::GetDownloadStatusFor(
   return DataTypeDownloadStatus::kUpToDate;
 }
 
-void SyncServiceImpl::OnPasswordSyncAllowedChanged() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  sync_prefs_.SetPasswordSyncAllowed(sync_client_->IsPasswordSyncAllowed());
-}
-
 void SyncServiceImpl::CacheTrustedVaultDebugInfoToPrefsFromEngine() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(engine_);
@@ -2054,9 +2038,8 @@ void SyncServiceImpl::SendExplicitPassphraseToPlatformClient() {
 #if BUILDFLAG(IS_ANDROID)
   int version_code = 0;
   bool has_min_gms_version =
-      base::StringToInt(
-          base::android::BuildInfo::GetInstance()->gms_version_code(),
-          &version_code) &&
+      base::StringToInt(base::android::device_info::gms_version_code(),
+                        &version_code) &&
       version_code >= kMinGmsVersionCodeWithCustomPassphraseApi;
   has_min_gms_version |= base::CommandLine::ForCurrentProcess()->HasSwitch(
       kIgnoreMinGmsVersionWithPassphraseSupportForTest);
@@ -2109,7 +2092,6 @@ void SyncServiceImpl::StopAndClear(ResetEngineReason reset_engine_reason) {
   // If the migration didn't finish before StopAndClear() was called, mark it as
   // done so it doesn't trigger again if the user signs in later.
   sync_prefs_.MarkPartialSyncToSigninMigrationFullyDone();
-  sync_prefs_.ClearFirstSyncCompletedInFullSyncMode();
 
   if (reset_engine_reason == ResetEngineReason::kNotSignedIn) {
     sync_prefs_.ClearCachedPersistentAuthErrorForMetrics();
@@ -2216,47 +2198,6 @@ void SyncServiceImpl::RecordHistoryOptInStateOnSigninHistograms(
   signin_metrics::RecordHistoryOptInStateOnSignin(
       access_point, consent_level,
       user_settings_->GetSelectedTypes().Has(UserSelectableType::kHistory));
-}
-
-PreviouslySyncingGaiaIdInfoForMetrics
-SyncServiceImpl::DeterminePreviouslySyncingGaiaIdInfoForMetrics() const {
-  if (IsLocalSyncEnabled()) {
-    return PreviouslySyncingGaiaIdInfoForMetrics::kUnspecified;
-  }
-
-  // If a configuration cycle already completed in full-sync mode, return
-  // `kUnspecified` because this field is used to record metrics that are
-  // relevant immediately when the user turns sync on. Later
-  // reconfigurations, such as when the user toggles sync settings, should be
-  // excluded from metrics.
-  if (sync_prefs_.IsFirstSyncCompletedInFullSyncMode()) {
-    return PreviouslySyncingGaiaIdInfoForMetrics::kUnspecified;
-  }
-
-  // Depending on whether sync the feature is currently on or not, the gaia ID
-  // corresponding to the previous user is stored in one pref or another. That's
-  // because `kGoogleServicesLastSyncingGaiaId` is updated early, as soon as
-  // the sync consent is granted, and before the notification reaches
-  // SyncServiceImpl.
-  const GaiaId previously_syncing_gaia_id = GaiaId(
-      HasSyncConsent() ? sync_client_->GetPrefService()->GetString(
-                             prefs::kGoogleServicesSecondLastSyncingGaiaId)
-                       : sync_client_->GetPrefService()->GetString(
-                             prefs::kGoogleServicesLastSyncingGaiaId));
-
-  if (previously_syncing_gaia_id.empty()) {
-    // It is known that no previous gaia ID existed that turned sync on.
-    return PreviouslySyncingGaiaIdInfoForMetrics::
-        kSyncFeatureNeverPreviouslyTurnedOn;
-  }
-
-  const GaiaId current_gaia_id = GetAccountInfo().gaia;
-
-  return current_gaia_id == previously_syncing_gaia_id
-             ? PreviouslySyncingGaiaIdInfoForMetrics::
-                   kCurrentGaiaIdMatchesPreviousWithSyncFeatureOn
-             : PreviouslySyncingGaiaIdInfoForMetrics::
-                   kCurrentGaiaIdIfDiffersPreviousWithSyncFeatureOn;
 }
 
 const GURL& SyncServiceImpl::GetSyncServiceUrlForDebugging() const {

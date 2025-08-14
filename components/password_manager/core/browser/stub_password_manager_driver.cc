@@ -5,8 +5,10 @@
 #include "components/password_manager/core/browser/stub_password_manager_driver.h"
 
 #include "components/autofill/core/common/aliases.h"
+#include "components/autofill/core/common/form_field_data.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace password_manager {
 
@@ -26,6 +28,12 @@ void StubPasswordManagerDriver::GeneratedPasswordAccepted(
 void StubPasswordManagerDriver::GeneratedPasswordRejected() {}
 
 void StubPasswordManagerDriver::FocusNextFieldAfterPasswords() {}
+
+void StubPasswordManagerDriver::FillField(
+    autofill::FieldRendererId triggering_field_id,
+    const std::u16string& value,
+    autofill::FieldPropertiesFlags field_properties,
+    base::OnceCallback<void(bool)> success_callback) {}
 
 void StubPasswordManagerDriver::FillSuggestion(
     const std::u16string& username,
@@ -90,6 +98,10 @@ int StubPasswordManagerDriver::GetFrameId() const {
 
 const GURL& StubPasswordManagerDriver::GetLastCommittedURL() const {
   return GURL::EmptyGURL();
+}
+
+const url::Origin& StubPasswordManagerDriver::GetLastCommittedOrigin() const {
+  return opaque_origin_;
 }
 
 gfx::RectF StubPasswordManagerDriver::TransformToRootCoordinates(

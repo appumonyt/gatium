@@ -16,11 +16,8 @@ namespace switches {
 BASE_FEATURE(kMitigateLegacySearchEnginePromoOverlap,
              "MitigateLegacySearchEnginePromoOverlap",
              base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
-
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
-BASE_FEATURE(kClearPrefForUnknownCountry,
-             "ClearCountryPrefForStoredUnknownCountry",
+BASE_FEATURE(kResolveRegionalCapabilitiesFromDevice,
+             "ResolveRegionalCapabilitiesFromDevice",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -34,5 +31,9 @@ BASE_FEATURE(kUseFinchPermanentCountryForFetchCountryId,
 COMPONENT_EXPORT(REGIONAL_CAPABILITIES_SWITCHES)
 BASE_FEATURE(kTaiyaki, "Taiyaki", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+
+BASE_FEATURE(kDynamicProfileCountry,
+             "DynamicProfileCountry",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace switches

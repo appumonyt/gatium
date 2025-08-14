@@ -146,10 +146,8 @@ class BrowserWithTestWindowTest : public testing::Test, public ProfileObserver {
   BrowserWindow* window() const { return window_.get(); }
 
   Browser* browser() const { return browser_.get(); }
-  void set_browser(std::unique_ptr<Browser> browser) {
-    browser_ = std::move(browser);
-  }
-  std::unique_ptr<Browser> release_browser() { return std::move(browser_); }
+
+  std::unique_ptr<Browser> release_browser();
 
   TestingProfile* profile() const { return profile_.get(); }
 
@@ -165,12 +163,8 @@ class BrowserWithTestWindowTest : public testing::Test, public ProfileObserver {
     return &test_url_loader_factory_;
   }
 
-  std::unique_ptr<BrowserWindow> release_browser_window() {
-    return std::move(window_);
-  }
-
 #if BUILDFLAG(IS_CHROMEOS)
-  ash::AshTestHelper* ash_test_helper() { return &ash_test_helper_; }
+  ash::AshTestHelper* ash_test_helper() { return &ash_test_helper_.value(); }
   user_manager::FakeUserManager* user_manager() { return user_manager_.Get(); }
 #endif
 
@@ -237,6 +231,12 @@ class BrowserWithTestWindowTest : public testing::Test, public ProfileObserver {
                                                  bool hosted_app,
                                                  BrowserWindow* browser_window);
 
+  // Creates the browser given `profile`, `browser_type` and `hosted_app` and
+  // a window created via `CreateBrowserWindow()`.
+  virtual std::unique_ptr<Browser> CreateBrowser(Profile* profile,
+                                                 Browser::Type browser_type,
+                                                 bool hosted_app);
+
 #if defined(TOOLKIT_VIEWS)
   views::TestViewsDelegate* test_views_delegate() {
 #if BUILDFLAG(IS_CHROMEOS)
@@ -300,11 +300,11 @@ class BrowserWithTestWindowTest : public testing::Test, public ProfileObserver {
   network::TestURLLoaderFactory test_url_loader_factory_;
 
   std::unique_ptr<TestingProfileManager> profile_manager_;
-  std::unique_ptr<BrowserWindow> window_;  // Usually a TestBrowserWindow.
+  raw_ptr<BrowserWindow> window_;  // Usually a TestBrowserWindow.
   std::unique_ptr<Browser> browser_;
 
 #if BUILDFLAG(IS_CHROMEOS)
-  ash::AshTestHelper ash_test_helper_;
+  std::optional<ash::AshTestHelper> ash_test_helper_;
   std::unique_ptr<views::TestViewsDelegate> test_views_delegate_ =
       std::make_unique<ChromeTestViewsDelegate<ash::AshTestViewsDelegate>>();
 #elif defined(TOOLKIT_VIEWS)

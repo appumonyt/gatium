@@ -28,6 +28,8 @@ if (use_bundled_fontconfig) {
     bindgen_flags = [
       "merge-extern-blocks",
       "allowlist-item=(FcPattern.*|FcRange.*|FcCharSet.*|FcLangSetFromCharSet|FC_.*_OBJECT)",
+      "blocklist-type=(FcCharSet|FcLangSet)",
+      "raw-line=pub use fontconfig_bindings::FcCharSet; pub use fontconfig_bindings::FcLangSet;",
     ]
     crate_name = "fcint_bindings"
     deps = [ ":fontconfig_h_bindgen" ]
@@ -59,8 +61,8 @@ if (use_bundled_fontconfig) {
       ":fontconfig_h_bindgen",
       "//third_party/rust/font_types/v0_9:lib",
       "//third_party/rust/libc/v0_2:lib",
-      "//third_party/rust/read_fonts/v0_30:lib",
-      "//third_party/rust/skrifa/v0_32:lib",
+      "//third_party/rust/read_fonts/v0_31:lib",
+      "//third_party/rust/skrifa/v0_33:lib",
     ]
   }
 
@@ -92,6 +94,7 @@ if (use_bundled_fontconfig) {
       "src/src/fcdbg.c",
       "src/src/fcdefault.c",
       "src/src/fcdir.c",
+      "src/src/fcfontations.c",
       "src/src/fcformat.c",
       "src/src/fcfreetype.c",
       "src/src/fcfs.c",
@@ -121,7 +124,10 @@ if (use_bundled_fontconfig) {
       "include/src",
     ]
 
-    defines = [ "HAVE_CONFIG_H" ]
+    defines = [
+      "HAVE_CONFIG_H",
+      "ENABLE_FONTATIONS",
+    ]
 
     # Fontconfig symbols should not be exported from chrome, nacl_helper, or
     # anything else.

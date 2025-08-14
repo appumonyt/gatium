@@ -18,6 +18,7 @@ import org.chromium.chrome.browser.tab.TabLaunchType;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 
 import java.util.Iterator;
+import java.util.Set;
 
 /**
  * A TabModel implementation that handles off the record tabs.
@@ -88,6 +89,7 @@ class IncognitoTabModelImpl implements IncognitoTabModelInternal {
                 }
             };
 
+    private long mNativeAndroidBrowserWindow;
     private TabModelInternal mDelegateModel;
     private int mCountOfAddingOrClosingTabs;
     private boolean mActive;
@@ -109,6 +111,9 @@ class IncognitoTabModelImpl implements IncognitoTabModelInternal {
         if (!(mDelegateModel instanceof EmptyTabModel)) return;
 
         mDelegateModel = mDelegate.createTabModel();
+        if (mNativeAndroidBrowserWindow != 0) {
+            mDelegateModel.associateWithBrowserWindow(mNativeAndroidBrowserWindow);
+        }
         mDelegateModel
                 .getCurrentTabSupplier()
                 .addObserver(mDelegateModelCurrentTabSupplierObserver);
@@ -169,6 +174,13 @@ class IncognitoTabModelImpl implements IncognitoTabModelInternal {
     @Override
     public @Nullable Profile getProfile() {
         return mDelegateModel.getProfile();
+    }
+
+    @Override
+    public void associateWithBrowserWindow(long nativeAndroidBrowserWindow) {
+        assert mNativeAndroidBrowserWindow == 0;
+        mNativeAndroidBrowserWindow = nativeAndroidBrowserWindow;
+        mDelegateModel.associateWithBrowserWindow(nativeAndroidBrowserWindow);
     }
 
     @Override
@@ -380,4 +392,29 @@ class IncognitoTabModelImpl implements IncognitoTabModelInternal {
 
     @Override
     public void broadcastSessionRestoreComplete() {}
+
+    @Override
+    public void setTabsMultiSelected(Set<Integer> tabIds, boolean isSelected) {
+        mDelegateModel.setTabsMultiSelected(tabIds, isSelected);
+    }
+
+    @Override
+    public void clearMultiSelection(boolean notifyObservers) {
+        mDelegateModel.clearMultiSelection(notifyObservers);
+    }
+
+    @Override
+    public boolean isTabMultiSelected(int tabId) {
+        return mDelegateModel.isTabMultiSelected(tabId);
+    }
+
+    @Override
+    public int getMultiSelectedTabsCount() {
+        return mDelegateModel.getMultiSelectedTabsCount();
+    }
+
+    @Override
+    public int findFirstNonPinnedTabIndex() {
+        return mDelegateModel.findFirstNonPinnedTabIndex();
+    }
 }

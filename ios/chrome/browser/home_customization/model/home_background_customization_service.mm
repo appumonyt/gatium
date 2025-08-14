@@ -4,6 +4,8 @@
 
 #import "ios/chrome/browser/home_customization/model/home_background_customization_service.h"
 
+#import <Foundation/Foundation.h>
+
 #import "base/base64.h"
 #import "base/logging.h"
 #import "components/prefs/pref_registry_simple.h"
@@ -13,6 +15,12 @@
 #import "ios/chrome/browser/shared/model/prefs/pref_names.h"
 #import "third_party/skia/include/core/SkColor.h"
 #import "url/gurl.h"
+
+namespace {
+// Keys for user-uploaded background dictionary serialization.
+const char kImagePathKey[] = "image_path";
+const char kFramingDataKey[] = "framing_data";
+}  // namespace
 
 HomeBackgroundCustomizationService::HomeBackgroundCustomizationService(
     PrefService* pref_service)
@@ -28,6 +36,7 @@ void HomeBackgroundCustomizationService::RegisterProfilePrefs(
     PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kIosSavedThemeSpecificsIos,
                                std::string());
+  registry->RegisterDictionaryPref(prefs::kIosUserUploadedBackground);
 }
 
 std::optional<sync_pb::NtpCustomBackground>
@@ -55,7 +64,6 @@ void HomeBackgroundCustomizationService::SetCurrentBackground(
     const std::string& collection_id) {
   sync_pb::NtpCustomBackground new_background;
   new_background.set_url(background_url.spec());
-  // TODO(crbug.com/411453550): Add thumbnail_url to NtpCustomBackground field.
   new_background.set_attribution_line_1(attribution_line_1);
   new_background.set_attribution_line_2(attribution_line_2);
   new_background.set_attribution_action_url(attribution_action_url.spec());
@@ -64,7 +72,8 @@ void HomeBackgroundCustomizationService::SetCurrentBackground(
   *current_theme_.mutable_ntp_background() = new_background;
   current_theme_.clear_user_color_theme();
 
-  StoreCurrentTheme();
+  pref_service_->ClearPref(prefs::kIosUserUploadedBackground);
+
   NotifyObserversOfBackgroundChange();
 }
 
@@ -78,7 +87,16 @@ void HomeBackgroundCustomizationService::SetBackgroundColor(
   *current_theme_.mutable_user_color_theme() = new_color_theme;
   current_theme_.clear_ntp_background();
 
-  StoreCurrentTheme();
+  pref_service_->ClearPref(prefs::kIosUserUploadedBackground);
+
+  NotifyObserversOfBackgroundChange();
+}
+
+void HomeBackgroundCustomizationService::ClearCurrentBackground() {
+  current_theme_.Clear();
+
+  pref_service_->ClearPref(prefs::kIosUserUploadedBackground);
+
   NotifyObserversOfBackgroundChange();
 }
 
@@ -87,6 +105,30 @@ void HomeBackgroundCustomizationService::StoreCurrentTheme() {
   // Encode bytestring so it can be stored in a pref.
   std::string encoded = base::Base64Encode(serialized);
   pref_service_->SetString(prefs::kIosSavedThemeSpecificsIos, encoded);
+}
+
+void HomeBackgroundCustomizationService::RestoreCurrentTheme() {
+  LoadCurrentTheme();
+
+  std::optional<sync_pb::UserColorTheme> colorTheme = GetCurrentColorTheme();
+  std::optional<sync_pb::NtpCustomBackground> presetImage =
+      GetCurrentCustomBackground();
+  std::optional<std::pair<std::string, FramingCoordinates>> uploadedImage =
+      GetCurrentUserUploadedBackground();
+
+  if (colorTheme) {
+    SetBackgroundColor(colorTheme->color(),
+                       colorTheme->browser_color_variant());
+  } else if (presetImage) {
+    SetCurrentBackground(GURL(presetImage->url()), GURL(presetImage->url()),
+                         presetImage->attribution_line_1(),
+                         presetImage->attribution_line_2(),
+                         GURL(presetImage->attribution_action_url()),
+                         presetImage->collection_id());
+  } else if (uploadedImage) {
+    SetCurrentUserUploadedBackground(uploadedImage->first,
+                                     uploadedImage->second);
+  }
 }
 
 void HomeBackgroundCustomizationService::LoadCurrentTheme() {
@@ -112,4 +154,54 @@ void HomeBackgroundCustomizationService::NotifyObserversOfBackgroundChange() {
   for (HomeBackgroundCustomizationServiceObserver& observer : observers_) {
     observer.OnBackgroundChanged();
   }
+}
+
+std::optional<UserUploadedBackground>
+HomeBackgroundCustomizationService::GetCurrentUserUploadedBackground() {
+  const base::Value::Dict& background_data =
+      pref_service_->GetDict(prefs::kIosUserUploadedBackground);
+
+  if (background_data.empty()) {
+    return std::nullopt;
+  }
+
+  const std::string* image_path = background_data.FindString(kImagePathKey);
+  const base::Value::Dict* framing_data_dict =
+      background_data.FindDict(kFramingDataKey);
+
+  if (!image_path || !framing_data_dict) {
+    pref_service_->ClearPref(prefs::kIosUserUploadedBackground);
+    return std::nullopt;
+  }
+
+  // Convert Dict to FramingCoordinates.
+  std::optional<FramingCoordinates> coordinates =
+      FramingCoordinates::FromDict(*framing_data_dict);
+
+  if (!coordinates) {
+    pref_service_->ClearPref(prefs::kIosUserUploadedBackground);
+    return std::nullopt;
+  }
+
+  return std::make_pair(*image_path, *coordinates);
+}
+
+void HomeBackgroundCustomizationService::SetCurrentUserUploadedBackground(
+    const std::string& image_path,
+    const FramingCoordinates& framing_coordinates) {
+  base::Value::Dict background_data;
+  background_data.Set(kImagePathKey, image_path);
+  background_data.Set(kFramingDataKey, framing_coordinates.ToDict());
+
+  pref_service_->SetDict(prefs::kIosUserUploadedBackground,
+                         std::move(background_data));
+
+  current_theme_.clear_ntp_background();
+  current_theme_.clear_user_color_theme();
+
+  NotifyObserversOfBackgroundChange();
+}
+
+void HomeBackgroundCustomizationService::ClearCurrentUserUploadedBackground() {
+  pref_service_->ClearPref(prefs::kIosUserUploadedBackground);
 }

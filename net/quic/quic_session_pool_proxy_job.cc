@@ -5,12 +5,12 @@
 #include "net/quic/quic_session_pool_proxy_job.h"
 
 #include "base/memory/weak_ptr.h"
+#include "base/trace_event/trace_event.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/network_handle.h"
 #include "net/base/request_priority.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/log/net_log_with_source.h"
 #include "net/quic/address_utils.h"
 #include "net/quic/quic_context.h"
@@ -180,6 +180,11 @@ int QuicSessionPool::ProxyJob::DoCreateProxySession() {
     use_empty_nak = true;
   }
 
+  // Disable cert verification network fetches since those network requests may
+  // need to go through the proxy chain too.
+  const int proxy_server_cert_verify_flags =
+      cert_verify_flags_ | CertVerifier::VERIFY_DISABLE_NETWORK_FETCHES;
+
   proxy_session_request_ = std::make_unique<QuicSessionRequest>(pool_);
   return proxy_session_request_->Request(
       destination, quic_version, proxy_chain_prefix, proxy_annotation_tag_,
@@ -188,8 +193,8 @@ int QuicSessionPool::ProxyJob::DoCreateProxySession() {
       use_empty_nak ? NetworkAnonymizationKey()
                     : session_key.network_anonymization_key(),
       session_key.secure_dns_policy(), session_key.require_dns_https_alpn(),
-      cert_verify_flags_, GURL("https://" + last_server.ToString()), net_log(),
-      &net_error_details_, session_creation_initiator_,
+      proxy_server_cert_verify_flags, GURL("https://" + last_server.ToString()),
+      net_log(), &net_error_details_, session_creation_initiator_,
       connection_management_config_,
       /*failed_on_default_network_callback=*/CompletionOnceCallback(),
       io_callback_);

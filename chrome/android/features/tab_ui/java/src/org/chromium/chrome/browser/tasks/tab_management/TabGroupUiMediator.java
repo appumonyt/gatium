@@ -246,7 +246,7 @@ public class TabGroupUiMediator implements BackPressHandler {
                     @Override
                     public void didAddTab(
                             Tab tab,
-                            int type,
+                            @TabLaunchType int type,
                             @TabCreationState int creationState,
                             boolean markedForSelection) {
                         resetTabStrip();
@@ -329,7 +329,7 @@ public class TabGroupUiMediator implements BackPressHandler {
                     }
 
                     @Override
-                    public void didMergeTabToGroup(Tab movedTab) {
+                    public void didMergeTabToGroup(Tab movedTab, boolean isDestinationTab) {
                         resetTabStrip();
                     }
                 };

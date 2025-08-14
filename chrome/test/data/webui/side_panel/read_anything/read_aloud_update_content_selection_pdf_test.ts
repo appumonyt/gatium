@@ -4,7 +4,7 @@
 import 'chrome-untrusted://read-anything-side-panel.top-chrome/read_anything.js';
 
 import type {AppElement} from 'chrome-untrusted://read-anything-side-panel.top-chrome/read_anything.js';
-import {SpeechBrowserProxyImpl, SpeechController, ToolbarEvent} from 'chrome-untrusted://read-anything-side-panel.top-chrome/read_anything.js';
+import {ContentController, SpeechBrowserProxyImpl, SpeechController, ToolbarEvent} from 'chrome-untrusted://read-anything-side-panel.top-chrome/read_anything.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome-untrusted://webui-test/chai_assert.js';
 import {microtasksFinished} from 'chrome-untrusted://webui-test/test_util.js';
 
@@ -92,6 +92,7 @@ suite('ReadAloud_UpdateContentSelectionPDF', () => {
     SpeechBrowserProxyImpl.setInstance(new TestSpeechBrowserProxy());
     speechController = new SpeechController();
     SpeechController.setInstance(speechController);
+    ContentController.setInstance(new ContentController());
 
     app = await createApp();
     document.onselectionchange = () => {};
@@ -102,8 +103,10 @@ suite('ReadAloud_UpdateContentSelectionPDF', () => {
   test('inner html of container matches expected html', () => {
     assertFalse(speechController.isSpeechActive());
     assertFalse(speechController.hasSpeechBeenTriggered());
-    // isSpeechTreeInitialized set in updateContent
-    assertTrue(speechController.isSpeechTreeInitialized());
+    // isSpeechTreeInitialized is set in updateContent but set to false when
+    // ReadAnythingAppController#DrawSelection is called with selection nodes
+    // that don't match the content nodes.
+    assertFalse(speechController.isSpeechTreeInitialized());
     // The expected HTML before any highlights are added.
     const expected = '<div><p>World</p><p>Friend!</p></div>';
     const innerHTML = app.$.container.innerHTML;
@@ -163,6 +166,7 @@ suite('ReadAloud_UpdateContentSelectionPDF', () => {
 
   suite('While Read Aloud paused', () => {
     setup(() => {
+      speechController.initializeSpeechTree();
       playFromSelectionWithMockTimer(app);
       emitEvent(app, ToolbarEvent.PLAY_PAUSE);
       return microtasksFinished();

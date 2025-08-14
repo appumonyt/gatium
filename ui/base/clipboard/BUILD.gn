@@ -94,6 +94,7 @@ component("clipboard") {
     "clipboard.h",
     "clipboard_change_notifier.cc",
     "clipboard_change_notifier.h",
+    "clipboard_metadata.h",
     "clipboard_metrics.cc",
     "clipboard_metrics.h",
     "clipboard_monitor.cc",
@@ -276,7 +277,7 @@ source_set("clipboard_test") {
     "//ui/base:features",
     "//ui/events/platform",
     "//ui/gfx:test_support",
-    "//url:url",
+    "//url",
   ]
 
   if (is_mac) {
@@ -296,6 +297,10 @@ source_set("clipboard_test") {
       ]
     }
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 fuzzer_test("url_file_parser_fuzzer") {

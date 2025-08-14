@@ -220,6 +220,10 @@ bool ContentRendererClient::IsEncoderSupportedVideoType(
   return ::media::IsDefaultEncoderSupportedVideoType(type);
 }
 
+bool ContentRendererClient::ShouldSuppressAudioTracks() {
+  return false;
+}
+
 media::ExternalMemoryAllocator* ContentRendererClient::GetMediaAllocator() {
   return nullptr;
 }
@@ -260,11 +264,6 @@ ContentRendererClient::CreateSpeechRecognitionClient(
   return nullptr;
 }
 #endif
-
-bool ContentRendererClient::IsPluginAllowedToUseCameraDeviceAPI(
-    const GURL& url) {
-  return false;
-}
 
 bool ContentRendererClient::AllowScriptExtensionForServiceWorker(
     const url::Origin& script_origin) {

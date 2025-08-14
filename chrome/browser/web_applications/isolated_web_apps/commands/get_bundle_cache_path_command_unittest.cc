@@ -9,6 +9,7 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/test/gmock_expected_support.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_path_override.h"
 #include "base/test/test_future.h"
 #include "base/version.h"
@@ -37,10 +38,11 @@ const SignedWebBundleId kMainBundleId = test::GetDefaultEd25519WebBundleId();
 const web_package::test::Ed25519KeyPair kPublicKeyPair =
     test::GetDefaultEd25519KeyPair();
 SignedWebBundleId kBundleId2 = test::GetDefaultEcdsaP256WebBundleId();
-const base::Version kVersion1 = base::Version("0.0.1");
-const base::Version kVersion2 = base::Version("0.0.2");
-const base::Version kVersion3 = base::Version("0.0.3");
-const base::Version kVersion4 = base::Version("1.0.0");
+
+constexpr char kGetBundleCachePathSuccessMetric[] =
+    "WebApp.Isolated.GetBundleCachePathSuccess";
+constexpr char kGetBundleCachePathErrorMetric[] =
+    "WebApp.Isolated.GetBundleCachePathError";
 
 }  // namespace
 
@@ -58,7 +60,7 @@ class GetBundleCachePathCommandTest
   }
 
   base::FilePath CreateBundleInCacheDir(const SignedWebBundleId& bundle_id,
-                                        const base::Version& version) {
+                                        const IwaVersion& version) {
     base::FilePath bundle_directory_path =
         GetBundleDirWithVersion(bundle_id, version);
     EXPECT_TRUE(base::CreateDirectory(bundle_directory_path));
@@ -72,17 +74,17 @@ class GetBundleCachePathCommandTest
   }
 
   base::FilePath GetBundleDirWithVersion(const SignedWebBundleId& bundle_id,
-                                         const base::Version& version) {
+                                         const IwaVersion& version) {
     auto session_cache_dir =
         IwaCacheClient::GetCacheBaseDirectoryForSessionType(GetSessionType(),
                                                             CacheRootPath());
     return IwaCacheClient::GetCacheDirectoryForBundleWithVersion(
-        session_cache_dir, bundle_id, version);
+        session_cache_dir, bundle_id, version.version());
   }
 
   void ScheduleCommand(
       const web_package::SignedWebBundleId& web_bundle_id,
-      const std::optional<base::Version>& version,
+      const std::optional<IwaVersion>& version,
       base::OnceCallback<void(GetBundleCachePathResult)> callback) {
     auto url_info =
         IsolatedWebAppUrlInfo::CreateFromSignedWebBundleId(web_bundle_id);
@@ -90,111 +92,141 @@ class GetBundleCachePathCommandTest
         url_info, version, GetSessionType(), std::move(callback));
   }
 
+  void ExpectEmptyGetBundleCachePathMetrics() {
+    histogram_tester_.ExpectTotalCount(kGetBundleCachePathSuccessMetric, 0);
+    histogram_tester_.ExpectTotalCount(kGetBundleCachePathErrorMetric, 0);
+  }
+
+  void ExpectSuccessGetBundleCachePathMetric() {
+    EXPECT_THAT(
+        histogram_tester_.GetAllSamples(kGetBundleCachePathSuccessMetric),
+        BucketsAre(base::Bucket(true, 1)));
+    histogram_tester_.ExpectTotalCount(kGetBundleCachePathErrorMetric, 0);
+  }
+
+  void ExpectErrorGetBundleCachePathMetric(
+      const GetBundleCachePathError& error) {
+    EXPECT_THAT(
+        histogram_tester_.GetAllSamples(kGetBundleCachePathSuccessMetric),
+        BucketsAre(base::Bucket(false, 1)));
+    EXPECT_THAT(histogram_tester_.GetAllSamples(kGetBundleCachePathErrorMetric),
+                BucketsAre(base::Bucket(error, 1)));
+  }
+
  private:
   const base::FilePath& CacheRootPath() { return cache_root_dir_.GetPath(); }
 
   SessionType GetSessionType() { return GetParam(); }
 
+  base::HistogramTester histogram_tester_;
   base::ScopedTempDir cache_root_dir_;
   std::unique_ptr<base::ScopedPathOverride> cache_root_dir_override_;
   data_decoder::test::InProcessDataDecoder in_process_data_decoder_;
 };
 
 TEST_P(GetBundleCachePathCommandTest, NoCachedPathToFetch) {
+  ExpectEmptyGetBundleCachePathMetrics();
   TestFuture<GetBundleCachePathResult> get_bundle_future;
   ScheduleCommand(kMainBundleId, /*version=*/std::nullopt,
                   get_bundle_future.GetCallback());
 
   EXPECT_THAT(get_bundle_future.Get(),
               ErrorIs(GetBundleCachePathError::kIwaNotCached));
+  ExpectErrorGetBundleCachePathMetric(GetBundleCachePathError::kIwaNotCached);
 }
 
 TEST_P(GetBundleCachePathCommandTest, RequiredVersionFound) {
-  base::FilePath bundle_path = CreateBundleInCacheDir(kMainBundleId, kVersion1);
+  ExpectEmptyGetBundleCachePathMetrics();
+  base::FilePath bundle_path =
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.1"));
 
   TestFuture<GetBundleCachePathResult> get_bundle_future;
-  ScheduleCommand(kMainBundleId, kVersion1, get_bundle_future.GetCallback());
+  ScheduleCommand(kMainBundleId, *IwaVersion::Create("0.0.1"),
+                  get_bundle_future.GetCallback());
 
   EXPECT_THAT(get_bundle_future.Get(),
-              ValueIs(GetBundleCachePathSuccess{bundle_path, kVersion1}));
+              ValueIs(GetBundleCachePathSuccess{bundle_path,
+                                                *IwaVersion::Create("0.0.1")}));
+  ExpectSuccessGetBundleCachePathMetric();
 }
 
 TEST_P(GetBundleCachePathCommandTest, ProvidedVersionNotFound) {
-  base::FilePath bundle_path = CreateBundleInCacheDir(kMainBundleId, kVersion1);
+  ExpectEmptyGetBundleCachePathMetrics();
+  base::FilePath bundle_path =
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.1"));
 
   TestFuture<GetBundleCachePathResult> get_bundle_future;
-  ScheduleCommand(kMainBundleId, kVersion2, get_bundle_future.GetCallback());
+  ScheduleCommand(kMainBundleId, *IwaVersion::Create("0.0.2"),
+                  get_bundle_future.GetCallback());
 
   EXPECT_THAT(get_bundle_future.Get(),
               ErrorIs(GetBundleCachePathError::kProvidedVersionNotFound));
+  ExpectErrorGetBundleCachePathMetric(
+      GetBundleCachePathError::kProvidedVersionNotFound);
 }
 
 TEST_P(GetBundleCachePathCommandTest, NoVersionProvided) {
-  base::FilePath bundle_path = CreateBundleInCacheDir(kMainBundleId, kVersion1);
+  base::FilePath bundle_path =
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.1"));
 
   TestFuture<GetBundleCachePathResult> get_bundle_future;
   ScheduleCommand(kMainBundleId, /*version=*/std::nullopt,
                   get_bundle_future.GetCallback());
 
   EXPECT_THAT(get_bundle_future.Get(),
-              ValueIs(GetBundleCachePathSuccess{bundle_path, kVersion1}));
+              ValueIs(GetBundleCachePathSuccess{bundle_path,
+                                                *IwaVersion::Create("0.0.1")}));
 }
 
 TEST_P(GetBundleCachePathCommandTest, GetNewestVersionWhenVersionNotProvided) {
   base::FilePath bundle_path_v1 =
-      CreateBundleInCacheDir(kMainBundleId, kVersion1);
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.1"));
   base::FilePath bundle_path_v3 =
-      CreateBundleInCacheDir(kMainBundleId, kVersion3);
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.3"));
   base::FilePath bundle_path_v4 =
-      CreateBundleInCacheDir(kMainBundleId, kVersion4);
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("1.0.0"));
   base::FilePath bundle_path_v2 =
-      CreateBundleInCacheDir(kMainBundleId, kVersion2);
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.2"));
 
   TestFuture<GetBundleCachePathResult> get_bundle_future;
   ScheduleCommand(kMainBundleId, /*version=*/std::nullopt,
                   get_bundle_future.GetCallback());
 
   EXPECT_THAT(get_bundle_future.Get(),
-              ValueIs(GetBundleCachePathSuccess{bundle_path_v4, kVersion4}));
+              ValueIs(GetBundleCachePathSuccess{bundle_path_v4,
+                                                *IwaVersion::Create("1.0.0")}));
 }
 
 TEST_P(GetBundleCachePathCommandTest, GetCorrectVersion) {
   base::FilePath bundle_path_v2 =
-      CreateBundleInCacheDir(kMainBundleId, kVersion2);
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.2"));
   base::FilePath bundle_path_v1 =
-      CreateBundleInCacheDir(kMainBundleId, kVersion1);
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.1"));
   base::FilePath bundle_path_v3 =
-      CreateBundleInCacheDir(kMainBundleId, kVersion3);
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.3"));
 
   TestFuture<GetBundleCachePathResult> get_bundle_future;
-  ScheduleCommand(kMainBundleId, kVersion1, get_bundle_future.GetCallback());
+  ScheduleCommand(kMainBundleId, *IwaVersion::Create("0.0.1"),
+                  get_bundle_future.GetCallback());
 
   EXPECT_THAT(get_bundle_future.Get(),
-              ValueIs(GetBundleCachePathSuccess{bundle_path_v1, kVersion1}));
+              ValueIs(GetBundleCachePathSuccess{bundle_path_v1,
+                                                *IwaVersion::Create("0.0.1")}));
 }
 
 TEST_P(GetBundleCachePathCommandTest, GetCorrectIwa) {
   base::FilePath bundle_path1 =
-      CreateBundleInCacheDir(kMainBundleId, kVersion1);
-  base::FilePath bundle_path2 = CreateBundleInCacheDir(kBundleId2, kVersion1);
+      CreateBundleInCacheDir(kMainBundleId, *IwaVersion::Create("0.0.1"));
+  base::FilePath bundle_path2 =
+      CreateBundleInCacheDir(kBundleId2, *IwaVersion::Create("0.0.1"));
 
   TestFuture<GetBundleCachePathResult> get_bundle_future;
-  ScheduleCommand(kBundleId2, kVersion1, get_bundle_future.GetCallback());
-
-  EXPECT_THAT(get_bundle_future.Get(),
-              ValueIs(GetBundleCachePathSuccess{bundle_path2, kVersion1}));
-}
-
-TEST_P(GetBundleCachePathCommandTest, IncorrectVersionParsed) {
-  base::FilePath bundle_path1 =
-      CreateBundleInCacheDir(kMainBundleId, base::Version("aaaaa"));
-
-  TestFuture<GetBundleCachePathResult> get_bundle_future;
-  ScheduleCommand(kMainBundleId, /*version=*/std::nullopt,
+  ScheduleCommand(kBundleId2, *IwaVersion::Create("0.0.1"),
                   get_bundle_future.GetCallback());
 
   EXPECT_THAT(get_bundle_future.Get(),
-              ErrorIs(GetBundleCachePathError::kIwaNotCached));
+              ValueIs(GetBundleCachePathSuccess{bundle_path2,
+                                                *IwaVersion::Create("0.0.1")}));
 }
 
 INSTANTIATE_TEST_SUITE_P(

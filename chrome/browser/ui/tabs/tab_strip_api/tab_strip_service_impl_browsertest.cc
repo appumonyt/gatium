@@ -13,11 +13,14 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_api/tab_strip_api.mojom.h"
+#include "chrome/browser/ui/tabs/tab_strip_api/tab_strip_experiment_api.mojom.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/tabs/public/tab_group.h"
 #include "content/public/test/browser_test.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -80,8 +83,15 @@ class TestTabStripClient : public tabs_api::mojom::TabsObserver {
     // TODO(crbug.com/412955607): implement this.
   }
 
+  void OnTabActiveChanged(
+      tabs_api::mojom::OnTabActiveChangedEventPtr event) override {
+    active_tab_changed_events.push_back(std::move(event));
+  }
+
   std::vector<tabs_api::mojom::OnTabMovedEventPtr> move_events;
   std::vector<tabs_api::mojom::OnTabGroupCreatedEventPtr> group_events;
+  std::vector<tabs_api::mojom::OnTabActiveChangedEventPtr>
+      active_tab_changed_events;
   // Tabs is a vector containing a tab id and a url in the form of a string.
   std::vector<std::pair<tabs_api::NodeId, std::string>> tabs;
 };
@@ -89,6 +99,7 @@ class TestTabStripClient : public tabs_api::mojom::TabsObserver {
 class TabStripServiceImplBrowserTest : public InProcessBrowserTest {
  public:
   using TabStripService = tabs_api::mojom::TabStripService;
+  using TabStripExperimentService = tabs_api::mojom::TabStripExperimentService;
 
   TabStripServiceImplBrowserTest() {
     feature_list_.InitAndEnableFeature(features::kTabStripBrowserApi);
@@ -172,7 +183,8 @@ IN_PROC_BROWSER_TEST_F(TabStripServiceImplBrowserTest, Observation) {
   mojo::AssociatedReceiver<tabs_api::mojom::TabsObserver> receiver(&client);
   const GURL url("http://example.com/");
   uint32_t target_index = 0;
-
+  auto original_tab_id = tabs_api::NodeId::FromTabHandle(
+      GetTabStripModel()->GetTabAtIndex(0)->GetHandle());
   base::RunLoop run_loop;
 
   base::RunLoop get_tabs_loop;
@@ -205,11 +217,16 @@ IN_PROC_BROWSER_TEST_F(TabStripServiceImplBrowserTest, Observation) {
   ASSERT_EQ(1ul, client.tabs.size());
   ASSERT_EQ(created_tab->id, client.tabs.at(0).first);
 
+  ASSERT_EQ(1ul, client.active_tab_changed_events.size());
+  ASSERT_EQ(created_tab->id, client.active_tab_changed_events.at(0)->tab->id);
+
   // Navigate to a new url which will modify the tab state.
   ASSERT_TRUE(
       ui_test_utils::NavigateToURL(browser(), GURL("https://www.google.com/")));
   receiver.FlushForTesting();
   ASSERT_EQ(client.tabs[0].second, "https://www.google.com/");
+
+  client.active_tab_changed_events.clear();
 
   TabStripService::CloseTabsResult close_result;
   base::RunLoop close_tab_loop;
@@ -227,6 +244,9 @@ IN_PROC_BROWSER_TEST_F(TabStripServiceImplBrowserTest, Observation) {
   ASSERT_TRUE(close_result.has_value());
   // Observation should have caused the tab to be removed.
   ASSERT_EQ(0ul, client.tabs.size());
+
+  ASSERT_EQ(1ul, client.active_tab_changed_events.size());
+  ASSERT_EQ(original_tab_id, client.active_tab_changed_events.at(0)->tab->id);
 }
 
 IN_PROC_BROWSER_TEST_F(TabStripServiceImplBrowserTest, CloseTabs) {
@@ -343,4 +363,146 @@ IN_PROC_BROWSER_TEST_F(TabStripServiceImplBrowserTest, MoveTab) {
   ASSERT_EQ(to_move_id, event->id);
   ASSERT_EQ(0u, event->from.index());
   ASSERT_EQ(1u, event->to.index());
+}
+
+IN_PROC_BROWSER_TEST_F(TabStripServiceImplBrowserTest, MoveTabIntoGroup) {
+  mojo::Remote<TabStripService> remote;
+  tab_strip_service_impl_->Accept(remote.BindNewPipeAndPassReceiver());
+
+  TabStripModel* model = GetTabStripModel();
+  for (int i = 0; i < 3; i++) {
+    base::RunLoop create_loop;
+    remote->CreateTabAt(std::nullopt,
+                        std::make_optional(GURL("http://somwewhere.nowhere")),
+                        base::BindLambdaForTesting(
+                            [&](TabStripService::CreateTabAtResult result) {
+                              ASSERT_TRUE(result.has_value());
+                              create_loop.Quit();
+                            }));
+    create_loop.Run();
+  }
+  ASSERT_EQ(model->count(), 4);
+
+  const tab_groups::TabGroupId group_id = model->AddToNewGroup({0, 1});
+  const TabGroup* group = model->group_model()->GetTabGroup(group_id);
+  const tabs_api::NodeId to_group_collection_id(
+      tabs_api::NodeId::Type::kCollection,
+      base::NumberToString(group->GetCollectionHandle().raw_value()));
+  auto position = tabs_api::Position(1, to_group_collection_id);
+  auto* tab_to_move = GetTabStripModel()->GetTabAtIndex(2);
+  auto to_move_id = tabs_api::NodeId(
+      tabs_api::NodeId::Type::kContent,
+      base::NumberToString(tab_to_move->GetHandle().raw_value()));
+  base::RunLoop move_loop;
+  remote->MoveTab(
+      to_move_id, position,
+      base::BindLambdaForTesting([&](TabStripService::MoveTabResult result) {
+        ASSERT_TRUE(result.has_value());
+        move_loop.Quit();
+      }));
+  move_loop.Run();
+
+  // Previously tab was at index 2. Now should be at index 1 of the TabGroup.
+  EXPECT_EQ(model->GetTabAtIndex(1), tab_to_move);
+  std::optional<tab_groups::TabGroupId> moved_tab_group =
+      model->GetTabGroupForTab(1);
+  ASSERT_TRUE(moved_tab_group.has_value());
+  EXPECT_EQ(moved_tab_group.value(), group_id);
+  EXPECT_EQ(model->group_model()->GetTabGroup(group_id)->tab_count(), 3);
+}
+
+IN_PROC_BROWSER_TEST_F(TabStripServiceImplBrowserTest, MoveCollection) {
+  mojo::Remote<TabStripService> remote;
+  tab_strip_service_impl_->Accept(remote.BindNewPipeAndPassReceiver());
+
+  TabStripModel* model = GetTabStripModel();
+  for (int i = 0; i < 3; i++) {
+    base::RunLoop create_loop;
+    remote->CreateTabAt(std::nullopt,
+                        std::make_optional(GURL("http://somwewhere.nowhere")),
+                        base::BindLambdaForTesting(
+                            [&](TabStripService::CreateTabAtResult result) {
+                              ASSERT_TRUE(result.has_value());
+                              create_loop.Quit();
+                            }));
+    create_loop.Run();
+  }
+  ASSERT_EQ(model->count(), 4);
+
+  const tab_groups::TabGroupId group_id = model->AddToNewGroup({2, 3});
+  const TabGroup* group = model->group_model()->GetTabGroup(group_id);
+  const tabs_api::NodeId group_node_id(
+      tabs_api::NodeId::Type::kCollection,
+      base::NumberToString(group->GetCollectionHandle().raw_value()));
+
+  // Move the group to the beginning of the unpinned tabs at index 0.
+  base::RunLoop move_loop;
+  remote->MoveTab(
+      group_node_id, tabs_api::Position(0),
+      base::BindLambdaForTesting([&](TabStripService::MoveTabResult result) {
+        ASSERT_TRUE(result.has_value());
+        move_loop.Quit();
+      }));
+  move_loop.Run();
+
+  // Expect the tab group to be at the first index: [g(t2, t3), t0, t1].
+  std::optional<tab_groups::TabGroupId> moved_tab_group_id =
+      model->GetTabGroupForTab(0);
+  ASSERT_TRUE(moved_tab_group_id.has_value());
+  EXPECT_EQ(moved_tab_group_id.value(), group_id);
+  const TabGroup* moved_tab_group =
+      model->group_model()->GetTabGroup(moved_tab_group_id.value());
+  EXPECT_EQ(moved_tab_group->tab_count(), 2);
+  EXPECT_EQ(model->count(), 4);
+}
+
+IN_PROC_BROWSER_TEST_F(TabStripServiceImplBrowserTest,
+                       UpdateTabGroupVisualData) {
+  mojo::Remote<TabStripService> remote;
+  mojo::Remote<TabStripExperimentService> experiment_remote;
+  tab_strip_service_impl_->Accept(remote.BindNewPipeAndPassReceiver());
+  tab_strip_service_impl_->AcceptExperimental(
+      experiment_remote.BindNewPipeAndPassReceiver());
+  TabStripModel* model = GetTabStripModel();
+
+  base::RunLoop create_loop;
+  remote->CreateTabAt(std::nullopt,
+                      std::make_optional(GURL("http://somwewhere.nowhere")),
+                      base::BindLambdaForTesting(
+                          [&](TabStripService::CreateTabAtResult result) {
+                            ASSERT_TRUE(result.has_value());
+                            create_loop.Quit();
+                          }));
+  create_loop.Run();
+
+  ASSERT_EQ(model->count(), 2);
+  const tab_groups::TabGroupId group_id = model->AddToNewGroup({0, 1});
+  const TabGroup* group = model->group_model()->GetTabGroup(group_id);
+  ASSERT_NE(group, nullptr);
+
+  const tabs_api::NodeId group_node_id(
+      tabs_api::NodeId::Type::kCollection,
+      base::NumberToString(group->GetCollectionHandle().raw_value()));
+
+  std::u16string expected_title = u"super cool title";
+  tab_groups::TabGroupVisualData new_visuals(
+      expected_title, tab_groups::TabGroupColorId::kRed, false);
+  base::RunLoop run_loop;
+  experiment_remote->UpdateTabGroupVisual(
+      group_node_id, new_visuals,
+      base::BindLambdaForTesting(
+          [&](TabStripExperimentService::UpdateTabGroupVisualResult result) {
+            ASSERT_TRUE(result.has_value())
+                << "UpdateTabGroupVisual failed: " << result.error()->message;
+            run_loop.Quit();
+          }));
+  run_loop.Run();
+
+  const TabGroup* updated_group = model->group_model()->GetTabGroup(group_id);
+  ASSERT_NE(updated_group, nullptr);
+  const tab_groups::TabGroupVisualData* updated_data =
+      updated_group->visual_data();
+
+  ASSERT_EQ(expected_title, updated_data->title());
+  ASSERT_EQ(tab_groups::TabGroupColorId::kRed, updated_data->color());
 }

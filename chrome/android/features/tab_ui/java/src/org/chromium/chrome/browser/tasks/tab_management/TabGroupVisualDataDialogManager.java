@@ -28,7 +28,6 @@ import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.sync.SyncServiceFactory;
-import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab_group_sync.TabGroupSyncFeatures;
 import org.chromium.chrome.browser.tabmodel.TabGroupColorUtils;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
@@ -121,18 +120,16 @@ public class TabGroupVisualDataDialogManager {
         // Early exit the second attempt so that we don't show another dialog and cause the
         // dialog controller and user actions to freeze when attempting to navigate out.
         if (mModel != null) {
-            assumeNonNull(mModalDialogManagerObserver);
-            assumeNonNull(mCustomView);
-            assumeNonNull(mTextInputLayout);
-            assumeNonNull(mInitialGroupTitle);
-            assumeNonNull(mColorPickerCoordinator);
+            assert mModalDialogManagerObserver != null;
+            assert mCustomView != null;
+            assert mTextInputLayout != null;
+            assert mInitialGroupTitle != null;
+            assert mColorPickerCoordinator != null;
             return;
         }
 
         assert tabGroupId != null;
-
-        int rootId = filter.getRootIdFromTabGroupId(tabGroupId);
-        assert rootId != Tab.INVALID_TAB_ID;
+        assert filter.tabGroupExists(tabGroupId);
 
         mCustomView =
                 LayoutInflater.from(mContext).inflate(R.layout.tab_group_visual_data_dialog, null);
@@ -164,7 +161,7 @@ public class TabGroupVisualDataDialogManager {
                         /* isIncognito= */ false,
                         ColorPickerLayoutType.DYNAMIC,
                         null);
-        mDefaultColorId = filter.getTabGroupColorWithFallback(rootId);
+        mDefaultColorId = filter.getTabGroupColorWithFallback(tabGroupId);
         mColorPickerCoordinator.setSelectedColorItem(mDefaultColorId);
 
         LinearLayout linearLayout = mCustomView.findViewById(R.id.visual_data_dialog_layout);

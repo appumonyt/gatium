@@ -18,6 +18,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/extensions/api/settings_private/generated_prefs.h"
 #include "chrome/browser/interstitials/security_interstitial_page_test_utils.h"
+#include "chrome/browser/preloading/scoped_prewarm_feature_list.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ssl/chrome_security_blocking_page_factory.h"
 #include "chrome/browser/ssl/generated_https_first_mode_pref.h"
@@ -201,7 +202,8 @@ class HttpsUpgradesBrowserTest
             /*enabled_features=*/{},
             /*disabled_features=*/{
                 features::kHttpsFirstModeV2ForEngagedSites,
-                features::kHttpsFirstModeV2ForTypicallySecureUsers});
+                features::kHttpsFirstModeV2ForTypicallySecureUsers,
+                features::kHttpsFirstDialogUi});
         break;
 
       case HttpsUpgradesTestType::kHttpsFirstModeWithSiteEngagement:
@@ -211,7 +213,8 @@ class HttpsUpgradesBrowserTest
                                   features::kHttpsFirstBalancedMode},
             /*disabled_features=*/{
                 features::kHttpsFirstModeV2ForTypicallySecureUsers,
-                features::kHttpsFirstBalancedModeAutoEnable});
+                features::kHttpsFirstBalancedModeAutoEnable,
+                features::kHttpsFirstDialogUi});
         break;
 
       case HttpsUpgradesTestType::
@@ -221,7 +224,8 @@ class HttpsUpgradesBrowserTest
             /*enabled_features=*/{features::kHttpsFirstModeV2ForEngagedSites},
             /*disabled_features=*/{
                 features::kHttpsFirstModeV2ForTypicallySecureUsers,
-                features::kHttpsFirstBalancedMode});
+                features::kHttpsFirstBalancedMode,
+                features::kHttpsFirstDialogUi});
         break;
 
       case HttpsUpgradesTestType::kHttpsFirstModeForTypicallySecureUsers:
@@ -230,9 +234,9 @@ class HttpsUpgradesBrowserTest
             /*enabled_features=*/{features::
                                       kHttpsFirstModeV2ForTypicallySecureUsers,
                                   features::kHttpsFirstBalancedMode},
-            /*disabled_features=*/{
-                features::kHttpsFirstModeV2ForEngagedSites,
-                features::kHttpsFirstBalancedModeAutoEnable});
+            /*disabled_features=*/{features::kHttpsFirstModeV2ForEngagedSites,
+                                   features::kHttpsFirstBalancedModeAutoEnable,
+                                   features::kHttpsFirstDialogUi});
         break;
 
       case HttpsUpgradesTestType::kAllAutoHFM:
@@ -242,14 +246,14 @@ class HttpsUpgradesBrowserTest
                                       kHttpsFirstModeV2ForTypicallySecureUsers,
                                   features::kHttpsFirstModeV2ForEngagedSites,
                                   features::kHttpsFirstBalancedMode},
-            /*disabled_features=*/{
-                features::kHttpsFirstBalancedModeAutoEnable});
+            /*disabled_features=*/{features::kHttpsFirstBalancedModeAutoEnable,
+                                   features::kHttpsFirstDialogUi});
         break;
 
       case HttpsUpgradesTestType::kHttpsFirstModeIncognito:
         feature_list_.InitWithFeatures(
             /*enabled_features=*/{features::kHttpsFirstModeIncognito},
-            /*disabled_features=*/{});
+            /*disabled_features=*/{features::kHttpsFirstDialogUi});
         break;
 
       case HttpsUpgradesTestType::kHttpsFirstBalancedMode:
@@ -258,7 +262,8 @@ class HttpsUpgradesBrowserTest
                                   features::kHttpsFirstBalancedModeAutoEnable},
             /*disabled_features=*/{
                 features::kHttpsFirstModeV2ForTypicallySecureUsers,
-                features::kHttpsFirstModeV2ForEngagedSites});
+                features::kHttpsFirstModeV2ForEngagedSites,
+                features::kHttpsFirstDialogUi});
         break;
 
       // Enable HFM, HFM with Site Engagement heuristic, HFM for typically
@@ -275,7 +280,7 @@ class HttpsUpgradesBrowserTest
                 features::kHttpsFirstBalancedMode,
                 features::kHttpsFirstBalancedModeAutoEnable,
             },
-            /*disabled_features=*/{});
+            /*disabled_features=*/{features::kHttpsFirstDialogUi});
         break;
 
       // Disable HFM, HFM with Site Engagement heuristic, HFM for Typically
@@ -289,7 +294,8 @@ class HttpsUpgradesBrowserTest
                 features::kHttpsFirstModeV2ForEngagedSites,
                 features::kHttpsFirstModeV2ForTypicallySecureUsers,
                 features::kHttpsFirstBalancedMode,
-                features::kHttpsFirstBalancedModeAutoEnable});
+                features::kHttpsFirstBalancedModeAutoEnable,
+                features::kHttpsFirstDialogUi});
         break;
     }
 
@@ -619,6 +625,10 @@ class HttpsUpgradesBrowserTest
   void EnableCaptivePortalDetection(Browser* browser);
 
  private:
+  // TODO(https://crbug.com/423465927): Explore a better approach to make the
+  // existing tests run with the prewarm feature enabled.
+  test::ScopedPrewarmFeatureList prewarm_feature_list_{
+      test::ScopedPrewarmFeatureList::PrewarmState::kDisabled};
   base::test::ScopedFeatureList feature_list_;
   net::EmbeddedTestServer http_server_{net::EmbeddedTestServer::TYPE_HTTP};
   net::EmbeddedTestServer https_server_{net::EmbeddedTestServer::TYPE_HTTPS};
@@ -4087,14 +4097,14 @@ IN_PROC_BROWSER_TEST_P(
 class HttpsUpgradesSecureOriginAllowlistBrowserTest
     : public InProcessBrowserTest {
  public:
-  HttpsUpgradesSecureOriginAllowlistBrowserTest() = default;
-  ~HttpsUpgradesSecureOriginAllowlistBrowserTest() override = default;
-
-  void SetUp() override {
-    feature_list_.InitAndEnableFeature(
-        features::kHttpsFirstBalancedModeAutoEnable);
-    InProcessBrowserTest::SetUp();
+  HttpsUpgradesSecureOriginAllowlistBrowserTest() {
+    feature_list_.InitWithFeatures(
+        {features::kHttpsFirstBalancedModeAutoEnable},
+        // TODO(crbug.com/351990829): Update these tests to work with the new
+        // native dialog UI, and then re-enable this feature.
+        {features::kHttpsFirstDialogUi});
   }
+  ~HttpsUpgradesSecureOriginAllowlistBrowserTest() override = default;
 
   void SetUpOnMainThread() override {
     host_resolver()->AddRule("*", "127.0.0.1");

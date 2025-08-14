@@ -5,7 +5,6 @@
       "blink_platform_nocompile_tests",
       "blink_probes_nocompile_tests",
       "content_nocompile_tests",
-      "ipc_fuzzer",
       "pdf_fuzzers"
     ],
     "scripts": [
@@ -193,6 +192,22 @@
         },
         "test": "blink_platform_unittests",
         "test_id_prefix": "ninja://third_party/blink/renderer/platform:blink_platform_unittests/"
+      },
+      {
+        "isolate_profile_data": true,
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
+        "name": "blink_unittests",
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Windows-11-22631"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "blink_unittests",
+        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
       },
       {
         "isolate_profile_data": true,
@@ -1497,22 +1512,6 @@
         },
         "test": "vr_common_unittests",
         "test_id_prefix": "ninja://chrome/browser/vr:vr_common_unittests/"
-      },
-      {
-        "isolate_profile_data": true,
-        "merge": {
-          "script": "//testing/merge_scripts/standard_gtest_merge.py"
-        },
-        "name": "webkit_unit_tests",
-        "swarming": {
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Windows-11-22631"
-          },
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "blink_unittests",
-        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
       },
       {
         "isolate_profile_data": true,

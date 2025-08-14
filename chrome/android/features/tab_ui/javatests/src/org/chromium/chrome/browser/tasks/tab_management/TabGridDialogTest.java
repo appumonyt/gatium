@@ -45,7 +45,6 @@ import static org.mockito.Mockito.when;
 
 import static org.chromium.chrome.browser.flags.ChromeFeatureList.DATA_SHARING;
 import static org.chromium.chrome.browser.flags.ChromeFeatureList.DATA_SHARING_JOIN_ONLY;
-import static org.chromium.chrome.browser.flags.ChromeFeatureList.NAV_BAR_COLOR_MATCHES_TAB_BACKGROUND;
 import static org.chromium.chrome.browser.flags.ChromeFeatureList.TAB_GROUP_PARITY_BOTTOM_SHEET_ANDROID;
 import static org.chromium.chrome.browser.ntp.HomeSurfaceTestUtils.createTabStatesAndMetadataFile;
 import static org.chromium.chrome.browser.ntp.HomeSurfaceTestUtils.createThumbnailBitmapAndWriteToFile;
@@ -112,6 +111,7 @@ import org.mockito.junit.MockitoRule;
 
 import org.chromium.base.Callback;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.Token;
 import org.chromium.base.test.params.ParameterAnnotations;
 import org.chromium.base.test.params.ParameterizedRunner;
 import org.chromium.base.test.util.Batch;
@@ -182,7 +182,7 @@ import java.util.concurrent.TimeoutException;
 @ParameterAnnotations.UseRunnerDelegate(ChromeJUnit4RunnerDelegate.class)
 @CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
 @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
-@DisableFeatures({NAV_BAR_COLOR_MATCHES_TAB_BACKGROUND, TAB_GROUP_PARITY_BOTTOM_SHEET_ANDROID})
+@DisableFeatures(TAB_GROUP_PARITY_BOTTOM_SHEET_ANDROID)
 @EnableFeatures({DATA_SHARING, DATA_SHARING_JOIN_ONLY})
 @Batch(Batch.PER_CLASS)
 public class TabGridDialogTest {
@@ -298,7 +298,10 @@ public class TabGridDialogTest {
 
         if (cta.getLayoutManager().isLayoutVisible(LayoutType.TAB_SWITCHER)
                 && !cta.getLayoutManager().isLayoutStartingToHide(LayoutType.TAB_SWITCHER)) {
-            if (cta.getTabModelSelectorSupplier().get().getTotalTabCount() == 0) {
+            int tabCount =
+                    ThreadUtils.runOnUiThreadBlocking(
+                            () -> cta.getTabModelSelectorSupplier().get().getTotalTabCount());
+            if (tabCount == 0) {
                 addBlankTabs(cta, false, 1);
                 LayoutTestUtils.waitForLayout(cta.getLayoutManager(), LayoutType.BROWSING);
             } else {
@@ -619,8 +622,7 @@ public class TabGridDialogTest {
     public void testColorPickerOnIconClick() throws ExecutionException {
         final ChromeTabbedActivity cta = mActivityTestRule.getActivity();
 
-        String blueColor =
-                cta.getString(R.string.accessibility_tab_group_color_picker_color_item_blue);
+        String blueColor = cta.getString(R.string.tab_group_color_blue);
         String notSelectedStringBlue =
                 cta.getString(
                         R.string
@@ -680,8 +682,7 @@ public class TabGridDialogTest {
     public void testColorPickerOnToolbarMenuItemClick() throws ExecutionException {
         final ChromeTabbedActivity cta = mActivityTestRule.getActivity();
 
-        String blueColor =
-                cta.getString(R.string.accessibility_tab_group_color_picker_color_item_blue);
+        String blueColor = cta.getString(R.string.tab_group_color_blue);
         String notSelectedStringBlue =
                 cta.getString(
                         R.string
@@ -1551,16 +1552,14 @@ public class TabGridDialogTest {
     public void testRenderDialog_TabGroupColorChange(boolean nightModeEnabled) throws Exception {
         final ChromeTabbedActivity cta = mActivityTestRule.getActivity();
 
-        String blueColor =
-                cta.getString(R.string.accessibility_tab_group_color_picker_color_item_blue);
+        String blueColor = cta.getString(R.string.tab_group_color_blue);
         String notSelectedStringBlue =
                 cta.getString(
                         R.string
                                 .accessibility_tab_group_color_picker_color_item_not_selected_description,
                         blueColor);
 
-        String redColor =
-                cta.getString(R.string.accessibility_tab_group_color_picker_color_item_red);
+        String redColor = cta.getString(R.string.tab_group_color_red);
         String notSelectedStringRed =
                 cta.getString(
                         R.string
@@ -1691,8 +1690,8 @@ public class TabGridDialogTest {
                 selector.getTabGroupModelFilterProvider().getTabGroupModelFilter(false);
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    int rootId = filter.getTabModel().getTabAt(0).getRootId();
-                    filter.setTabGroupTitle(rootId, CUSTOMIZED_TITLE1);
+                    Token tabGroupId = filter.getTabModel().getTabAt(0).getTabGroupId();
+                    filter.setTabGroupTitle(tabGroupId, CUSTOMIZED_TITLE1);
                 });
         collapseTargetString = "Collapse " + CUSTOMIZED_TITLE1 + " tab group with 3 tabs.";
         verifyDialogBackButtonContentDescription(cta, collapseTargetString);
@@ -1730,8 +1729,8 @@ public class TabGridDialogTest {
         openDialogFromTabSwitcherAndVerify(cta, 2, CUSTOMIZED_TITLE1);
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    int rootId = filter.getTabModel().getTabAt(0).getRootId();
-                    filter.deleteTabGroupTitle(rootId);
+                    Token tabGroupId = filter.getTabModel().getTabAt(0).getTabGroupId();
+                    filter.deleteTabGroupTitle(tabGroupId);
                 });
         verifyShowingDialog(cta, 2, null);
         collapseTargetString = "Collapse tab group with 2 tabs.";

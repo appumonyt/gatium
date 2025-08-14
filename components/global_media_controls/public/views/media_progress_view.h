@@ -81,6 +81,8 @@ class COMPONENT_EXPORT(GLOBAL_MEDIA_CONTROLS) MediaProgressView
   void OnPaint(gfx::Canvas* canvas) override;
   void OnFocus() override;
   void OnBlur() override;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
   ui::Cursor GetCursor(const ui::MouseEvent& event) override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
   bool OnMouseDragged(const ui::MouseEvent& event) override;
@@ -113,6 +115,7 @@ class COMPONENT_EXPORT(GLOBAL_MEDIA_CONTROLS) MediaProgressView
   void OnProgressDragStarted(double location);
   void DelayedProgressDragStarted(double location);
   void OnProgressDragEnded();
+  void PauseForDragging();
 
   // Updates the colors of the progress view based on whether the media is
   // paused.
@@ -185,6 +188,9 @@ class COMPONENT_EXPORT(GLOBAL_MEDIA_CONTROLS) MediaProgressView
   // Whether the media is currently paused due to the user dragging the progress
   // line.
   bool paused_for_dragging_ = false;
+
+  // True if the user is currently dragging the progress line.
+  bool is_dragging_ = false;
 
   // Whether we should use the paused colors for the progress view.
   bool use_paused_colors_ = true;

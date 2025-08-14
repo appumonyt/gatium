@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/modules/webgpu/gpu_texture.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/webgpu_mailbox_texture.h"
@@ -126,12 +127,6 @@ gfx::ColorSpace GPUCanvasContext::GetColorSpace() const {
     return gfx::ColorSpace::CreateSRGB();
   }
   return PredefinedColorSpaceToGfxColorSpace(color_space_);
-}
-
-bool GPUCanvasContext::IsAccelerated() const {
-  auto* resource_provider = resource_provider_.get();
-  return resource_provider ? resource_provider->IsAccelerated()
-                           : Host()->ShouldTryToUseGpuRaster();
 }
 
 void GPUCanvasContext::Stop() {
@@ -372,8 +367,7 @@ ImageBitmap* GPUCanvasContext::TransferToImageBitmap(
       AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(
           std::move(client_si), sk_image_sync_token,
           /*shared_image_texture_id=*/0, kPremul_SkAlphaType,
-          gfx::ColorSpace::CreateSRGB(), GetContextProviderWeakPtr(),
-          base::PlatformThread::CurrentRef(),
+          GetContextProviderWeakPtr(), base::PlatformThread::CurrentRef(),
           ThreadScheduler::Current()->CleanupTaskRunner(),
           std::move(release_callback)));
 }

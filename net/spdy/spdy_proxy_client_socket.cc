@@ -15,9 +15,12 @@
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/types/expected.h"
+#include "base/types/expected_macros.h"
 #include "base/values.h"
 #include "net/base/auth.h"
 #include "net/base/io_buffer.h"
+#include "net/base/net_errors.h"
 #include "net/base/proxy_chain.h"
 #include "net/base/proxy_delegate.h"
 #include "net/http/http_auth_cache.h"
@@ -210,7 +213,7 @@ int SpdyProxyClientSocket::ReadIfReady(IOBuffer* buf,
 
   DCHECK(next_state_ == STATE_OPEN || next_state_ == STATE_CLOSED);
   DCHECK(buf);
-  size_t result = PopulateUserReadBuffer(buf->data(), buf_len);
+  size_t result = PopulateUserReadBuffer(buf->first(buf_len));
   if (result == 0) {
     read_callback_ = std::move(callback);
     return ERR_IO_PENDING;
@@ -225,8 +228,8 @@ int SpdyProxyClientSocket::CancelReadIfReady() {
   return OK;
 }
 
-size_t SpdyProxyClientSocket::PopulateUserReadBuffer(char* data, size_t len) {
-  return read_buffer_queue_.Dequeue(data, len);
+size_t SpdyProxyClientSocket::PopulateUserReadBuffer(base::span<uint8_t> data) {
+  return read_buffer_queue_.Dequeue(data);
 }
 
 int SpdyProxyClientSocket::Write(
@@ -370,12 +373,19 @@ int SpdyProxyClientSocket::DoSendRequest() {
   }
 
   if (proxy_delegate_) {
-    HttpRequestHeaders proxy_delegate_headers;
-    int result = proxy_delegate_->OnBeforeTunnelRequest(
-        proxy_chain_, proxy_chain_index_, &proxy_delegate_headers);
-    if (result < 0) {
-      return result;
-    }
+    ASSIGN_OR_RETURN(HttpRequestHeaders proxy_delegate_headers,
+                     proxy_delegate_->OnBeforeTunnelRequest(proxy_chain_,
+                                                            proxy_chain_index_),
+                     [](const auto& e) {
+                       // ProxyDelegate::OnBeforeTunnelRequest cannot block on
+                       // IO.
+                       CHECK_NE(ERR_IO_PENDING, e);
+                       // Success should always be reported via a base::expected
+                       // containing an HttpRequestHeaders, see
+                       // ProxyDelegate::OnBeforeTunnelRequest.
+                       CHECK_NE(OK, e);
+                       return e;
+                     });
     request_.extra_headers.MergeFrom(proxy_delegate_headers);
   }
 
@@ -476,8 +486,7 @@ void SpdyProxyClientSocket::OnHeadersReceived(
 void SpdyProxyClientSocket::OnDataReceived(std::unique_ptr<SpdyBuffer> buffer) {
   if (buffer) {
     net_log_.AddByteTransferEvent(NetLogEventType::SOCKET_BYTES_RECEIVED,
-                                  buffer->GetRemainingSize(),
-                                  buffer->GetRemainingData());
+                                  buffer->GetRemaining());
     read_buffer_queue_.Enqueue(std::move(buffer));
   } else {
     net_log_.AddByteTransferEvent(NetLogEventType::SOCKET_BYTES_RECEIVED, 0,
@@ -494,7 +503,7 @@ void SpdyProxyClientSocket::OnDataReceived(std::unique_ptr<SpdyBuffer> buffer) {
 
   if (read_callback_) {
     if (user_buffer_) {
-      int rv = PopulateUserReadBuffer(user_buffer_->data(), user_buffer_len_);
+      int rv = PopulateUserReadBuffer(user_buffer_->first(user_buffer_len_));
       user_buffer_ = nullptr;
       user_buffer_len_ = 0;
       std::move(read_callback_).Run(rv);

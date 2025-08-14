@@ -51,7 +51,6 @@
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
 #include "net/android/network_change_notifier_factory_android.h"
 #include "net/base/network_change_notifier.h"
 #endif
@@ -763,8 +762,8 @@ TEST_F(UDPSocketTest, CloseWithPendingRead) {
 TEST_F(UDPSocketTest, JoinMulticastGroup) {
 #if BUILDFLAG(IS_MAC)
   // See https://crbug.com/354933441
-  if (base::mac::MacOSMajorVersion() == 15) {
-    GTEST_SKIP() << "Disabled on macOS Sequoia.";
+  if (base::mac::MacOSMajorVersion() >= 15) {
+    GTEST_SKIP() << "Disabled on macOS Sequoia and later OS versions.";
   }
 #endif
 

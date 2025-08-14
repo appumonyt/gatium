@@ -1468,7 +1468,7 @@ void WebGLRenderingContextWebGPUBase::shaderSource(WebGLShader* shader,
   std::vector<char> ascii_source;
   ascii_source.reserve(source.length());
   for (auto code_point : source) {
-    ascii_source.push_back(WTF::IsASCII(code_point) ? code_point : '?');
+    ascii_source.push_back(IsASCII(code_point) ? code_point : '?');
   }
 
   GLint c_ascii_size = ascii_source.size();
@@ -3537,11 +3537,6 @@ void WebGLRenderingContextWebGPUBase::SetHdrMetadata(
 
 bool WebGLRenderingContextWebGPUBase::IsComposited() const {
   return true;
-}
-
-bool WebGLRenderingContextWebGPUBase::IsAccelerated() const {
-  NOTIMPLEMENTED();
-  return false;
 }
 
 bool WebGLRenderingContextWebGPUBase::IsPaintable() const {

@@ -1557,8 +1557,6 @@ bool NavigationControllerImpl::RendererDidNavigate(
 
   bool is_main_frame_navigation = !rfh->GetParent();
 
-  // TODO(altimin, crbug.com/933147): Remove this logic after we are done with
-  // implementing back-forward cache.
   // For primary frame tree navigations, choose an appropriate
   // BackForwardCacheMetrics to be associated with the new navigation's
   // NavigationEntry, by either creating a new object or reusing the previous
@@ -1746,8 +1744,6 @@ bool NavigationControllerImpl::RendererDidNavigate(
   active_entry->SetTimestamp(timestamp);
   active_entry->SetHttpStatusCode(params.http_status_code);
 
-  // TODO(altimin, crbug.com/933147): Remove this logic after we are done with
-  // implementing back-forward cache.
   if (back_forward_cache_metrics &&
       !active_entry->back_forward_cache_metrics()) {
     active_entry->set_back_forward_cache_metrics(
@@ -2758,8 +2754,10 @@ bool NavigationControllerImpl::ValidateDataURLAsString(
   if (!data_url_as_string)
     return false;
 
-  if (data_url_as_string->size() > kMaxLengthOfDataURLString)
+  if (data_url_as_string->size() >
+      kMaxLengthOfDataURLString.InBytesUnsigned()) {
     return false;
+  }
 
   // The number of characters that is enough for validating a data: URI.
   // From the GURL's POV, the only important part here is scheme, it doesn't
@@ -4574,9 +4572,11 @@ NavigationControllerImpl::LoadPostCommitErrorPage(
 }
 
 void NavigationControllerImpl::NavigateFrameToErrorPage(
-    RenderFrameHostImpl* render_frame_host_impl,
+    RenderFrameHost* render_frame_host,
     const GURL& url,
     const std::string& error_page_html) {
+  RenderFrameHostImpl* render_frame_host_impl =
+      static_cast<RenderFrameHostImpl*>(render_frame_host);
   std::unique_ptr<NavigationRequest> navigation_request =
       CreateNavigationRequestForErrorPage(render_frame_host_impl, url,
                                           error_page_html,

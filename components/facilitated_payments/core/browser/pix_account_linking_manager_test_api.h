@@ -23,8 +23,20 @@ class PixAccountLinkingManagerTestApi {
   ~PixAccountLinkingManagerTestApi() = default;
 
   // Calls the underlying PixAccountLinkingManager's private methods.
+  void DismissPrompt() { manager_->DismissPrompt(); }
   void OnAccepted() { manager_->OnAccepted(); }
   void OnDeclined() { manager_->OnDeclined(); }
+  void OnUiScreenEvent(UiEvent ui_event_type) {
+    manager_->OnUiScreenEvent(ui_event_type);
+  }
+  void OnGetDetailsForCreatePaymentInstrumentResponseReceived(
+      base::TimeTicks start_time,
+      autofill::payments::PaymentsAutofillClient::PaymentsRpcResult result,
+      bool is_eligible_for_pix_account_linking) {
+    manager_->OnGetDetailsForCreatePaymentInstrumentResponseReceived(
+        start_time, result, is_eligible_for_pix_account_linking);
+  }
+  void Reset() { manager_->Reset(); }
 
  private:
   const raw_ref<PixAccountLinkingManager> manager_;

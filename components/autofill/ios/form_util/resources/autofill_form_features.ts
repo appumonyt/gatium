@@ -15,14 +15,21 @@ import {gCrWebLegacy} from '//ios/web/public/js_messaging/resources/gcrweb.js';
  * Whether or not to register and return child frame IDs when extracting forms.
  * Corresponds to autofill::feature::AutofillAcrossIframesIos.
  */
-let autofillAcrossIframes: boolean = false;
+let autofillAcrossIframes: boolean = true;
 
 /**
  * True if the throttling of child frames for autofill across iframes is
  * enabled.
  */
-let autofillAcrossIframesThrottling: boolean = false;
+let autofillAcrossIframesThrottling: boolean = true;
 // LINT.ThenChange(//components/autofill/core/common/autofill_features.cc:autofill_across_iframes_ios)
+
+// LINT.IfChange(autofill_ignore_checkable_elements)
+/**
+ * If true, checkboxes and radio buttons aren't extracted anymore.
+ */
+let autofillIgnoreCheckableElements: boolean = false;
+// LINT.ThenChange(//components/autofill/core/common/autofill_features.cc:autofill_ignore_checkable_elements)
 
 // LINT.IfChange(autofill_isolated_content_world)
 /**
@@ -45,7 +52,7 @@ let autofillCorrectUserEditedBitInParsedField: boolean = false;
 Allows detecting form submissions that are `defaultPrevented` by the page
 content.
 */
-let autofillAllowDefaultPreventedSubmission: boolean = false;
+let autofillAllowDefaultPreventedSubmission: boolean = true;
 // LINT.ThenChange(//components/autofill/ios/common/features.mm:autofill_allow_default_prevented_submission)
 
 // LINT.IfChange(autofill_dedupe_form_submission)
@@ -96,6 +103,20 @@ function setAutofillAcrossIframesThrottling(enabled: boolean): void {
  */
 function isAutofillAcrossIframesThrottlingEnabled(): boolean {
   return autofillAcrossIframesThrottling;
+}
+
+/**
+ * @see autofillIgnoreCheckableElements
+ */
+function setAutofillIgnoreCheckableElements(enabled: boolean): void {
+  autofillIgnoreCheckableElements = enabled;
+}
+
+/**
+ * @see autofillIgnoreCheckableElements
+ */
+function isAutofillIgnoreCheckableElementsEnabled(): boolean {
+  return autofillIgnoreCheckableElements;
 }
 
 /**
@@ -191,6 +212,8 @@ gCrWebLegacy.autofill_form_features = {
   isAutofillAcrossIframesEnabled,
   setAutofillAcrossIframesThrottling,
   isAutofillAcrossIframesThrottlingEnabled,
+  setAutofillIgnoreCheckableElements,
+  isAutofillIgnoreCheckableElementsEnabled,
   setAutofillIsolatedContentWorld,
   isAutofillIsolatedContentWorldEnabled,
   setAutofillCorrectUserEditedBitInParsedField,

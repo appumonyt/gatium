@@ -635,16 +635,6 @@ AXNode* AXNode::GetPreviousUnignoredInTreeOrder() const {
   return sibling;
 }
 
-AXNode::AllChildIterator AXNode::AllChildrenBegin() const {
-  DCHECK(!tree_->GetTreeUpdateInProgressState());
-  return AllChildIterator(this, GetFirstChild());
-}
-
-AXNode::AllChildIterator AXNode::AllChildrenEnd() const {
-  DCHECK(!tree_->GetTreeUpdateInProgressState());
-  return AllChildIterator(this, nullptr);
-}
-
 AXNode::AllChildCrossingTreeBoundaryIterator
 AXNode::AllChildrenCrossingTreeBoundaryBegin() const {
   DCHECK(!tree_->GetTreeUpdateInProgressState());
@@ -1586,9 +1576,10 @@ bool AXNode::IsGenerated() const {
       GetRole() == ax::mojom::Role::kTableHeaderContainer;
   DCHECK_EQ(is_generated_node, is_extra_mac_node_role);
 #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
-  //  On Linux, generated nodes are always children of the root.
+  // On Linux and Windows, generated nodes are always children of the root, but
+  // not necessarily the root tree.
   if (GetParent() && GetParent()->GetManager()) {
-    DCHECK(GetParent()->GetManager()->IsRoot());
+    DCHECK_EQ(GetParent(), GetManager()->GetRoot());
   }
 #endif
 #endif  // DCHECK_IS_ON()
@@ -2306,16 +2297,20 @@ bool AXNode::IsLikelyARIAActiveDescendant() const {
   if (!ui::IsLikelyActiveDescendantRole(GetRole()))
     return false;
 
+  // False if no explicit ARIA role -- not a perfect rule, but a reasonable
+  // heuristic. Don't apply this rule for table cells or headers that get their
+  // role from their HTML semantics (e.g., <td>, <th>, etc.).
+  if (!HasStringAttribute(ax::mojom::StringAttribute::kRole) &&
+      !ui::IsCellOrTableHeader(GetRole())) {
+    return false;
+  }
+
   // False if invisible, ignored or disabled.
   if (IsInvisibleOrIgnored() ||
       GetIntAttribute(ax::mojom::IntAttribute::kRestriction) ==
           static_cast<int>(ax::mojom::Restriction::kDisabled)) {
     return false;
   }
-
-  // False if no ARIA role -- not a perfect rule, but a reasonable heuristic.
-  if (!HasStringAttribute(ax::mojom::StringAttribute::kRole))
-    return false;
 
   // False if no id attribute -- nothing to point to.
   // This requirement may need to be removed if ARIA element reflection is
@@ -2345,7 +2340,8 @@ bool AXNode::IsLikelyARIAActiveDescendant() const {
                                       ancestor_node->id());
       for (AXNodeID id : nodes_that_control_this_list) {
         if (AXNode* node = tree()->GetFromId(id)) {
-          if (ui::IsTextField(node->GetRole())) {
+          if (ui::IsTextField(node->GetRole()) ||
+              ui::IsComboBox(node->GetRole())) {
             return node->HasIntAttribute(
                 ax::mojom::IntAttribute::kActivedescendantId);
           }

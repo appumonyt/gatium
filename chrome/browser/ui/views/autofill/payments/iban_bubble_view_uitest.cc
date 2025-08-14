@@ -347,7 +347,7 @@ class IbanBubbleViewFullFormBrowserTest
     if (!iban_bubble_controller) {
       return IbanBubbleType::kInactive;
     }
-    return iban_bubble_controller->GetBubbleType();
+    return iban_bubble_controller->GetIbanBubbleType();
   }
 
   SavePaymentIconView* GetSaveIbanIconView() {
@@ -481,7 +481,7 @@ IN_PROC_BROWSER_TEST_F(IbanBubbleViewFullFormBrowserTest,
       "Autofill.SaveIbanPromptOffer.Local.FirstShow",
       autofill_metrics::SaveIbanPromptOffer::kShown, 1);
   histogram_tester.ExpectUniqueSample(
-      "Autofill.SaveIbanPromptResult.Local.FirstShow",
+      "Autofill.SaveIbanPromptResult2.Local.FirstShow",
       autofill_metrics::SaveIbanPromptResult::kCancelled, 1);
 }
 
@@ -507,7 +507,7 @@ IN_PROC_BROWSER_TEST_F(IbanBubbleViewFullFormBrowserTest,
       "Autofill.SaveIbanPromptOffer.Local.FirstShow",
       autofill_metrics::SaveIbanPromptOffer::kShown, 1);
   histogram_tester.ExpectUniqueSample(
-      "Autofill.SaveIbanPromptResult.Local.FirstShow",
+      "Autofill.SaveIbanPromptResult2.Local.FirstShow",
       autofill_metrics::SaveIbanPromptResult::kClosed, 1);
 }
 
@@ -588,7 +588,7 @@ IN_PROC_BROWSER_TEST_F(IbanBubbleViewFullFormBrowserTest,
       "Autofill.SaveIbanPromptOffer.Local.FirstShow",
       autofill_metrics::SaveIbanPromptOffer::kShown, 1);
   histogram_tester.ExpectUniqueSample(
-      "Autofill.SaveIbanPromptResult.Local.FirstShow",
+      "Autofill.SaveIbanPromptResult2.Local.FirstShow",
       autofill_metrics::SaveIbanPromptResult::kAccepted, 1);
   histogram_tester.ExpectUniqueSample(
       "Autofill.SaveIbanPromptResult.Local.SavedWithNickname", false, 1);
@@ -612,7 +612,7 @@ IN_PROC_BROWSER_TEST_F(IbanBubbleViewFullFormBrowserTest,
       "Autofill.SaveIbanPromptOffer.Local.FirstShow",
       autofill_metrics::SaveIbanPromptOffer::kShown, 1);
   histogram_tester.ExpectUniqueSample(
-      "Autofill.SaveIbanPromptResult.Local.FirstShow",
+      "Autofill.SaveIbanPromptResult2.Local.FirstShow",
       autofill_metrics::SaveIbanPromptResult::kAccepted, 1);
   histogram_tester.ExpectUniqueSample(
       "Autofill.SaveIbanPromptResult.Local.SavedWithNickname", true, 1);
@@ -633,7 +633,7 @@ IN_PROC_BROWSER_TEST_F(IbanBubbleViewFullFormBrowserTest,
       "Autofill.SaveIbanPromptOffer.Local.FirstShow",
       autofill_metrics::SaveIbanPromptOffer::kShown, 1);
   histogram_tester.ExpectUniqueSample(
-      "Autofill.SaveIbanPromptResult.Local.FirstShow",
+      "Autofill.SaveIbanPromptResult2.Local.FirstShow",
       autofill_metrics::SaveIbanPromptResult::kClosed, 1);
 }
 

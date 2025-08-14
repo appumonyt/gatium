@@ -608,7 +608,7 @@ void SvgTextLayoutAlgorithm::PositionOnPath(
   }
 
   wtf_size_t range_index = 0;
-  wtf_size_t in_path_index = WTF::kNotFound;
+  wtf_size_t in_path_index = kNotFound;
   std::unique_ptr<PathPositionMapper> path_mapper;
 
   // 2. Set the "in path" flag to false.
@@ -860,6 +860,7 @@ PhysicalSize SvgTextLayoutAlgorithm::WriteBackToFragmentItems(
     auto* data = MakeGarbageCollected<SvgFragmentData>();
     data->rect = scaled_rect;
     data->length_adjust_scale = info.length_adjust_scale;
+    data->scale_type = TextScaleType::kLengthAdjust;
     data->angle = info.rotate.value_or(0.0f);
     data->baseline_shift = info.baseline_shift;
     data->in_text_path = info.in_text_path;

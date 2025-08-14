@@ -4,28 +4,31 @@
 
 #import "ios/chrome/browser/home_customization/coordinator/home_customization_coordinator.h"
 
-#import "components/image_fetcher/core/image_fetcher_service.h"
+#import "components/image_fetcher/ios/ios_image_data_fetcher_wrapper.h"
 #import "ios/chrome/browser/discover_feed/model/discover_feed_visibility_browser_agent.h"
+#import "ios/chrome/browser/google/model/google_logo_service_factory.h"
 #import "ios/chrome/browser/home_customization/coordinator/home_customization_background_picker_action_sheet_coordinator.h"
 #import "ios/chrome/browser/home_customization/coordinator/home_customization_delegate.h"
 #import "ios/chrome/browser/home_customization/coordinator/home_customization_mediator.h"
+#import "ios/chrome/browser/home_customization/model/home_background_customization_service_factory.h"
 #import "ios/chrome/browser/home_customization/ui/home_customization_background_color_picker_view_controller.h"
 #import "ios/chrome/browser/home_customization/ui/home_customization_background_picker_presentation_delegate.h"
 #import "ios/chrome/browser/home_customization/ui/home_customization_color_palette_provider.h"
-#import "ios/chrome/browser/home_customization/ui/home_customization_color_palette_util.h"
 #import "ios/chrome/browser/home_customization/ui/home_customization_discover_view_controller.h"
-#import "ios/chrome/browser/home_customization/ui/home_customization_logo_vendor_provider.h"
 #import "ios/chrome/browser/home_customization/ui/home_customization_magic_stack_view_controller.h"
 #import "ios/chrome/browser/home_customization/ui/home_customization_main_view_controller.h"
+#import "ios/chrome/browser/home_customization/ui/home_customization_search_engine_logo_mediator_provider.h"
 #import "ios/chrome/browser/home_customization/utils/home_customization_constants.h"
 #import "ios/chrome/browser/image_fetcher/model/image_fetcher_service_factory.h"
-#import "ios/chrome/browser/ntp/ui_bundled/logo_vendor.h"
+#import "ios/chrome/browser/ntp/search_engine_logo/mediator/search_engine_logo_mediator.h"
+#import "ios/chrome/browser/ntp/ui_bundled/new_tab_page_color_palette_util.h"
+#import "ios/chrome/browser/search_engines/model/template_url_service_factory.h"
 #import "ios/chrome/browser/shared/coordinator/alert/action_sheet_coordinator.h"
 #import "ios/chrome/browser/shared/model/browser/browser.h"
 #import "ios/chrome/browser/shared/model/profile/profile_ios.h"
 #import "ios/chrome/browser/url_loading/model/url_loading_browser_agent.h"
 #import "ios/chrome/browser/url_loading/model/url_loading_params.h"
-#import "ios/public/provider/chrome/browser/ui_utils/ui_utils_api.h"
+#import "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace {
 
@@ -41,7 +44,7 @@ CGFloat const kSheetCornerRadius = 30;
 @interface HomeCustomizationCoordinator () <
     UISheetPresentationControllerDelegate,
     HomeCustomizationBackgroundPickerPresentationDelegate,
-    HomeCustomizationLogoVendorProvider,
+    HomeCustomizationSearchEngineLogoMediatorProvider,
     HomeCustomizationColorPaletteProvider> {
   // Displays the background picker action sheet.
   HomeCustomizationBackgroundPickerActionSheetCoordinator*
@@ -67,6 +70,7 @@ CGFloat const kSheetCornerRadius = 30;
 // other, each representing a submenu.
 // This property points to the view controller that is at the base of the stack.
 @property(nonatomic, weak) UIViewController* firstPageViewController;
+
 // This property points to the view controller that is at the top of the stack.
 @property(nonatomic, weak) UIViewController* currentPageViewController;
 
@@ -84,6 +88,9 @@ CGFloat const kSheetCornerRadius = 30;
                      initWithPrefService:self.profile->GetPrefs()
       discoverFeedVisibilityBrowserAgent:DiscoverFeedVisibilityBrowserAgent::
                                              FromBrowser(self.browser)
+                       backgroundService:
+                           HomeBackgroundCustomizationServiceFactory::
+                               GetForProfile(self.profile)
                      imageFetcherService:imageFetcherService];
   _mediator.navigationDelegate = self;
 
@@ -144,21 +151,7 @@ CGFloat const kSheetCornerRadius = 30;
 }
 
 - (void)dismissMenuPage {
-  // If the page being dismissed is the first page of the stack, then the entire
-  // menu should be dismissed. Otherwise, dismiss the topmost page and update
-  // the currently visible page.
-  if (self.currentPageViewController == self.firstPageViewController) {
-    [self.delegate dismissCustomizationMenu];
-  } else {
-    [self.currentPageViewController dismissViewControllerAnimated:YES
-                                                       completion:nil];
-    self.currentPageViewController =
-        self.currentPageViewController.presentingViewController;
-
-    // The presented page was closed, so the presenting page should become
-    // interactable.
-    self.currentPageViewController.view.accessibilityViewIsModal = YES;
-  }
+  [self dismissCurrentPageBySwipe:NO presentationController:nil];
 }
 
 - (void)navigateToURL:(GURL)URL {
@@ -171,7 +164,8 @@ CGFloat const kSheetCornerRadius = 30;
 
 - (void)presentationControllerDidDismiss:
     (UIPresentationController*)presentationController {
-  [self dismissMenuPage];
+  [self dismissCurrentPageBySwipe:YES
+           presentationController:presentationController];
   [self dismissBackgroundPickerActionSheet];
 }
 
@@ -188,7 +182,7 @@ CGFloat const kSheetCornerRadius = 30;
           [[HomeCustomizationMainViewController alloc] init];
       self.mainViewController.backgroundPickerPresentationDelegate = self;
       self.mainViewController.mutator = _mediator;
-      self.mainViewController.logoVendorProvider = self;
+      self.mainViewController.searchEngineLogoMediatorProvider = self;
       self.mainViewController.colorPaletteProvider = self;
       self.mediator.mainPageConsumer = self.mainViewController;
       [self.mediator configureMainPageData];
@@ -254,6 +248,34 @@ CGFloat const kSheetCornerRadius = 30;
   _backgroundPickerActionSheetCoordinator = nil;
 }
 
+// Handles the dismissal of the current menu page, either explicitly for a tap
+// on the dismiss button or implicitly for a swipe to dismiss gesture.
+- (void)dismissCurrentPageBySwipe:(BOOL)bySwipe
+           presentationController:
+               (UIPresentationController*)presentationController {
+  // If the page being dismissed is the first page of the stack, then the entire
+  // menu should be dismissed. Otherwise, dismiss the topmost page and update
+  // the currently visible page.
+  if (self.currentPageViewController == self.firstPageViewController) {
+    [self.delegate dismissCustomizationMenu];
+  } else {
+    // If the dismissal was not triggered natively (e.g., a swipe gesture), the
+    // view controller should be dismissed programmatically.
+    if (!bySwipe) {
+      [self.currentPageViewController dismissViewControllerAnimated:YES
+                                                         completion:nil];
+      self.currentPageViewController =
+          self.currentPageViewController.presentingViewController;
+    } else {
+      self.currentPageViewController =
+          presentationController.presentingViewController;
+    }
+
+    // The presenting page should become interactable for voiceover.
+    self.currentPageViewController.view.accessibilityViewIsModal = YES;
+  }
+}
+
 #pragma mark - HomeCustomizationBackgroundPickerPresentationDelegate
 
 - (void)showBackgroundPickerOptions {
@@ -265,18 +287,37 @@ CGFloat const kSheetCornerRadius = 30;
   [_backgroundPickerActionSheetCoordinator start];
 }
 
-#pragma mark - HomeCustomizationLogoVendorProvider
+#pragma mark - HomeCustomizationSearchEngineLogoMediator
 
-- (id<LogoVendor>)provideLogoVendor {
-  return ios::provider::CreateLogoVendor(
-      self.browser, self.browser->GetWebStateList()->GetActiveWebState());
+- (SearchEngineLogoMediator*)provideSearchEngineLogoMediator {
+  ProfileIOS* profile = self.browser->GetProfile();
+  web::WebState* webState =
+      self.browser->GetWebStateList()->GetActiveWebState();
+  TemplateURLService* templateURLService =
+      ios::TemplateURLServiceFactory::GetForProfile(profile);
+  GoogleLogoService* logoService =
+      GoogleLogoServiceFactory::GetForProfile(profile);
+  UrlLoadingBrowserAgent* URLLoadingBrowserAgent =
+      UrlLoadingBrowserAgent::FromBrowser(self.browser);
+  scoped_refptr<network::SharedURLLoaderFactory> sharedURLLoaderFactory =
+      profile->GetSharedURLLoaderFactory();
+  BOOL offTheRecord = profile->IsOffTheRecord();
+  return
+      [[SearchEngineLogoMediator alloc] initWithWebState:webState
+                                      templateURLService:templateURLService
+                                             logoService:logoService
+                                  URLLoadingBrowserAgent:URLLoadingBrowserAgent
+                                  sharedURLLoaderFactory:sharedURLLoaderFactory
+                                            offTheRecord:offTheRecord];
 }
 
 #pragma mark - HomeCustomizationColorPaletteProvider
 
-- (HomeCustomizationColorPaletteConfiguration*)provideColorPaletteFromSeedColor:
-    (UIColor*)seedColor {
-  return CreateColorPaletteConfigurationFromSeedColor(seedColor);
+- (NewTabPageColorPalette*)
+    provideColorPaletteFromSeedColor:(UIColor*)seedColor
+                        colorVariant:
+                            (ui::ColorProviderKey::SchemeVariant)colorVariant {
+  return CreateColorPaletteFromSeedColor(seedColor, colorVariant);
 }
 
 @end

@@ -42,6 +42,7 @@
 #include "components/variations/pref_names.h"
 #include "components/variations/proto/variations_seed.pb.h"
 #include "components/variations/seed_response.h"
+#include "components/variations/sticky_activation_manager.h"
 #include "components/variations/variations_safe_seed_store_local_state.h"
 #include "components/variations/variations_seed_simulator.h"
 #include "components/variations/variations_switches.h"
@@ -554,6 +555,7 @@ void VariationsService::RegisterPrefs(PrefRegistrySimple* registry) {
   SafeSeedManager::RegisterPrefs(registry);
   VariationsSeedStore::RegisterPrefs(registry);
   RegisterFieldTrialInternalsPrefs(*registry);
+  StickyActivationManager::RegisterPrefs(*registry);
 
   registry->RegisterIntegerPref(
       prefs::kDeviceVariationsRestrictionsByPolicy,
@@ -561,9 +563,6 @@ void VariationsService::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(
       prefs::kVariationsGoogleGroups,
       static_cast<int>(RestrictionPolicy::NO_RESTRICTIONS));
-  // This preference keeps track of the country code used to filter
-  // permanent-consistency studies.
-  registry->RegisterListPref(prefs::kVariationsPermanentConsistencyCountry);
   // This preference is used to override the variations country code which is
   // consistent across different chrome version.
   registry->RegisterStringPref(prefs::kVariationsPermanentOverriddenCountry,
@@ -796,7 +795,7 @@ void VariationsService::NotifyObservers(const SeedSimulationResult& result) {
 }
 
 void VariationsService::OnSimpleLoaderComplete(
-    std::unique_ptr<std::string> response_body) {
+    std::optional<std::string> response_body) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   TRACE_EVENT0("browser", "VariationsService::OnSimpleLoaderComplete");
 

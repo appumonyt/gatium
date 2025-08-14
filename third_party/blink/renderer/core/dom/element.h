@@ -47,6 +47,7 @@
 #include "third_party/blink/renderer/core/dom/element_rare_data_field.h"
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
 #include "third_party/blink/renderer/core/dom/focusgroup_flags.h"
+#include "third_party/blink/renderer/core/dom/named_animation_trigger_map.h"
 #include "third_party/blink/renderer/core/dom/names_map.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/whitespace_attacher.h"
@@ -74,6 +75,7 @@ namespace blink {
 
 class AnchorElementObserver;
 class AnchorPositionScrollData;
+class AnimationTrigger;
 class AriaNotificationOptions;
 class Attr;
 class Attribute;
@@ -82,6 +84,7 @@ class ContainerQueryData;
 class ContainerQueryEvaluator;
 class CSSPropertyName;
 class CSSPropertyValueSet;
+class CSSPseudoElement;
 class CSSStyleDeclaration;
 class CustomElementDefinition;
 class CustomElementRegistry;
@@ -110,6 +113,7 @@ class Locale;
 class MutableCSSPropertyValueSet;
 class NamedNodeMap;
 class OutOfFlowData;
+class Patch;
 class PointerLockOptions;
 class PopoverData;
 class PseudoElement;
@@ -118,6 +122,7 @@ class ResizeObserver;
 class ResizeObserverSize;
 class ScrollIntoViewOptions;
 class CheckVisibilityOptions;
+class ScopedCSSName;
 class ScrollMarkerGroupData;
 class ScrollMarkerPseudoElement;
 class ScrollToOptions;
@@ -134,6 +139,8 @@ class StyleRecalcContext;
 class StyleScopeData;
 class TextVisitor;
 class V8UnionBooleanOrScrollIntoViewOptions;
+class V8UnionStringLegacyNullToEmptyStringOrTrustedHTML;
+class V8UnionStringOrTrustedHTML;
 class ComputedStyleBuilder;
 class StyleAdjuster;
 
@@ -169,7 +176,7 @@ enum SpellcheckAttributeState {
 enum class ElementFlags {
   kTabIndexWasSetExplicitly = 1 << 0,
   kStyleAffectedByEmpty = 1 << 1,
-  kIsInCanvasSubtree = 1 << 2,
+  kIsCanvasOrInCanvasSubtree = 1 << 2,
   kContainsFullScreenElement = 1 << 3,
   kIsInTopLayer = 1 << 4,
   kContainsPersistentVideo = 1 << 5,
@@ -225,6 +232,8 @@ enum class CommandEventType {
   // kClose
   // Input / Select
   kShowPicker,
+  // Interest invokers (`interestfor`)
+  kToggleInterest,
   // Number Input
   kStepUp,
   kStepDown,
@@ -245,7 +254,9 @@ enum class CommandEventType {
 
 typedef HeapVector<Member<Attr>> AttrNodeList;
 
-typedef HashMap<AtomicString, SpecificTrustedType> AttrNameToTrustedType;
+// https://w3c.github.io/trusted-types/dist/spec/#abstract-opdef-get-trusted-type-data-for-attribute
+typedef HashMap<AtomicString, std::pair<SpecificTrustedType, const char*>>
+    AttrNameToTrustedType;
 
 class CORE_EXPORT Element : public ContainerNode, public Animatable {
   DEFINE_WRAPPERTYPEINFO();
@@ -413,7 +424,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   void setAttribute(AtomicString name,
                     String value,
                     ExceptionState& exception_state = ASSERT_NO_EXCEPTION) {
-    WTF::AtomicStringTable::WeakResult weak_lowercase_name =
+    AtomicStringTable::WeakResult weak_lowercase_name =
         WeakLowercaseIfNecessary(name);
     SetAttributeHinted(std::move(name), weak_lowercase_name, std::move(value),
                        exception_state);
@@ -423,7 +434,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   void setAttribute(AtomicString name,
                     const V8TrustedType* trusted_string,
                     ExceptionState& exception_state) {
-    WTF::AtomicStringTable::WeakResult weak_lowercase_name =
+    AtomicStringTable::WeakResult weak_lowercase_name =
         WeakLowercaseIfNecessary(name);
     SetAttributeHinted(std::move(name), weak_lowercase_name, trusted_string,
                        exception_state);
@@ -431,6 +442,9 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
 
   // Returns attributes that should be checked against Trusted Types
   virtual const AttrNameToTrustedType& GetCheckedAttributeTypes() const;
+  const std::tuple<SpecificTrustedType, const char*, const AtomicString>
+  GetTrustedTypeDataForAttribute(const QualifiedName& q_name,
+                                 const char* legacy_sink_name) const;
 
   static std::optional<QualifiedName> ParseAttributeName(
       const AtomicString& namespace_uri,
@@ -459,7 +473,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   //   document, then set qualifiedName to qualifiedName in ASCII lowercase.
   //   https://dom.spec.whatwg.org/#concept-element-attributes-get-by-name
   AtomicString LowercaseIfNecessary(AtomicString) const;
-  WTF::AtomicStringTable::WeakResult WeakLowercaseIfNecessary(
+  AtomicStringTable::WeakResult WeakLowercaseIfNecessary(
       const AtomicString&) const;
 
   // NoncedElement implementation: this is only used by HTMLElement and
@@ -923,7 +937,8 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
                                    SlotAssignmentMode,
                                    bool serializable,
                                    bool clonable,
-                                   const AtomicString& reference_target);
+                                   const AtomicString& reference_target,
+                                   const bool waiting_for_scoped_registry);
 
   ShadowRoot& CreateUserAgentShadowRoot(
       SlotAssignmentMode = SlotAssignmentMode::kNamed);
@@ -936,14 +951,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
                                        const AtomicString& reference_target);
   // This version is for testing only, and allows easy attachment of a shadow
   // root, specifying only the type and none of the other arguments.
-  ShadowRoot& AttachShadowRootForTesting(ShadowRootMode type) {
-    return AttachShadowRootInternal(type, FocusDelegation::kNone,
-                                    SlotAssignmentMode::kNamed,
-                                    /*registry*/ nullptr,
-                                    /*serializable*/ false,
-                                    /*clonable*/ false,
-                                    /*reference_target*/ g_null_atom);
-  }
+  ShadowRoot& AttachShadowRootForTesting(ShadowRootMode type);
 
   // Returns the shadow root attached to this element if it is a shadow host.
   ShadowRoot* GetShadowRoot() const;
@@ -981,11 +989,11 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
     SetElementFlag(ElementFlags::kStyleAffectedByEmpty);
   }
 
-  void SetIsInCanvasSubtree(bool value) {
-    SetElementFlag(ElementFlags::kIsInCanvasSubtree, value);
+  void SetIsCanvasOrInCanvasSubtree(bool value) {
+    SetElementFlag(ElementFlags::kIsCanvasOrInCanvasSubtree, value);
   }
-  bool IsInCanvasSubtree() const {
-    return HasElementFlag(ElementFlags::kIsInCanvasSubtree);
+  bool IsCanvasOrInCanvasSubtree() const {
+    return HasElementFlag(ElementFlags::kIsCanvasOrInCanvasSubtree);
   }
 
   bool IsDefined() const {
@@ -1050,6 +1058,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   void FocusWithinStateChanged();
   void ActiveViewTransitionStateChanged();
   void ActiveViewTransitionTypeStateChanged();
+  void PatchStateChanged();
   void SetDragged(bool) override;
 
   void UpdateSelectionOnFocus(SelectionBehaviorOnFocus);
@@ -1072,14 +1081,6 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
     // Don't update style and layout, and assert that layout is clean already.
     kAssertNoLayoutUpdates,
   };
-
-  // Whether the element is clickable. This checks for whether the node is
-  // a clickable control (e.g. form control elements) or has activation
-  // behavior. It also checks for whether the node has a click handler.
-  // Note: this should not be taken as a guarantee that the element is
-  // clickable; this is used as a heuristic to determine whether the element
-  // is likely to be clickable.
-  bool IsMaybeClickable();
 
   // Focusability logic:
   //   IsFocusable: true if the element can be focused via element.focus().
@@ -1152,6 +1153,12 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
     return false;
   }
 
+  // These are slightly different than e.g. checking popover->popoverOpen(),
+  // because they also catch the case where the element *was* open as a popover
+  // or dialog, but is in the process of transitioning out of the top layer.
+  bool IsPopoverInTopLayer();
+  bool IsDialogInTopLayer();
+
   // If this element is a triggering element for an *open* popover, in one of
   // several ways, this returns the targeted popover. These forms of triggering
   // are supported:
@@ -1164,23 +1171,10 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   // this triggering element. (E.g. if the popover is just open on its own and
   // wasn't triggered by this invoker, this will return nullptr.)
   HTMLElement* GetOpenPopoverTarget() const;
-
   // Represents the current state of an interest invoker.
   enum class InterestState {
     // No interest.
     kNoInterest,
-    // This is a transient interest state, used for an interest invoker pointing
-    // to a popover that has been activated via keyboard focus. It potentially
-    // has partial interest, but that can only be determined once the popover
-    // actually opens, so that focusability can be tested. Once the popover is
-    // open, the invoker's interest_state will be updated to one of the other
-    // states. It can actually get to any of the states:
-    //  - partial interest if there are focusable elements
-    //  - full interest otherwise
-    //  - no interest if the showPopover is cancelled for any reason
-    kPotentialPartialInterest,
-    // Invoker has partial interest (for sure).
-    kPartialInterest,
     // Invoker has full interest.
     kFullInterest,
   };
@@ -1198,14 +1192,10 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   virtual Element* InterestForElement() const { return nullptr; }
   // Returns the active interest invoker for which this element is the target,
   // or nullptr otherwise.
-  Element* GetInterestInvoker() const;
+  Element* SourceInterestInvoker() const;
   // Returns the current state of "interest" in an element that is an interest
   // invoker.
   InterestState GetInterestState();
-  // Returns true if this element is (inclusively) contained within an open
-  // popover that is the target of an interest invoker that has partial
-  // interest.
-  bool IsInPartialInterestPopover() const;
   // Used in some situations (e.g. mobile device context menu activation) to
   // immediately show interest in an element, ignoring any show delays that may
   // be set on the element. If the element is not an interest invoker, nothing
@@ -1215,9 +1205,9 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   // Used in some situations (e.g. target popover closed via other means) to
   // immediately lose interest in an element, ignoring any hide delays that may
   // be set on the element. Element must already be an an interest invoker that
-  // has interest in the provided target, or a DCHECK will fail. If the target
-  // of the interest invoker is a popover, the popover will be hidden.
-  void LoseInterestNow(Element* target);
+  // has interest, or a DCHECK will fail. If the target of the interest invoker
+  // is a popover, the popover will be hidden.
+  void LoseInterestNow();
 
   // Returns true if any of its (non-inclusive) flat tree descendants is
   // keyboard focusable. Note that this is quite slow, since it traverses the
@@ -1243,21 +1233,35 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   void insertAdjacentText(const String& where,
                           const String& text,
                           ExceptionState&);
+  void InsertAdjacentHTMLWithoutTrustedTypes(const String& where,
+                                             const String& html,
+                                             ExceptionState&);
   void insertAdjacentHTML(const String& where,
-                          const String& html,
+                          const V8UnionStringOrTrustedHTML* html,
                           ExceptionState&);
 
-  String innerHTML() const;
-  String outerHTML() const;
-  void setInnerHTML(const String&, ExceptionState& = ASSERT_NO_EXCEPTION);
-  void setOuterHTML(const String&, ExceptionState& = ASSERT_NO_EXCEPTION);
+  String GetInnerHTMLString() const;
+  String GetOuterHTMLString() const;
+  void SetInnerHTMLWithoutTrustedTypes(const String&,
+                                       ExceptionState& = ASSERT_NO_EXCEPTION);
+  void SetOuterHTMLWithoutTrustedTypes(const String&,
+                                       ExceptionState& = ASSERT_NO_EXCEPTION);
+
+  V8UnionStringLegacyNullToEmptyStringOrTrustedHTML* innerHTML() const;
+  V8UnionStringLegacyNullToEmptyStringOrTrustedHTML* outerHTML() const;
+  void setInnerHTML(const V8UnionStringLegacyNullToEmptyStringOrTrustedHTML*,
+                    ExceptionState&);
+  void setOuterHTML(const V8UnionStringLegacyNullToEmptyStringOrTrustedHTML*,
+                    ExceptionState&);
 
   // The setHTMLUnsafe method is like `setInnerHTML()` except that a) it parses
   // declarative shadow DOM by default, and b) will eventually have a second
   // argument to set Sanitizer parameters.
   // See https://github.com/whatwg/html/pull/9538.
-  void setHTMLUnsafe(const String& html, ExceptionState& = ASSERT_NO_EXCEPTION);
-  void setHTMLUnsafe(const String& html,
+  void SetHTMLUnsafeWithoutTrustedTypes(const String& html,
+                                        ExceptionState& = ASSERT_NO_EXCEPTION);
+  void setHTMLUnsafe(const V8UnionStringOrTrustedHTML* html, ExceptionState&);
+  void setHTMLUnsafe(const V8UnionStringOrTrustedHTML* html,
                      SetHTMLUnsafeOptions*,
                      ExceptionState&);
   void setHTML(const String& html, SetHTMLOptions*, ExceptionState&);
@@ -1304,6 +1308,11 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
       PseudoId,
       const AtomicString& view_transition_name = g_null_atom) const;
   LayoutObject* PseudoElementLayoutObject(PseudoId) const;
+  CSSPseudoElement* pseudo(const AtomicString& type);
+
+  // Used to cache CSSPseudoElement objects.
+  void CacheCSSPseudoElement(PseudoId, CSSPseudoElement&);
+  CSSPseudoElement* GetCSSPseudoElement(PseudoId) const;
 
   // Returns true if this element contains any ::scroll-button or
   // ::scroll-marker-group pseudos.
@@ -1415,6 +1424,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
 
   // Scoped Custom Elements
   CustomElementRegistry* customElementRegistry() const;
+  void SetCustomElementRegistry(CustomElementRegistry*);
 
   // https://dom.spec.whatwg.org/#concept-element-is-value
   void SetIsValue(const AtomicString&);
@@ -1502,6 +1512,9 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
 
   void setEditContext(EditContext* editContext, ExceptionState&);
   EditContext* editContext() const;
+
+  // https://github.com/WICG/declarative-partial-updates
+  Patch* currentPatch();
 
   // Helpers for V8DOMActivityLogger::logEvent.  They call logEvent only if
   // the element is isConnected() and the context is an isolated world.
@@ -1674,7 +1687,6 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   void RemoveInterestInvokerTargetData();
   InterestInvokerTargetData& EnsureInterestInvokerTargetData();
   InterestInvokerTargetData* GetInterestInvokerTargetData() const;
-  static String GetPartialInterestForActivationHotkey();
 
   void DefaultEventHandler(Event&) override;
 
@@ -1756,7 +1768,13 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   GCedHeapVector<Member<Element>>* ElementsFromAttributeOrInternals(
       const QualifiedName& attribute) const;
 
-  bool IsClickableFormControlNode();
+  bool IsClickableFormControlNode() const;
+
+  bool HasTabIndexWasSetExplicitly() const;
+
+  void SetNamedTriggers(NamedAnimationTriggerMap&& named_triggers);
+  NamedAnimationTriggerMap* NamedTriggers() const;
+  AnimationTrigger* NamedTrigger(const ScopedCSSName* name) const;
 
  protected:
   bool HasElementData() const { return static_cast<bool>(element_data_); }
@@ -1887,6 +1905,8 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
       PseudoId,
       const AtomicString& view_transition_name = g_null_atom);
   void ClearTransitionPseudoTreeIfNeeded(const StyleRecalcChange);
+  void DetachTransitionPseudo();
+  void AttachTransitionPseudo();
 
   bool IsElementNode() const =
       delete;  // This will catch anyone doing an unnecessary check.
@@ -2052,6 +2072,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   }
 
   void AttachSucceedingPseudoElements(AttachContext& context) {
+    AttachPseudoElement(kPseudoIdInterestHint, context);
     AttachPseudoElement(kPseudoIdPickerIcon, context);
     AttachPseudoElement(kPseudoIdAfter, context);
     AttachDocumentElementSucceedingPseudoElements(context);
@@ -2081,6 +2102,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   }
 
   void DetachSucceedingPseudoElements(bool performing_reattach) {
+    DetachPseudoElement(kPseudoIdInterestHint, performing_reattach);
     DetachPseudoElement(kPseudoIdPickerIcon, performing_reattach);
     DetachPseudoElement(kPseudoIdAfter, performing_reattach);
     DetachPseudoElement(kPseudoIdScrollButtonBlockStart, performing_reattach);
@@ -2151,8 +2173,18 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
                                const AtomicString& value,
                                AttributeModificationReason);
   void RemoveAttributeInternal(wtf_size_t index, AttributeModificationReason);
-  SpecificTrustedType ExpectedTrustedTypeForAttribute(
-      const QualifiedName&) const;
+  String TrustedTypesCheckForAttribute(const QualifiedName&,
+                                       String value,
+                                       const char* legacy_sink_name,
+                                       ExceptionState&) const;
+  String TrustedTypesCheckForAttribute(const QualifiedName&,
+                                       const V8TrustedType* value,
+                                       const char* legacy_sink_name,
+                                       ExceptionState&) const;
+  String TrustedTypesCheckForAttribute(const QualifiedName&,
+                                       const AtomicString&,
+                                       const char* legacy_sink_name,
+                                       ExceptionState&) const;
 
   // These Hinted versions of the functions are subtle hot path
   // optimizations designed to reduce the number of unnecessary AtomicString
@@ -2163,23 +2195,22 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   // the `hint` can be constructed from calling AtomicString::Impl().
   const AtomicString& GetAttributeHinted(
       const AtomicString& name,
-      WTF::AtomicStringTable::WeakResult hint) const;
+      AtomicStringTable::WeakResult hint) const;
   void RemoveAttributeHinted(const AtomicString& name,
-                             WTF::AtomicStringTable::WeakResult hint);
-  void SynchronizeAttributeHinted(
-      const AtomicString& name,
-      WTF::AtomicStringTable::WeakResult hint) const;
+                             AtomicStringTable::WeakResult hint);
+  void SynchronizeAttributeHinted(const AtomicString& name,
+                                  AtomicStringTable::WeakResult hint) const;
   void SetAttributeHinted(AtomicString name,
-                          WTF::AtomicStringTable::WeakResult hint,
+                          AtomicStringTable::WeakResult hint,
                           String value,
                           ExceptionState& = ASSERT_NO_EXCEPTION);
   void SetAttributeHinted(AtomicString name,
-                          WTF::AtomicStringTable::WeakResult hint,
+                          AtomicStringTable::WeakResult hint,
                           const V8TrustedType* trusted_string,
                           ExceptionState& exception_state);
   std::pair<wtf_size_t, const QualifiedName> LookupAttributeQNameHinted(
       AtomicString name,
-      WTF::AtomicStringTable::WeakResult hint) const;
+      AtomicStringTable::WeakResult hint) const;
   wtf_size_t ValidateAttributeIndex(wtf_size_t index,
                                     const QualifiedName& qname) const;
 
@@ -2267,9 +2298,8 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
       const ComputedStyle& new_style,
       const ComputedStyle* parent_style) const;
 
-  // This checks that the feature KeyboardFocusableScrollers is enabled and
-  // element is a scroller. This will call IsScrollableNode, which might update
-  // layout.
+  // This checks that the element is a scroller by calling IsScrollableNode,
+  // which might update layout.
   // If UpdateBehavior::kNoneForAccessibility argument is passed, which should
   // only be used by a11y code, layout updates will never be performed.
   bool CanBeKeyboardFocusableScroller(

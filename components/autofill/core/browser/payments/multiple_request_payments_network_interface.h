@@ -38,17 +38,12 @@ class MultipleRequestPaymentsNetworkInterface
 
   // Sends a preflight request to determine if the user meets the Payments
   // service's conditions for card saving.
-  RequestId GetDetailsForCreateCard(
-      const std::string& unique_country_code,
-      const std::vector<ClientBehaviorConstants>& client_behavior_signals,
-      const std::string& app_locale,
-      GetDetailsForCreateCardCallback callback,
-      const int billable_service_number,
-      const int64_t billing_customer_number,
-      UploadCardSource upload_card_source);
+  virtual RequestId GetDetailsForCreateCard(
+      const UploadCardRequestDetails& details,
+      GetDetailsForCreateCardCallback callback);
 
   // Sends a request to save the card.
-  RequestId CreateCard(
+  virtual RequestId CreateCard(
       const UploadCardRequestDetails& details,
       base::OnceCallback<void(PaymentsAutofillClient::PaymentsRpcResult,
                               const std::string&)> callback);
@@ -66,7 +61,7 @@ class MultipleRequestPaymentsNetworkInterface
   // Send the necessary information for the server to identify the credit card
   // for which virtual-card enrollment will be updated, as well as metadata so
   // that the server understands the context for the request.
-  RequestId UpdateVirtualCardEnrollment(
+  virtual RequestId UpdateVirtualCardEnrollment(
       const UpdateVirtualCardEnrollmentRequestDetails& request_details,
       base::OnceCallback<void(PaymentsAutofillClient::PaymentsRpcResult)>
           callback);

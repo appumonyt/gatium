@@ -6,6 +6,7 @@
 
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "components/url_formatter/elide_url.h"
 #include "components/url_formatter/url_formatter.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
@@ -13,9 +14,9 @@
 #include "content/browser/webid/federated_auth_request_page_data.h"
 #include "content/browser/webid/flags.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/federated_identity_api_permission_context_delegate.h"
-#include "content/public/browser/federated_identity_permission_context_delegate.h"
 #include "content/public/browser/runtime_feature_state/runtime_feature_state_document_data.h"
+#include "content/public/browser/webid/federated_identity_api_permission_context_delegate.h"
+#include "content/public/browser/webid/federated_identity_permission_context_delegate.h"
 #include "content/public/common/web_identity.h"
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -466,6 +467,11 @@ void MaybeAddResponseCodeToConsole(RenderFrameHost& render_frame_host,
     render_frame_host.AddMessageToConsole(
         blink::mojom::ConsoleMessageLevel::kError, *console_message);
   }
+}
+
+perfetto::NamedTrack CreatePerfettoTrackForFedCM(void* class_pointer) {
+  return perfetto::NamedTrack::ThreadScoped(
+      "FedCM", reinterpret_cast<uintptr_t>(class_pointer));
 }
 
 }  // namespace content::webid

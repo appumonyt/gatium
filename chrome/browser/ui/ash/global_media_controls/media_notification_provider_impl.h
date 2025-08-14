@@ -10,14 +10,13 @@
 #include "ash/ash_export.h"
 #include "ash/system/media/media_notification_provider.h"
 #include "base/observer_list.h"
-#include "chrome/browser/ash/crosapi/media_ui_ash.h"
 #include "chrome/browser/ui/ash/global_media_controls/media_item_ui_device_selector_delegate_ash.h"
-#include "chrome/browser/ui/global_media_controls/supplemental_device_picker_producer.h"
 #include "components/global_media_controls/public/constants.h"
 #include "components/global_media_controls/public/media_dialog_delegate.h"
 #include "components/global_media_controls/public/media_item_manager_observer.h"
 #include "components/global_media_controls/public/media_item_ui_observer.h"
 #include "components/global_media_controls/public/media_item_ui_observer_set.h"
+#include "components/global_media_controls/public/supplemental_device_picker_producer.h"
 #include "components/media_message_center/media_notification_view_impl.h"
 
 class CastMediaNotificationProducerKeyedService;
@@ -129,7 +128,7 @@ class ASH_EXPORT MediaNotificationProviderImpl
 
   std::unique_ptr<global_media_controls::MediaSessionItemProducer>
       media_session_item_producer_;
-  std::unique_ptr<SupplementalDevicePickerProducer>
+  std::unique_ptr<global_media_controls::SupplementalDevicePickerProducer>
       supplemental_device_picker_producer_;
 
   std::optional<media_message_center::NotificationTheme> color_theme_;

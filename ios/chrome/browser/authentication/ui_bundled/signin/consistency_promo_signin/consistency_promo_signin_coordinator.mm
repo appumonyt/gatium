@@ -235,6 +235,13 @@
                     completionIdentity:completionIdentity];
 }
 
+- (BOOL)isAtRiskOfASWViewBug {
+  // This coordinator has no view of its own. So we only need to check whether
+  // the coordinator currently started’s view may have disappeared silently.
+  return self.addAccountCoordinator.isAtRiskOfASWViewBug ||
+         self.reauthCoordinator.isAtRiskOfASWViewBug;
+}
+
 #pragma mark - AnimatedCoordinator
 
 - (void)stopAnimated:(BOOL)animated {
@@ -252,6 +259,7 @@
   // nothing.
   [self disconnectMediatorWithResult:SigninCoordinatorResultInterrupted];
   [self stopAccountChooserCoordinator];
+  [self stopReauthCoordinator];
   [super stopAnimated:animated];
 }
 
@@ -287,7 +295,7 @@
       initWithBaseViewController:self.navigationController
                          browser:self.browser
                          account:account
-                     accessPoint:self.accessPoint];
+               signinAccessPoint:self.accessPoint];
   self.reauthCoordinator.delegate = self;
   [self.reauthCoordinator start];
 }
@@ -317,6 +325,7 @@
 }
 
 - (void)stopReauthCoordinator {
+  self.reauthCoordinator.delegate = nil;
   [self.reauthCoordinator stop];
   self.reauthCoordinator = nil;
 }
@@ -360,10 +369,10 @@
 // If `hasAccounts == NO`, the added account will be used to sign in to Chrome
 // directly after the AddAccountSigninCoordinator finishes.
 - (void)openAddAccountCoordinatorWithHasAccounts:(BOOL)hasAccounts {
-  if (self.addAccountCoordinator) {
-    // This can occur in case of double tap.
-    return;
-  }
+  // In case of double-tap, we must stop the first coordinator. This may occur
+  // because, up to iOS 18, the view may have disappeared without calling the
+  // signin completion. See crbug.com/395959814
+  [self.addAccountCoordinator stop];
   if (hasAccounts) {
     RecordConsistencyPromoUserAction(
         signin_metrics::AccountConsistencyPromoAction::ADD_ACCOUNT_STARTED,
@@ -393,15 +402,16 @@
 
 // Starts the sign-in flow.
 - (void)startSignIn {
-  AuthenticationFlow* authenticationFlow =
-      [[AuthenticationFlow alloc] initWithBrowser:self.browser
-                                         identity:self.selectedIdentity
-                                      accessPoint:self.accessPoint
-                             precedingHistorySync:YES
-                                postSignInActions:PostSignInActionSet()
-                         presentingViewController:self.navigationController
-                                       anchorView:nil
-                                       anchorRect:CGRectNull];
+  AuthenticationFlow* authenticationFlow = [[AuthenticationFlow alloc]
+               initWithBrowser:self.browser
+                      identity:self.selectedIdentity
+                   accessPoint:self.accessPoint
+          precedingHistorySync:YES
+             postSignInActions:
+                 {PostSignInAction::kShowIdentityConfirmationSnackbar}
+      presentingViewController:self.navigationController
+                    anchorView:nil
+                    anchorRect:CGRectNull];
   [self.consistencyPromoSigninMediator
       signinWithAuthenticationFlow:authenticationFlow];
 }
@@ -449,6 +459,10 @@
 
 - (void)consistencyDefaultAccountCoordinatorOpenIdentityChooser:
     (ConsistencyDefaultAccountCoordinator*)coordinator {
+  if (self.accountChooserCoordinator) {
+    // This can occur if the user double tap on the button.
+    return;
+  }
   self.accountChooserCoordinator = [[ConsistencyAccountChooserCoordinator alloc]
       initWithBaseViewController:self.navigationController
                          browser:self.browser
@@ -570,6 +584,15 @@
   [self dismissViewControllerAnimated:YES];
   [self runCompletionWithSigninResult:SigninCoordinatorResultSuccess
                    completionIdentity:completionIdentity];
+}
+
+- (void)consistencyPromoSigninMediatorSignInIsImpossible:
+    (ConsistencyPromoSigninMediator*)mediator {
+  CHECK_EQ(self.consistencyPromoSigninMediator, mediator,
+           base::NotFatalUntil::M143);
+  [self dismissViewControllerAnimated:YES];
+  [self runCompletionWithSigninResult:SigninCoordinatorResultInterrupted
+                   completionIdentity:nil];
 }
 
 - (void)consistencyPromoSigninMediatorSignInCancelled:

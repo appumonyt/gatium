@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "media/cdm/simple_cdm_allocator.h"
 
@@ -35,7 +31,7 @@ class SimpleCdmVideoFrame final : public VideoFrameImpl {
   // VideoFrameImpl implementation.
   scoped_refptr<media::VideoFrame> TransformToVideoFrame(
       gfx::Size natural_size) override {
-    CHECK(FrameBuffer(), base::NotFatalUntil::M140);
+    CHECK(FrameBuffer());
 
     cdm::Buffer* buffer = FrameBuffer();
     // SAFETY: cdm::Buffer is like `span` from CDM stable interface.

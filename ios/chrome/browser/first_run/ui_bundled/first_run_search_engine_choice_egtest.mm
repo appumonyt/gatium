@@ -5,6 +5,7 @@
 #import "base/strings/sys_string_conversions.h"
 #import "components/policy/policy_constants.h"
 #import "components/regional_capabilities/regional_capabilities_switches.h"
+#import "components/regional_capabilities/regional_capabilities_test_utils.h"
 #import "components/search_engines/search_engine_choice/search_engine_choice_utils.h"
 #import "components/search_engines/search_engines_switches.h"
 #import "components/strings/grit/components_strings.h"
@@ -49,6 +50,16 @@
       "--disable-features=UpdatedFirstRunSequence");
   config.additional_args.push_back(
       "--disable-features=AnimatedDefaultBrowserPromoInFRE");
+
+  if ([self isRunningTest:@selector
+            (testNoDefaultBrowserPromoAfterSearchEngineChoiceScreen)]) {
+    config.additional_args.push_back(
+        "--enable-features=SkipDefaultBrowserPromoInFirstRun");
+  } else {
+    config.additional_args.push_back(
+        "--disable-features=SkipDefaultBrowserPromoInFirstRun");
+  }
+
   return config;
 }
 
@@ -268,9 +279,14 @@
   [[self class] dismissDefaultBrowserAndRemainingScreens];
 }
 
-// TODO(crbug.com/427943675): This test is flaky.
 // Tests that incognito can be forced through the FRE with search engine screen.
-- (void)FLAKY_testIncognitoForcedByPolicy {
+// TODO(crbug.com/427943675): Test is flaky on simulator. Reenable the test.
+#if TARGET_OS_SIMULATOR
+#define MAYBE_testIncognitoForcedByPolicy FLAKY_testIncognitoForcedByPolicy
+#else
+#define MAYBE_testIncognitoForcedByPolicy testIncognitoForcedByPolicy
+#endif
+- (void)MAYBE_testIncognitoForcedByPolicy {
   // Configure the policy to force sign-in.
   [self relaunchAppWithPolicyKey:policy::key::kIncognitoModeAvailability
                   xmlPolicyValue:"<integer>2</integer>"];
@@ -311,6 +327,34 @@
   [[[EarlGrey selectElementWithMatcher:continueButtonMatcher]
       assertWithMatcher:grey_notNil()] performAction:grey_tap()];
   [SearchEngineChoiceEarlGreyUI confirmSearchEngineChoiceScreen];
+}
+
+// Tests that the Default Browser Promo is not shown in the EEA region if
+// `kSkipDefaultBrowserInFirstRun` is enabled.
+- (void)testNoDefaultBrowserPromoAfterSearchEngineChoiceScreen {
+  // Skip sign-in.
+  [[self elementInteractionWithGreyMatcher:
+             chrome_test_util::PromoScreenSecondaryButtonMatcher()
+                      scrollViewIdentifier:
+                          kPromoStyleScrollViewAccessibilityIdentifier]
+      performAction:grey_tap()];
+
+  // Select a search engine.
+  NSString* searchEngineToSelect = [SearchEngineChoiceEarlGreyUI
+      searchEngineNameWithPrepopulatedEngine:TemplateURLPrepopulateData::bing];
+  [SearchEngineChoiceEarlGreyUI
+      selectSearchEngineCellWithName:searchEngineToSelect
+                     scrollDirection:kGREYDirectionDown
+                              amount:50];
+
+  // Tap on the Continue button. This scrolls the table down to the bottom.
+  id<GREYMatcher> continueButtonMatcher =
+      grey_accessibilityID(kSearchEngineContinueButtonIdentifier);
+  [[[EarlGrey selectElementWithMatcher:continueButtonMatcher]
+      assertWithMatcher:grey_notNil()] performAction:grey_tap()];
+
+  // Verify that the Default Browser Promo doesn't appear.
+  [self verifyDefaultBrowserNotDisplayed];
 }
 
 @end

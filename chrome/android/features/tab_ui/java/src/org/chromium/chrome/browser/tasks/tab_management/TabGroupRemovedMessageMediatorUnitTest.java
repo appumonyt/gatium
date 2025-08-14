@@ -12,10 +12,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import static org.chromium.chrome.browser.tasks.tab_management.MessageService.MessageType.ALL;
-import static org.chromium.chrome.browser.tasks.tab_management.TabGroupListCoordinator.MessageCardType.TAB_GROUP_REMOVED;
-import static org.chromium.chrome.browser.tasks.tab_management.TabGroupListCoordinator.RowType.MESSAGE_CARD;
+import static org.chromium.chrome.browser.tasks.tab_management.TabGroupListCoordinator.RowType.TAB_GROUP_REMOVED;
 import static org.chromium.chrome.browser.tasks.tab_management.TabListModel.CardProperties.ModelType.MESSAGE;
+import static org.chromium.chrome.browser.tasks.tab_management.TabSwitcherMessageManager.MessageType.ALL;
 
 import android.content.Context;
 
@@ -30,8 +29,9 @@ import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
 import org.chromium.base.test.BaseRobolectricTestRunner;
-import org.chromium.chrome.browser.tasks.tab_management.MessageCardView.DismissActionProvider;
-import org.chromium.chrome.browser.tasks.tab_management.MessageService.MessageType;
+import org.chromium.chrome.browser.tasks.tab_management.MessageCardView.ActionProvider;
+import org.chromium.chrome.browser.tasks.tab_management.MessageCardView.ServiceDismissActionProvider;
+import org.chromium.chrome.browser.tasks.tab_management.TabSwitcherMessageManager.MessageType;
 import org.chromium.components.collaboration.messaging.CollaborationEvent;
 import org.chromium.components.collaboration.messaging.MessageAttribution;
 import org.chromium.components.collaboration.messaging.MessagingBackendService;
@@ -206,9 +206,9 @@ public class TabGroupRemovedMessageMediatorUnitTest {
         assertEquals(1, mModelList.size());
 
         PropertyModel model = mModelList.get(0).model;
-        MessageCardView.DismissActionProvider reviewProvider =
+        ActionProvider reviewProvider =
                 model.get(MessageCardViewProperties.UI_DISMISS_ACTION_PROVIDER);
-        reviewProvider.dismiss(ALL);
+        reviewProvider.action();
 
         assertTrue(mModelList.isEmpty());
 
@@ -224,7 +224,7 @@ public class TabGroupRemovedMessageMediatorUnitTest {
     public void testDismissActionProvider_onEmptyList() {
         assertTrue(mModelList.isEmpty());
 
-        DismissActionProvider dismissProvider = ignored -> mMediator.removeMessageCard();
+        ServiceDismissActionProvider dismissProvider = ignored -> mMediator.removeMessageCard();
         dismissProvider.dismiss(DISMISS_MSG_TYPE);
     }
 
@@ -235,9 +235,9 @@ public class TabGroupRemovedMessageMediatorUnitTest {
                         .with(TabListModel.CardProperties.CARD_TYPE, MESSAGE)
                         .with(MessageCardViewProperties.MESSAGE_TYPE, 99) // Not TAB_GROUP_REMOVED
                         .build();
-        mModelList.add(new ListItem(MESSAGE_CARD, wrongTypeModel));
+        mModelList.add(new ListItem(TAB_GROUP_REMOVED, wrongTypeModel));
 
-        DismissActionProvider dismissProvider = ignored -> mMediator.removeMessageCard();
+        ServiceDismissActionProvider dismissProvider = ignored -> mMediator.removeMessageCard();
         dismissProvider.dismiss(DISMISS_MSG_TYPE);
 
         assertEquals(1, mModelList.size());

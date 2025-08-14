@@ -15,6 +15,7 @@
 #include <array>
 
 #include "base/containers/heap_array.h"
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/aligned_memory.h"
@@ -103,9 +104,9 @@ static base::HeapArray<uint8_t> ReadbackTexture(gpu::gles2::GLES2Interface* gl,
 
 // Returns a functor that retrieves a SkColor for a given pixel, from raw RGBA
 // data.
-static auto ColorGetter(uint8_t* pixels, const gfx::Size& size) {
+static auto ColorGetter(base::span<uint8_t> pixels, const gfx::Size& size) {
   return [pixels, size](size_t x, size_t y) {
-    uint8_t* p = pixels + (size.width() * y + x) * 4;
+    base::span<uint8_t> p = pixels.subspan((size.width() * y + x) * 4);
     return SkColorSetARGB(p[3], p[0], p[1], p[2]);
   };
 }
@@ -381,7 +382,12 @@ TEST_F(PaintCanvasVideoRendererTest, CopyTransparentFrame) {
 
 TEST_F(PaintCanvasVideoRendererTest, ReinterpretAsSRGB) {
   FillFrameWithColor(natural_frame(), kRed);
-  natural_frame()->set_color_space(gfx::ColorSpace::CreateHDR10());
+  // Set to HDR PQ color space but with default 601 matrix and range as I420
+  // formats cannot convert to RGB color spaces with RGB matrix.
+  auto hdr_cs = gfx::ColorSpace(
+      gfx::ColorSpace::PrimaryID::BT2020, gfx::ColorSpace::TransferID::PQ,
+      gfx::ColorSpace::MatrixID::SMPTE170M, gfx::ColorSpace::RangeID::LIMITED);
+  natural_frame()->set_color_space(hdr_cs);
 
   cc::PaintFlags flags;
   flags.setBlendMode(SkBlendMode::kSrcOver);
@@ -957,9 +963,15 @@ TEST_F(PaintCanvasVideoRendererTest, ContextLost) {
   gfx::Size size(kWidth, kHeight);
   // We try copying the contents of the source VideoFrame *into* the
   // cached SI over the raster interface.
+  gpu::SharedImageMetadata metadata;
+  metadata.format = viz::SinglePlaneFormat::kRGBA_8888;
+  metadata.size = size;
+  metadata.color_space = gfx::ColorSpace::CreateSRGB();
+  metadata.surface_origin = kTopLeft_GrSurfaceOrigin;
+  metadata.alpha_type = kOpaque_SkAlphaType;
+  metadata.usage = gpu::SHARED_IMAGE_USAGE_RASTER_READ;
   scoped_refptr<gpu::ClientSharedImage> shared_image =
-      gpu::ClientSharedImage::CreateForTesting(
-          gpu::SHARED_IMAGE_USAGE_RASTER_READ);
+      gpu::ClientSharedImage::CreateForTesting(metadata);
   auto video_frame = VideoFrame::WrapSharedImage(
       PIXEL_FORMAT_NV12, shared_image, gpu::SyncToken(),
       base::BindOnce(MailboxHoldersReleased), size, gfx::Rect(size), size,
@@ -1317,7 +1329,7 @@ TEST_F(PaintCanvasVideoRendererWithGLTest, CopyVideoFrameYUVDataToGLTexture) {
 
   base::HeapArray<uint8_t> pixels =
       ReadbackTexture(destination_gl, texture, expected_size);
-  auto get_color = ColorGetter(pixels.data(), expected_size);
+  auto get_color = ColorGetter(pixels, expected_size);
 
   // Avoid checking around the seams.
   EXPECT_EQ(SK_ColorBLACK, get_color(0, 0));
@@ -1349,7 +1361,7 @@ TEST_F(PaintCanvasVideoRendererWithGLTest,
 
   base::HeapArray<uint8_t> pixels =
       ReadbackTexture(destination_gl, texture, expected_size);
-  auto get_color = ColorGetter(pixels.data(), expected_size);
+  auto get_color = ColorGetter(pixels, expected_size);
 
   // Avoid checking around the seams.
   EXPECT_EQ(SK_ColorBLACK, get_color(0, 5));

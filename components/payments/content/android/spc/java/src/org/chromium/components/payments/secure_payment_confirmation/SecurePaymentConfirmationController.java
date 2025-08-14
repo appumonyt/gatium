@@ -80,6 +80,7 @@ public class SecurePaymentConfirmationController implements ControllerDelegate {
     private final SecurePaymentConfirmationView mView;
     private final PropertyModel mModel;
     private final BottomSheetController mBottomSheetController;
+    private final Boolean mShowOptOut;
     private final Boolean mInformOnly;
     private final Callback<Integer> mResponseCallback;
     private final @SPCTransactionMode int mTransactionMode;
@@ -122,6 +123,7 @@ public class SecurePaymentConfirmationController implements ControllerDelegate {
                 assertNonNull(BottomSheetControllerProvider.from(window));
 
         mBottomSheetController = bottomSheetController;
+        mShowOptOut = showOptOut;
         mInformOnly = informOnly;
         mResponseCallback = responseCallback;
         mTransactionMode = transactionMode;
@@ -218,7 +220,7 @@ public class SecurePaymentConfirmationController implements ControllerDelegate {
                 SecurePaymentConfirmationViewBinder::bindItem);
 
         SpannableString optOutText = null;
-        if (showOptOut) {
+        if (mShowOptOut) {
             // Attempt to determine whether the current device is a tablet or not. This method is
             // quite inaccurate, but is only used for customizing the opt out UX and so getting it
             // wrong is low-cost.
@@ -302,10 +304,10 @@ public class SecurePaymentConfirmationController implements ControllerDelegate {
             //
             // https://w3c.github.io/secure-payment-confirmation/#sctn-transaction-ux-test-automation
             switch (mTransactionMode) {
-                case SPCTransactionMode.AUTOACCEPT:
+                case SPCTransactionMode.AUTO_ACCEPT:
                     onContinue();
                     break;
-                case SPCTransactionMode.AUTOAUTHANOTHERWAY:
+                case SPCTransactionMode.AUTO_AUTH_ANOTHER_WAY:
                     // To best mimic the underlying dialog, in mInformOnly mode we still click on
                     // the 'Continue' button.
                     if (mInformOnly) {
@@ -314,10 +316,10 @@ public class SecurePaymentConfirmationController implements ControllerDelegate {
                         onVerifyAnotherWay();
                     }
                     break;
-                case SPCTransactionMode.AUTOOPTOUT:
+                case SPCTransactionMode.AUTO_OPT_OUT:
                     onOptOut();
                     break;
-                case SPCTransactionMode.AUTOREJECT:
+                case SPCTransactionMode.AUTO_REJECT:
                     onCancel();
                     break;
             }
@@ -373,6 +375,26 @@ public class SecurePaymentConfirmationController implements ControllerDelegate {
         }
         hide();
         mResponseCallback.onResult(SpcResponseStatus.OPT_OUT);
+    }
+
+    /**
+     * Called by PaymentRequestTestBridge for cross-platform browser tests, the following methods
+     * bypass the input protector. The Java unit tests simulate clicking the button and therefore
+     * test the input protector.
+     */
+    public boolean cancelForTest() {
+        hide();
+        mResponseCallback.onResult(SpcResponseStatus.CANCEL);
+        return true;
+    }
+
+    public boolean optOutForTest() {
+        if (!mShowOptOut) {
+            return false;
+        }
+        hide();
+        mResponseCallback.onResult(SpcResponseStatus.OPT_OUT);
+        return true;
     }
 
     /*package*/ SecurePaymentConfirmationView getViewForTesting() {

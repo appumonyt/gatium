@@ -34,7 +34,6 @@
 #import "ios/chrome/browser/credential_provider/model/credential_provider_util.h"
 #import "ios/chrome/browser/credential_provider/model/features.h"
 #import "ios/chrome/browser/shared/model/prefs/pref_names.h"
-#import "ios/chrome/browser/shared/public/features/features.h"
 #import "ios/chrome/browser/signin/model/system_identity.h"
 #import "ios/chrome/common/app_group/app_group_constants.h"
 #import "ios/chrome/common/credential_provider/ASPasskeyCredentialIdentity+credential.h"
@@ -103,35 +102,20 @@ void SyncASIdentityStore(NSArray<id<Credential>>* credentials) {
             errorForReporting);
       }
     };
-    if (@available(iOS 17.0, *)) {
-      NSMutableArray<id<ASCredentialIdentity>>* storeIdentities =
-          [NSMutableArray arrayWithCapacity:credentials.count];
-      for (id<Credential> credential in credentials) {
-        if (credential.isPasskey) {
-          [storeIdentities addObject:[[ASPasskeyCredentialIdentity alloc]
-                                         cr_initWithCredential:credential]];
-        } else {
-          [storeIdentities addObject:[[ASPasswordCredentialIdentity alloc]
-                                         cr_initWithCredential:credential]];
-        }
-      }
-      [ASCredentialIdentityStore.sharedStore
-          replaceCredentialIdentityEntries:storeIdentities
-                                completion:replaceCompletion];
-    }
-#if !defined(__IPHONE_17_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_17_0
-    else {
-      NSMutableArray<ASPasswordCredentialIdentity*>* storeIdentities =
-          [NSMutableArray arrayWithCapacity:credentials.count];
-      for (id<Credential> credential in credentials) {
+    NSMutableArray<id<ASCredentialIdentity>>* storeIdentities =
+        [NSMutableArray arrayWithCapacity:credentials.count];
+    for (id<Credential> credential in credentials) {
+      if (credential.isPasskey) {
+        [storeIdentities addObject:[[ASPasskeyCredentialIdentity alloc]
+                                       cr_initWithCredential:credential]];
+      } else {
         [storeIdentities addObject:[[ASPasswordCredentialIdentity alloc]
                                        cr_initWithCredential:credential]];
       }
-      [ASCredentialIdentityStore.sharedStore
-          replaceCredentialIdentitiesWithIdentities:storeIdentities
-                                         completion:replaceCompletion];
     }
-#endif
+    [ASCredentialIdentityStore.sharedStore
+        replaceCredentialIdentityEntries:storeIdentities
+                              completion:replaceCompletion];
   };
   [ASCredentialIdentityStore.sharedStore
       getCredentialIdentityStoreStateWithCompletion:stateCompletion];
@@ -168,7 +152,6 @@ CredentialProviderService::CredentialProviderService(
     affiliations::AffiliationService* affiliation_service,
     FaviconLoader* favicon_loader)
     : profile_name_(profile_name),
-      prefs_(prefs),
       local_state_(local_state),
       profile_password_store_(profile_password_store),
       account_password_store_(account_password_store),
@@ -235,7 +218,8 @@ CredentialProviderService::CredentialProviderService(
   UpdatePasswordSyncSetting();
   UpdateAutomaticPasskeyUpgradeSetting();
   UpdatePasskeyPRFSetting();
-  UpdatePasskeysM2Availability();
+  UpdatePasskeyLargeBlobSetting();
+  UpdateSignalAPISetting();
 }
 
 CredentialProviderService::~CredentialProviderService() {}
@@ -567,7 +551,7 @@ void CredentialProviderService::UpdateUserEmail() {
   }
 
   std::optional accountForSaving =
-      password_manager::sync_util::GetAccountForSaving(prefs_, sync_service_);
+      password_manager::sync_util::GetAccountForSaving(sync_service_);
   [app_group::GetGroupUserDefaults()
       setObject:accountForSaving ? base::SysUTF8ToNSString(*accountForSaving)
                                  : nil
@@ -613,14 +597,27 @@ void CredentialProviderService::UpdatePasskeyPRFSetting() {
          forKey:AppGroupUserDefaulsCredentialProviderPasskeyPRFEnabled()];
 }
 
-void CredentialProviderService::UpdatePasskeysM2Availability() {
+void CredentialProviderService::UpdatePasskeyLargeBlobSetting() {
   if (!IsLastUsedProfile()) {
     return;
   }
 
+  BOOL is_enabled =
+      base::FeatureList::IsEnabled(kCredentialProviderPasskeyLargeBlob);
   [app_group::GetGroupUserDefaults()
-      setObject:[NSNumber numberWithBool:IOSPasskeysM2Enabled()]
-         forKey:AppGroupUserDefaultsCredentialProviderPasskeysM2Enabled()];
+      setObject:[NSNumber numberWithBool:is_enabled]
+         forKey:AppGroupUserDefaulsCredentialProviderPasskeyLargeBlobEnabled()];
+}
+
+void CredentialProviderService::UpdateSignalAPISetting() {
+  if (!IsLastUsedProfile()) {
+    return;
+  }
+
+  BOOL is_enabled = base::FeatureList::IsEnabled(kCredentialProviderSignalAPI);
+  [app_group::GetGroupUserDefaults()
+      setObject:[NSNumber numberWithBool:is_enabled]
+         forKey:AppGroupUserDefaulsCredentialProviderSignalAPIEnabled()];
 }
 
 void CredentialProviderService::OnGetPasswordStoreResultsOrErrorFrom(

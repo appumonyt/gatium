@@ -7,6 +7,7 @@ package org.chromium.content_public.browser;
 import org.chromium.base.MutableBooleanParamWithSafeDefault;
 import org.chromium.base.MutableFlagWithSafeDefault;
 import org.chromium.build.annotations.NullMarked;
+import org.chromium.content.common.ContentInternalFeatures;
 import org.chromium.content_public.common.ContentFeatures;
 
 /** Convenience static methods to access {@link ContentFeatureMap}. */
@@ -33,6 +34,8 @@ public class ContentFeatureList {
     public static final String ACCESSIBILITY_MANAGE_BROADCAST_RECEIVER_ON_BACKGROUND =
             "AccessibilityManageBroadcastReceiverOnBackground";
 
+    public static final String ANDROID_CAPTURE_KEY_EVENTS = "AndroidCaptureKeyEvents";
+
     public static final String ANDROID_OPEN_PDF_INLINE = "AndroidOpenPdfInline";
 
     public static final String HIDE_PASTE_POPUP_ON_GSB = "HidePastePopupOnGSB";
@@ -53,9 +56,6 @@ public class ContentFeatureList {
     public static final String WEB_IDENTITY_DIGITAL_CREDENTIALS_CREATION =
             "WebIdentityDigitalCredentialsCreation";
 
-    public static final String PREFETCH_BROWSER_INITIATED_TRIGGERS =
-            "PrefetchBrowserInitiatedTriggers";
-
     public static final String DIPS_TTL = "DIPSTtl";
 
     public static final MutableFlagWithSafeDefault sAccessibilityDeprecateJavaNodeCache =
@@ -71,6 +71,12 @@ public class ContentFeatureList {
     public static final MutableBooleanParamWithSafeDefault
             sAccessibilityDeprecateJavaNodeCacheDisableCache =
                     sAccessibilityDeprecateJavaNodeCache.newBooleanParam("disable_cache", false);
+
+    public static final MutableFlagWithSafeDefault sStrictHighRankProcessLRU =
+            new MutableFlagWithSafeDefault(
+                    ContentFeatureMap.getInstance(),
+                    ContentInternalFeatures.STRICT_HIGH_RANK_PROCESS_LRU,
+                    false);
 
     public static final MutableFlagWithSafeDefault sGroupRebindingForGroupImportance =
             new MutableFlagWithSafeDefault(

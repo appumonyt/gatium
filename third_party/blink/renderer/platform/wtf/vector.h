@@ -50,6 +50,7 @@
 #include "third_party/blink/renderer/platform/wtf/construct_traits.h"
 #include "third_party/blink/renderer/platform/wtf/container_annotations.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"  // For default Vector template parameters.
+#include "third_party/blink/renderer/platform/wtf/gc_plugin.h"
 #include "third_party/blink/renderer/platform/wtf/hash_table_deleted_value_type.h"
 #include "third_party/blink/renderer/platform/wtf/stack_util.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -65,12 +66,7 @@
 #define INLINE_CAPACITY InlineCapacity
 #endif
 
-namespace WTF {
-template <typename T, wtf_size_t InlineCapacity, typename Allocator>
-class Vector;
-}
-
-namespace WTF {
+namespace blink {
 
 #if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
 // The allocation pool for nodes is one big chunk that ASAN has no insight
@@ -80,9 +76,6 @@ static const wtf_size_t kInitialVectorSize = 1;
 #else
 static const wtf_size_t kInitialVectorSize = 4;
 #endif
-
-template <typename T, wtf_size_t inlineBuffer, typename Allocator>
-class Deque;
 
 //
 // Vector Traits
@@ -170,7 +163,7 @@ template <typename T, typename Allocator>
 struct VectorTypeOperations {
   STATIC_ONLY(VectorTypeOperations);
 
-  using ConstructTraits = WTF::ConstructTraits<T, VectorTraits<T>, Allocator>;
+  using ConstructTraits = ConstructTraits<T, VectorTraits<T>, Allocator>;
 
   ALWAYS_INLINE static void Destruct(T* begin, T* end) {
     if constexpr (!VectorTraits<T>::kNeedsDestruction) {
@@ -466,7 +459,7 @@ struct VectorTypeOperations {
 // Not meant for general consumption.
 
 template <typename T, typename Allocator>
-class VectorBufferBase {
+class GC_PLUGIN_IGNORE("crbug.com/428987863") VectorBufferBase {
   DISALLOW_NEW();
 
  public:
@@ -1015,7 +1008,7 @@ class VectorBuffer : protected VectorBufferBase<T, Allocator> {
     if constexpr (Allocator::kIsGarbageCollected) {
       const bool is_zeroed =
           std::ranges::all_of(inline_buffer_, [](char c) { return c == 0; });
-      DCHECK(is_zeroed || WTF::IsOnStack(inline_buffer_));
+      DCHECK(is_zeroed || IsOnStack(inline_buffer_));
     }
   }
 
@@ -1025,9 +1018,9 @@ class VectorBuffer : protected VectorBufferBase<T, Allocator> {
 };
 
 // UncheckedIteraotr<T> is just a wrapper of a T pointer with no bounds
-// checking, and the default iterator implementation of WTF::Vector.
+// checking, and the default iterator implementation of blink::Vector.
 template <typename T>
-class UncheckedIterator {
+class GC_PLUGIN_IGNORE("crbug.com/428987863") UncheckedIterator {
  public:
   using difference_type = std::ptrdiff_t;
   using value_type = std::remove_cv_t<T>;
@@ -1713,13 +1706,13 @@ class Vector : private VectorBuffer<T, INLINE_CAPACITY, Allocator> {
   struct TypeConstraints {
     constexpr TypeConstraints() {
       // This condition is relied upon by TraceCollectionIfEnabled.
-      static_assert(!IsWeak<T>::value);
+      static_assert(!IsWeakV<T>);
       static_assert(!IsStackAllocatedTypeV<T>);
       static_assert(!std::is_polymorphic_v<T> ||
                         !VectorTraits<T>::kCanInitializeWithMemset,
                     "Cannot initialize with memset if there is a vtable.");
       static_assert(Allocator::kIsGarbageCollected || !IsDisallowNew<T> ||
-                        !IsTraceable<T>::value,
+                        !IsTraceableV<T>,
                     "Cannot put DISALLOW_NEW() objects that have trace methods "
                     "into an off-heap Vector.");
       static_assert(
@@ -2458,7 +2451,7 @@ inline void Vector<T, InlineCapacity, Allocator>::Reverse() {
 template <typename T, wtf_size_t InlineCapacity, typename Allocator>
 inline void swap(Vector<T, InlineCapacity, Allocator>& a,
                  Vector<T, InlineCapacity, Allocator>& b) {
-  a.Swap(b);
+  a.swap(b);
 }
 
 template <typename T,
@@ -2635,8 +2628,18 @@ auto ToVector(Range&& range, Proj proj = {}) {
   return Vector<ProjectedType>(std::forward<Range>(range), std::move(proj));
 }
 
-}  // namespace WTF
+}  // namespace blink
 
-using WTF::Vector;
+// TODO(crbug.com/422768753): Remove these `using` directives.
+namespace WTF {
+using blink::Erase;
+using blink::EraseIf;
+using blink::kVectorNeedsDestructor;
+using blink::ToVector;
+using blink::Vector;
+using blink::VectorBuffer;
+using blink::VectorOperationOrigin;
+using blink::VectorTypeOperations;
+}  // namespace WTF
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_VECTOR_H_

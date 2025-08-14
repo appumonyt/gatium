@@ -14,14 +14,17 @@
 #import "ios/chrome/browser/download/coordinator/download_manager_coordinator.h"
 #import "ios/chrome/browser/download/model/download_manager_tab_helper.h"
 #import "ios/chrome/browser/download/model/pass_kit_tab_helper.h"
+#import "ios/chrome/browser/find_in_page/model/find_tab_helper.h"
 #import "ios/chrome/browser/follow/model/follow_tab_helper.h"
+#import "ios/chrome/browser/fullscreen/ui_bundled/fullscreen_controller.h"
+#import "ios/chrome/browser/intelligence/bwg/model/bwg_tab_helper.h"
 #import "ios/chrome/browser/itunes_urls/model/itunes_urls_handler_tab_helper.h"
 #import "ios/chrome/browser/lens/model/lens_tab_helper.h"
 #import "ios/chrome/browser/mini_map/model/mini_map_tab_helper.h"
 #import "ios/chrome/browser/ntp/model/new_tab_page_tab_helper.h"
 #import "ios/chrome/browser/overscroll_actions/model/overscroll_actions_tab_helper.h"
 #import "ios/chrome/browser/passwords/model/password_tab_helper.h"
-#import "ios/chrome/browser/prerender/model/prerender_service.h"
+#import "ios/chrome/browser/prerender/model/prerender_tab_helper.h"
 #import "ios/chrome/browser/print/coordinator/print_coordinator.h"
 #import "ios/chrome/browser/reader_mode/model/features.h"
 #import "ios/chrome/browser/reader_mode/model/reader_mode_tab_helper.h"
@@ -29,6 +32,7 @@
 #import "ios/chrome/browser/shared/model/profile/profile_ios.h"
 #import "ios/chrome/browser/shared/model/web_state_list/web_state_list.h"
 #import "ios/chrome/browser/shared/public/commands/autofill_commands.h"
+#import "ios/chrome/browser/shared/public/commands/bwg_commands.h"
 #import "ios/chrome/browser/shared/public/commands/command_dispatcher.h"
 #import "ios/chrome/browser/shared/public/commands/contextual_sheet_commands.h"
 #import "ios/chrome/browser/shared/public/commands/help_commands.h"
@@ -45,48 +49,47 @@
 #import "ios/chrome/browser/ssl/model/captive_portal_tab_helper.h"
 #import "ios/chrome/browser/supervised_user/model/supervised_user_error_container.h"
 #import "ios/chrome/browser/tab_insertion/model/tab_insertion_browser_agent.h"
+#import "ios/chrome/browser/tabs/model/tabs_dependency_installer.h"
+#import "ios/chrome/browser/tabs/model/tabs_dependency_installer_bridge.h"
 #import "ios/chrome/browser/web/model/annotations/annotations_tab_helper.h"
 #import "ios/chrome/browser/web/model/print/print_tab_helper.h"
 #import "ios/chrome/browser/web/model/repost_form_tab_helper.h"
 #import "ios/chrome/browser/web/model/repost_form_tab_helper_delegate.h"
-#import "ios/chrome/browser/web_state_list/model/web_state_dependency_installation_observer.h"
-#import "ios/chrome/browser/web_state_list/model/web_state_dependency_installer_bridge.h"
 #import "ios/chrome/browser/webui/model/net_export_tab_helper.h"
 #import "ios/chrome/browser/webui/model/net_export_tab_helper_delegate.h"
 #import "ios/public/provider/chrome/browser/lens/lens_api.h"
 #import "ui/base/device_form_factor.h"
 
-@interface TabLifecycleMediator () <DependencyInstalling>
+@interface TabLifecycleMediator () <TabsDependencyInstalling>
 @end
 
 @implementation TabLifecycleMediator {
   // Bridge to observe the web state list from Objective-C.
-  std::unique_ptr<WebStateDependencyInstallerBridge> _dependencyInstallerBridge;
+  TabsDependencyInstallerBridge _dependencyInstallerBridge;
 }
 
 - (instancetype)initWithWebStateList:(WebStateList*)webStateList {
   if ((self = [super init])) {
-    _dependencyInstallerBridge =
-        std::make_unique<WebStateDependencyInstallerBridge>(self, webStateList);
+    _dependencyInstallerBridge.StartObserving(
+        self, webStateList, TabsDependencyInstaller::Policy::kOnlyRealized);
   }
   return self;
 }
 
 - (void)disconnect {
-  // Deleting the installer bridge will cause all web states to have
-  // dependencies uninstalled.
-  _dependencyInstallerBridge.reset();
+  // Stop observing the WebStateList before destroying the bridge object.
+  _dependencyInstallerBridge.StopObserving();
 }
 
-#pragma mark - DependencyInstalling
+#pragma mark - TabsDependencyInstalling
 
-- (void)installDependencyForWebState:(web::WebState*)webState {
-  // If there is a prerender service, this webstate shouldn't be a prerendered
-  // one. (There's no prerender service in incognito, for example).
-  DCHECK(!_prerenderService ||
-         !_prerenderService->IsWebStatePrerendered(webState));
+- (void)webStateInserted:(web::WebState*)webState {
   // Only realized webstates should have dependencies installed.
   DCHECK(webState->IsRealized());
+
+  // The WebState must not be used for prerendering (i.e. it must not have a
+  // PrerenderTabHelper attached).
+  DCHECK(!PrerenderTabHelper::FromWebState(webState));
 
   DCHECK(_snapshotGeneratorDelegate);
   SnapshotTabHelper::FromWebState(webState)->SetDelegate(
@@ -158,12 +161,18 @@
   autofillTabHelper->SetSnackbarHandler(
       static_cast<id<SnackbarCommands>>(_commandDispatcher));
 
-  if (IsReaderModeSnackbarEnabled() &&
-      [_commandDispatcher dispatchingForProtocol:@protocol(SnackbarCommands)]) {
-    ReaderModeTabHelper* readerModeTabHelper =
-        ReaderModeTabHelper::FromWebState(webState);
-    readerModeTabHelper->SetSnackbarHandler(
-        HandlerForProtocol(_commandDispatcher, SnackbarCommands));
+  ReaderModeTabHelper* readerModeTabHelper =
+      ReaderModeTabHelper::FromWebState(webState);
+
+  if (readerModeTabHelper) {
+    readerModeTabHelper->SetReaderModeHandler(
+        HandlerForProtocol(_commandDispatcher, ReaderModeCommands));
+    if (IsReaderModeSnackbarEnabled() &&
+        [_commandDispatcher
+            dispatchingForProtocol:@protocol(SnackbarCommands)]) {
+      readerModeTabHelper->SetSnackbarHandler(
+          HandlerForProtocol(_commandDispatcher, SnackbarCommands));
+    }
   }
 
   DCHECK(_printCoordinator);
@@ -224,9 +233,23 @@
   if (editMenuTabHelper) {
     editMenuTabHelper->SetEditMenuBuilder(self.editMenuBuilder);
   }
+
+  BwgTabHelper* BWGTabHelper = BwgTabHelper::FromWebState(webState);
+  if (BWGTabHelper) {
+    id<BWGCommands> BWGCommandsHandler =
+        HandlerForProtocol(_commandDispatcher, BWGCommands);
+    BWGTabHelper->SetBwgCommandsHandler(BWGCommandsHandler);
+  }
+
+  FindTabHelper* findTabHelper = FindTabHelper::FromWebState(webState);
+  if (findTabHelper) {
+    FullscreenController* fullscreenController =
+        FullscreenController::FromBrowser(self.browser);
+    findTabHelper->SetFullscreenController(fullscreenController);
+  }
 }
 
-- (void)uninstallDependencyForWebState:(web::WebState*)webState {
+- (void)webStateRemoved:(web::WebState*)webState {
   // Only realized webstates should have dependencies uninstalled.
   DCHECK(webState->IsRealized());
 
@@ -267,10 +290,13 @@
   autofillTabHelper->SetAutofillHandler(nil);
   autofillTabHelper->SetSnackbarHandler(nil);
 
-  if (IsReaderModeSnackbarEnabled()) {
-    ReaderModeTabHelper* readerModeTabHelper =
-        ReaderModeTabHelper::FromWebState(webState);
-    readerModeTabHelper->SetSnackbarHandler(nil);
+  ReaderModeTabHelper* readerModeTabHelper =
+      ReaderModeTabHelper::FromWebState(webState);
+  if (readerModeTabHelper) {
+    readerModeTabHelper->SetReaderModeHandler(nil);
+    if (IsReaderModeSnackbarEnabled()) {
+      readerModeTabHelper->SetSnackbarHandler(nil);
+    }
   }
 
   PrintTabHelper::GetOrCreateForWebState(webState)->set_printer(nil);
@@ -322,6 +348,25 @@
   }
 
   FormSuggestionTabHelper::RemoveFromWebState(webState);
+
+  BwgTabHelper* BWGTabHelper = BwgTabHelper::FromWebState(webState);
+  if (BWGTabHelper) {
+    BWGTabHelper->SetBwgCommandsHandler(nil);
+  }
+
+  FindTabHelper* findTabHelper = FindTabHelper::FromWebState(webState);
+  if (findTabHelper) {
+    findTabHelper->SetFullscreenController(nullptr);
+  }
+}
+
+- (void)webStateDeleted:(web::WebState*)webState {
+  // Nothing to do.
+}
+
+- (void)newWebStateActivated:(web::WebState*)newActive
+           oldActiveWebState:(web::WebState*)oldActive {
+  // Nothing to do.
 }
 
 @end

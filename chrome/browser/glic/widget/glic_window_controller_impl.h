@@ -16,10 +16,10 @@
 #include "base/observer_list_types.h"
 #include "base/scoped_observation.h"
 #include "base/scoped_observation_traits.h"
-#include "chrome/browser/glic/glic_enabling.h"
 #include "chrome/browser/glic/host/glic.mojom.h"
 #include "chrome/browser/glic/host/glic_web_client_access.h"
 #include "chrome/browser/glic/host/host.h"
+#include "chrome/browser/glic/public/glic_enabling.h"
 #include "chrome/browser/glic/widget/application_hotkey_delegate.h"
 #include "chrome/browser/glic/widget/glic_window_config.h"
 #include "chrome/browser/glic/widget/glic_window_controller.h"
@@ -31,6 +31,7 @@
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/interaction/element_tracker.h"
+#include "ui/display/display_observer.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 
@@ -54,7 +55,8 @@ class GlicButton;
 // window is open |attached_browser_| indicates if the window is attached or
 // standalone. See |IsAttached|
 class GlicWindowControllerImpl
-    : public GlicWindowController,
+    : public display::DisplayObserver,
+      public GlicWindowController,
       public views::WidgetObserver,
       public Host::Observer,
       public web_modal::WebContentsModalDialogManagerDelegate,
@@ -137,6 +139,10 @@ class GlicWindowControllerImpl
   void OnWidgetUserResizeStarted() override;
   void OnWidgetUserResizeEnded() override;
 
+  // display::DisplayObserver implementation
+  void OnDisplayMetricsChanged(const display::Display& display,
+                               uint32_t changed_metrics) override;
+
  private:
   Host& host() const;
 
@@ -177,6 +183,7 @@ class GlicWindowControllerImpl
   void WebClientInitializeFailed() override;
   void LoginPageCommitted() override;
   void ClientReadyToShow(const mojom::OpenPanelInfo& open_info) override;
+  void OnViewChanged(mojom::CurrentView view) override;
 
   // Called once glic is completely loaded and any animations have finished.
   // This is the end of the opening process and |state_| will be set to kOpen.
@@ -266,9 +273,22 @@ class GlicWindowControllerImpl
   void AddObserver(web_modal::ModalDialogHostObserver* observer) override;
   void RemoveObserver(web_modal::ModalDialogHostObserver* observer) override;
 
+  // Maybe send a ViewChangeRequest:
+  void MaybeSendConversationViewRequest();
+  void MaybeSendActuationViewRequest();
+
+  // Maybe send a request to change the view.
+  void MaybeSendViewChangeRequest(mojom::InvocationSource source);
+
+  // Check if the invocation source matches the entry point for the given view.
+  bool InvocationSourceMatchesCurrentView(mojom::InvocationSource source);
+
   // Observes the glic widget.
   base::ScopedObservation<views::Widget, views::WidgetObserver>
       glic_widget_observation_{this};
+
+  // Observes the display configuration.
+  display::ScopedOptionalDisplayObserver display_observer_{this};
 
   // Used for observing closing of the pinned browser.
   std::optional<base::CallbackListSubscription> browser_close_subscription_;

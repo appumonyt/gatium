@@ -118,6 +118,20 @@ class AutofillMetrics {
     kMaxValue = kKeyboardAccessory
   };
 
+  // The user action that triggered the acceptance of a suggestion entry.
+  // These values are used in enums.xml; do not reorder or renumber entries!
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
+  enum class SuggestionAcceptedMethod {
+    // The user clicked on the suggestion.
+    kMouse = 0,
+    // The user pressed enter or tab to accept the suggestion.
+    kKeyboard = 1,
+    // The user tapped on the suggestion.
+    kTap = 2,
+    kMaxValue = kTap,
+  };
+
   // Represents card submitted state.
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
@@ -456,6 +470,21 @@ class AutofillMetrics {
     kMaxValue = kPassword
   };
 
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
+  //
+  // Represents the status of Autofill prompts when at least one prompt can be
+  // displayed.
+  enum class AutofillPromptStatus {
+    // Both prompts could have been displayed.
+    kAddressAndCreditCardShown = 0,
+    // Only the address prompt could have been displayed.
+    kAddressShown = 1,
+    // Only the credit card prompt could have been displayed.
+    kCreditCardShown = 2,
+    kMaxValue = kCreditCardShown,
+  };
+
   // Utility class for determining the seamlessness of a credit card fill.
   class CreditCardSeamlessness {
    public:
@@ -723,10 +752,6 @@ class AutofillMetrics {
   // used.
   static void LogAutocompleteDaysSinceLastUse(size_t days);
 
-  // Logs the number of days since an unaccepted Autocomplete suggestion was
-  // last used.
-  static void LogUnacceptedAutocompleteSuggestionDaysSinceLastUse(size_t days);
-
   // Logs the fact that an autocomplete popup was shown.
   static void OnAutocompleteSuggestionsShown();
 
@@ -906,6 +931,9 @@ class AutofillMetrics {
   static void LogDataListSuggestionsUpdated();
 
   static void LogDataListSuggestionsInserted();
+
+  // Logs the status of Autofill prompts.
+  static void LogAutofillPromptStatus(AutofillPromptStatus status);
 };
 
 #if defined(UNIT_TEST)

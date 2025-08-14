@@ -24,6 +24,9 @@ class PermissionPromptChipModel;
 class LocationBarView;
 class PermissionDashboardView;
 class PermissionDashboardController;
+class PermissionPromptBubbleBaseView;
+class ContentSettingBubbleContents;
+
 // ButtonController that NotifyClick from being called when the
 // BubbleOwnerDelegate's bubble is showing. Otherwise the bubble will show again
 // immediately after being closed via losing focus.
@@ -132,7 +135,14 @@ class ChipController : public permissions::PermissionRequestManager::Observer,
 
   views::Widget* GetBubbleWidget();
 
+  // Returns the currently active permission prompt bubble, specifically when a
+  // non quiet chip UI is expected. This method CHECKs that the prompt style is
+  // `kChip`.
   PermissionPromptBubbleBaseView* GetPromptBubbleView();
+  // Returns the currently active permission prompt bubble,  specifically when a
+  // quiet chip UI is expected. This method CHECKs that the prompt style is
+  // `kQuietChip`.
+  ContentSettingBubbleContents* GetContentSettingBubbleContentsForTesting();
 
   void ClosePermissionPrompt();
   void PromptDecided(permissions::PermissionAction action);
@@ -254,9 +264,6 @@ class ChipController : public permissions::PermissionRequestManager::Observer,
   raw_ptr<PermissionDashboardView> permission_dashboard_view_;
   // `PermissionDashboardController` is an owner of this.
   raw_ptr<PermissionDashboardController> permission_dashboard_controller_;
-
-  // The time when the request chip was displayed.
-  base::TimeTicks request_chip_shown_time_;
 
   // A timer used to dismiss the permission request after it's been collapsed
   // for a while.

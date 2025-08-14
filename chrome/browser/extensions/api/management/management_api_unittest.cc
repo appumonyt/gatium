@@ -125,8 +125,6 @@ class ManagementApiUnitTest : public ExtensionServiceTestWithInstall {
   // ScopedDisableRootChecking needs to be used (which disables the root window
   // check).
   test::ScopedDisableRootChecking disable_root_checking_;
-  // The browser (and accompanying window).
-  std::unique_ptr<TestBrowserWindow> browser_window_;
   std::unique_ptr<Browser> browser_;
 };
 
@@ -172,16 +170,15 @@ void ManagementApiUnitTest::SetUp() {
   EventRouterFactory::GetInstance()->SetTestingFactory(
       profile(), base::BindRepeating(&BuildEventRouter));
 
-  browser_window_ = std::make_unique<TestBrowserWindow>();
+  auto browser_window = std::make_unique<TestBrowserWindow>();
   Browser::CreateParams params(profile(), true);
   params.type = Browser::TYPE_NORMAL;
-  params.window = browser_window_.get();
+  params.window = browser_window.release();
   browser_ = Browser::DeprecatedCreateOwnedForTesting(params);
 }
 
 void ManagementApiUnitTest::TearDown() {
   browser_.reset();
-  browser_window_.reset();
   ExtensionServiceTestBase::TearDown();
 }
 
@@ -903,8 +900,9 @@ class ManagementApiUnitTestMV2DisableWithReEnableUnitTest
     : public ManagementApiUnitTest {
  public:
   ManagementApiUnitTestMV2DisableWithReEnableUnitTest() {
-    feature_list_.InitAndEnableFeature(
-        extensions_features::kExtensionManifestV2Disabled);
+    feature_list_.InitWithFeatures(
+        {extensions_features::kExtensionManifestV2Disabled},
+        {extensions_features::kExtensionManifestV2Unsupported});
   }
   ~ManagementApiUnitTestMV2DisableWithReEnableUnitTest() override = default;
 
@@ -1239,7 +1237,7 @@ class ManagementApiSupervisedUserTest : public ManagementApiUnitTest {
     ManagementApiUnitTest::SetUp();
 
     // Set up custodians (parents) for the child.
-    supervised_user_test_util::AddCustodians(browser()->profile());
+    supervised_user_test_util::AddCustodians(profile());
 
     // Set the pref to allow the child to request extension install.
     supervised_user_test_util::

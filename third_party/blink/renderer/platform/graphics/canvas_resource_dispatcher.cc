@@ -190,25 +190,6 @@ void CanvasResourceDispatcher::PostImageToPlaceholder(
                           resource_id));
 }
 
-void CanvasResourceDispatcher::DispatchFrameSync(
-    scoped_refptr<CanvasResource>&& canvas_resource,
-    const SkIRect& damage_rect,
-    bool is_opaque) {
-  TRACE_EVENT0("blink", "CanvasResourceDispatcher::DispatchFrameSync");
-  viz::CompositorFrame frame;
-  if (!PrepareFrame(std::move(canvas_resource), damage_rect, is_opaque,
-                    &frame)) {
-    return;
-  }
-
-  pending_compositor_frames_++;
-  WTF::Vector<viz::ReturnedResource> resources;
-  sink_->SubmitCompositorFrameSync(
-      parent_local_surface_id_allocator_.GetCurrentLocalSurfaceId(),
-      std::move(frame), std::nullopt, 0, &resources);
-  DidReceiveCompositorFrameAck(std::move(resources));
-}
-
 void CanvasResourceDispatcher::DispatchFrame(
     scoped_refptr<CanvasResource>&& canvas_resource,
     const SkIRect& damage_rect,
@@ -336,7 +317,7 @@ bool CanvasResourceDispatcher::PrepareFrame(
 }
 
 void CanvasResourceDispatcher::DidReceiveCompositorFrameAck(
-    WTF::Vector<viz::ReturnedResource> resources) {
+    Vector<viz::ReturnedResource> resources) {
   ReclaimResources(std::move(resources));
   pending_compositor_frames_--;
   DCHECK_GE(pending_compositor_frames_, 0u);
@@ -400,8 +381,8 @@ bool CanvasResourceDispatcher::HasTooManyPendingFrames() const {
 
 void CanvasResourceDispatcher::OnBeginFrame(
     const viz::BeginFrameArgs& begin_frame_args,
-    const WTF::HashMap<uint32_t, viz::FrameTimingDetails>&,
-    WTF::Vector<viz::ReturnedResource> resources) {
+    const HashMap<uint32_t, viz::FrameTimingDetails>&,
+    Vector<viz::ReturnedResource> resources) {
   if (!resources.empty()) {
     ReclaimResources(std::move(resources));
   }
@@ -444,7 +425,7 @@ void CanvasResourceDispatcher::OnFakeFrameTimer(TimerBase* timer) {
 }
 
 void CanvasResourceDispatcher::ReclaimResources(
-    WTF::Vector<viz::ReturnedResource> resources) {
+    Vector<viz::ReturnedResource> resources) {
   for (const auto& resource : resources) {
     auto it = exported_resources_.find(resource.id);
 

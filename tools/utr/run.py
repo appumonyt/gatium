@@ -79,7 +79,9 @@ def add_common_args(parser):
                       dest='tests',
                       help='Name of test suite(s) to replicate. Pass multiple '
                       'times for multiple tests. Optional with the "compile" '
-                      'run mode which will compile "all".')
+                      'run mode which will compile "all". Test files can also '
+                      'be used instead of test suites to attempt to run tests '
+                      'in those files.')
   parser.add_argument('--builder',
                       '-b',
                       required=True,
@@ -155,6 +157,13 @@ def add_compile_args(parser):
       help='Skips instrumenting code-coverage, even if the builder is '
       'configured to instrument. Instrumentation can inflate both build sizes '
       "and runtimes. But some failures may only occur when it's enabled.")
+  parser.add_argument(
+      '--use-autoninja',
+      action='store_true',
+      help="Uses autoninja if it's detected on PATH. By default, UTR will "
+      'compile using direct siso invocations, exactly as the given builder '
+      'behaves. But this may lead to slower compiles than expected. Use this '
+      'option to instead use autoninja, which will use its own siso settings.')
 
 
 def add_test_args(parser):
@@ -296,6 +305,7 @@ def _main_impl():
         skip_coverage=not skip_compile and args.no_coverage_instrumentation,
         no_rbe=not skip_compile and args.no_rbe,
         no_siso=args.no_siso,
+        use_autoninja=not skip_compile and args.use_autoninja,
     )
     exit_code, error_msg = recipe_runner.run_recipe(
         filter_stdout=args.verbosity < 2)

@@ -208,10 +208,12 @@ class PrerenderHostRegistryTest : public RenderViewHostImplTestHarness {
             ui::PAGE_TRANSITION_LINK,
             /*should_warm_up_compositor=*/false,
             /*should_prepare_paint_tree=*/false,
+            /*should_pause_javascript_execution=*/false,
             /*url_match_predicate=*/{},
             /*prerender_navigation_handle_callback=*/{},
             PreloadPipelineInfoImpl::Create(
-                /*planned_max_preloading_type=*/PreloadingType::kPrerender));
+                /*planned_max_preloading_type=*/PreloadingType::kPrerender),
+            /*allow_reuse=*/false);
       case PreloadingTriggerType::kEmbedder:
         return PrerenderAttributes(
             url, trigger_type, embedder_histogram_suffix,
@@ -222,10 +224,12 @@ class PrerenderHostRegistryTest : public RenderViewHostImplTestHarness {
                                       ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
             /*should_warm_up_compositor=*/false,
             /*should_prepare_paint_tree=*/false,
+            /*should_pause_javascript_execution=*/false,
             /*url_match_predicate=*/{},
             /*prerender_navigation_handle_callback=*/{},
             PreloadPipelineInfoImpl::Create(
-                /*planned_max_preloading_type=*/PreloadingType::kPrerender));
+                /*planned_max_preloading_type=*/PreloadingType::kPrerender),
+            /*allow_reuse=*/false);
     }
   }
 

@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "chromeos/ash/components/dbus/audio/cras_audio_client.h"
 
 #include <memory>
@@ -14,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
@@ -173,13 +170,9 @@ void ExpectInt32AndArrayOfDoublesArguments(
   int32_t value;
   ASSERT_TRUE(reader->PopInt32(&value));
   EXPECT_EQ(expected_value, value);
-  const double* doubles = nullptr;
-  size_t size = 0;
-  ASSERT_TRUE(reader->PopArrayOfDoubles(&doubles, &size));
-  EXPECT_EQ(expected_doubles.size(), size);
-  for (size_t i = 0; i < size; ++i) {
-    EXPECT_EQ(expected_doubles[i], doubles[i]);
-  }
+  base::span<const double> doubles;
+  ASSERT_TRUE(reader->PopArrayOfDoubles(&doubles));
+  EXPECT_EQ(base::span(expected_doubles), doubles);
   EXPECT_FALSE(reader->HasMoreData());
 }
 
@@ -415,12 +408,11 @@ class CrasAudioClientTest : public testing::Test {
     EXPECT_CALL(*mock_cras_proxy_.get(), DoCallMethod(_, _, _))
         .WillRepeatedly(Invoke(this, &CrasAudioClientTest::OnCallMethod));
 
-    // Set an expectation so mock_cras_proxy's CallMethodWithErrorCallback()
+    // Set an expectation so mock_cras_proxy's CallMethodWithErrorResponse()
     // will use OnCallMethodWithErrorCallback() to return responses.
-    EXPECT_CALL(*mock_cras_proxy_.get(),
-                DoCallMethodWithErrorCallback(_, _, _, _))
+    EXPECT_CALL(*mock_cras_proxy_.get(), DoCallMethodWithErrorResponse(_, _, _))
         .WillRepeatedly(
-            Invoke(this, &CrasAudioClientTest::OnCallMethodWithErrorCallback));
+            Invoke(this, &CrasAudioClientTest::OnCallMethodWithErrorResponse));
 
     // Set an expectation so mock_cras_proxy's monitoring OutputMuteChanged
     // ConnectToSignal will use OnConnectToOutputMuteChanged() to run the
@@ -1081,12 +1073,18 @@ class CrasAudioClientTest : public testing::Test {
 
   // Checks the content of the method call and returns the response.
   // Used to implement the mock cras proxy.
-  void OnCallMethodWithErrorCallback(
+  void OnCallMethodWithErrorResponse(
       dbus::MethodCall* method_call,
       int timeout_ms,
-      dbus::ObjectProxy::ResponseCallback* response_callback,
-      dbus::ObjectProxy::ErrorCallback* error_callback) {
-    OnCallMethod(method_call, timeout_ms, response_callback);
+      dbus::ObjectProxy::ResponseOrErrorCallback* response_callback) {
+    // Adapt the ResponseOrErrorCallback to a ResponseCallback.
+    auto callback = base::BindOnce(
+        [](dbus::ObjectProxy::ResponseOrErrorCallback* response_callback,
+           dbus::Response* response) {
+          std::move(*response_callback).Run(response, nullptr);
+        },
+        response_callback);
+    OnCallMethod(method_call, timeout_ms, &callback);
   }
 };
 

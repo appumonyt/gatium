@@ -110,7 +110,7 @@ BASE_FEATURE(kIPHFocusHelpBubbleScreenReaderPromoFeature,
              base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHGlicPromoFeature,
              "IPH_GlicPromo",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHGMCCastStartStopFeature,
              "IPH_GMCCastStartStop",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -250,7 +250,7 @@ BASE_FEATURE(kIPHTabSearchFeature,
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHTabSearchToolbarButtonFeature,
              "IPH_TabSearchToolbarButton",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHDesktopSnoozeFeature,
              "IPH_DesktopSnoozeFeature",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -413,7 +413,7 @@ BASE_FEATURE(kIPHRequestDesktopSiteWindowSettingFeature,
              base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHRtlGestureNavigationFeature,
              "IPH_RtlGestureNavigation",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHShoppingListSaveFlowFeature,
              "IPH_ShoppingListSaveFlow",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -456,6 +456,9 @@ BASE_FEATURE(kIPHMicToolbarFeature,
 BASE_FEATURE(kIPHMenuAddToGroup,
              "IPH_MenuAddToGroup",
              base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHMostVisitedTilesCustomizationPinFeature,
+             "IPH_MostVisitedTilesCustomizationPin",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHPageInfoFeature,
              "IPH_PageInfo",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -489,6 +492,9 @@ BASE_FEATURE(kIPHTabGroupShareNotificationBubbleOnStripFeature,
 BASE_FEATURE(kIPHTabGroupShareUpdateFeature,
              "IPH_TabGroupShareUpdate",
              base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHTabGroupShareVersionUpdateFeature,
+             "IPH_TabGroupShareVersionUpdate",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHTabGroupsRemoteGroupFeature,
              "IPH_TabGroupsRemoteGroup",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -509,6 +515,9 @@ BASE_FEATURE(kIPHTabSwitcherButtonFeature,
              base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHTabSwitcherButtonSwitchIncognitoFeature,
              "IPH_TabSwitcherButtonSwitchIncognito",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHTouchToSearchCalloutFeature,
+             "IPH_TouchToSearchCallout",
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHTranslateMenuButtonFeature,
              "IPH_TranslateMenuButton",
@@ -747,6 +756,13 @@ BASE_FEATURE(kIPHiOSSharedTabGroupForeground,
 BASE_FEATURE(kIPHiOSDefaultBrowserBannerPromoFeature,
              "IPH_iOSDefaultBrowserBannerPromoFeature",
              base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHiOSDefaultBrowserOffCyclePromoFeature,
+             "IPH_iOSDefaultBrowserOffCyclePromo",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+constexpr base::FeatureParam<int> kIPHiOSDefaultBrowserOffCyclePromoCooldown{
+    &kIPHiOSDefaultBrowserOffCyclePromoFeature,
+    /*name=*/"cooldown-days",
+    /*default_value=*/10 * 365};
 BASE_FEATURE(kIPHiOSReminderNotificationsOverflowMenuBubbleFeature,
              "IPH_iOSReminderNotificationsOverflowMenuBubbleFeature",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -781,10 +797,6 @@ BASE_FEATURE(kIPHiOSWelcomeBackFeature,
              "IPH_iOSWelcomeBack",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kIPHIOSBWGPromoFeature,
-             "IPH_iOSBWGPromo",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kIPHIOSPageActionMenu,
              "IPH_iOSPageActionMenu",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -795,6 +807,10 @@ BASE_FEATURE(kIPHiOSHomepageLensNewBadge,
 
 BASE_FEATURE(kIPHiOSHomepageCustomizationNewBadge,
              "IPH_iOSHomepageCustomizationNewBadge",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kIPHiOSOneTimeDefaultBrowserNotificationFeature,
+             "IPH_iOSOneTimeDefaultBrowserNotification",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Non-FET feature.
@@ -826,7 +842,7 @@ BASE_FEATURE(kIPHAutofillCardInfoRetrievalSuggestionFeature,
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHAutofillCreditCardBenefitFeature,
              "IPH_AutofillCreditCardBenefit",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHAutofillDisabledVirtualCardSuggestionFeature,
              "IPH_AutofillDisabledVirtualCardSuggestion",
              base::FEATURE_DISABLED_BY_DEFAULT);

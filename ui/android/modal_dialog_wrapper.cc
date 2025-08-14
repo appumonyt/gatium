@@ -4,13 +4,21 @@
 
 #include "ui/android/modal_dialog_wrapper.h"
 
+#include "base/android/callback_android.h"
 #include "base/android/jni_android.h"
+#include "base/android/jni_callback.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/functional/bind.h"
 #include "ui/android/modal_dialog_manager_bridge.h"
 #include "ui/android/window_android.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/dialog_model.h"
+#include "ui/base/models/image_model.h"
 #include "ui/base/mojom/dialog_button.mojom.h"
+#include "ui/color/color_provider.h"
+#include "ui/color/color_provider_key.h"
+#include "ui/color/color_provider_manager.h"
+#include "ui/gfx/android/java_bitmap.h"
 #include "ui/strings/grit/ui_strings.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
@@ -90,6 +98,17 @@ std::u16string getMessageParagraph(DialogModelField* field) {
   return text;
 }
 
+const SkBitmap* getIconBitmap(const ui::ImageModel& icon_model) {
+  auto key = ui::ColorProviderKey();
+  ui::ColorProvider* color_provider =
+      ui::ColorProviderManager::Get().GetColorProviderFor(key);
+  CHECK(color_provider);
+
+  gfx::ImageSkia image_skia = icon_model.Rasterize(color_provider);
+  // Returns the 1x Skia if it exists. See ImageSkia.bitmap() for details.
+  return image_skia.bitmap();
+}
+
 }  // anonymous namespace
 
 ModalDialogWrapper::ModalDialogButtonStyles
@@ -156,12 +175,54 @@ void ModalDialogWrapper::BuildPropertyModel() {
       env, java_obj_, title, ok_button_label, cancel_button_label,
       (int)buttonStyles);
 
+  const SkBitmap* bitmap =
+      getIconBitmap(dialog_model_->icon(DialogModelHost::GetPassKey()));
+  if (!bitmap->isNull()) {
+    Java_ModalDialogWrapper_withTitleIcon(env, java_obj_,
+                                          gfx::ConvertToJavaBitmap(*bitmap));
+  }
+
+  std::u16string checkbox_text;
+  jboolean checked = false;
   std::vector<std::u16string> paragraphs;
+  std::vector<const SkBitmap*> menu_item_icons;
+  std::vector<std::u16string> menu_item_labels;
+  menu_items_.clear();
+
   for (const auto& field :
        dialog_model_->fields(DialogModelHost::GetPassKey())) {
     switch (field->type()) {
       case DialogModelField::kParagraph: {
         paragraphs.push_back(getMessageParagraph(field.get()));
+        break;
+      }
+      case DialogModelField::kCheckbox: {
+        // TODO(crbug.com/428048190): A dialog should not have more than one
+        // checkbox.
+        CHECK(checkbox_text.empty())
+            << "Dialogs with more than one checkbox are "
+               "not yet supported on Android.";
+        DialogModelCheckbox* checkbox_field = field->AsCheckbox();
+
+        const DialogModelLabel& label = checkbox_field->label();
+        // Checkboxes with replacements (links) are not yet supported on
+        // Android.
+        CHECK(label.replacements().empty());
+
+        checkbox_text = label.GetString();
+        checked = checkbox_field->is_checked();
+        checkbox_id_ = checkbox_field->id();
+        break;
+      }
+      case DialogModelField::kMenuItem: {
+        DialogModelMenuItem* menu_item = field->AsMenuItem();
+        const SkBitmap* icon_bitmap = getIconBitmap(menu_item->icon());
+        // Menu items without icons are not yet handled on Android.
+        if (icon_bitmap && !icon_bitmap->isNull()) {
+          menu_item_icons.push_back(icon_bitmap);
+          menu_item_labels.push_back(menu_item->label());
+          menu_items_.push_back(menu_item);
+        }
         break;
       }
       default:
@@ -178,6 +239,32 @@ void ModalDialogWrapper::BuildPropertyModel() {
     Java_ModalDialogWrapper_withMessageParagraphs(env, java_obj_,
                                                   java_paragraphs_array);
   }
+
+  if (!checkbox_text.empty()) {
+    ScopedJavaLocalRef<jstring> java_checkbox_label =
+        ConvertUTF16ToJavaString(env, checkbox_text);
+    Java_ModalDialogWrapper_withCheckbox(env, java_obj_, java_checkbox_label,
+                                         checked);
+  }
+
+  if (!menu_item_icons.empty()) {
+    ScopedJavaLocalRef<jclass> bitmap_class =
+        base::android::GetClass(env, "android/graphics/Bitmap");
+    ScopedJavaLocalRef<jobjectArray> java_icons_array(
+        env, env->NewObjectArray(menu_item_icons.size(), bitmap_class.obj(),
+                                 nullptr));
+    for (size_t i = 0; i < menu_item_icons.size(); ++i) {
+      env->SetObjectArrayElement(
+          java_icons_array.obj(), i,
+          gfx::ConvertToJavaBitmap(*menu_item_icons[i]).obj());
+    }
+
+    ScopedJavaLocalRef<jobjectArray> java_labels_array =
+        base::android::ToJavaArrayOfStrings(env, menu_item_labels);
+
+    Java_ModalDialogWrapper_withMenuItems(env, java_obj_, java_icons_array,
+                                          java_labels_array);
+  }
 }
 
 void ModalDialogWrapper::PositiveButtonClicked(JNIEnv* env) {
@@ -186,6 +273,21 @@ void ModalDialogWrapper::PositiveButtonClicked(JNIEnv* env) {
 
 void ModalDialogWrapper::NegativeButtonClicked(JNIEnv* env) {
   dialog_model_->OnDialogCancelAction(DialogModelHost::GetPassKey());
+}
+
+void ModalDialogWrapper::CheckboxToggled(JNIEnv* env, jboolean is_checked) {
+  if (!checkbox_id_) {
+    return;
+  }
+  dialog_model_->GetCheckboxByUniqueId(checkbox_id_)
+      ->OnChecked(DialogModelFieldHost::GetPassKey(),
+                  static_cast<bool>(is_checked));
+}
+
+void ModalDialogWrapper::MenuItemClicked(JNIEnv* env, jint index) {
+  CHECK_GE(index, 0);
+  CHECK_LT(static_cast<size_t>(index), menu_items_.size());
+  menu_items_[index]->OnActivated(DialogModelFieldHost::GetPassKey(), 0);
 }
 
 void ModalDialogWrapper::Dismissed(JNIEnv* env) {

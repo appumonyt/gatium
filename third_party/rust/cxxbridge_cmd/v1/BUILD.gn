@@ -54,8 +54,10 @@ cargo_crate("cxxbridge") {
     "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/primitive.rs",
     "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/qualified.rs",
     "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/report.rs",
+    "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/repr.rs",
     "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/resolve.rs",
     "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/set.rs",
+    "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/signature.rs",
     "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/symbol.rs",
     "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/tokens.rs",
     "//third_party/rust/chromium_crates_io/vendor/cxxbridge-cmd-v1/src/syntax/toposort.rs",
@@ -72,13 +74,15 @@ cargo_crate("cxxbridge") {
   cargo_pkg_name = "cxxbridge-cmd"
   cargo_pkg_description =
       "C++ code generator for integrating `cxx` crate into a non-Cargo build."
-  cargo_pkg_version = "1.0.158"
+  cargo_pkg_repository = "https://github.com/dtolnay/cxx"
+  cargo_pkg_version = "1.0.168"
 
   allow_unsafe = false
 
   deps = [
     "//third_party/rust/clap/v4:lib",
     "//third_party/rust/codespan_reporting/v0_12:lib",
+    "//third_party/rust/indexmap/v2:lib",
     "//third_party/rust/proc_macro2/v1:lib",
     "//third_party/rust/quote/v1:lib",
     "//third_party/rust/syn/v2:lib",

@@ -13,6 +13,7 @@
 #import "components/image_fetcher/core/image_fetcher_service.h"
 #import "ios/chrome/browser/home_customization/model/background_collection_configuration.h"
 #import "ios/chrome/browser/home_customization/model/background_customization_configuration_item.h"
+#import "ios/chrome/browser/home_customization/model/home_background_customization_service.h"
 #import "ios/chrome/browser/home_customization/model/home_background_image_service.h"
 #import "ios/chrome/browser/home_customization/ui/home_customization_background_preset_gallery_picker_consumer.h"
 #import "ui/gfx/image/image.h"
@@ -23,6 +24,8 @@
   raw_ptr<image_fetcher::ImageFetcher> _imageFetcher;
   // The service that provides the background images.
   raw_ptr<HomeBackgroundImageService> _homeBackgroundImageService;
+  // Used to get and observe the background state.
+  raw_ptr<HomeBackgroundCustomizationService> _backgroundCustomizationService;
 }
 
 @end
@@ -32,12 +35,16 @@
 - (instancetype)initWithImageFetcherService:
                     (image_fetcher::ImageFetcherService*)imageFetcherService
                  homeBackgroundImageService:
-                     (HomeBackgroundImageService*)homeBackgroundImageService {
+                     (HomeBackgroundImageService*)homeBackgroundImageService
+             backgroundCustomizationService:
+                 (HomeBackgroundCustomizationService*)
+                     backgroundCustomizationService {
   self = [super init];
   if (self) {
     _imageFetcher = imageFetcherService->GetImageFetcher(
         image_fetcher::ImageFetcherConfig::kDiskCacheOnly);
     _homeBackgroundImageService = homeBackgroundImageService;
+    _backgroundCustomizationService = backgroundCustomizationService;
   }
   return self;
 }
@@ -57,8 +64,9 @@
 #pragma mark - HomeCustomizationBackgroundPresetGalleryPickerMutator
 
 - (void)fetchBackgroundCustomizationThumbnailURLImage:(GURL)thumbnailURL
-                                           completion:
-                                               (void (^)(UIImage*))completion {
+                                           completion:(void (^)(UIImage* image,
+                                                                NSError* error))
+                                                          completion {
   CHECK(!thumbnailURL.is_empty());
   CHECK(thumbnailURL.is_valid());
 
@@ -66,11 +74,21 @@
       thumbnailURL,
       base::BindOnce(^(const gfx::Image& image,
                        const image_fetcher::RequestMetadata& metadata) {
-        if (!image.IsEmpty()) {
-          UIImage* uiImage = image.ToUIImage();
-          if (completion) {
-            completion(uiImage);
-          }
+        if (image.IsEmpty()) {
+          // Image fetch failed or returned empty.
+          NSDictionary<NSErrorUserInfoKey, id>* userInfo = @{
+            NSURLErrorFailingURLStringErrorKey :
+                base::SysUTF8ToNSString(thumbnailURL.spec())
+          };
+          NSError* fetchError = [NSError errorWithDomain:NSURLErrorDomain
+                                                    code:NSURLErrorUnknown
+                                                userInfo:userInfo];
+          completion(nil, fetchError);
+          return;
+        }
+        UIImage* uiImage = image.ToUIImage();
+        if (completion) {
+          completion(uiImage, nil);
         }
       }),
       // TODO (crbug.com/417234848): Add annotation.
@@ -87,6 +105,11 @@
   NSMutableArray<BackgroundCollectionConfiguration*>* collectionConfigurations =
       [NSMutableArray array];
 
+  std::optional<sync_pb::NtpCustomBackground> background =
+      _backgroundCustomizationService->GetCurrentCustomBackground();
+
+  NSString* selectedBackgroundId = nil;
+
   for (const auto& [collectionName, collectionImages] : collectionMap) {
     // Create a new section for the collection.
     BackgroundCollectionConfiguration* section =
@@ -99,15 +122,17 @@
           [[BackgroundCustomizationConfigurationItem alloc]
               initWithCollectionImage:image];
       [imageConfigurations addObject:config];
+
+      if (background && image.image_url == background->url()) {
+        selectedBackgroundId = config.configurationID;
+      }
     }
     section.configurations = [NSArray arrayWithArray:imageConfigurations];
     [collectionConfigurations addObject:section];
   }
 
-  // TODO(crbug.com/418005063): Fetch the selected background ID from local
-  // storage.
   [_consumer setBackgroundCollectionConfigurations:collectionConfigurations
-                              selectedBackgroundId:nil];
+                              selectedBackgroundId:selectedBackgroundId];
 }
 
 @end

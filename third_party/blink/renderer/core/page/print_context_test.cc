@@ -131,7 +131,7 @@ class PrintContextTest : public PaintTestConfigurations, public RenderingTest {
   void SetBodyInnerHTML(String body_content) {
     GetDocument().body()->setAttribute(html_names::kStyleAttr,
                                        AtomicString("margin: 0"));
-    GetDocument().body()->setInnerHTML(body_content);
+    GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(body_content);
   }
 
   gfx::Rect PrintSinglePage(SkCanvas& canvas, int page_index = 0) {
@@ -673,7 +673,6 @@ TEST_P(PrintContextTest, LinkedTargetSecondPage) {
 }
 
 TEST_P(PrintContextTest, LinkedTargetRootMargin) {
-  ScopedLayoutBoxVisualLocationForTest scoped_feature(true);
   SetBodyInnerHTML(R"HTML(
     <style>
       html { margin-top: 50px; }
@@ -894,7 +893,7 @@ TEST_P(PrintContextFrameTest, WithScrolledSubframe) {
       AbsoluteBlockHtmlForLink(850, 860, 70, 80,
                                "http://another.invisible.com"));
 
-  ChildDocument().domWindow()->scrollTo(100, 100);
+  ChildDocument().domWindow()->scrollToForTesting(100, 100);
 
   MockPageContextCanvas canvas;
   PrintSinglePage(canvas);

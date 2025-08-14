@@ -19,7 +19,7 @@
 #include "third_party/blink/renderer/core/events/mouse_event.h"
 #include "third_party/blink/renderer/core/html/html_body_element.h"
 #include "third_party/blink/renderer/core/html/html_div_element.h"
-#include "third_party/blink/renderer/core/paint/timing/text_paint_timing_detector.h"
+#include "third_party/blink/renderer/core/paint/timing/paint_timing_record.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/core/timing/soft_navigation_context.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -39,36 +39,26 @@ class SoftNavigationHeuristicsTest : public testing::Test {
   }
 
   SoftNavigationHeuristics* CreateSoftNavigationHeuristicsForTest() {
-    ScriptState* script_state = GetScriptStateForTest();
-
-    LocalDOMWindow* window = LocalDOMWindow::From(script_state);
-
-    SoftNavigationHeuristics* heuristics =
-        window->GetSoftNavigationHeuristics();
-
-    return heuristics;
-  }
-
-  Node* CreateNodeForTest() {
-    ScriptState* script_state = GetScriptStateForTest();
-    LocalDOMWindow* window = LocalDOMWindow::From(script_state);
-    Document* document = window->document();
-    return document->CreateRawElement(html_names::kDivTag);
-  }
-
-  ScriptState* GetScriptStateForTest() {
-    return ToScriptStateForMainWorld(page_holder_->GetDocument().GetFrame());
+    return page_holder_->GetDocument()
+        .domWindow()
+        ->GetSoftNavigationHeuristics();
   }
 
   Document& GetDocument() { return page_holder_->GetDocument(); }
 
-  bool IsDocumentTrackingSoftNavigations() {
-    return LocalDOMWindow::From(GetScriptStateForTest())
-        ->document()
-        ->IsTrackingSoftNavigationHeuristics();
+  Node* CreateNodeForTest() {
+    return GetDocument().CreateRawElement(html_names::kDivTag);
   }
 
-  static WTF::AtomicString KeyboardEventScopeTypeToEventName(
+  v8::Isolate* GetIsolate() {
+    return GetDocument().GetExecutionContext()->GetIsolate();
+  }
+
+  ScriptState* GetScriptStateForTest() {
+    return ToScriptStateForMainWorld(GetDocument().GetFrame());
+  }
+
+  static AtomicString KeyboardEventScopeTypeToEventName(
       SoftNavigationHeuristics::EventScope::Type type) {
     switch (type) {
       case SoftNavigationHeuristics::EventScope::Type::kKeydown:
@@ -123,89 +113,63 @@ TEST_F(SoftNavigationHeuristicsTest,
       CreateEvent(SoftNavigationHeuristics::EventScope::Type::kKeypress);
   std::optional<SoftNavigationHeuristics::EventScope> event_scope(
       test_heuristics->MaybeCreateEventScopeForEvent(*event));
-  auto* tracker = scheduler::TaskAttributionTracker::From(
-      GetScriptStateForTest()->GetIsolate());
-  ASSERT_TRUE(tracker);
-  {
-    // Simulate a top-level event dispatch with no context to propagate.
-    std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(GetScriptStateForTest(),
-                                                 nullptr);
-  }
 }
 
 TEST_F(SoftNavigationHeuristicsTest, ResetHeuristicOnSetBecameEmpty) {
   auto* heuristics = CreateSoftNavigationHeuristicsForTest();
   ASSERT_TRUE(heuristics);
 
-  auto* script_state = GetScriptStateForTest();
-  auto* tracker =
-      scheduler::TaskAttributionTracker::From(script_state->GetIsolate());
+  auto* tracker = scheduler::TaskAttributionTracker::From(GetIsolate());
   ASSERT_TRUE(tracker);
 
   Persistent<scheduler::TaskAttributionInfo> root_task_state = nullptr;
   // Simulate a click.
   {
-    EXPECT_FALSE(IsDocumentTrackingSoftNavigations());
+    EXPECT_FALSE(heuristics->IsTrackingSoftNavigationsForTest());
     auto* event =
         CreateEvent(SoftNavigationHeuristics::EventScope::Type::kClick);
     std::optional<SoftNavigationHeuristics::EventScope> event_scope(
         heuristics->MaybeCreateEventScopeForEvent(*event));
-
-    // Simulate a top-level event dispatch with no context to propagate.
-    std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(script_state, nullptr);
-    // This won't create a new task scope because there's already one on the
-    // stack to propagate the soft navigation context, but it should notify
-    // `heuristics`.
-    EXPECT_FALSE(task_scope);
     root_task_state = tracker->CurrentTaskState();
   }
   EXPECT_TRUE(root_task_state);
-  EXPECT_TRUE(IsDocumentTrackingSoftNavigations());
+  EXPECT_TRUE(heuristics->IsTrackingSoftNavigationsForTest());
 
   // Simulate a descendant task.
   Persistent<scheduler::TaskAttributionInfo> descendant_task_state = nullptr;
   {
-    TaskScope task_scope = tracker->CreateTaskScope(
-        script_state, root_task_state, TaskScopeType::kCallback);
+    TaskScope task_scope =
+        tracker->CreateTaskScope(root_task_state, TaskScopeType::kCallback);
     descendant_task_state = tracker->CurrentTaskState();
   }
   EXPECT_TRUE(descendant_task_state);
 
-  EXPECT_TRUE(IsDocumentTrackingSoftNavigations());
+  EXPECT_TRUE(heuristics->IsTrackingSoftNavigationsForTest());
   EXPECT_EQ(root_task_state.Get(), descendant_task_state.Get());
 
   root_task_state = nullptr;
   ThreadState::Current()->CollectAllGarbageForTesting();
   // The heuristics still should not have been reset since there is a live
   // root task, which is being held onto by its descendant task.
-  EXPECT_TRUE(IsDocumentTrackingSoftNavigations());
+  EXPECT_TRUE(heuristics->IsTrackingSoftNavigationsForTest());
 
   // Finally, this should allow the click task to be GCed, which should cause
   // the heuristics to be reset.
   descendant_task_state = nullptr;
   ThreadState::Current()->CollectAllGarbageForTesting();
-  EXPECT_FALSE(IsDocumentTrackingSoftNavigations());
+  EXPECT_FALSE(heuristics->IsTrackingSoftNavigationsForTest());
 }
 
 TEST_F(SoftNavigationHeuristicsTest, NestedEventScopesAreMerged) {
   auto* heuristics = CreateSoftNavigationHeuristicsForTest();
-  auto* script_state = GetScriptStateForTest();
-
   auto* event = CreateEvent(SoftNavigationHeuristics::EventScope::Type::kClick);
   std::optional<SoftNavigationHeuristics::EventScope> outer_event_scope(
       heuristics->MaybeCreateEventScopeForEvent(*event));
-  auto* tracker = scheduler::TaskAttributionTracker::From(
-      GetScriptStateForTest()->GetIsolate());
+  auto* tracker = scheduler::TaskAttributionTracker::From(GetIsolate());
   ASSERT_TRUE(tracker);
 
-  SoftNavigationContext* context1 = nullptr;
-  {
-    std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(script_state, nullptr);
-    context1 = tracker->CurrentTaskState()->GetSoftNavigationContext();
-  }
+  SoftNavigationContext* context1 =
+      tracker->CurrentTaskState()->GetSoftNavigationContext();
   EXPECT_TRUE(context1);
 
   auto* inner_event =
@@ -213,12 +177,8 @@ TEST_F(SoftNavigationHeuristicsTest, NestedEventScopesAreMerged) {
   std::optional<SoftNavigationHeuristics::EventScope> inner_event_scope(
       heuristics->MaybeCreateEventScopeForEvent(*inner_event));
 
-  SoftNavigationContext* context2 = nullptr;
-  {
-    std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(script_state, nullptr);
-    context2 = tracker->CurrentTaskState()->GetSoftNavigationContext();
-  }
+  SoftNavigationContext* context2 =
+      tracker->CurrentTaskState()->GetSoftNavigationContext();
   EXPECT_TRUE(context2);
 
   EXPECT_EQ(context1, context2);
@@ -226,24 +186,16 @@ TEST_F(SoftNavigationHeuristicsTest, NestedEventScopesAreMerged) {
 
 TEST_F(SoftNavigationHeuristicsTest, EventAfterSoftNavDetection) {
   auto* heuristics = CreateSoftNavigationHeuristicsForTest();
-  auto* script_state = GetScriptStateForTest();
-
   auto* outer_event =
       CreateEvent(SoftNavigationHeuristics::EventScope::Type::kClick);
   std::optional<SoftNavigationHeuristics::EventScope> outer_event_scope(
       heuristics->MaybeCreateEventScopeForEvent(*outer_event));
-  auto* tracker =
-      scheduler::TaskAttributionTracker::From(script_state->GetIsolate());
+  auto* tracker = scheduler::TaskAttributionTracker::From(GetIsolate());
   ASSERT_TRUE(tracker);
 
   auto* context = tracker->CurrentTaskState()->GetSoftNavigationContext();
   ASSERT_TRUE(context);
-
-  {
-    std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(script_state, nullptr);
-    heuristics->ModifiedDOM(CreateNodeForTest());
-  }
+  heuristics->ModifiedDOM(CreateNodeForTest());
 
   // Simulate default action link navigation after the click event.
   heuristics->SameDocumentNavigationCommitted("foo", context);
@@ -253,27 +205,12 @@ TEST_F(SoftNavigationHeuristicsTest, EventAfterSoftNavDetection) {
     std::optional<SoftNavigationHeuristics::EventScope> inner_event_scope(
         heuristics->MaybeCreateEventScopeForEvent(*inner_event));
   }
-
-  // crbug.com/335945346: Some events, e.g. blur, can fire after all of the soft
-  // navigation criteria have been met and all of the input event handlers have
-  // run, while there's still an EventScope on the stack. Since
-  // SoftNavigationHeuristics::OnCreateTaskScope relies on the active context
-  // being non-null, emitting a soft navigation entry and resetting the
-  // heuristic prematurely would clear the context while it still may be needed.
-  // An event firing here, after the criteria have been met, should not cause a
-  // crash.
-  {
-    std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(script_state, nullptr);
-  }
 }
 
 TEST_F(SoftNavigationHeuristicsTest,
        HeuristicNotResetDuringGCWithActiveContext) {
   auto* heuristics = CreateSoftNavigationHeuristicsForTest();
-  auto* script_state = GetScriptStateForTest();
-  auto* tracker =
-      scheduler::TaskAttributionTracker::From(script_state->GetIsolate());
+  auto* tracker = scheduler::TaskAttributionTracker::From(GetIsolate());
   ASSERT_TRUE(tracker);
 
   {
@@ -281,14 +218,10 @@ TEST_F(SoftNavigationHeuristicsTest,
         CreateEvent(SoftNavigationHeuristics::EventScope::Type::kClick);
     std::optional<SoftNavigationHeuristics::EventScope> event_scope(
         heuristics->MaybeCreateEventScopeForEvent(*event));
-    {
-      std::optional<TaskScope> task_scope =
-          tracker->MaybeCreateTaskScopeForCallback(script_state, nullptr);
-    }
   }
   // At this point there is a single `SoftNavigationContext` being tracked, but
   // it wasn't propagated anywhere, so it is eligible for GC.
-  EXPECT_TRUE(IsDocumentTrackingSoftNavigations());
+  EXPECT_TRUE(heuristics->IsTrackingSoftNavigationsForTest());
 
   auto* event = CreateEvent(SoftNavigationHeuristics::EventScope::Type::kClick);
   std::optional<SoftNavigationHeuristics::EventScope> event_scope(
@@ -300,9 +233,7 @@ TEST_F(SoftNavigationHeuristicsTest,
   ThreadState::Current()->CollectAllGarbageForTesting(
       cppgc::EmbedderStackState::kMayContainHeapPointers);
 
-  std::optional<TaskScope> task_scope =
-      tracker->MaybeCreateTaskScopeForCallback(script_state, nullptr);
-  EXPECT_TRUE(IsDocumentTrackingSoftNavigations());
+  EXPECT_TRUE(heuristics->IsTrackingSoftNavigationsForTest());
 }
 
 TEST_F(SoftNavigationHeuristicsTest, SoftNavigationEmittedOnlyOnce) {
@@ -313,7 +244,6 @@ TEST_F(SoftNavigationHeuristicsTest, SoftNavigationEmittedOnlyOnce) {
       GetScriptStateForTest()->GetIsolate());
   ASSERT_TRUE(tracker);
 
-  auto* script_state = GetScriptStateForTest();
   scheduler::TaskAttributionInfo* task_state = nullptr;
   SoftNavigationContext* context = nullptr;
 
@@ -326,8 +256,6 @@ TEST_F(SoftNavigationHeuristicsTest, SoftNavigationEmittedOnlyOnce) {
         CreateEvent(SoftNavigationHeuristics::EventScope::Type::kClick);
     std::optional<SoftNavigationHeuristics::EventScope> event_scope(
         heuristics->MaybeCreateEventScopeForEvent(*event));
-    std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(script_state, nullptr);
     task_state = tracker->CurrentTaskState();
     ASSERT_TRUE(task_state);
     context = task_state->GetSoftNavigationContext();
@@ -344,7 +272,7 @@ TEST_F(SoftNavigationHeuristicsTest, SoftNavigationEmittedOnlyOnce) {
   // Simulate a paint in a separate task.
   {
     TextRecord* record = MakeGarbageCollected<TextRecord>(
-        *node1, 0, gfx::RectF(1000, 1000), gfx::Rect(1000, 1000),
+        node1, 0, gfx::RectF(1000, 1000), gfx::Rect(1000, 1000),
         gfx::RectF(1000, 1000),
         /* frame_index= */ 0,
         /* is_needed_for_timing= */ false, context);
@@ -357,7 +285,7 @@ TEST_F(SoftNavigationHeuristicsTest, SoftNavigationEmittedOnlyOnce) {
   // Simulate another task for the same context, which does a second soft-nav
   {
     std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(script_state, task_state);
+        tracker->MaybeCreateTaskScopeForCallback(task_state);
     EXPECT_EQ(tracker->CurrentTaskState()->GetSoftNavigationContext(), context);
     heuristics->SameDocumentNavigationCommitted("bar.html", context);
     heuristics->ModifiedDOM(node2);
@@ -366,7 +294,7 @@ TEST_F(SoftNavigationHeuristicsTest, SoftNavigationEmittedOnlyOnce) {
   // And another paint
   {
     TextRecord* record = MakeGarbageCollected<TextRecord>(
-        *node2, 0, gfx::RectF(1000, 1000), gfx::Rect(1000, 1000),
+        node2, 0, gfx::RectF(1000, 1000), gfx::Rect(1000, 1000),
         gfx::RectF(1000, 1000),
         /* frame_index= */ 0,
         /* is_needed_for_timing= */ false, context);
@@ -388,7 +316,6 @@ TEST_F(SoftNavigationHeuristicsTest, AsyncSameDocumentNavigation) {
       GetScriptStateForTest()->GetIsolate());
   ASSERT_TRUE(tracker);
 
-  auto* script_state = GetScriptStateForTest();
   scheduler::TaskAttributionInfo* task_state = nullptr;
   SoftNavigationContext* context = nullptr;
 
@@ -408,8 +335,8 @@ TEST_F(SoftNavigationHeuristicsTest, AsyncSameDocumentNavigation) {
   std::optional<scheduler::TaskAttributionId> navigation_task_id;
   {
     std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(script_state, task_state);
-    navigation_task_id = heuristics->AsyncSameDocumentNavigationStarted();
+        tracker->MaybeCreateTaskScopeForCallback(task_state);
+    navigation_task_id = tracker->AsyncSameDocumentNavigationStarted();
   }
   ASSERT_TRUE(navigation_task_id);
 
@@ -433,13 +360,8 @@ TEST_F(SoftNavigationHeuristicsTest, AsyncSameDocumentNavigationNoContext) {
 
   // Simulate starting a same-document navigation in a JavaScript task that
   // isn't associated with a `SoftNavigationContext`
-  std::optional<scheduler::TaskAttributionId> navigation_task_id;
-  {
-    std::optional<TaskScope> task_scope =
-        tracker->MaybeCreateTaskScopeForCallback(GetScriptStateForTest(),
-                                                 /*task_state=*/nullptr);
-    navigation_task_id = heuristics->AsyncSameDocumentNavigationStarted();
-  }
+  std::optional<scheduler::TaskAttributionId> navigation_task_id =
+      tracker->AsyncSameDocumentNavigationStarted();
   EXPECT_FALSE(navigation_task_id);
 
   // Simulate committing the same-document navigation asynchronously without a

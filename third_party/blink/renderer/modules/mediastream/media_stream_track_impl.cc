@@ -31,11 +31,14 @@
 #include "base/functional/callback_helpers.h"
 #include "base/strings/to_string.h"
 #include "build/build_config.h"
+#include "media/base/media_switches.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_track.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/web/modules/mediastream/media_stream_video_source.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_boolean_string.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_double_range.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_long_range.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_stream_track_state.h"
@@ -65,6 +68,7 @@
 #include "third_party/blink/renderer/modules/mediastream/webaudio_media_stream_audio_sink.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_source.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_component.h"
@@ -485,12 +489,13 @@ MediaTrackCapabilities* MediaStreamTrackImpl::getCapabilities() const {
   }
 
   if (component_->GetSourceType() == MediaStreamSource::kTypeAudio) {
-    Vector<bool> echo_cancellation, auto_gain_control, noise_suppression,
-        voice_isolation, restrict_own_audio;
-    for (bool value : platform_capabilities.echo_cancellation) {
-      echo_cancellation.push_back(value);
+    HeapVector<Member<V8UnionBooleanOrString>> echo_cancellation;
+    for (EchoCancellationMode value : platform_capabilities.echo_cancellation) {
+      echo_cancellation.push_back(EchoCancellationModeToBooleanOrString(value));
     }
     capabilities->setEchoCancellation(echo_cancellation);
+    Vector<bool> auto_gain_control, noise_suppression, voice_isolation,
+        restrict_own_audio;
     for (bool value : platform_capabilities.auto_gain_control) {
       auto_gain_control.push_back(value);
     }
@@ -655,7 +660,9 @@ MediaTrackSettings* MediaStreamTrackImpl::getSettings() const {
   }
 
   if (platform_settings.echo_cancellation) {
-    settings->setEchoCancellation(*platform_settings.echo_cancellation);
+    auto* echo_cancellation = EchoCancellationModeToBooleanOrString(
+        *platform_settings.echo_cancellation);
+    settings->setEchoCancellation(echo_cancellation);
   }
   if (platform_settings.auto_gain_control) {
     settings->setAutoGainControl(*platform_settings.auto_gain_control);
@@ -791,6 +798,19 @@ CaptureHandle* MediaStreamTrackImpl::getCaptureHandle() const {
   return capture_handle;
 }
 
+void MediaStreamTrackImpl::Dispose() {
+  // `MediaStreamTrackImpl` and the `SpeechRecognitionMediaStreamAudioSink`
+  // which it owns may be destroyed before the `MediaStreamAudioTrack`. Remove
+  // the sinks before destroying them to prevent `MediaStreamAudioTrack` from
+  // using them after destruction.
+  if (MediaStreamAudioTrack* audio_track =
+          MediaStreamAudioTrack::From(Component())) {
+    for (SpeechRecognitionMediaStreamAudioSink* sink : registered_sinks_) {
+      audio_track->RemoveSink(sink);
+    }
+  }
+}
+
 ScriptPromise<IDLUndefined> MediaStreamTrackImpl::applyConstraints(
     ScriptState* script_state,
     const MediaTrackConstraints* constraints) {
@@ -831,11 +851,16 @@ void MediaStreamTrackImpl::SetConstraintsInternal(
         constraints_.Basic().suppress_local_audio_playback.Ideal();
   }
 
-  CHECK(!restrict_own_audio_setting_.has_value());
-  if (!constraints_.IsNull() &&
-      constraints_.Basic().restrict_own_audio.HasIdeal()) {
-    restrict_own_audio_setting_ =
-        constraints_.Basic().restrict_own_audio.Ideal();
+  if (RuntimeEnabledFeatures::RestrictOwnAudioEnabled() &&
+      device().has_value() &&
+      device()->type == mojom::blink::MediaStreamType::DISPLAY_AUDIO_CAPTURE) {
+    restrict_own_audio_setting_ = false;
+    if (!constraints_.IsNull() &&
+        constraints_.Basic().restrict_own_audio.HasIdeal()) {
+      restrict_own_audio_setting_ =
+          constraints_.Basic().restrict_own_audio.Ideal() &&
+          media::IsRestrictOwnAudioSupported();
+    }
   }
 }
 

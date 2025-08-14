@@ -36,9 +36,11 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
 import org.mockito.Spy;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
+import org.chromium.base.supplier.Supplier;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
@@ -51,12 +53,17 @@ import org.chromium.chrome.browser.recent_tabs.ForeignSessionHelper.ForeignSessi
 import org.chromium.chrome.browser.recent_tabs.ForeignSessionHelper.ForeignSessionWindow;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiTestHelper;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
-import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
+import org.chromium.chrome.test.transit.ChromeTransitTestRules;
+import org.chromium.chrome.test.transit.FreshCtaTransitTestRule;
+import org.chromium.chrome.test.transit.page.WebPageStation;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.feature_engagement.FeatureConstants;
 import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.components.sync_device_info.FormFactor;
 import org.chromium.ui.base.DeviceFormFactor;
+import org.chromium.ui.modaldialog.ModalDialogManager;
+import org.chromium.ui.modaldialog.ModalDialogProperties;
+import org.chromium.ui.util.XrUtils;
 import org.chromium.url.JUnitTestGURLs;
 
 import java.util.ArrayList;
@@ -70,25 +77,30 @@ import java.util.List;
 public class RestoreTabsTest {
     private static final String RESTORE_TABS_FEATURE = FeatureConstants.RESTORE_TABS_ON_FRE_FEATURE;
 
+    @Rule public final MockitoRule mMockitoRule = MockitoJUnit.rule();
+
     @Rule
-    public ChromeTabbedActivityTestRule mActivityTestRule = new ChromeTabbedActivityTestRule();
+    public FreshCtaTransitTestRule mActivityTestRule =
+            ChromeTransitTestRules.freshChromeTabbedActivityRule();
 
     @Spy ForeignSessionHelper.Natives mForeignSessionHelperJniSpy;
     // Tell R8 not to break the ability to mock the class.
-    @Spy ForeignSessionHelperJni mUnused;
+    @Spy org.chromium.chrome.browser.recent_tabs.ForeignSessionHelperJni mUnused;
 
     @Mock private Tracker mMockTracker;
 
     private BottomSheetController mBottomSheetController;
+    private Supplier<ModalDialogManager> mModalDialogManagerSupplier;
+    private WebPageStation mPage;
 
     @Before
     public void setUp() {
-        MockitoAnnotations.initMocks(this);
-        mActivityTestRule.startMainActivityOnBlankPage();
+        mPage = mActivityTestRule.startOnBlankPage();
         TrackerFactory.setTrackerForTests(mMockTracker);
 
         mForeignSessionHelperJniSpy = Mockito.spy(ForeignSessionHelperJni.get());
-        ForeignSessionHelperJni.setInstanceForTesting(mForeignSessionHelperJniSpy);
+        org.chromium.chrome.browser.recent_tabs.ForeignSessionHelperJni.setInstanceForTesting(
+                mForeignSessionHelperJniSpy);
         doReturn(true).when(mForeignSessionHelperJniSpy).isTabSyncEnabled(anyLong());
 
         mBottomSheetController =
@@ -96,6 +108,9 @@ public class RestoreTabsTest {
                         .getActivity()
                         .getRootUiCoordinatorForTesting()
                         .getBottomSheetController();
+
+        mModalDialogManagerSupplier =
+                mActivityTestRule.getActivity().getModalDialogManagerSupplier();
     }
 
     @After
@@ -106,6 +121,51 @@ public class RestoreTabsTest {
     @Test
     @MediumTest
     public void testRestoreTabsPromo_triggerBottomSheetView() {
+        triggerRestoreTabsPromo();
+        CriteriaHelper.pollUiThread(
+                () -> {
+                    Criteria.checkThat(
+                            "Bottom sheet never fully loaded",
+                            mBottomSheetController.getCurrentSheetContent(),
+                            Matchers.instanceOf(RestoreTabsPromoSheetContent.class));
+                });
+        Assert.assertTrue(
+                mBottomSheetController.getCurrentSheetContent()
+                        instanceof RestoreTabsPromoSheetContent);
+
+        pressBack();
+        verify(mMockTracker, times(1)).dismissed(eq(RESTORE_TABS_FEATURE));
+    }
+
+    @Test
+    @MediumTest
+    public void testRestoreTabsPromo_triggerDialogOnXr() {
+        XrUtils.setXrDeviceForTesting(true);
+        triggerRestoreTabsPromo();
+        String expectedContentDescription =
+                mActivityTestRule
+                        .getActivity()
+                        .getString(R.string.restore_tabs_content_description);
+        CriteriaHelper.pollUiThread(
+                () -> {
+                    Criteria.checkThat(
+                            "Dialog never fully loaded",
+                            mModalDialogManagerSupplier
+                                    .get()
+                                    .getCurrentDialogForTest()
+                                    .get(ModalDialogProperties.CONTENT_DESCRIPTION),
+                            Matchers.equalTo(expectedContentDescription));
+                });
+
+        onView(withId(R.id.restore_tabs_bottom_sheet_view_flipper)).check(matches(isDisplayed()));
+
+        pressBack();
+        verify(mMockTracker, times(1)).dismissed(eq(RESTORE_TABS_FEATURE));
+
+        XrUtils.setXrDeviceForTesting(false);
+    }
+
+    private void triggerRestoreTabsPromo() {
         // Setup mock data
         ForeignSessionTab tab = new ForeignSessionTab(JUnitTestGURLs.URL_1, "title", 32L, 32L, 0);
         List<ForeignSessionTab> tabs = new ArrayList<>();
@@ -130,19 +190,6 @@ public class RestoreTabsTest {
                 .getMobileAndTabletForeignSessions(anyLong(), anyList());
 
         TabUiTestHelper.enterTabSwitcher(mActivityTestRule.getActivity());
-        CriteriaHelper.pollUiThread(
-                () -> {
-                    Criteria.checkThat(
-                            "Bottom sheet never fully loaded",
-                            mBottomSheetController.getCurrentSheetContent(),
-                            Matchers.instanceOf(RestoreTabsPromoSheetContent.class));
-                });
-        Assert.assertTrue(
-                mBottomSheetController.getCurrentSheetContent()
-                        instanceof RestoreTabsPromoSheetContent);
-
-        pressBack();
-        verify(mMockTracker, times(1)).dismissed(eq(RESTORE_TABS_FEATURE));
     }
 
     @Test

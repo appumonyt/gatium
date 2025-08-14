@@ -78,7 +78,6 @@
 #include "content/common/features.h"
 #include "content/common/frame.mojom.h"
 #include "content/common/input/input_injector.mojom-forward.h"
-#include "content/common/navigation_client.mojom-forward.h"
 #include "content/common/navigation_client.mojom.h"
 #include "content/public/browser/back_forward_cache.h"
 #include "content/public/browser/browser_thread.h"
@@ -103,7 +102,6 @@
 #include "media/mojo/mojom/media_metrics_provider.mojom-forward.h"
 #include "media/mojo/mojom/media_player.mojom-forward.h"
 #include "media/mojo/mojom/video_encoder_metrics_provider.mojom-forward.h"
-#include "media/mojo/services/media_metrics_provider.h"
 #include "media/mojo/services/mojo_video_encoder_metrics_provider_service.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
@@ -144,13 +142,13 @@
 #include "third_party/blink/public/mojom/blob/file_backed_blob_factory.mojom-forward.h"
 #include "third_party/blink/public/mojom/broadcastchannel/broadcast_channel.mojom.h"
 #include "third_party/blink/public/mojom/buckets/bucket_manager_host.mojom.h"
+#include "third_party/blink/public/mojom/dom_storage/storage_area.mojom.h"
 #include "third_party/blink/public/mojom/feature_observer/feature_observer.mojom-forward.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_manager.mojom-forward.h"
 #include "third_party/blink/public/mojom/filesystem/file_system.mojom-forward.h"
 #include "third_party/blink/public/mojom/font_access/font_access.mojom-forward.h"
 #include "third_party/blink/public/mojom/frame/back_forward_cache_controller.mojom.h"
 #include "third_party/blink/public/mojom/frame/find_in_page.mojom.h"
-#include "third_party/blink/public/mojom/frame/frame.mojom-forward.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom.h"
 #include "third_party/blink/public/mojom/frame/frame_owner_properties.mojom-forward.h"
 #include "third_party/blink/public/mojom/frame/reporting_observer.mojom-forward.h"
@@ -161,7 +159,6 @@
 #include "third_party/blink/public/mojom/loader/fetch_later.mojom-forward.h"
 #include "third_party/blink/public/mojom/loader/local_resource_loader_config.mojom-forward.h"
 #include "third_party/blink/public/mojom/loader/resource_load_info.mojom-forward.h"
-#include "third_party/blink/public/mojom/navigation/navigation_params.mojom-forward.h"
 #include "third_party/blink/public/mojom/navigation/navigation_params.mojom.h"
 #include "third_party/blink/public/mojom/navigation/renderer_eviction_reason.mojom.h"
 #include "third_party/blink/public/mojom/notifications/notification_service.mojom-forward.h"
@@ -193,7 +190,7 @@
 #include "ui/accessibility/platform/ax_platform_tree_manager.h"
 #include "ui/accessibility/platform/ax_platform_tree_manager_delegate.h"
 #include "ui/accessibility/platform/ax_unique_id.h"
-#include "ui/accessibility/platform/browser_accessibility_manager.h"
+#include "ui/base/clipboard/clipboard_metadata.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
@@ -250,6 +247,10 @@ namespace network {
 struct ResourceRequest;
 class ResourceRequestBody;
 }  // namespace network
+
+namespace ui {
+class BrowserAccessibilityManager;
+}
 
 namespace ukm {
 class UkmRecorder;
@@ -663,7 +664,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void IsClipboardPasteAllowedByPolicy(
       const ClipboardEndpoint& source,
       const ClipboardEndpoint& destination,
-      const ClipboardMetadata& metadata,
+      const ui::ClipboardMetadata& metadata,
       ClipboardPasteData clipboard_paste_data,
       IsClipboardPasteAllowedCallback callback);
 
@@ -713,9 +714,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // RenderFrameHost. Will create one if it does not exist (and update all the
   // renderers with the newly computed value).
   blink::web_pref::WebPreferences GetOrCreateWebPreferences();
-
-  // IPC::Sender
-  bool Send(IPC::Message* msg) override;
 
   // IPC::Listener
   bool OnMessageReceived(const IPC::Message& msg) override;
@@ -1646,7 +1644,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Requests that the renderer discard the frame associated with this host,
   // freeing up as many resources as possible.
-  void DiscardFrame();
+  void DiscardFrame(base::OnceClosure on_discarded_cb);
 
   // BEGIN IPC REVIEW BOUNDARY: to enforce security review for IPC, these
   // methods are defined in render_frame_host_impl_interface_bindings.cc.
@@ -2624,6 +2622,16 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void RecordWindowProxyUsageMetrics(
       const blink::FrameToken& target_frame_token,
       blink::mojom::WindowProxyAccessType access_type) override;
+  void InitializeCrashReportStorage(
+      uint64_t length,
+      InitializeCrashReportStorageCallback callback) override;
+  void SetCrashReportStorageKey(
+      const std::string& key,
+      const std::string& value,
+      SetCrashReportStorageKeyCallback callback) override;
+  void RemoveCrashReportStorageKey(
+      const std::string& key,
+      RemoveCrashReportStorageKeyCallback callback) override;
 
   // blink::mojom::BackForwardCacheControllerHost:
   void EvictFromBackForwardCache(
@@ -3351,6 +3359,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
           subresource_loader_factories,
       const blink::DocumentToken& document_token,
+      const base::UnguessableToken& devtools_navigation_token,
       blink::mojom::PolicyContainerPtr policy_container);
 
   // The Build*Callback functions below are responsible for building the
@@ -4414,6 +4423,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   media::PictureInPictureEventsInfo::AutoPipReasonCallback
   CreateAutoPipReasonCallback();
 
+  // Notifies discard clients the operation completed successfully. This may be
+  // called either when the renderer acknowledges the operation completed
+  // successfully or the renderer was proactively terminated.
+  void MaybeNotifyDiscardedFrame();
+
   // The RenderViewHost that this RenderFrameHost is associated with.
   //
   // It is kept alive as long as any RenderFrameHosts or RenderFrameProxyHosts
@@ -4735,6 +4749,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Returns whether the tab was previously discarded.
   // This is passed to CommitNavigationParams in NavigationRequest.
   bool was_discarded_ = false;
+
+  // Callback invoked once the discard operation has finished. The operation may
+  // finish with an acknowledgement from the renderer or a process-kill (in
+  // which case the renderer will have terminated before acknowledging
+  // completion).
+  // Defined only if there is a discard operation being processed by this frame.
+  base::OnceClosure on_discarded_cb_;
 
   // Indicates whether this RenderFrameHost is in the process of loading a
   // document or not, and if so, whether it should show loading UI.

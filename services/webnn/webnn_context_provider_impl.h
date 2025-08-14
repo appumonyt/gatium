@@ -45,6 +45,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
       scoped_refptr<gpu::SharedContextState> shared_context_state,
       gpu::GpuFeatureInfo gpu_feature_info,
       gpu::GPUInfo gpu_info,
+      gpu::SharedImageManager* shared_image_manager,
       LoseAllContextsCallback lose_all_contexts_callback,
       scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
       gpu::Scheduler* scheduler,
@@ -62,15 +63,6 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
     kWebNNEnabled = 3,
   };
 
-  // Called to create a WebNNContextProviderImpl as a self-owned receiver.
-  // Optionally returns a reference to the WebNNContextProviderImpl to test
-  // interop.
-  static base::optional_ref<WebNNContextProviderImpl> CreateForTesting(
-      mojo::PendingReceiver<mojom::WebNNContextProvider> receiver,
-      WebNNStatus status = WebNNStatus::kWebNNEnabled,
-      LoseAllContextsCallback lose_all_contexts_callback = base::BindOnce([]() {
-      }));
-
   // Called when a WebNNContextImpl has a connection error. After this call, it
   // is no longer safe to access |impl|.
   void OnConnectionError(WebNNContextImpl* impl);
@@ -78,7 +70,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
 #if BUILDFLAG(IS_WIN)
   // Send the contexts lost reason to the renderer process and kill the GPU
   // process to destroy all contexts.
-  void DestroyContextsAndKillGpuProcess(std::string_view reason);
+  void DestroyContextsAndKillGpuProcess(const std::string& reason);
 #endif  // BUILDFLAG(IS_WIN)
 
   // Retrieves a `WebNNContextImpl` instance created from this provider.
@@ -110,11 +102,20 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
     return main_thread_task_runner_;
   }
 
+  scoped_refptr<gpu::SharedContextState> shared_context_state() const {
+    return shared_context_state_;
+  }
+
+  gpu::SharedImageManager* shared_image_manager() const {
+    return shared_image_manager_;
+  }
+
  private:
   WebNNContextProviderImpl(
       scoped_refptr<gpu::SharedContextState> shared_context_state,
       gpu::GpuFeatureInfo gpu_feature_info,
       gpu::GPUInfo gpu_info,
+      gpu::SharedImageManager* shared_image_manager,
       LoseAllContextsCallback lose_all_contexts_callback,
       scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
       gpu::Scheduler* scheduler,
@@ -127,6 +128,12 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
   scoped_refptr<gpu::SharedContextState> shared_context_state_;
   const gpu::GpuFeatureInfo gpu_feature_info_;
   const gpu::GPUInfo gpu_info_;
+
+  // The lifetime of the shared image manager is managed by the GPU service and
+  // is destroyed after this WebNNProviderImpl is destroyed, which makes it
+  // safe to store the shared image manager as a raw_ptr here.
+  const raw_ptr<gpu::SharedImageManager> shared_image_manager_;
+
   // A callback from `GpuServiceImpl` to terminate the GPU process, which will
   // destroy all contexts.
   LoseAllContextsCallback lose_all_contexts_callback_;

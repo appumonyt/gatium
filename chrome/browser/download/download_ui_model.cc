@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/byte_count.h"
 #include "base/feature_list.h"
 #include "base/i18n/number_formatting.h"
 #include "base/i18n/rtl.h"
@@ -14,9 +15,9 @@
 #include "build/build_config.h"
 #include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/download/bubble/download_bubble_prefs.h"
 #include "chrome/browser/download/download_commands.h"
 #include "chrome/browser/download/download_item_warning_data.h"
+#include "chrome/browser/download/download_ui_enterprise_util.h"
 #include "chrome/browser/download/download_ui_safe_browsing_util.h"
 #include "chrome/browser/download/offline_item_utils.h"
 #include "chrome/browser/enterprise/connectors/common.h"
@@ -154,9 +155,6 @@ std::u16string FailStateDescription(FailState fail_state) {
 
 }  // namespace
 
-DownloadUIModel::DownloadUIModel()
-    : DownloadUIModel::DownloadUIModel(std::make_unique<StatusTextBuilder>()) {}
-
 DownloadUIModel::DownloadUIModel(
     std::unique_ptr<StatusTextBuilderBase> status_text_builder)
     : status_text_builder_(std::move(status_text_builder)) {
@@ -197,9 +195,9 @@ std::u16string DownloadUIModel::GetProgressSizesString() const {
 std::u16string DownloadUIModel::StatusTextBuilder::GetProgressSizesString()
     const {
   std::u16string size_ratio;
-  int64_t size = model_->GetCompletedBytes();
-  int64_t total = model_->GetTotalBytes();
-  if (total > 0) {
+  base::ByteCount size = base::ByteCount(model_->GetCompletedBytes());
+  base::ByteCount total = base::ByteCount(model_->GetTotalBytes());
+  if (total > base::ByteCount(0)) {
     ui::DataUnits amount_units = ui::GetByteDisplayUnits(total);
     std::u16string simple_size =
         ui::FormatBytesWithUnits(size, amount_units, false);
@@ -223,9 +221,9 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetProgressSizesString()
 std::u16string
 DownloadUIModel::BubbleStatusTextBuilder::GetProgressSizesString() const {
   std::u16string size_ratio;
-  int64_t size = model_->GetCompletedBytes();
-  int64_t total = model_->GetTotalBytes();
-  if (total > 0) {
+  base::ByteCount size = base::ByteCount(model_->GetCompletedBytes());
+  base::ByteCount total = base::ByteCount(model_->GetTotalBytes());
+  if (total > base::ByteCount(0)) {
     ui::DataUnits amount_units = ui::GetByteDisplayUnits(total);
     std::u16string simple_size =
         ui::FormatBytesWithUnits(size, amount_units, false);
@@ -442,19 +440,9 @@ bool DownloadUIModel::IsInsecure() const {
   return false;
 }
 
-bool DownloadUIModel::ShouldRemoveFromShelfWhenComplete() const {
-  return false;
-}
-
 bool DownloadUIModel::ShouldShowDownloadStartedAnimation() const {
   return true;
 }
-
-bool DownloadUIModel::ShouldShowInShelf() const {
-  return true;
-}
-
-void DownloadUIModel::SetShouldShowInShelf(bool should_show) {}
 
 bool DownloadUIModel::ShouldNotifyUI() const {
   return true;
@@ -797,8 +785,14 @@ DownloadUIModel::DangerUiPattern DownloadUIModel::GetDangerUiPattern() const {
   return DangerUiPattern::kNormal;
 }
 
+bool DownloadUIModel::ShouldShowInUi() const {
+  return true;
+}
+
+void DownloadUIModel::SetShouldShowInUi(bool should_show) {}
+
 bool DownloadUIModel::ShouldShowInBubble() const {
-  return ShouldShowInShelf();
+  return ShouldShowInUi();
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
@@ -1082,8 +1076,9 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
   // If the detail message is "Done" and the total_bytes is "120 MB", then
   // this returns "120 MB • Done".
   auto get_total_string = [total_bytes](std::u16string detail_message) {
-    return GetBubbleStatusMessageWithBytes(ui::FormatBytes(total_bytes),
-                                           detail_message, /*is_active=*/false);
+    return GetBubbleStatusMessageWithBytes(
+        ui::FormatBytes(base::ByteCount(total_bytes)), detail_message,
+        /*is_active=*/false);
   };
 
   // The download is a CRX (app, extension, theme, ...) and it is being unpacked
@@ -1185,7 +1180,7 @@ DownloadUIModel::BubbleStatusTextBuilder::GetCompletedStatusText() const {
                                      ui::TimeFormat::LENGTH_LONG, time_elapsed);
   }
   return GetBubbleStatusMessageWithBytes(
-      ui::FormatBytes(model_->GetTotalBytes()), delta_str,
+      ui::FormatBytes(base::ByteCount(model_->GetTotalBytes())), delta_str,
       /*is_active=*/false);
 }
 
@@ -1359,7 +1354,7 @@ std::u16string DownloadUIModel::GetInProgressAccessibleAlertText() const {
   // Percent remaining is also unknown, announce bytes to download.
   return l10n_util::GetStringFUTF16(
       IDS_DOWNLOAD_STATUS_IN_PROGRESS_ACCESSIBLE_ALERT,
-      ui::FormatBytes(GetTotalBytes()),
+      ui::FormatBytes(base::ByteCount(GetTotalBytes())),
       GetFileNameToReportUser().LossyDisplayName());
 }
 

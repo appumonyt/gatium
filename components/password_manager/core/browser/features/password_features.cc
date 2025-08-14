@@ -9,12 +9,23 @@
 #include "components/password_manager/core/browser/password_manager_buildflags.h"
 
 namespace password_manager::features {
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)  // Desktop
+BASE_FEATURE(kActorLogin, "ActorLogin", base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kAndroidSmsOtpFilling,
              "AndroidSmsOtpFilling",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
+
+BASE_FEATURE(kApplyClientsideModelPredictionsForPasswordTypes,
+             "ApplyClientsideModelPredictionsForPasswordTypes",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kApplyClientsideModelPredictionsForOtps,
+             "ApplyClientsideModelPredictionsForOtps",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAutoApproveSharedPasswordUpdatesFromSameSender,
              "AutoApproveSharedPasswordUpdatesFromSameSender",
@@ -35,6 +46,14 @@ BASE_FEATURE(kBiometricTouchToFill,
              "BiometricTouchToFill",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kCheckIfSubmittedFormIdenticalToObserved,
+             "CheckIfSubmittedFormIdenticalToObserved",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kCheckLoginStateBeforePasswordChange,
+             "CheckLoginStateBeforePasswordChange",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kClearUndecryptablePasswords,
              "ClearUndecryptablePasswords",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_IOS)
@@ -53,14 +72,6 @@ BASE_FEATURE(kClearUndecryptablePasswordsOnSync,
              base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 );
-
-BASE_FEATURE(kFailedLoginDetectionBasedOnResourceLoadingErrors,
-             "FailedLoginDetectionBasedOnResourceLoadingErrors",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kFailedLoginDetectionBasedOnFormClearEvent,
-             "FailedLoginDetectionBasedOnFormClearEvent",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kFetchGaiaHashOnSignIn,
@@ -96,7 +107,7 @@ BASE_FEATURE(kIOSProactivePasswordGenerationBottomSheet,
 
 BASE_FEATURE(kIOSFillRecoveryPassword,
              "IOSFillRecoveryPassword",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // IS_IOS
 
 BASE_FEATURE(kPasswordFormGroupedAffiliations,
@@ -148,6 +159,10 @@ BASE_FEATURE(kShowRecoveryPassword,
              "ShowRecoveryPassword",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kShowTabWithPasswordChangeOnSuccess,
+             "ShowTabWithPasswordChangeOnSuccess",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kSkipUndecryptablePasswords,
              "SkipUndecryptablePasswords",
 #if BUILDFLAG(IS_WIN)
@@ -162,11 +177,11 @@ BASE_FEATURE(kTriggerPasswordResyncAfterDeletingUndecryptablePasswords,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kTriggerPasswordResyncWhenUndecryptablePasswordsDetected,
-            "TriggerPasswordResyncWhenUndecryptablePasswordsDetected",
+             "TriggerPasswordResyncWhenUndecryptablePasswordsDetected",
 #if BUILDFLAG(IS_WIN)
-            base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT
 #else
-            base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 );
 
@@ -174,10 +189,6 @@ BASE_FEATURE(kTriggerPasswordResyncWhenUndecryptablePasswordsDetected,
 BASE_FEATURE(kBiometricAuthIdentityCheck,
              "BiometricAuthIdentityCheck",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kLoginDbDeprecationAndroid,
-             "LoginDbDeprecationAndroid",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 
 BASE_FEATURE(kUseNewEncryptionMethod,
@@ -192,8 +203,24 @@ BASE_FEATURE(kMarkAllCredentialsAsLeaked,
              "MarkAllCredentialsAsLeaked",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)  // Desktop
+BASE_FEATURE(kEnablePasswordManagerMojoApi,
+             "EnablePasswordManagerMojoApi",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+
 BASE_FEATURE(kImprovedPasswordChangeService,
              "ImprovedPasswordChangeService",
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kReloadPasswordsOnTrustedVaultEncryptionChange,
+             "ReloadPasswordsOnTrustedVaultEncryptionChange",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kRetrieveTrustedVaultKeyKeyboardAccessoryAction,
+             "RetrieveTrustedVaultKeyKeyboardAccessoryAction",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_ANDROID)
 
 }  // namespace password_manager::features

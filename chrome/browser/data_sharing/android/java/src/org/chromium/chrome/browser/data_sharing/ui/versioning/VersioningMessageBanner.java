@@ -57,15 +57,19 @@ public class VersioningMessageBanner {
 
         VersioningMessageController versioningMessageController =
                 tabGroupSyncService.getVersioningMessageController();
-        if (versioningMessageController.shouldShowMessageUi(
-                MessageType.VERSION_OUT_OF_DATE_INSTANT_MESSAGE)) {
-            new VersioningMessageBanner(
-                            context,
-                            messageDispatcher,
-                            modalDialogManager,
-                            versioningMessageController)
-                    .show();
-        }
+        if (versioningMessageController == null) return;
+
+        versioningMessageController.shouldShowMessageUiAsync(
+                MessageType.VERSION_OUT_OF_DATE_INSTANT_MESSAGE,
+                (Boolean shouldShow) -> {
+                    if (!Boolean.TRUE.equals(shouldShow)) return;
+                    new VersioningMessageBanner(
+                                    context,
+                                    messageDispatcher,
+                                    modalDialogManager,
+                                    versioningMessageController)
+                            .show();
+                });
     }
 
     private final Context mContext;

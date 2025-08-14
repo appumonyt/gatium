@@ -357,6 +357,16 @@
             super("no such web extension" , message, stacktrace);
         }
     }
+    class NoSuchNetworkCollectorException extends Exception {
+        constructor(message, stacktrace) {
+            super("no such network collector" , message, stacktrace);
+        }
+    }
+    class NoSuchNetworkDataException extends Exception {
+        constructor(message, stacktrace) {
+            super("no such network data" , message, stacktrace);
+        }
+    }
 
     /**
      * Copyright 2023 Google LLC.
@@ -417,6 +427,9 @@
         parseRemoveUserContextParameters(params) {
             return params;
         }
+        parseSetClientWindowStateParameters(params) {
+            return params;
+        }
         parseActivateParams(params) {
             return params;
         }
@@ -462,7 +475,22 @@
         parseSendCommandParams(params) {
             return params;
         }
+        parseSetForcedColorsModeThemeOverrideParams(params) {
+            return params;
+        }
         parseSetGeolocationOverrideParams(params) {
+            return params;
+        }
+        parseSetLocaleOverrideParams(params) {
+            return params;
+        }
+        parseSetScreenOrientationOverrideParams(params) {
+            return params;
+        }
+        parseSetScriptingEnabledParams(params) {
+            return params;
+        }
+        parseSetTimezoneOverrideParams(params) {
             return params;
         }
         parseAddPreloadScriptParams(params) {
@@ -492,6 +520,9 @@
         parseSetFilesParams(params) {
             return params;
         }
+        parseAddDataCollectorParams(params) {
+            return params;
+        }
         parseAddInterceptParams(params) {
             return params;
         }
@@ -504,16 +535,28 @@
         parseContinueWithAuthParams(params) {
             return params;
         }
+        parseDisownDataParams(params) {
+            return params;
+        }
         parseFailRequestParams(params) {
+            return params;
+        }
+        parseGetDataParams(params) {
             return params;
         }
         parseProvideResponseParams(params) {
             return params;
         }
+        parseRemoveDataCollectorParams(params) {
+            return params;
+        }
         parseRemoveInterceptParams(params) {
             return params;
         }
-        parseSetCacheBehavior(params) {
+        parseSetCacheBehaviorParams(params) {
+            return params;
+        }
+        parseSetExtraHeadersParams(params) {
             return params;
         }
         parseSetPermissionsParams(params) {
@@ -561,12 +604,12 @@
     class BrowserProcessor {
         #browserCdpClient;
         #browsingContextStorage;
+        #configStorage;
         #userContextStorage;
-        #mapperOptionsStorage;
-        constructor(browserCdpClient, browsingContextStorage, mapperOptionsStorage, userContextStorage) {
+        constructor(browserCdpClient, browsingContextStorage, configStorage, userContextStorage) {
             this.#browserCdpClient = browserCdpClient;
             this.#browsingContextStorage = browsingContextStorage;
-            this.#mapperOptionsStorage = mapperOptionsStorage;
+            this.#configStorage = configStorage;
             this.#userContextStorage = userContextStorage;
         }
         close() {
@@ -576,8 +619,9 @@
         async createUserContext(params) {
             const w3cParams = params;
             if (w3cParams.acceptInsecureCerts !== undefined) {
+                const globalConfig = this.#configStorage.getGlobalConfig();
                 if (w3cParams.acceptInsecureCerts === false &&
-                    this.#mapperOptionsStorage.mapperOptions?.acceptInsecureCerts === true)
+                    globalConfig.acceptInsecureCerts === true)
                     throw new UnknownErrorException(`Cannot set user context's "acceptInsecureCerts" to false, when a capability "acceptInsecureCerts" is set to true`);
             }
             const request = {};
@@ -600,7 +644,10 @@
                 }
             }
             const context = await this.#browserCdpClient.sendCommand('Target.createBrowserContext', request);
-            this.#userContextStorage.getConfig(context.browserContextId).acceptInsecureCerts = params['acceptInsecureCerts'];
+            this.#configStorage.updateUserContextConfig(context.browserContextId, {
+                acceptInsecureCerts: params['acceptInsecureCerts'],
+                userPromptHandler: params['unhandledPromptBehavior'],
+            });
             return {
                 userContext: context.browserContextId,
             };
@@ -671,9 +718,6 @@
             const servers = [];
             if (proxyConfig.httpProxy !== undefined) {
                 servers.push(`http=${proxyConfig.httpProxy}`);
-            }
-            if (proxyConfig.ftpProxy !== undefined) {
-                servers.push(`ftp=${proxyConfig.ftpProxy}`);
             }
             if (proxyConfig.sslProxy !== undefined) {
                 servers.push(`https=${proxyConfig.sslProxy}`);
@@ -758,9 +802,11 @@
     class BrowsingContextProcessor {
         #browserCdpClient;
         #browsingContextStorage;
+        #contextConfigStorage;
         #eventManager;
         #userContextStorage;
-        constructor(browserCdpClient, browsingContextStorage, userContextStorage, eventManager) {
+        constructor(browserCdpClient, browsingContextStorage, userContextStorage, contextConfigStorage, eventManager) {
+            this.#contextConfigStorage = contextConfigStorage;
             this.#userContextStorage = userContextStorage;
             this.#browserCdpClient = browserCdpClient;
             this.#browsingContextStorage = browsingContextStorage;
@@ -849,15 +895,19 @@
             return await context.print(params);
         }
         async setViewport(params) {
+            const config = {};
+            if (params.devicePixelRatio !== undefined) {
+                config.devicePixelRatio = params.devicePixelRatio;
+            }
+            if (params.viewport !== undefined) {
+                config.viewport = params.viewport;
+            }
             const impactedTopLevelContexts = await this.#getRelatedTopLevelBrowsingContexts(params.context, params.userContexts);
             for (const userContextId of params.userContexts ?? []) {
-                const userContextConfig = this.#userContextStorage.getConfig(userContextId);
-                if (params.devicePixelRatio !== undefined) {
-                    userContextConfig.devicePixelRatio = params.devicePixelRatio;
-                }
-                if (params.viewport !== undefined) {
-                    userContextConfig.viewport = params.viewport;
-                }
+                this.#contextConfigStorage.updateUserContextConfig(userContextId, config);
+            }
+            if (params.context !== undefined) {
+                this.#contextConfigStorage.updateBrowsingContextConfig(params.context, config);
             }
             await Promise.all(impactedTopLevelContexts.map((context) => context.setViewport(params.viewport, params.devicePixelRatio)));
             return {};
@@ -991,9 +1041,11 @@
     class EmulationProcessor {
         #userContextStorage;
         #browsingContextStorage;
-        constructor(browsingContextStorage, userContextStorage) {
+        #contextConfigStorage;
+        constructor(browsingContextStorage, userContextStorage, contextConfigStorage) {
             this.#userContextStorage = userContextStorage;
             this.#browsingContextStorage = browsingContextStorage;
+            this.#contextConfigStorage = contextConfigStorage;
         }
         async setGeolocationOverride(params) {
             if ('coordinates' in params && 'error' in params) {
@@ -1017,11 +1069,67 @@
                 throw new InvalidArgumentException(`Coordinates or error should be set`);
             }
             const browsingContexts = await this.#getRelatedTopLevelBrowsingContexts(params.contexts, params.userContexts);
-            for (const userContextId of params.userContexts ?? []) {
-                const userContextConfig = this.#userContextStorage.getConfig(userContextId);
-                userContextConfig.geolocation = geolocation;
+            for (const browsingContextId of params.contexts ?? []) {
+                this.#contextConfigStorage.updateBrowsingContextConfig(browsingContextId, {
+                    geolocation,
+                });
             }
-            await Promise.all(browsingContexts.map(async (context) => await context.cdpTarget.setGeolocationOverride(geolocation)));
+            for (const userContextId of params.userContexts ?? []) {
+                this.#contextConfigStorage.updateUserContextConfig(userContextId, {
+                    geolocation,
+                });
+            }
+            await Promise.all(browsingContexts.map(async (context) => await context.setGeolocationOverride(geolocation)));
+            return {};
+        }
+        async setLocaleOverride(params) {
+            const locale = params.locale ?? null;
+            if (locale !== null && !isValidLocale(locale)) {
+                throw new InvalidArgumentException(`Invalid locale "${locale}"`);
+            }
+            const browsingContexts = await this.#getRelatedTopLevelBrowsingContexts(params.contexts, params.userContexts);
+            for (const browsingContextId of params.contexts ?? []) {
+                this.#contextConfigStorage.updateBrowsingContextConfig(browsingContextId, {
+                    locale,
+                });
+            }
+            for (const userContextId of params.userContexts ?? []) {
+                this.#contextConfigStorage.updateUserContextConfig(userContextId, {
+                    locale,
+                });
+            }
+            await Promise.all(browsingContexts.map(async (context) => await context.setLocaleOverride(locale)));
+            return {};
+        }
+        async setScriptingEnabled(params) {
+            const scriptingEnabled = params.enabled;
+            const browsingContexts = await this.#getRelatedTopLevelBrowsingContexts(params.contexts, params.userContexts);
+            for (const browsingContextId of params.contexts ?? []) {
+                this.#contextConfigStorage.updateBrowsingContextConfig(browsingContextId, {
+                    scriptingEnabled,
+                });
+            }
+            for (const userContextId of params.userContexts ?? []) {
+                this.#contextConfigStorage.updateUserContextConfig(userContextId, {
+                    scriptingEnabled,
+                });
+            }
+            await Promise.all(browsingContexts.map(async (context) => await context.setScriptingEnabled(scriptingEnabled)));
+            return {};
+        }
+        async setScreenOrientationOverride(params) {
+            const browsingContexts = await this.#getRelatedTopLevelBrowsingContexts(params.contexts, params.userContexts);
+            for (const browsingContextId of params.contexts ?? []) {
+                this.#contextConfigStorage.updateBrowsingContextConfig(browsingContextId, {
+                    screenOrientation: params.screenOrientation,
+                });
+            }
+            for (const userContextId of params.userContexts ?? []) {
+                this.#contextConfigStorage.updateUserContextConfig(userContextId, {
+                    screenOrientation: params.screenOrientation,
+                });
+            }
+            await Promise.all(browsingContexts.map(async (context) => await context.setScreenOrientationOverride(params.screenOrientation)));
             return {};
         }
         async #getRelatedTopLevelBrowsingContexts(browsingContextIds, userContextIds) {
@@ -1058,6 +1166,55 @@
             }
             return [...new Set(result).values()];
         }
+        async setTimezoneOverride(params) {
+            let timezone = params.timezone ?? null;
+            if (timezone !== null && !isValidTimezone(timezone)) {
+                throw new InvalidArgumentException(`Invalid timezone "${timezone}"`);
+            }
+            if (timezone !== null && isTimeZoneOffsetString(timezone)) {
+                timezone = `GMT${timezone}`;
+            }
+            const browsingContexts = await this.#getRelatedTopLevelBrowsingContexts(params.contexts, params.userContexts);
+            for (const browsingContextId of params.contexts ?? []) {
+                this.#contextConfigStorage.updateBrowsingContextConfig(browsingContextId, {
+                    timezone,
+                });
+            }
+            for (const userContextId of params.userContexts ?? []) {
+                this.#contextConfigStorage.updateUserContextConfig(userContextId, {
+                    timezone,
+                });
+            }
+            await Promise.all(browsingContexts.map(async (context) => await context.setTimezoneOverride(timezone)));
+            return {};
+        }
+    }
+    function isValidLocale(locale) {
+        try {
+            new Intl.Locale(locale);
+            return true;
+        }
+        catch (e) {
+            if (e instanceof RangeError) {
+                return false;
+            }
+            throw e;
+        }
+    }
+    function isValidTimezone(timezone) {
+        try {
+            Intl.DateTimeFormat(undefined, { timeZone: timezone });
+            return true;
+        }
+        catch (e) {
+            if (e instanceof RangeError) {
+                return false;
+            }
+            throw e;
+        }
+    }
+    function isTimeZoneOffsetString(timezone) {
+        return /^[+-](?:2[0-3]|[01]\d)(?::[0-5]\d)?$/.test(timezone);
     }
 
     /**
@@ -3188,12 +3345,13 @@
     }
     function sameSiteBiDiToCdp(sameSite) {
         switch (sameSite) {
-            case "strict" :
-                return 'Strict';
-            case "lax" :
-                return 'Lax';
             case "none" :
                 return 'None';
+            case "strict" :
+                return 'Strict';
+            case "default" :
+            case "lax" :
+                return 'Lax';
         }
         throw new InvalidArgumentException(`Unknown 'sameSite' value ${sameSite}`);
     }
@@ -3261,9 +3419,13 @@
     class NetworkProcessor {
         #browsingContextStorage;
         #networkStorage;
-        constructor(browsingContextStorage, networkStorage) {
+        #userContextStorage;
+        #contextConfigStorage;
+        constructor(browsingContextStorage, networkStorage, userContextStorage, contextConfigStorage) {
+            this.#userContextStorage = userContextStorage;
             this.#browsingContextStorage = browsingContextStorage;
             this.#networkStorage = networkStorage;
+            this.#contextConfigStorage = contextConfigStorage;
         }
         async addIntercept(params) {
             this.#browsingContextStorage.verifyTopLevelContextsList(params.contexts);
@@ -3274,9 +3436,7 @@
                 phases: params.phases,
                 contexts: params.contexts,
             });
-            await Promise.all(this.#browsingContextStorage.getAllContexts().map((context) => {
-                return context.cdpTarget.toggleNetwork();
-            }));
+            await this.#toggleNetwork();
             return {
                 intercept,
             };
@@ -3356,11 +3516,14 @@
             }
             return {};
         }
-        async removeIntercept(params) {
-            this.#networkStorage.removeIntercept(params.intercept);
+        async #toggleNetwork() {
             await Promise.all(this.#browsingContextStorage.getAllContexts().map((context) => {
                 return context.cdpTarget.toggleNetwork();
             }));
+        }
+        async removeIntercept(params) {
+            this.#networkStorage.removeIntercept(params.intercept);
+            await this.#toggleNetwork();
             return {};
         }
         async setCacheBehavior(params) {
@@ -3571,6 +3734,76 @@
             }
             return error;
         }
+        async addDataCollector(params) {
+            if (params.userContexts !== undefined && params.contexts !== undefined) {
+                throw new InvalidArgumentException("'contexts' and 'userContexts' are mutually exclusive");
+            }
+            if (params.userContexts !== undefined) {
+                await this.#userContextStorage.verifyUserContextIdList(params.userContexts);
+            }
+            if (params.contexts !== undefined) {
+                for (const browsingContextId of params.contexts) {
+                    const browsingContext = this.#browsingContextStorage.getContext(browsingContextId);
+                    if (!browsingContext.isTopLevelContext()) {
+                        throw new InvalidArgumentException(`Data collectors are available only on top-level browsing contexts`);
+                    }
+                }
+            }
+            const collectorId = this.#networkStorage.addDataCollector(params);
+            await this.#toggleNetwork();
+            return { collector: collectorId };
+        }
+        async getData(params) {
+            return await this.#networkStorage.getCollectedData(params);
+        }
+        async removeDataCollector(params) {
+            this.#networkStorage.removeDataCollector(params);
+            await this.#toggleNetwork();
+            return {};
+        }
+        disownData(params) {
+            this.#networkStorage.disownData(params);
+            return {};
+        }
+        async setExtraHeaders(params) {
+            if (params.userContexts !== undefined && params.contexts !== undefined) {
+                throw new InvalidArgumentException('contexts and userContexts are mutually exclusive');
+            }
+            const cdpExtraHeaders = parseBiDiHeaders(params.headers);
+            const affectedCdpTargets = new Set();
+            if (params.userContexts === undefined && params.contexts === undefined) {
+                this.#contextConfigStorage.updateGlobalConfig({
+                    extraHeaders: cdpExtraHeaders,
+                });
+                this.#browsingContextStorage
+                    .getAllContexts()
+                    .forEach((c) => affectedCdpTargets.add(c.cdpTarget));
+            }
+            if (params.userContexts !== undefined) {
+                await this.#userContextStorage.verifyUserContextIdList(params.userContexts);
+                params.userContexts.forEach((userContext) => {
+                    this.#contextConfigStorage.updateUserContextConfig(userContext, {
+                        extraHeaders: cdpExtraHeaders,
+                    });
+                    this.#browsingContextStorage
+                        .getAllContexts()
+                        .filter((c) => c.userContext === userContext)
+                        .forEach((c) => affectedCdpTargets.add(c.cdpTarget));
+                });
+            }
+            if (params.contexts !== undefined) {
+                this.#browsingContextStorage.verifyTopLevelContextsList(params.contexts);
+                params.contexts.forEach((browsingContextId) => {
+                    this.#contextConfigStorage.updateBrowsingContextConfig(browsingContextId, { extraHeaders: cdpExtraHeaders });
+                    affectedCdpTargets.add(this.#browsingContextStorage.getContext(browsingContextId).cdpTarget);
+                    this.#browsingContextStorage
+                        .getContext(browsingContextId)
+                        .allChildren.forEach((c) => affectedCdpTargets.add(c.cdpTarget));
+                });
+            }
+            await Promise.all(Array.from(affectedCdpTargets).map((cdpTarget) => cdpTarget.setExtraHeaders(cdpExtraHeaders)));
+            return {};
+        }
     }
     function unescapeURLPattern(pattern) {
         const forbidden = new Set(['(', ')', '*', '{', '}']);
@@ -3590,6 +3823,24 @@
             isEscaped = false;
         }
         return result;
+    }
+    function parseBiDiHeaders(headers) {
+        const parsedHeaders = {};
+        for (const bidiHeader of headers) {
+            if (bidiHeader.value.type === 'string') {
+                if (parsedHeaders[bidiHeader.name] === undefined) {
+                    parsedHeaders[bidiHeader.name] = bidiHeader.value.value;
+                }
+                else {
+                    parsedHeaders[bidiHeader.name] =
+                        `${parsedHeaders[bidiHeader.name]}, ${bidiHeader.value.value}`;
+                }
+            }
+            else {
+                throw new UnsupportedOperationException('Only string headers values are supported');
+            }
+        }
+        return parsedHeaders;
     }
 
     /**
@@ -4487,18 +4738,18 @@
         #webExtensionProcessor;
         #parser;
         #logger;
-        constructor(cdpConnection, browserCdpClient, eventManager, browsingContextStorage, realmStorage, preloadScriptStorage, networkStorage, mapperOptionsStorage, bluetoothProcessor, userContextStorage, parser = new BidiNoOpParser(), initConnection, logger) {
+        constructor(cdpConnection, browserCdpClient, eventManager, browsingContextStorage, realmStorage, preloadScriptStorage, networkStorage, contextConfigStorage, bluetoothProcessor, userContextStorage, parser = new BidiNoOpParser(), initConnection, logger) {
             super();
             this.#browserCdpClient = browserCdpClient;
             this.#parser = parser;
             this.#logger = logger;
             this.#bluetoothProcessor = bluetoothProcessor;
-            this.#browserProcessor = new BrowserProcessor(browserCdpClient, browsingContextStorage, mapperOptionsStorage, userContextStorage);
-            this.#browsingContextProcessor = new BrowsingContextProcessor(browserCdpClient, browsingContextStorage, userContextStorage, eventManager);
+            this.#browserProcessor = new BrowserProcessor(browserCdpClient, browsingContextStorage, contextConfigStorage, userContextStorage);
+            this.#browsingContextProcessor = new BrowsingContextProcessor(browserCdpClient, browsingContextStorage, userContextStorage, contextConfigStorage, eventManager);
             this.#cdpProcessor = new CdpProcessor(browsingContextStorage, realmStorage, cdpConnection, browserCdpClient);
-            this.#emulationProcessor = new EmulationProcessor(browsingContextStorage, userContextStorage);
+            this.#emulationProcessor = new EmulationProcessor(browsingContextStorage, userContextStorage, contextConfigStorage);
             this.#inputProcessor = new InputProcessor(browsingContextStorage);
-            this.#networkProcessor = new NetworkProcessor(browsingContextStorage, networkStorage);
+            this.#networkProcessor = new NetworkProcessor(browsingContextStorage, networkStorage, userContextStorage, contextConfigStorage);
             this.#permissionsProcessor = new PermissionsProcessor(browserCdpClient);
             this.#scriptProcessor = new ScriptProcessor(eventManager, browsingContextStorage, realmStorage, preloadScriptStorage, userContextStorage, logger);
             this.#sessionProcessor = new SessionProcessor(eventManager, browserCdpClient, initConnection);
@@ -4542,6 +4793,7 @@
                 case 'browser.removeUserContext':
                     return await this.#browserProcessor.removeUserContext(this.#parser.parseRemoveUserContextParameters(command.params));
                 case 'browser.setClientWindowState':
+                    this.#parser.parseSetClientWindowStateParameters(command.params);
                     throw new UnknownErrorException(`Method ${command.method} is not implemented.`);
                 case 'browsingContext.activate':
                     return await this.#browsingContextProcessor.activate(this.#parser.parseActivateParams(command.params));
@@ -4573,14 +4825,27 @@
                     return this.#cdpProcessor.resolveRealm(this.#parser.parseResolveRealmParams(command.params));
                 case 'goog:cdp.sendCommand':
                     return await this.#cdpProcessor.sendCommand(this.#parser.parseSendCommandParams(command.params));
+                case 'emulation.setForcedColorsModeThemeOverride':
+                    this.#parser.parseSetForcedColorsModeThemeOverrideParams(command.params);
+                    throw new UnknownErrorException(`Method ${command.method} is not implemented.`);
                 case 'emulation.setGeolocationOverride':
                     return await this.#emulationProcessor.setGeolocationOverride(this.#parser.parseSetGeolocationOverrideParams(command.params));
+                case 'emulation.setLocaleOverride':
+                    return await this.#emulationProcessor.setLocaleOverride(this.#parser.parseSetLocaleOverrideParams(command.params));
+                case 'emulation.setScreenOrientationOverride':
+                    return await this.#emulationProcessor.setScreenOrientationOverride(this.#parser.parseSetScreenOrientationOverrideParams(command.params));
+                case 'emulation.setScriptingEnabled':
+                    return await this.#emulationProcessor.setScriptingEnabled(this.#parser.parseSetScriptingEnabledParams(command.params));
+                case 'emulation.setTimezoneOverride':
+                    return await this.#emulationProcessor.setTimezoneOverride(this.#parser.parseSetTimezoneOverrideParams(command.params));
                 case 'input.performActions':
                     return await this.#inputProcessor.performActions(this.#parser.parsePerformActionsParams(command.params));
                 case 'input.releaseActions':
                     return await this.#inputProcessor.releaseActions(this.#parser.parseReleaseActionsParams(command.params));
                 case 'input.setFiles':
                     return await this.#inputProcessor.setFiles(this.#parser.parseSetFilesParams(command.params));
+                case 'network.addDataCollector':
+                    return await this.#networkProcessor.addDataCollector(this.#parser.parseAddDataCollectorParams(command.params));
                 case 'network.addIntercept':
                     return await this.#networkProcessor.addIntercept(this.#parser.parseAddInterceptParams(command.params));
                 case 'network.continueRequest':
@@ -4589,14 +4854,22 @@
                     return await this.#networkProcessor.continueResponse(this.#parser.parseContinueResponseParams(command.params));
                 case 'network.continueWithAuth':
                     return await this.#networkProcessor.continueWithAuth(this.#parser.parseContinueWithAuthParams(command.params));
+                case 'network.disownData':
+                    return this.#networkProcessor.disownData(this.#parser.parseDisownDataParams(command.params));
                 case 'network.failRequest':
                     return await this.#networkProcessor.failRequest(this.#parser.parseFailRequestParams(command.params));
+                case 'network.getData':
+                    return await this.#networkProcessor.getData(this.#parser.parseGetDataParams(command.params));
                 case 'network.provideResponse':
                     return await this.#networkProcessor.provideResponse(this.#parser.parseProvideResponseParams(command.params));
+                case 'network.removeDataCollector':
+                    return await this.#networkProcessor.removeDataCollector(this.#parser.parseRemoveDataCollectorParams(command.params));
                 case 'network.removeIntercept':
                     return await this.#networkProcessor.removeIntercept(this.#parser.parseRemoveInterceptParams(command.params));
                 case 'network.setCacheBehavior':
-                    return await this.#networkProcessor.setCacheBehavior(this.#parser.parseSetCacheBehavior(command.params));
+                    return await this.#networkProcessor.setCacheBehavior(this.#parser.parseSetCacheBehaviorParams(command.params));
+                case 'network.setExtraHeaders':
+                    return await this.#networkProcessor.setExtraHeaders(this.#parser.parseSetExtraHeadersParams(command.params));
                 case 'permissions.setPermission':
                     return await this.#permissionsProcessor.setPermissions(this.#parser.parseSetPermissionsParams(command.params));
                 case 'script.addPreloadScript':
@@ -4678,27 +4951,6 @@
                 }
             }
         }
-    }
-
-    /*
-     *  Copyright 2025 Google LLC.
-     *  Copyright (c) Microsoft Corporation.
-     *
-     *  Licensed under the Apache License, Version 2.0 (the "License");
-     *  you may not use this file except in compliance with the License.
-     *  You may obtain a copy of the License at
-     *
-     *      http://www.apache.org/licenses/LICENSE-2.0
-     *
-     *  Unless required by applicable law or agreed to in writing, software
-     *  distributed under the License is distributed on an "AS IS" BASIS,
-     *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-     *  See the License for the specific language governing permissions and
-     *  limitations under the License.
-     *
-     */
-    class MapperOptionsStorage {
-        mapperOptions;
     }
 
     /**
@@ -5098,14 +5350,69 @@
      * See the License for the specific language governing permissions and
      * limitations under the License.
      */
-    class UserContextConfig {
-        userContextId;
+    class ContextConfig {
         acceptInsecureCerts;
         viewport;
         devicePixelRatio;
+        extraHeaders;
         geolocation;
-        constructor(userContextId) {
-            this.userContextId = userContextId;
+        locale;
+        prerenderingDisabled;
+        screenOrientation;
+        scriptingEnabled;
+        timezone;
+        userPromptHandler;
+        static merge(...configs) {
+            const result = new ContextConfig();
+            for (const config of configs) {
+                if (!config) {
+                    continue;
+                }
+                for (const key in config) {
+                    const value = config[key];
+                    if (value !== undefined) {
+                        result[key] = value;
+                    }
+                }
+            }
+            return result;
+        }
+    }
+
+    /*
+     * Copyright 2025 Google LLC.
+     * Copyright (c) Microsoft Corporation.
+     *
+     * Licensed under the Apache License, Version 2.0 (the "License");
+     * you may not use this file except in compliance with the License.
+     * You may obtain a copy of the License at
+     *
+     *     http://www.apache.org/licenses/LICENSE-2.0
+     *
+     * Unless required by applicable law or agreed to in writing, software
+     * distributed under the License is distributed on an "AS IS" BASIS,
+     * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     * See the License for the specific language governing permissions and
+     * limitations under the License.
+     */
+    class ContextConfigStorage {
+        #global = new ContextConfig();
+        #userContextConfigs = new Map();
+        #browsingContextConfigs = new Map();
+        updateGlobalConfig(config) {
+            this.#global = ContextConfig.merge(this.#global, config);
+        }
+        updateBrowsingContextConfig(browsingContextId, config) {
+            this.#browsingContextConfigs.set(browsingContextId, ContextConfig.merge(this.#browsingContextConfigs.get(browsingContextId), config));
+        }
+        updateUserContextConfig(userContext, config) {
+            this.#userContextConfigs.set(userContext, ContextConfig.merge(this.#userContextConfigs.get(userContext), config));
+        }
+        getGlobalConfig() {
+            return this.#global;
+        }
+        getActiveConfig(topLevelBrowsingContextId, userContext) {
+            return ContextConfig.merge(this.#global, this.#userContextConfigs.get(userContext), this.#browsingContextConfigs.get(topLevelBrowsingContextId));
         }
     }
 
@@ -5127,7 +5434,6 @@
      */
     class UserContextStorage {
         #browserClient;
-        #userConfigMap = new Map();
         constructor(browserClient) {
             this.#browserClient = browserClient;
         }
@@ -5143,12 +5449,6 @@
                     };
                 }),
             ];
-        }
-        getConfig(userContextId) {
-            const userContextConfig = this.#userConfigMap.get(userContextId) ??
-                new UserContextConfig(userContextId);
-            this.#userConfigMap.set(userContextId, userContextConfig);
-            return userContextConfig;
         }
         async verifyUserContextIdList(userContextIds) {
             const foundContexts = new Set();
@@ -6192,6 +6492,7 @@
         #id;
         userContext;
         #hiddenSandbox = uuidv4();
+        #downloadIdToUrlMap = new Map();
         #loaderId;
         #parentId = null;
         #originalOpener;
@@ -6206,9 +6507,9 @@
         #logger;
         #navigationTracker;
         #realmStorage;
-        #unhandledPromptBehavior;
+        #configStorage;
         #lastUserPromptType;
-        constructor(id, parentId, userContext, cdpTarget, eventManager, browsingContextStorage, realmStorage, url, originalOpener, unhandledPromptBehavior, logger) {
+        constructor(id, parentId, userContext, cdpTarget, eventManager, browsingContextStorage, realmStorage, configStorage, url, originalOpener, logger) {
             this.#cdpTarget = cdpTarget;
             this.#id = id;
             this.#parentId = parentId;
@@ -6216,14 +6517,14 @@
             this.#eventManager = eventManager;
             this.#browsingContextStorage = browsingContextStorage;
             this.#realmStorage = realmStorage;
-            this.#unhandledPromptBehavior = unhandledPromptBehavior;
+            this.#configStorage = configStorage;
             this.#logger = logger;
             this.#originalOpener = originalOpener;
             this.#realmStorage.hiddenSandboxes.add(this.#hiddenSandbox);
             this.#navigationTracker = new NavigationTracker(url, id, eventManager, logger);
         }
-        static create(id, parentId, userContext, cdpTarget, eventManager, browsingContextStorage, realmStorage, url, originalOpener, unhandledPromptBehavior, logger) {
-            const context = new _a$5(id, parentId, userContext, cdpTarget, eventManager, browsingContextStorage, realmStorage, url, originalOpener, unhandledPromptBehavior, logger);
+        static create(id, parentId, userContext, cdpTarget, eventManager, browsingContextStorage, realmStorage, configStorage, url, originalOpener, logger) {
+            const context = new _a$5(id, parentId, userContext, cdpTarget, eventManager, browsingContextStorage, realmStorage, configStorage, url, originalOpener, logger);
             context.#initListeners();
             browsingContextStorage.addContext(context);
             if (!context.isTopLevelContext()) {
@@ -6620,6 +6921,7 @@
                 if (this.id !== params.frameId) {
                     return;
                 }
+                this.#downloadIdToUrlMap.set(params.guid, params.url);
                 this.#eventManager.registerEvent({
                     type: 'event',
                     method: BrowsingContext$2.EventNames.DownloadWillBegin,
@@ -6631,6 +6933,46 @@
                         url: params.url,
                     },
                 }, this.id);
+            });
+            this.#cdpTarget.browserCdpClient.on('Browser.downloadProgress', (params) => {
+                if (!this.#downloadIdToUrlMap.has(params.guid)) {
+                    return;
+                }
+                if (params.state === 'inProgress') {
+                    return;
+                }
+                const url = this.#downloadIdToUrlMap.get(params.guid);
+                switch (params.state) {
+                    case 'canceled':
+                        this.#eventManager.registerEvent({
+                            type: 'event',
+                            method: BrowsingContext$2.EventNames.DownloadEnd,
+                            params: {
+                                status: 'canceled',
+                                context: this.id,
+                                navigation: params.guid,
+                                timestamp: getTimestamp(),
+                                url,
+                            },
+                        }, this.id);
+                        break;
+                    case 'completed':
+                        this.#eventManager.registerEvent({
+                            type: 'event',
+                            method: BrowsingContext$2.EventNames.DownloadEnd,
+                            params: {
+                                filepath: params.filePath ?? null,
+                                status: 'complete',
+                                context: this.id,
+                                navigation: params.guid,
+                                timestamp: getTimestamp(),
+                                url,
+                            },
+                        }, this.id);
+                        break;
+                    default:
+                        throw new UnknownErrorException(`Unknown download state: ${params.state}`);
+                }
             });
         }
         static #getPromptType(cdpType) {
@@ -6647,22 +6989,23 @@
         }
         #getPromptHandler(promptType) {
             const defaultPromptHandler = "dismiss" ;
+            const contextConfig = this.#configStorage.getActiveConfig(this.top.id, this.userContext);
             switch (promptType) {
                 case "alert" :
-                    return (this.#unhandledPromptBehavior?.alert ??
-                        this.#unhandledPromptBehavior?.default ??
+                    return (contextConfig.userPromptHandler?.alert ??
+                        contextConfig.userPromptHandler?.default ??
                         defaultPromptHandler);
                 case "beforeunload" :
-                    return (this.#unhandledPromptBehavior?.beforeUnload ??
-                        this.#unhandledPromptBehavior?.default ??
+                    return (contextConfig.userPromptHandler?.beforeUnload ??
+                        contextConfig.userPromptHandler?.default ??
                         "accept" );
                 case "confirm" :
-                    return (this.#unhandledPromptBehavior?.confirm ??
-                        this.#unhandledPromptBehavior?.default ??
+                    return (contextConfig.userPromptHandler?.confirm ??
+                        contextConfig.userPromptHandler?.default ??
                         defaultPromptHandler);
                 case "prompt" :
-                    return (this.#unhandledPromptBehavior?.prompt ??
-                        this.#unhandledPromptBehavior?.default ??
+                    return (contextConfig.userPromptHandler?.prompt ??
+                        contextConfig.userPromptHandler?.default ??
                         defaultPromptHandler);
             }
         }
@@ -6777,7 +7120,7 @@
             await this.cdpTarget.setViewport(viewport, devicePixelRatio);
         }
         async handleUserPrompt(accept, userText) {
-            await this.#cdpTarget.cdpClient.sendCommand('Page.handleJavaScriptDialog', {
+            await this.top.#cdpTarget.cdpClient.sendCommand('Page.handleJavaScriptDialog', {
                 accept: accept ?? true,
                 promptText: userText,
             });
@@ -6997,8 +7340,9 @@
                             const locateNodesUsingCss = (element) => {
                                 if (!(element instanceof HTMLElement ||
                                     element instanceof Document ||
-                                    element instanceof DocumentFragment)) {
-                                    throw new Error('startNodes in css selector should be HTMLElement, Document or DocumentFragment');
+                                    element instanceof DocumentFragment ||
+                                    element instanceof SVGElement)) {
+                                    throw new Error('startNodes in css selector should be HTMLElement, SVGElement or Document or DocumentFragment');
                                 }
                                 return [...element.querySelectorAll(cssSelector)];
                             };
@@ -7250,8 +7594,8 @@
                     throw new InvalidSelectorException(`Not valid selector ${typeof locator.value === 'string' ? locator.value : JSON.stringify(locator.value)}`);
                 }
                 if (locatorResult.exceptionDetails.text ===
-                    'Error: startNodes in css selector should be HTMLElement, Document or DocumentFragment') {
-                    throw new InvalidArgumentException('startNodes in css selector should be HTMLElement, Document or DocumentFragment');
+                    'Error: startNodes in css selector should be HTMLElement, SVGElement or Document or DocumentFragment') {
+                    throw new InvalidArgumentException('startNodes in css selector should be HTMLElement, SVGElement or Document or DocumentFragment');
                 }
                 throw new UnknownErrorException(`Unexpected error in selector script: ${locatorResult.exceptionDetails.text}`);
             }
@@ -7265,6 +7609,27 @@
                 return value;
             });
             return { nodes };
+        }
+        #getAllRelatedCdpTargets() {
+            const targets = new Set();
+            targets.add(this.cdpTarget);
+            this.allChildren.forEach((c) => targets.add(c.cdpTarget));
+            return Array.from(targets);
+        }
+        async setTimezoneOverride(timezone) {
+            await Promise.all(this.#getAllRelatedCdpTargets().map(async (cdpTarget) => await cdpTarget.setTimezoneOverride(timezone)));
+        }
+        async setLocaleOverride(locale) {
+            await Promise.all(this.#getAllRelatedCdpTargets().map(async (cdpTarget) => await cdpTarget.setLocaleOverride(locale)));
+        }
+        async setGeolocationOverride(geolocation) {
+            await Promise.all(this.#getAllRelatedCdpTargets().map(async (cdpTarget) => await cdpTarget.setGeolocationOverride(geolocation)));
+        }
+        async setScreenOrientationOverride(screenOrientation) {
+            await this.#cdpTarget.setScreenOrientationOverride(screenOrientation);
+        }
+        async setScriptingEnabled(scriptingEnabled) {
+            await Promise.all(this.#getAllRelatedCdpTargets().map(async (cdpTarget) => await cdpTarget.setScriptingEnabled(scriptingEnabled)));
         }
     }
     _a$5 = BrowsingContextImpl;
@@ -7731,6 +8096,7 @@
 
     class CdpTarget {
         #id;
+        #userContext;
         #cdpClient;
         #browserCdpClient;
         #parentCdpClient;
@@ -7738,13 +8104,17 @@
         #eventManager;
         #preloadScriptStorage;
         #browsingContextStorage;
-        #prerenderingDisabled;
         #networkStorage;
-        #userContextConfig;
+        contextConfigStorage;
         #unblocked = new Deferred();
-        #unhandledPromptBehavior;
         #logger;
-        #previousViewport = { width: 0, height: 0 };
+        #previousDeviceMetricsOverride = {
+            width: 0,
+            height: 0,
+            deviceScaleFactor: 0,
+            mobile: false,
+            dontSetVisibleSize: true,
+        };
         #windowId;
         #deviceAccessEnabled = false;
         #cacheDisableState = false;
@@ -7753,15 +8123,15 @@
             response: false,
             auth: false,
         };
-        static create(targetId, cdpClient, browserCdpClient, parentCdpClient, realmStorage, eventManager, preloadScriptStorage, browsingContextStorage, networkStorage, prerenderingDisabled, userContextConfig, unhandledPromptBehavior, logger) {
-            const cdpTarget = new CdpTarget(targetId, cdpClient, browserCdpClient, parentCdpClient, eventManager, realmStorage, preloadScriptStorage, browsingContextStorage, networkStorage, prerenderingDisabled, userContextConfig, unhandledPromptBehavior, logger);
+        static create(targetId, cdpClient, browserCdpClient, parentCdpClient, realmStorage, eventManager, preloadScriptStorage, browsingContextStorage, networkStorage, configStorage, userContext, logger) {
+            const cdpTarget = new CdpTarget(targetId, cdpClient, browserCdpClient, parentCdpClient, eventManager, realmStorage, preloadScriptStorage, browsingContextStorage, configStorage, networkStorage, userContext, logger);
             LogManager.create(cdpTarget, realmStorage, eventManager, logger);
             cdpTarget.#setEventListeners();
             void cdpTarget.#unblock();
             return cdpTarget;
         }
-        constructor(targetId, cdpClient, browserCdpClient, parentCdpClient, eventManager, realmStorage, preloadScriptStorage, browsingContextStorage, networkStorage, prerenderingDisabled, userContextConfig, unhandledPromptBehavior, logger) {
-            this.#userContextConfig = userContextConfig;
+        constructor(targetId, cdpClient, browserCdpClient, parentCdpClient, eventManager, realmStorage, preloadScriptStorage, browsingContextStorage, configStorage, networkStorage, userContext, logger) {
+            this.#userContext = userContext;
             this.#id = targetId;
             this.#cdpClient = cdpClient;
             this.#browserCdpClient = browserCdpClient;
@@ -7771,8 +8141,7 @@
             this.#preloadScriptStorage = preloadScriptStorage;
             this.#networkStorage = networkStorage;
             this.#browsingContextStorage = browsingContextStorage;
-            this.#prerenderingDisabled = prerenderingDisabled;
-            this.#unhandledPromptBehavior = unhandledPromptBehavior;
+            this.contextConfigStorage = configStorage;
             this.#logger = logger;
         }
         get unblocked() {
@@ -7821,12 +8190,6 @@
                         enabled: true,
                     }),
                     this.#cdpClient
-                        .sendCommand('Page.setPrerenderingAllowed', {
-                        isAllowed: !this.#prerenderingDisabled,
-                    })
-                        .catch(() => {
-                    }),
-                    this.#cdpClient
                         .sendCommand('Network.enable')
                         .then(() => this.toggleNetworkIfNeeded()),
                     this.#cdpClient.sendCommand('Target.setAutoAttach', {
@@ -7869,7 +8232,7 @@
             }
             if (maybeContext === undefined && frame.parentId !== undefined) {
                 const parentBrowsingContext = this.#browsingContextStorage.getContext(frame.parentId);
-                BrowsingContextImpl.create(frame.id, frame.parentId, parentBrowsingContext.userContext, parentBrowsingContext.cdpTarget, this.#eventManager, this.#browsingContextStorage, this.#realmStorage, frame.url, undefined, this.#unhandledPromptBehavior, this.#logger);
+                BrowsingContextImpl.create(frame.id, frame.parentId, this.#userContext, parentBrowsingContext.cdpTarget, this.#eventManager, this.#browsingContextStorage, this.#realmStorage, this.contextConfigStorage, frame.url, undefined, this.#logger);
             }
             frameTree.childFrames?.map((frameTree) => this.#restoreFrameTreeState(frameTree));
         }
@@ -8070,28 +8433,24 @@
                 await this.cdpClient.sendCommand('Emulation.clearDeviceMetricsOverride');
                 return;
             }
-            let newViewport;
-            if (viewport === undefined) {
-                newViewport = this.#previousViewport;
+            const newViewport = { ...this.#previousDeviceMetricsOverride };
+            if (viewport === null) {
+                newViewport.width = 0;
+                newViewport.height = 0;
             }
-            else if (viewport === null) {
-                newViewport = {
-                    width: 0,
-                    height: 0,
-                };
+            else if (viewport !== undefined) {
+                newViewport.width = viewport.width;
+                newViewport.height = viewport.height;
             }
-            else {
-                newViewport = viewport;
+            if (devicePixelRatio === null) {
+                newViewport.deviceScaleFactor = 0;
+            }
+            else if (devicePixelRatio !== undefined) {
+                newViewport.deviceScaleFactor = devicePixelRatio;
             }
             try {
-                await this.cdpClient.sendCommand('Emulation.setDeviceMetricsOverride', {
-                    width: newViewport.width,
-                    height: newViewport.height,
-                    deviceScaleFactor: devicePixelRatio ? devicePixelRatio : 0,
-                    mobile: false,
-                    dontSetVisibleSize: true,
-                });
-                this.#previousViewport = newViewport;
+                await this.cdpClient.sendCommand('Emulation.setDeviceMetricsOverride', newViewport);
+                this.#previousDeviceMetricsOverride = newViewport;
             }
             catch (err) {
                 if (err.message.startsWith(
@@ -8103,17 +8462,41 @@
         }
         async #setUserContextConfig() {
             const promises = [];
-            if (this.#userContextConfig.viewport !== undefined ||
-                this.#userContextConfig.devicePixelRatio !== undefined) {
-                promises.push(this.setViewport(this.#userContextConfig.viewport, this.#userContextConfig.devicePixelRatio));
+            const config = this.contextConfigStorage.getActiveConfig(this.topLevelId, this.#userContext);
+            promises.push(this.#cdpClient
+                .sendCommand('Page.setPrerenderingAllowed', {
+                isAllowed: !config.prerenderingDisabled,
+            })
+                .catch(() => {
+            }));
+            if (config.viewport !== undefined ||
+                config.devicePixelRatio !== undefined) {
+                promises.push(this.setViewport(config.viewport, config.devicePixelRatio).catch(() => {
+                }));
             }
-            if (this.#userContextConfig.geolocation !== undefined &&
-                this.#userContextConfig.geolocation !== null) {
-                promises.push(this.setGeolocationOverride(this.#userContextConfig.geolocation));
+            if (config.screenOrientation !== undefined &&
+                config.screenOrientation !== null) {
+                promises.push(this.setScreenOrientationOverride(config.screenOrientation).catch(() => {
+                }));
             }
-            if (this.#userContextConfig.acceptInsecureCerts !== undefined) {
+            if (config.geolocation !== undefined && config.geolocation !== null) {
+                promises.push(this.setGeolocationOverride(config.geolocation));
+            }
+            if (config.locale !== undefined) {
+                promises.push(this.setLocaleOverride(config.locale));
+            }
+            if (config.timezone !== undefined) {
+                promises.push(this.setTimezoneOverride(config.timezone));
+            }
+            if (config.extraHeaders !== undefined) {
+                promises.push(this.setExtraHeaders(config.extraHeaders));
+            }
+            if (config.scriptingEnabled !== undefined) {
+                promises.push(this.setScriptingEnabled(config.scriptingEnabled));
+            }
+            if (config.acceptInsecureCerts !== undefined) {
                 promises.push(this.cdpClient.sendCommand('Security.setIgnoreCertificateErrors', {
-                    ignore: this.#userContextConfig.acceptInsecureCerts,
+                    ignore: config.acceptInsecureCerts,
                 }));
             }
             await Promise.all(promises);
@@ -8125,8 +8508,9 @@
             return this.#eventManager.subscriptionManager.isSubscribedTo(moduleOrEvent, this.topLevelId);
         }
         #ignoreFileDialog() {
-            return ((this.#unhandledPromptBehavior?.file ??
-                this.#unhandledPromptBehavior?.default ??
+            const config = this.contextConfigStorage.getActiveConfig(this.topLevelId, this.#userContext);
+            return ((config.userPromptHandler?.file ??
+                config.userPromptHandler?.default ??
                 "ignore" ) ===
                 "ignore" );
         }
@@ -8155,6 +8539,105 @@
                 throw new UnknownErrorException('Unexpected geolocation coordinates value');
             }
         }
+        async setScreenOrientationOverride(screenOrientation) {
+            const newViewport = { ...this.#previousDeviceMetricsOverride };
+            if (screenOrientation === null) {
+                delete newViewport.screenOrientation;
+            }
+            else {
+                newViewport.screenOrientation =
+                    this.#toCdpScreenOrientationAngle(screenOrientation);
+            }
+            await this.cdpClient.sendCommand('Emulation.setDeviceMetricsOverride', newViewport);
+            this.#previousDeviceMetricsOverride = newViewport;
+        }
+        #toCdpScreenOrientationAngle(orientation) {
+            if (orientation.natural === "portrait" ) {
+                switch (orientation.type) {
+                    case 'portrait-primary':
+                        return {
+                            angle: 0,
+                            type: 'portraitPrimary',
+                        };
+                    case 'landscape-primary':
+                        return {
+                            angle: 90,
+                            type: 'landscapePrimary',
+                        };
+                    case 'portrait-secondary':
+                        return {
+                            angle: 180,
+                            type: 'portraitSecondary',
+                        };
+                    case 'landscape-secondary':
+                        return {
+                            angle: 270,
+                            type: 'landscapeSecondary',
+                        };
+                    default:
+                        throw new UnknownErrorException(`Unexpected screen orientation type ${orientation.type}`);
+                }
+            }
+            if (orientation.natural === "landscape" ) {
+                switch (orientation.type) {
+                    case 'landscape-primary':
+                        return {
+                            angle: 0,
+                            type: 'landscapePrimary',
+                        };
+                    case 'portrait-primary':
+                        return {
+                            angle: 90,
+                            type: 'portraitPrimary',
+                        };
+                    case 'landscape-secondary':
+                        return {
+                            angle: 180,
+                            type: 'landscapeSecondary',
+                        };
+                    case 'portrait-secondary':
+                        return {
+                            angle: 270,
+                            type: 'portraitSecondary',
+                        };
+                    default:
+                        throw new UnknownErrorException(`Unexpected screen orientation type ${orientation.type}`);
+                }
+            }
+            throw new UnknownErrorException(`Unexpected orientation natural ${orientation.natural}`);
+        }
+        async setLocaleOverride(locale) {
+            if (locale === null) {
+                await this.cdpClient.sendCommand('Emulation.setLocaleOverride', {});
+            }
+            else {
+                await this.cdpClient.sendCommand('Emulation.setLocaleOverride', {
+                    locale,
+                });
+            }
+        }
+        async setScriptingEnabled(scriptingEnabled) {
+            await this.cdpClient.sendCommand('Emulation.setScriptExecutionDisabled', {
+                value: scriptingEnabled === false,
+            });
+        }
+        async setTimezoneOverride(timezone) {
+            if (timezone === null) {
+                await this.cdpClient.sendCommand('Emulation.setTimezoneOverride', {
+                    timezoneId: '',
+                });
+            }
+            else {
+                await this.cdpClient.sendCommand('Emulation.setTimezoneOverride', {
+                    timezoneId: timezone,
+                });
+            }
+        }
+        async setExtraHeaders(headers) {
+            await this.cdpClient.sendCommand('Network.setExtraHTTPHeaders', {
+                headers,
+            });
+        }
     }
 
     const cdpToBidiTargetTypes = {
@@ -8170,16 +8653,13 @@
         #eventManager;
         #browsingContextStorage;
         #networkStorage;
-        #userContextStorage;
         #bluetoothProcessor;
         #preloadScriptStorage;
         #realmStorage;
+        #configStorage;
         #defaultUserContextId;
         #logger;
-        #unhandledPromptBehavior;
-        #prerenderingDisabled;
-        constructor(cdpConnection, browserCdpClient, selfTargetId, eventManager, browsingContextStorage, userContextStorage, realmStorage, networkStorage, bluetoothProcessor, preloadScriptStorage, defaultUserContextId, prerenderingDisabled, unhandledPromptBehavior, logger) {
-            this.#userContextStorage = userContextStorage;
+        constructor(cdpConnection, browserCdpClient, selfTargetId, eventManager, browsingContextStorage, realmStorage, networkStorage, configStorage, bluetoothProcessor, preloadScriptStorage, defaultUserContextId, logger) {
             this.#cdpConnection = cdpConnection;
             this.#browserCdpClient = browserCdpClient;
             this.#targetKeysToBeIgnoredByAutoAttach.add(selfTargetId);
@@ -8188,11 +8668,10 @@
             this.#browsingContextStorage = browsingContextStorage;
             this.#preloadScriptStorage = preloadScriptStorage;
             this.#networkStorage = networkStorage;
+            this.#configStorage = configStorage;
             this.#bluetoothProcessor = bluetoothProcessor;
             this.#realmStorage = realmStorage;
             this.#defaultUserContextId = defaultUserContextId;
-            this.#prerenderingDisabled = prerenderingDisabled;
-            this.#unhandledPromptBehavior = unhandledPromptBehavior;
             this.#logger = logger;
             this.#setEventListeners(browserCdpClient);
         }
@@ -8211,8 +8690,8 @@
         #handleFrameAttachedEvent(params) {
             const parentBrowsingContext = this.#browsingContextStorage.findContext(params.parentFrameId);
             if (parentBrowsingContext !== undefined) {
-                BrowsingContextImpl.create(params.frameId, params.parentFrameId, parentBrowsingContext.userContext, parentBrowsingContext.cdpTarget, this.#eventManager, this.#browsingContextStorage, this.#realmStorage,
-                'about:blank', undefined, this.#unhandledPromptBehavior, this.#logger);
+                BrowsingContextImpl.create(params.frameId, params.parentFrameId, parentBrowsingContext.userContext, parentBrowsingContext.cdpTarget, this.#eventManager, this.#browsingContextStorage, this.#realmStorage, this.#configStorage,
+                'about:blank', undefined, this.#logger);
             }
         }
         #handleFrameSubtreeWillBeDetached(params) {
@@ -8263,8 +8742,8 @@
                     }
                     else {
                         const parentId = this.#findFrameParentId(targetInfo, parentSessionCdpClient.sessionId);
-                        BrowsingContextImpl.create(targetInfo.targetId, parentId, userContext, cdpTarget, this.#eventManager, this.#browsingContextStorage, this.#realmStorage,
-                        targetInfo.url === '' ? 'about:blank' : targetInfo.url, targetInfo.openerFrameId ?? targetInfo.openerId, this.#unhandledPromptBehavior, this.#logger);
+                        BrowsingContextImpl.create(targetInfo.targetId, parentId, userContext, cdpTarget, this.#eventManager, this.#browsingContextStorage, this.#realmStorage, this.#configStorage,
+                        targetInfo.url === '' ? 'about:blank' : targetInfo.url, targetInfo.openerFrameId ?? targetInfo.openerId, this.#logger);
                     }
                     return;
                 }
@@ -8306,7 +8785,7 @@
         #createCdpTarget(targetCdpClient, parentCdpClient, targetInfo, userContext) {
             this.#setEventListeners(targetCdpClient);
             this.#preloadScriptStorage.onCdpTargetCreated(targetInfo.targetId, userContext);
-            const target = CdpTarget.create(targetInfo.targetId, targetCdpClient, this.#browserCdpClient, parentCdpClient, this.#realmStorage, this.#eventManager, this.#preloadScriptStorage, this.#browsingContextStorage, this.#networkStorage, this.#prerenderingDisabled, this.#userContextStorage.getConfig(userContext), this.#unhandledPromptBehavior, this.#logger);
+            const target = CdpTarget.create(targetInfo.targetId, targetCdpClient, this.#browserCdpClient, parentCdpClient, this.#realmStorage, this.#eventManager, this.#preloadScriptStorage, this.#browsingContextStorage, this.#networkStorage, this.#configStorage, userContext, this.#logger);
             this.#networkStorage.onCdpTargetCreated(target);
             this.#bluetoothProcessor.onCdpTargetCreated(target);
             return target;
@@ -8619,11 +9098,21 @@
             return bodySize;
         }
         get #context() {
-            return (this.#response.paused?.frameId ??
+            const result = this.#response.paused?.frameId ??
                 this.#request.info?.frameId ??
                 this.#request.paused?.frameId ??
-                this.#request.auth?.frameId ??
-                null);
+                this.#request.auth?.frameId;
+            if (result !== undefined) {
+                return result;
+            }
+            if (this.#request?.info?.initiator.type === 'preflight' &&
+                this.#request?.info?.initiator.requestId !== undefined) {
+                const maybeInitiator = this.#networkStorage.getRequestById(this.#request?.info?.initiator.requestId);
+                if (maybeInitiator !== undefined) {
+                    return maybeInitiator.#request.info?.frameId ?? null;
+                }
+            }
+            return null;
         }
         get #statusCode() {
             return (this.#responseOverrides?.statusCode ??
@@ -8750,7 +9239,7 @@
                 responseExtraInfoCompleted &&
                 responseInterceptionCompleted) {
                 this.#emitEvent(this.#getResponseReceivedEvent.bind(this));
-                this.#networkStorage.deleteRequest(this.id);
+                this.#networkStorage.disposeRequest(this.id);
             }
         }
         onRequestWillBeSentEvent(event) {
@@ -8774,6 +9263,7 @@
         onResponseReceivedEvent(event) {
             this.#response.hasExtraInfo = event.hasExtraInfo;
             this.#response.info = event.response;
+            this.#networkStorage.markRequestCollectedIfNeeded(this);
             this.#emitEventsIfReady();
         }
         onServedFromCache() {
@@ -9209,6 +9699,8 @@
         #logger;
         #requests = new Map();
         #intercepts = new Map();
+        #collectors = new Map();
+        #requestCollectors = new Map();
         #defaultCacheBehavior = 'default';
         constructor(eventManager, browsingContextStorage, browserClient, logger) {
             this.#browsingContextStorage = browsingContextStorage;
@@ -9236,7 +9728,7 @@
                         const request = this.getRequestById(params.requestId);
                         if (request && request.isRedirecting()) {
                             request.handleRedirect(params);
-                            this.deleteRequest(params.requestId);
+                            this.disposeRequest(params.requestId);
                             this.#getOrCreateNetworkRequest(params.requestId, cdpTarget, request.redirectCount + 1).onRequestWillBeSentEvent(params);
                         }
                         else {
@@ -9294,6 +9786,83 @@
             ];
             for (const [event, listener] of listeners) {
                 cdpClient.on(event, listener);
+            }
+        }
+        getCollectorsForBrowsingContext(browsingContextId) {
+            if (!this.#browsingContextStorage.hasContext(browsingContextId)) {
+                this.#logger?.(LogType.debugError, 'trying to get collector for unknown browsing context');
+                return [];
+            }
+            const userContext = this.#browsingContextStorage.getContext(browsingContextId).userContext;
+            const collectors = new Set();
+            for (const collector of this.#collectors.values()) {
+                if (collector.contexts?.includes(browsingContextId)) {
+                    collectors.add(collector);
+                }
+                if (collector.userContexts?.includes(userContext)) {
+                    collectors.add(collector);
+                }
+                if (collector.userContexts === undefined &&
+                    collector.contexts === undefined) {
+                    collectors.add(collector);
+                }
+            }
+            return [...collectors.values()];
+        }
+        async getCollectedData(params) {
+            if (params.collector !== undefined &&
+                !this.#collectors.has(params.collector)) {
+                throw new NoSuchNetworkCollectorException(`Unknown collector ${params.collector}`);
+            }
+            const requestCollectors = this.#requestCollectors.get(params.request);
+            if (requestCollectors === undefined) {
+                throw new NoSuchNetworkDataException(`No collected data for request ${params.request}`);
+            }
+            if (params.collector !== undefined &&
+                !requestCollectors.has(params.collector)) {
+                throw new NoSuchNetworkDataException(`Collector ${params.collector} didn't collect data for request ${params.request}`);
+            }
+            if (params.disown && params.collector === undefined) {
+                throw new InvalidArgumentException('Cannot disown collected data without collector ID');
+            }
+            const request = this.getRequestById(params.request);
+            if (request === undefined) {
+                throw new NoSuchNetworkDataException(`No collected data for request ${params.request}`);
+            }
+            const responseBody = await request.cdpClient.sendCommand('Network.getResponseBody', { requestId: request.id });
+            if (params.disown && params.collector !== undefined) {
+                this.#requestCollectors.delete(params.request);
+                this.disposeRequest(request.id);
+            }
+            return {
+                bytes: {
+                    type: responseBody.base64Encoded ? 'base64' : 'string',
+                    value: responseBody.body,
+                },
+            };
+        }
+        #getCollectorIdsForRequest(request) {
+            const collectors = new Set();
+            for (const collectorId of this.#collectors.keys()) {
+                const collector = this.#collectors.get(collectorId);
+                if (!collector.userContexts && !collector.contexts) {
+                    collectors.add(collectorId);
+                }
+                if (collector.contexts?.includes(request.cdpTarget.topLevelId)) {
+                    collectors.add(collectorId);
+                }
+                if (collector.userContexts?.includes(this.#browsingContextStorage.getContext(request.cdpTarget.topLevelId)
+                    .userContext)) {
+                    collectors.add(collectorId);
+                }
+            }
+            this.#logger?.(LogType.debug, `Request ${request.id} has ${collectors.size} collectors`);
+            return [...collectors.values()];
+        }
+        markRequestCollectedIfNeeded(request) {
+            const collectorIds = this.#getCollectorIdsForRequest(request);
+            if (collectorIds.length > 0) {
+                this.#requestCollectors.set(request.id, new Set(collectorIds));
             }
         }
         getInterceptionStages(browsingContextId) {
@@ -9379,7 +9948,10 @@
         addRequest(request) {
             this.#requests.set(request.id, request);
         }
-        deleteRequest(id) {
+        disposeRequest(id) {
+            if (this.#requestCollectors.get(id)?.size ?? 0 > 0) {
+                return;
+            }
             this.#requests.delete(id);
         }
         getNavigationId(contextId) {
@@ -9393,6 +9965,46 @@
         }
         get defaultCacheBehavior() {
             return this.#defaultCacheBehavior;
+        }
+        addDataCollector(params) {
+            const collectorId = uuidv4();
+            this.#collectors.set(collectorId, params);
+            return collectorId;
+        }
+        removeDataCollector(params) {
+            const collectorId = params.collector;
+            if (!this.#collectors.has(collectorId)) {
+                throw new NoSuchNetworkCollectorException(`Collector ${params.collector} does not exist`);
+            }
+            this.#collectors.delete(params.collector);
+            for (const [requestId, collectorIds] of this.#requestCollectors) {
+                if (collectorIds.has(collectorId)) {
+                    collectorIds.delete(collectorId);
+                    if (collectorIds.size === 0) {
+                        this.#requestCollectors.delete(requestId);
+                        this.disposeRequest(requestId);
+                    }
+                }
+            }
+        }
+        disownData(params) {
+            const collectorId = params.collector;
+            const requestId = params.request;
+            if (!this.#collectors.has(collectorId)) {
+                throw new NoSuchNetworkCollectorException(`Collector ${collectorId} does not exist`);
+            }
+            if (!this.#requestCollectors.has(requestId)) {
+                throw new NoSuchNetworkDataException(`No collected data for request ${requestId}`);
+            }
+            const collectorIds = this.#requestCollectors.get(requestId);
+            if (!collectorIds.has(collectorId)) {
+                throw new NoSuchNetworkDataException(`No collected data for request ${requestId} and collector ${collectorId}`);
+            }
+            collectorIds.delete(collectorId);
+            if (collectorIds.size === 0) {
+                this.#requestCollectors.delete(requestId);
+                this.disposeRequest(requestId);
+            }
         }
     }
 
@@ -10143,17 +10755,21 @@
             this.#messageQueue = new ProcessingQueue(this.#processOutgoingMessage, this.#logger);
             this.#transport = bidiTransport;
             this.#transport.setOnMessage(this.#handleIncomingMessage);
+            const contextConfigStorage = new ContextConfigStorage();
             const userContextStorage = new UserContextStorage(browserCdpClient);
             this.#eventManager = new EventManager(this.#browsingContextStorage, userContextStorage);
             const networkStorage = new NetworkStorage(this.#eventManager, this.#browsingContextStorage, browserCdpClient, logger);
-            const mapperOptionsStorage = new MapperOptionsStorage();
             this.#bluetoothProcessor = new BluetoothProcessor(this.#eventManager, this.#browsingContextStorage);
-            this.#commandProcessor = new CommandProcessor(cdpConnection, browserCdpClient, this.#eventManager, this.#browsingContextStorage, this.#realmStorage, this.#preloadScriptStorage, networkStorage, mapperOptionsStorage, this.#bluetoothProcessor, userContextStorage, parser, async (options) => {
-                mapperOptionsStorage.mapperOptions = options;
+            this.#commandProcessor = new CommandProcessor(cdpConnection, browserCdpClient, this.#eventManager, this.#browsingContextStorage, this.#realmStorage, this.#preloadScriptStorage, networkStorage, contextConfigStorage, this.#bluetoothProcessor, userContextStorage, parser, async (options) => {
                 await browserCdpClient.sendCommand('Security.setIgnoreCertificateErrors', {
                     ignore: options.acceptInsecureCerts ?? false,
                 });
-                new CdpTargetManager(cdpConnection, browserCdpClient, selfTargetId, this.#eventManager, this.#browsingContextStorage, userContextStorage, this.#realmStorage, networkStorage, this.#bluetoothProcessor, this.#preloadScriptStorage, defaultUserContextId, options?.['goog:prerenderingDisabled'] ?? false, options?.unhandledPromptBehavior, logger);
+                contextConfigStorage.updateGlobalConfig({
+                    acceptInsecureCerts: options.acceptInsecureCerts ?? false,
+                    userPromptHandler: options.unhandledPromptBehavior,
+                    prerenderingDisabled: options?.['goog:prerenderingDisabled'] ?? false,
+                });
+                new CdpTargetManager(cdpConnection, browserCdpClient, selfTargetId, this.#eventManager, this.#browsingContextStorage, this.#realmStorage, networkStorage, contextConfigStorage, this.#bluetoothProcessor, this.#preloadScriptStorage, defaultUserContextId, logger);
                 await browserCdpClient.sendCommand('Target.setDiscoverTargets', {
                     discover: true,
                 });
@@ -10590,8 +11206,9 @@
             const formErrors = [];
             for (const sub of this.issues) {
                 if (sub.path.length > 0) {
-                    fieldErrors[sub.path[0]] = fieldErrors[sub.path[0]] || [];
-                    fieldErrors[sub.path[0]].push(mapper(sub));
+                    const firstEl = sub.path[0];
+                    fieldErrors[firstEl] = fieldErrors[firstEl] || [];
+                    fieldErrors[firstEl].push(mapper(sub));
                 }
                 else {
                     formErrors.push(mapper(sub));
@@ -10674,6 +11291,8 @@
                 else if (issue.type === "string")
                     message = `String must contain ${issue.exact ? "exactly" : issue.inclusive ? `at least` : `over`} ${issue.minimum} character(s)`;
                 else if (issue.type === "number")
+                    message = `Number must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${issue.minimum}`;
+                else if (issue.type === "bigint")
                     message = `Number must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${issue.minimum}`;
                 else if (issue.type === "date")
                     message = `Date must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${new Date(Number(issue.minimum))}`;
@@ -11246,6 +11865,8 @@
             return false;
         try {
             const [header] = jwt.split(".");
+            if (!header)
+                return false;
             const base64 = header
                 .replace(/-/g, "+")
                 .replace(/_/g, "/")
@@ -14892,11 +15513,13 @@
         'invalid web extension',
         'move target out of bounds',
         'no such alert',
+        'no such network collector',
         'no such element',
         'no such frame',
         'no such handle',
         'no such history entry',
         'no such intercept',
+        'no such network data',
         'no such node',
         'no such request',
         'no such script',
@@ -14908,6 +15531,7 @@
         'unable to close browser',
         'unable to set cookie',
         'unable to set file input',
+        'unavailable network data',
         'underspecified storage partition',
         'unknown command',
         'unknown error',
@@ -14971,7 +15595,6 @@
         Session.ManualProxyConfigurationSchema = z.lazy(() => z
             .object({
             proxyType: z.literal('manual'),
-            ftpProxy: z.string().optional(),
             httpProxy: z.string().optional(),
             sslProxy: z.string().optional(),
         })
@@ -15163,6 +15786,7 @@
         Browser.CreateUserContextParametersSchema = z.lazy(() => z.object({
             acceptInsecureCerts: z.boolean().optional(),
             proxy: Session$1.ProxyConfigurationSchema.optional(),
+            unhandledPromptBehavior: Session$1.UserPromptHandlerSchema.optional(),
         }));
     })(Browser$1 || (Browser$1 = {}));
     (function (Browser) {
@@ -15744,8 +16368,34 @@
             defaultValue: z.string().optional(),
         }));
     })(BrowsingContext$1 || (BrowsingContext$1 = {}));
-    const EmulationCommandSchema = z.lazy(() => Emulation$1.SetGeolocationOverrideSchema);
+    const EmulationCommandSchema = z.lazy(() => z.union([
+        Emulation$1.SetForcedColorsModeThemeOverrideSchema,
+        Emulation$1.SetGeolocationOverrideSchema,
+        Emulation$1.SetLocaleOverrideSchema,
+        Emulation$1.SetScreenOrientationOverrideSchema,
+        Emulation$1.SetScriptingEnabledSchema,
+        Emulation$1.SetTimezoneOverrideSchema,
+    ]));
     var Emulation$1;
+    (function (Emulation) {
+        Emulation.SetForcedColorsModeThemeOverrideSchema = z.lazy(() => z.object({
+            method: z.literal('emulation.setForcedColorsModeThemeOverride'),
+            params: Emulation.SetForcedColorsModeThemeOverrideParametersSchema,
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetForcedColorsModeThemeOverrideParametersSchema = z.lazy(() => z.object({
+            theme: z.union([Emulation.ForcedColorsModeThemeSchema, z.null()]),
+            contexts: z
+                .array(BrowsingContext$1.BrowsingContextSchema)
+                .min(1)
+                .optional(),
+            userContexts: z.array(Browser$1.UserContextSchema).min(1).optional(),
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.ForcedColorsModeThemeSchema = z.lazy(() => z.enum(['light', 'dark']));
+    })(Emulation$1 || (Emulation$1 = {}));
     (function (Emulation) {
         Emulation.SetGeolocationOverrideSchema = z.lazy(() => z.object({
             method: z.literal('emulation.setGeolocationOverride'),
@@ -15793,15 +16443,101 @@
             type: z.literal('positionUnavailable'),
         }));
     })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetLocaleOverrideSchema = z.lazy(() => z.object({
+            method: z.literal('emulation.setLocaleOverride'),
+            params: Emulation.SetLocaleOverrideParametersSchema,
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetLocaleOverrideParametersSchema = z.lazy(() => z.object({
+            locale: z.union([z.string(), z.null()]),
+            contexts: z
+                .array(BrowsingContext$1.BrowsingContextSchema)
+                .min(1)
+                .optional(),
+            userContexts: z.array(Browser$1.UserContextSchema).min(1).optional(),
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetScreenOrientationOverrideSchema = z.lazy(() => z.object({
+            method: z.literal('emulation.setScreenOrientationOverride'),
+            params: Emulation.SetScreenOrientationOverrideParametersSchema,
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.ScreenOrientationNaturalSchema = z.lazy(() => z.enum(['portrait', 'landscape']));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.ScreenOrientationTypeSchema = z.lazy(() => z.enum([
+            'portrait-primary',
+            'portrait-secondary',
+            'landscape-primary',
+            'landscape-secondary',
+        ]));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.ScreenOrientationSchema = z.lazy(() => z.object({
+            natural: Emulation.ScreenOrientationNaturalSchema,
+            type: Emulation.ScreenOrientationTypeSchema,
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetScreenOrientationOverrideParametersSchema = z.lazy(() => z.object({
+            screenOrientation: z.union([Emulation.ScreenOrientationSchema, z.null()]),
+            contexts: z
+                .array(BrowsingContext$1.BrowsingContextSchema)
+                .min(1)
+                .optional(),
+            userContexts: z.array(Browser$1.UserContextSchema).min(1).optional(),
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetScriptingEnabledSchema = z.lazy(() => z.object({
+            method: z.literal('emulation.setScriptingEnabled'),
+            params: Emulation.SetScriptingEnabledParametersSchema,
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetScriptingEnabledParametersSchema = z.lazy(() => z.object({
+            enabled: z.union([z.literal(false), z.null()]),
+            contexts: z
+                .array(BrowsingContext$1.BrowsingContextSchema)
+                .min(1)
+                .optional(),
+            userContexts: z.array(Browser$1.UserContextSchema).min(1).optional(),
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetTimezoneOverrideSchema = z.lazy(() => z.object({
+            method: z.literal('emulation.setTimezoneOverride'),
+            params: Emulation.SetTimezoneOverrideParametersSchema,
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
+    (function (Emulation) {
+        Emulation.SetTimezoneOverrideParametersSchema = z.lazy(() => z.object({
+            timezone: z.union([z.string(), z.null()]),
+            contexts: z
+                .array(BrowsingContext$1.BrowsingContextSchema)
+                .min(1)
+                .optional(),
+            userContexts: z.array(Browser$1.UserContextSchema).min(1).optional(),
+        }));
+    })(Emulation$1 || (Emulation$1 = {}));
     const NetworkCommandSchema = z.lazy(() => z.union([
+        Network$1.AddDataCollectorSchema,
         Network$1.AddInterceptSchema,
         Network$1.ContinueRequestSchema,
         Network$1.ContinueResponseSchema,
         Network$1.ContinueWithAuthSchema,
+        Network$1.DisownDataSchema,
         Network$1.FailRequestSchema,
+        Network$1.GetDataSchema,
         Network$1.ProvideResponseSchema,
+        Network$1.RemoveDataCollectorSchema,
         Network$1.RemoveInterceptSchema,
         Network$1.SetCacheBehaviorSchema,
+        Network$1.SetExtraHeadersSchema,
     ]));
     const NetworkEventSchema = z.lazy(() => z.union([
         Network$1.AuthRequiredSchema,
@@ -15852,7 +16588,13 @@
         }));
     })(Network$1 || (Network$1 = {}));
     (function (Network) {
-        Network.SameSiteSchema = z.lazy(() => z.enum(['strict', 'lax', 'none']));
+        Network.CollectorSchema = z.lazy(() => z.string());
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.CollectorTypeSchema = z.literal('blob');
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.SameSiteSchema = z.lazy(() => z.enum(['strict', 'lax', 'none', 'default']));
     })(Network$1 || (Network$1 = {}));
     (function (Network) {
         Network.CookieSchema = z.lazy(() => z
@@ -15874,6 +16616,9 @@
             name: z.string(),
             value: Network.BytesValueSchema,
         }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.DataTypeSchema = z.literal('response');
     })(Network$1 || (Network$1 = {}));
     (function (Network) {
         Network.FetchTimingInfoSchema = z.lazy(() => z.object({
@@ -15981,6 +16726,29 @@
         }));
     })(Network$1 || (Network$1 = {}));
     (function (Network) {
+        Network.AddDataCollectorSchema = z.lazy(() => z.object({
+            method: z.literal('network.addDataCollector'),
+            params: Network.AddDataCollectorParametersSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.AddDataCollectorParametersSchema = z.lazy(() => z.object({
+            dataTypes: z.array(Network.DataTypeSchema).min(1),
+            maxEncodedDataSize: JsUintSchema,
+            collectorType: Network.CollectorTypeSchema.default('blob').optional(),
+            contexts: z
+                .array(BrowsingContext$1.BrowsingContextSchema)
+                .min(1)
+                .optional(),
+            userContexts: z.array(Browser$1.UserContextSchema).min(1).optional(),
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.AddDataCollectorResultSchema = z.lazy(() => z.object({
+            collector: Network.CollectorSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
         Network.AddInterceptParametersSchema = z.lazy(() => z.object({
             phases: z.array(Network.InterceptPhaseSchema).min(1),
             contexts: z
@@ -16064,6 +16832,19 @@
         }));
     })(Network$1 || (Network$1 = {}));
     (function (Network) {
+        Network.DisownDataSchema = z.lazy(() => z.object({
+            method: z.literal('network.disownData'),
+            params: Network.DisownDataParametersSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.DisownDataParametersSchema = z.lazy(() => z.object({
+            dataType: Network.DataTypeSchema,
+            collector: Network.CollectorSchema,
+            request: Network.RequestSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
         Network.FailRequestSchema = z.lazy(() => z.object({
             method: z.literal('network.failRequest'),
             params: Network.FailRequestParametersSchema,
@@ -16072,6 +16853,25 @@
     (function (Network) {
         Network.FailRequestParametersSchema = z.lazy(() => z.object({
             request: Network.RequestSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.GetDataSchema = z.lazy(() => z.object({
+            method: z.literal('network.getData'),
+            params: Network.GetDataParametersSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.GetDataParametersSchema = z.lazy(() => z.object({
+            dataType: Network.DataTypeSchema,
+            collector: Network.CollectorSchema.optional(),
+            disown: z.boolean().default(false).optional(),
+            request: Network.RequestSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.GetDataResultSchema = z.lazy(() => z.object({
+            bytes: Network.BytesValueSchema,
         }));
     })(Network$1 || (Network$1 = {}));
     (function (Network) {
@@ -16088,6 +16888,17 @@
             headers: z.array(Network.HeaderSchema).optional(),
             reasonPhrase: z.string().optional(),
             statusCode: JsUintSchema.optional(),
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.RemoveDataCollectorSchema = z.lazy(() => z.object({
+            method: z.literal('network.removeDataCollector'),
+            params: Network.RemoveDataCollectorParametersSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.RemoveDataCollectorParametersSchema = z.lazy(() => z.object({
+            collector: Network.CollectorSchema,
         }));
     })(Network$1 || (Network$1 = {}));
     (function (Network) {
@@ -16114,6 +16925,22 @@
                 .array(BrowsingContext$1.BrowsingContextSchema)
                 .min(1)
                 .optional(),
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.SetExtraHeadersSchema = z.lazy(() => z.object({
+            method: z.literal('network.setExtraHeaders'),
+            params: Network.SetExtraHeadersParametersSchema,
+        }));
+    })(Network$1 || (Network$1 = {}));
+    (function (Network) {
+        Network.SetExtraHeadersParametersSchema = z.lazy(() => z.object({
+            headers: z.array(Network.HeaderSchema),
+            contexts: z
+                .array(BrowsingContext$1.BrowsingContextSchema)
+                .min(1)
+                .optional(),
+            userContexts: z.array(Browser$1.UserContextSchema).min(1).optional(),
         }));
     })(Network$1 || (Network$1 = {}));
     const ScriptEventSchema = z.lazy(() => z.union([
@@ -17306,9 +18133,17 @@
             return parseObject(params, Browser$1.RemoveUserContextParametersSchema);
         }
         Browser.parseRemoveUserContextParameters = parseRemoveUserContextParameters;
+        function parseSetClientWindowStateParameters(params) {
+            return parseObject(params, Browser$1.SetClientWindowStateParametersSchema);
+        }
+        Browser.parseSetClientWindowStateParameters = parseSetClientWindowStateParameters;
     })(Browser || (Browser = {}));
     var Network;
     (function (Network) {
+        function parseAddDataCollectorParameters(params) {
+            return parseObject(params, Network$1.AddDataCollectorParametersSchema);
+        }
+        Network.parseAddDataCollectorParameters = parseAddDataCollectorParameters;
         function parseAddInterceptParameters(params) {
             return parseObject(params, Network$1.AddInterceptParametersSchema);
         }
@@ -17325,49 +18160,65 @@
             return parseObject(params, Network$1.ContinueWithAuthParametersSchema);
         }
         Network.parseContinueWithAuthParameters = parseContinueWithAuthParameters;
+        function parseDisownDataParameters(params) {
+            return parseObject(params, Network$1.DisownDataParametersSchema);
+        }
+        Network.parseDisownDataParameters = parseDisownDataParameters;
         function parseFailRequestParameters(params) {
             return parseObject(params, Network$1.FailRequestParametersSchema);
         }
         Network.parseFailRequestParameters = parseFailRequestParameters;
+        function parseGetDataParameters(params) {
+            return parseObject(params, Network$1.GetDataParametersSchema);
+        }
+        Network.parseGetDataParameters = parseGetDataParameters;
         function parseProvideResponseParameters(params) {
             return parseObject(params, Network$1.ProvideResponseParametersSchema);
         }
         Network.parseProvideResponseParameters = parseProvideResponseParameters;
+        function parseRemoveDataCollectorParameters(params) {
+            return parseObject(params, Network$1.RemoveDataCollectorParametersSchema);
+        }
+        Network.parseRemoveDataCollectorParameters = parseRemoveDataCollectorParameters;
         function parseRemoveInterceptParameters(params) {
             return parseObject(params, Network$1.RemoveInterceptParametersSchema);
         }
         Network.parseRemoveInterceptParameters = parseRemoveInterceptParameters;
-        function parseSetCacheBehavior(params) {
+        function parseSetCacheBehaviorParameters(params) {
             return parseObject(params, Network$1.SetCacheBehaviorParametersSchema);
         }
-        Network.parseSetCacheBehavior = parseSetCacheBehavior;
+        Network.parseSetCacheBehaviorParameters = parseSetCacheBehaviorParameters;
+        function parseSetExtraHeadersParameters(params) {
+            return parseObject(params, Network$1.SetExtraHeadersParametersSchema);
+        }
+        Network.parseSetExtraHeadersParameters = parseSetExtraHeadersParameters;
     })(Network || (Network = {}));
     var Script;
     (function (Script) {
-        function parseGetRealmsParams(params) {
-            return parseObject(params, Script$1.GetRealmsParametersSchema);
-        }
-        Script.parseGetRealmsParams = parseGetRealmsParams;
-        function parseEvaluateParams(params) {
-            return parseObject(params, Script$1.EvaluateParametersSchema);
-        }
-        Script.parseEvaluateParams = parseEvaluateParams;
-        function parseDisownParams(params) {
-            return parseObject(params, Script$1.DisownParametersSchema);
-        }
-        Script.parseDisownParams = parseDisownParams;
         function parseAddPreloadScriptParams(params) {
             return parseObject(params, Script$1.AddPreloadScriptParametersSchema);
         }
         Script.parseAddPreloadScriptParams = parseAddPreloadScriptParams;
-        function parseRemovePreloadScriptParams(params) {
-            return parseObject(params, Script$1.RemovePreloadScriptParametersSchema);
-        }
-        Script.parseRemovePreloadScriptParams = parseRemovePreloadScriptParams;
         function parseCallFunctionParams(params) {
             return parseObject(params, Script$1.CallFunctionParametersSchema);
         }
         Script.parseCallFunctionParams = parseCallFunctionParams;
+        function parseDisownParams(params) {
+            return parseObject(params, Script$1.DisownParametersSchema);
+        }
+        Script.parseDisownParams = parseDisownParams;
+        function parseEvaluateParams(params) {
+            return parseObject(params, Script$1.EvaluateParametersSchema);
+        }
+        Script.parseEvaluateParams = parseEvaluateParams;
+        function parseGetRealmsParams(params) {
+            return parseObject(params, Script$1.GetRealmsParametersSchema);
+        }
+        Script.parseGetRealmsParams = parseGetRealmsParams;
+        function parseRemovePreloadScriptParams(params) {
+            return parseObject(params, Script$1.RemovePreloadScriptParametersSchema);
+        }
+        Script.parseRemovePreloadScriptParams = parseRemovePreloadScriptParams;
     })(Script || (Script = {}));
     var BrowsingContext;
     (function (BrowsingContext) {
@@ -17375,42 +18226,22 @@
             return parseObject(params, BrowsingContext$1.ActivateParametersSchema);
         }
         BrowsingContext.parseActivateParams = parseActivateParams;
-        function parseGetTreeParams(params) {
-            return parseObject(params, BrowsingContext$1.GetTreeParametersSchema);
-        }
-        BrowsingContext.parseGetTreeParams = parseGetTreeParams;
-        function parseNavigateParams(params) {
-            return parseObject(params, BrowsingContext$1.NavigateParametersSchema);
-        }
-        BrowsingContext.parseNavigateParams = parseNavigateParams;
-        function parseReloadParams(params) {
-            return parseObject(params, BrowsingContext$1.ReloadParametersSchema);
-        }
-        BrowsingContext.parseReloadParams = parseReloadParams;
-        function parseCreateParams(params) {
-            return parseObject(params, BrowsingContext$1.CreateParametersSchema);
-        }
-        BrowsingContext.parseCreateParams = parseCreateParams;
-        function parseCloseParams(params) {
-            return parseObject(params, BrowsingContext$1.CloseParametersSchema);
-        }
-        BrowsingContext.parseCloseParams = parseCloseParams;
         function parseCaptureScreenshotParams(params) {
             return parseObject(params, BrowsingContext$1.CaptureScreenshotParametersSchema);
         }
         BrowsingContext.parseCaptureScreenshotParams = parseCaptureScreenshotParams;
-        function parsePrintParams(params) {
-            return parseObject(params, BrowsingContext$1.PrintParametersSchema);
+        function parseCloseParams(params) {
+            return parseObject(params, BrowsingContext$1.CloseParametersSchema);
         }
-        BrowsingContext.parsePrintParams = parsePrintParams;
-        function parseSetViewportParams(params) {
-            return parseObject(params, BrowsingContext$1.SetViewportParametersSchema);
+        BrowsingContext.parseCloseParams = parseCloseParams;
+        function parseCreateParams(params) {
+            return parseObject(params, BrowsingContext$1.CreateParametersSchema);
         }
-        BrowsingContext.parseSetViewportParams = parseSetViewportParams;
-        function parseTraverseHistoryParams(params) {
-            return parseObject(params, BrowsingContext$1.TraverseHistoryParametersSchema);
+        BrowsingContext.parseCreateParams = parseCreateParams;
+        function parseGetTreeParams(params) {
+            return parseObject(params, BrowsingContext$1.GetTreeParametersSchema);
         }
-        BrowsingContext.parseTraverseHistoryParams = parseTraverseHistoryParams;
+        BrowsingContext.parseGetTreeParams = parseGetTreeParams;
         function parseHandleUserPromptParameters(params) {
             return parseObject(params, BrowsingContext$1.HandleUserPromptParametersSchema);
         }
@@ -17419,6 +18250,26 @@
             return parseObject(params, BrowsingContext$1.LocateNodesParametersSchema);
         }
         BrowsingContext.parseLocateNodesParams = parseLocateNodesParams;
+        function parseNavigateParams(params) {
+            return parseObject(params, BrowsingContext$1.NavigateParametersSchema);
+        }
+        BrowsingContext.parseNavigateParams = parseNavigateParams;
+        function parsePrintParams(params) {
+            return parseObject(params, BrowsingContext$1.PrintParametersSchema);
+        }
+        BrowsingContext.parsePrintParams = parsePrintParams;
+        function parseReloadParams(params) {
+            return parseObject(params, BrowsingContext$1.ReloadParametersSchema);
+        }
+        BrowsingContext.parseReloadParams = parseReloadParams;
+        function parseSetViewportParams(params) {
+            return parseObject(params, BrowsingContext$1.SetViewportParametersSchema);
+        }
+        BrowsingContext.parseSetViewportParams = parseSetViewportParams;
+        function parseTraverseHistoryParams(params) {
+            return parseObject(params, BrowsingContext$1.TraverseHistoryParametersSchema);
+        }
+        BrowsingContext.parseTraverseHistoryParams = parseTraverseHistoryParams;
     })(BrowsingContext || (BrowsingContext = {}));
     var Session;
     (function (Session) {
@@ -17436,6 +18287,10 @@
     })(Session || (Session = {}));
     var Emulation;
     (function (Emulation) {
+        function parseSetForcedColorsModeThemeOverrideParams(params) {
+            return parseObject(params, Emulation$1.SetForcedColorsModeThemeOverrideParametersSchema);
+        }
+        Emulation.parseSetForcedColorsModeThemeOverrideParams = parseSetForcedColorsModeThemeOverrideParams;
         function parseSetGeolocationOverrideParams(params) {
             if ('coordinates' in params && 'error' in params) {
                 throw new InvalidArgumentException('Coordinates and error cannot be set at the same time');
@@ -17443,6 +18298,22 @@
             return parseObject(params, Emulation$1.SetGeolocationOverrideParametersSchema);
         }
         Emulation.parseSetGeolocationOverrideParams = parseSetGeolocationOverrideParams;
+        function parseSetLocaleOverrideParams(params) {
+            return parseObject(params, Emulation$1.SetLocaleOverrideParametersSchema);
+        }
+        Emulation.parseSetLocaleOverrideParams = parseSetLocaleOverrideParams;
+        function parseSetScreenOrientationOverrideParams(params) {
+            return parseObject(params, Emulation$1.SetScreenOrientationOverrideParametersSchema);
+        }
+        Emulation.parseSetScreenOrientationOverrideParams = parseSetScreenOrientationOverrideParams;
+        function parseSetScriptingEnabledParams(params) {
+            return parseObject(params, Emulation$1.SetScriptingEnabledParametersSchema);
+        }
+        Emulation.parseSetScriptingEnabledParams = parseSetScriptingEnabledParams;
+        function parseSetTimezoneOverrideParams(params) {
+            return parseObject(params, Emulation$1.SetTimezoneOverrideParametersSchema);
+        }
+        Emulation.parseSetTimezoneOverrideParams = parseSetTimezoneOverrideParams;
     })(Emulation || (Emulation = {}));
     var Input;
     (function (Input) {
@@ -17461,6 +18332,10 @@
     })(Input || (Input = {}));
     var Storage;
     (function (Storage) {
+        function parseDeleteCookiesParams(params) {
+            return parseObject(params, Storage$1.DeleteCookiesParametersSchema);
+        }
+        Storage.parseDeleteCookiesParams = parseDeleteCookiesParams;
         function parseGetCookiesParams(params) {
             return parseObject(params, Storage$1.GetCookiesParametersSchema);
         }
@@ -17469,28 +18344,20 @@
             return parseObject(params, Storage$1.SetCookieParametersSchema);
         }
         Storage.parseSetCookieParams = parseSetCookieParams;
-        function parseDeleteCookiesParams(params) {
-            return parseObject(params, Storage$1.DeleteCookiesParametersSchema);
-        }
-        Storage.parseDeleteCookiesParams = parseDeleteCookiesParams;
     })(Storage || (Storage = {}));
     var Cdp;
     (function (Cdp) {
-        const SendCommandRequestSchema = objectType({
-            method: stringType(),
-            params: objectType({}).passthrough().optional(),
-            session: stringType().optional(),
-        });
         const GetSessionRequestSchema = objectType({
             context: BrowsingContext$1.BrowsingContextSchema,
         });
         const ResolveRealmRequestSchema = objectType({
             realm: Script$1.RealmSchema,
         });
-        function parseSendCommandRequest(params) {
-            return parseObject(params, SendCommandRequestSchema);
-        }
-        Cdp.parseSendCommandRequest = parseSendCommandRequest;
+        const SendCommandRequestSchema = objectType({
+            method: stringType(),
+            params: objectType({}).passthrough().optional(),
+            session: stringType().optional(),
+        });
         function parseGetSessionRequest(params) {
             return parseObject(params, GetSessionRequestSchema);
         }
@@ -17499,6 +18366,10 @@
             return parseObject(params, ResolveRealmRequestSchema);
         }
         Cdp.parseResolveRealmRequest = parseResolveRealmRequest;
+        function parseSendCommandRequest(params) {
+            return parseObject(params, SendCommandRequestSchema);
+        }
+        Cdp.parseSendCommandRequest = parseSendCommandRequest;
     })(Cdp || (Cdp = {}));
     var Permissions;
     (function (Permissions) {
@@ -17512,6 +18383,10 @@
     })(Permissions || (Permissions = {}));
     var Bluetooth;
     (function (Bluetooth) {
+        function parseDisableSimulationParameters(params) {
+            return parseObject(params, Bluetooth$1.DisableSimulationParametersSchema);
+        }
+        Bluetooth.parseDisableSimulationParameters = parseDisableSimulationParameters;
         function parseHandleRequestDevicePromptParams(params) {
             return parseObject(params, Bluetooth$1
                 .HandleRequestDevicePromptParametersSchema);
@@ -17521,10 +18396,6 @@
             return parseObject(params, Bluetooth$1.SimulateAdapterParametersSchema);
         }
         Bluetooth.parseSimulateAdapterParams = parseSimulateAdapterParams;
-        function parseDisableSimulationParameters(params) {
-            return parseObject(params, Bluetooth$1.DisableSimulationParametersSchema);
-        }
-        Bluetooth.parseDisableSimulationParameters = parseDisableSimulationParameters;
         function parseSimulateAdvertisementParams(params) {
             return parseObject(params, Bluetooth$1.SimulateAdvertisementParametersSchema);
         }
@@ -17623,6 +18494,9 @@
         parseRemoveUserContextParameters(params) {
             return Browser.parseRemoveUserContextParameters(params);
         }
+        parseSetClientWindowStateParameters(params) {
+            return Browser.parseSetClientWindowStateParameters(params);
+        }
         parseActivateParams(params) {
             return BrowsingContext.parseActivateParams(params);
         }
@@ -17668,8 +18542,23 @@
         parseSendCommandParams(params) {
             return Cdp.parseSendCommandRequest(params);
         }
+        parseSetForcedColorsModeThemeOverrideParams(params) {
+            return Emulation.parseSetForcedColorsModeThemeOverrideParams(params);
+        }
         parseSetGeolocationOverrideParams(params) {
             return Emulation.parseSetGeolocationOverrideParams(params);
+        }
+        parseSetLocaleOverrideParams(params) {
+            return Emulation.parseSetLocaleOverrideParams(params);
+        }
+        parseSetScreenOrientationOverrideParams(params) {
+            return Emulation.parseSetScreenOrientationOverrideParams(params);
+        }
+        parseSetScriptingEnabledParams(params) {
+            return Emulation.parseSetScriptingEnabledParams(params);
+        }
+        parseSetTimezoneOverrideParams(params) {
+            return Emulation.parseSetTimezoneOverrideParams(params);
         }
         parsePerformActionsParams(params) {
             return Input.parsePerformActionsParams(params);
@@ -17679,6 +18568,9 @@
         }
         parseSetFilesParams(params) {
             return Input.parseSetFilesParams(params);
+        }
+        parseAddDataCollectorParams(params) {
+            return Network.parseAddDataCollectorParameters(params);
         }
         parseAddInterceptParams(params) {
             return Network.parseAddInterceptParameters(params);
@@ -17692,17 +18584,29 @@
         parseContinueWithAuthParams(params) {
             return Network.parseContinueWithAuthParameters(params);
         }
+        parseDisownDataParams(params) {
+            return Network.parseDisownDataParameters(params);
+        }
         parseFailRequestParams(params) {
             return Network.parseFailRequestParameters(params);
+        }
+        parseGetDataParams(params) {
+            return Network.parseGetDataParameters(params);
         }
         parseProvideResponseParams(params) {
             return Network.parseProvideResponseParameters(params);
         }
+        parseRemoveDataCollectorParams(params) {
+            return Network.parseRemoveDataCollectorParameters(params);
+        }
         parseRemoveInterceptParams(params) {
             return Network.parseRemoveInterceptParameters(params);
         }
-        parseSetCacheBehavior(params) {
-            return Network.parseSetCacheBehavior(params);
+        parseSetCacheBehaviorParams(params) {
+            return Network.parseSetCacheBehaviorParameters(params);
+        }
+        parseSetExtraHeadersParams(params) {
+            return Network.parseSetExtraHeadersParameters(params);
         }
         parseSetPermissionsParams(params) {
             return Permissions.parseSetPermissionsParams(params);

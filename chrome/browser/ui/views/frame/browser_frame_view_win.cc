@@ -26,7 +26,7 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/frame/browser_caption_button_container_win.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+#include "chrome/browser/ui/views/frame/tab_strip_view_interface.h"
 #include "chrome/browser/ui/views/frame/webui_tab_strip_container_view.h"
 #include "chrome/browser/ui/views/tabs/new_tab_button.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
@@ -105,7 +105,12 @@ BrowserFrameViewWin::BrowserFrameViewWin(BrowserFrame* frame,
   // is true. Everything else here is only used when
   // ShouldBrowserCustomDrawTitlebar() is true.
 
-  if (browser_view->GetSupportsIcon()) {
+  Browser* browser = browser_view->browser();
+  bool supports_title_bar =
+      browser->SupportsWindowFeature(Browser::FEATURE_TITLEBAR);
+
+  // Only show icons if the browser supports title bars.
+  if (supports_title_bar) {
     InitThrobberIcons();
 
     AddChildView(views::Builder<TabIconView>()
@@ -122,7 +127,8 @@ BrowserFrameViewWin::BrowserFrameViewWin(BrowserFrame* frame,
 
   // If this is a web app window, the window title will be part of the
   // BrowserView and thus we don't need to create another one here.
-  if (!browser_view->GetIsWebAppType() && browser_view->GetSupportsTitle()) {
+  if (!browser_view->GetIsWebAppType() && supports_title_bar &&
+      WebUITabStripContainerView::SupportsTouchableTabStrip(browser)) {
     window_title_ = new views::Label(browser_view->GetWindowTitle());
     window_title_->SetSubpixelRenderingEnabled(false);
     window_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -584,7 +590,9 @@ int BrowserFrameViewWin::TitlebarHeight(bool restored) const {
 
 int BrowserFrameViewWin::GetFrameHeight() const {
   if (browser_view()->GetTabStripVisible()) {
-    return browser_view()->tab_strip_region_view()->GetMinimumSize().height() -
+    // TODO(crbug.com/437915973): Account for the vertical tab region when using
+    // GetMinimumSize().
+    return browser_view()->tab_strip_view()->GetMinimumSize().height() -
            WindowTopY() - GetLayoutConstant(TABSTRIP_TOOLBAR_OVERLAP);
   }
   return IsMaximized() ? TitlebarMaximizedVisualHeight()
@@ -715,10 +723,12 @@ void BrowserFrameViewWin::PaintTitlebar(gfx::Canvas* canvas) const {
       titlebar_color));
   canvas->DrawRect(gfx::RectF(0, 0, width() * scale, y), flags);
 
+  // TODO(crbug.com/437915973): Account for the vertical tab region when using
+  // GetMinimumSize().
   const int titlebar_height =
       browser_view()->GetTabStripVisible()
           ? GetBoundsForTabStripRegion(
-                browser_view()->tab_strip_region_view()->GetMinimumSize())
+                browser_view()->tab_strip_view()->GetMinimumSize())
                 .bottom()
           : TitlebarHeight(false);
   const gfx::Rect titlebar_rect = gfx::ToEnclosingRect(

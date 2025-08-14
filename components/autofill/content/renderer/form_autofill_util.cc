@@ -297,12 +297,16 @@ bool IsSelectElement(const WebFormControlElement& element) {
   return GetAutofillFormControlType(element) == FormControlType::kSelectOne;
 }
 
+// TODO(crbug.com/402071086): Remove when AutofillIgnoreCheckableElements is
+// removed.
 bool IsCheckableElement(const WebFormControlElement& element) {
   using enum blink::mojom::FormControlType;
   return element && (element.FormControlTypeForAutofill() == kInputCheckbox ||
                      element.FormControlTypeForAutofill() == kInputRadio);
 }
 
+// TODO(crbug.com/402071086): Remove when AutofillIgnoreCheckableElements is
+// removed.
 bool IsCheckableElement(const WebElement& element) {
   return IsCheckableElement(element.DynamicTo<WebInputElement>());
 }
@@ -2072,7 +2076,7 @@ std::optional<FormData> ExtractFormDataWithFieldsAndFrames(
     ButtonTitlesCache* button_titles_cache,
     DenseSet<ExtractOption> extract_options) {
   CHECK(!form_element || form_element.GetDocument() == document,
-        base::NotFatalUntil::M140);
+        base::NotFatalUntil::M141);
 
   if (form_element && !IsAccessible(form_element)) {
     return std::nullopt;
@@ -2304,11 +2308,22 @@ bool IsAutofillableElement(const WebFormControlElement& element) {
 
 std::optional<FormControlType> ToAutofillFormControlType(
     blink::mojom::FormControlType type) {
+  // We cache this for performance reasons (crbug.com/428506178). This should
+  // not affect tests because the only tests that explicitly set the feature are
+  // two browser tests (form_autofill_util_browsertest.cc and
+  // form_structure_browsertest.cc) whose renderer processes are hopefully never
+  // shared with other tests.
+  const static bool g_autofill_ignore_checkable_elements_enabled =
+      base::FeatureList::IsEnabled(features::kAutofillIgnoreCheckableElements);
+
   // Note that adding a new field type here automatically makes
   // IsAutofillableElement() return true.
   switch (type) {
     case blink::mojom::FormControlType::kInputCheckbox:
-      return FormControlType::kInputCheckbox;
+      if (!g_autofill_ignore_checkable_elements_enabled) {
+        return FormControlType::kInputCheckbox;
+      }
+      break;
     case blink::mojom::FormControlType::kInputEmail:
       return FormControlType::kInputEmail;
     case blink::mojom::FormControlType::kInputMonth:
@@ -2318,7 +2333,10 @@ std::optional<FormControlType> ToAutofillFormControlType(
     case blink::mojom::FormControlType::kInputPassword:
       return FormControlType::kInputPassword;
     case blink::mojom::FormControlType::kInputRadio:
-      return FormControlType::kInputRadio;
+      if (!g_autofill_ignore_checkable_elements_enabled) {
+        return FormControlType::kInputRadio;
+      }
+      break;
     case blink::mojom::FormControlType::kInputSearch:
       return FormControlType::kInputSearch;
     case blink::mojom::FormControlType::kInputTelephone:
@@ -2537,8 +2555,8 @@ FindFormAndFieldForFormControlElement(
   CHECK(base::Contains(GetOwnedFormControls(element.GetDocument(),
                                             element.GetOwningFormForAutofill()),
                        element),
-        base::NotFatalUntil::M140);
-  NOTREACHED(base::NotFatalUntil::M140);
+        base::NotFatalUntil::M141);
+  NOTREACHED(base::NotFatalUntil::M141);
   return std::nullopt;
 }
 

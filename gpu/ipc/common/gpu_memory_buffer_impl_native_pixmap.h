@@ -10,6 +10,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/functional/callback_helpers.h"
 #include "gpu/ipc/common/gpu_ipc_common_export.h"
 #include "gpu/ipc/common/gpu_memory_buffer_impl.h"
 
@@ -18,14 +19,9 @@ class ClientNativePixmap;
 class ClientNativePixmapFactory;
 }  // namespace gfx
 
-namespace media {
-class V4L2JpegEncodeAccelerator;
-class VaapiJpegEncodeAccelerator;
-}  // namespace media
-
 namespace gpu {
 
-class GpuMemoryBufferSupport;
+class ClientSharedImage;
 
 // Implementation of GPU memory buffer based on Ozone native pixmap.
 class GPU_IPC_COMMON_EXPORT GpuMemoryBufferImplNativePixmap
@@ -40,13 +36,24 @@ class GPU_IPC_COMMON_EXPORT GpuMemoryBufferImplNativePixmap
 
   static constexpr gfx::GpuMemoryBufferType kBufferType = gfx::NATIVE_PIXMAP;
 
+  static std::unique_ptr<GpuMemoryBufferImplNativePixmap>
+  CreateFromHandleForTesting(
+      gfx::ClientNativePixmapFactory* client_native_pixmap_factory,
+      gfx::GpuMemoryBufferHandle handle,
+      const gfx::Size& size,
+      gfx::BufferFormat format,
+      gfx::BufferUsage usage) {
+    return CreateFromHandle(client_native_pixmap_factory, std::move(handle),
+                            size, format, usage);
+  }
+
   static base::OnceClosure AllocateForTesting(
       const gfx::Size& size,
       gfx::BufferFormat format,
       gfx::BufferUsage usage,
       gfx::GpuMemoryBufferHandle* handle);
 
-  // Overridden from gfx::GpuMemoryBuffer:
+  // Overridden from GpuMemoryBufferImpl:
   bool Map() override;
   void* memory(size_t plane) override;
   void Unmap() override;
@@ -55,25 +62,18 @@ class GPU_IPC_COMMON_EXPORT GpuMemoryBufferImplNativePixmap
   gfx::GpuMemoryBufferHandle CloneHandle() const override;
 
  private:
-  // TODO(crbug.com/404905709): Eliminate these class' creation of GMBs and
-  // remove this friending.
-  friend class media::V4L2JpegEncodeAccelerator;
-  friend class media::VaapiJpegEncodeAccelerator;
-  friend class GpuMemoryBufferSupport;
+  friend class ClientSharedImage;
 
   static std::unique_ptr<GpuMemoryBufferImplNativePixmap> CreateFromHandle(
       gfx::ClientNativePixmapFactory* client_native_pixmap_factory,
       gfx::GpuMemoryBufferHandle handle,
       const gfx::Size& size,
       gfx::BufferFormat format,
-      gfx::BufferUsage usage,
-      DestructionCallback callback);
+      gfx::BufferUsage usage);
 
   GpuMemoryBufferImplNativePixmap(
-      gfx::GpuMemoryBufferId id,
       const gfx::Size& size,
       gfx::BufferFormat format,
-      DestructionCallback callback,
       std::unique_ptr<gfx::ClientNativePixmap> native_pixmap);
 
   const std::unique_ptr<gfx::ClientNativePixmap> pixmap_;

@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/builder_config.star", "builder_config")
-load("//lib/builders.star", "builder", "cpu", "defaults", "os", "siso")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/targets.star", "targets")
+load("@chromium-luci//builder_config.star", "builder_config")
+load("@chromium-luci//builders.star", "builder", "cpu", "defaults", "os")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//targets.star", "targets")
+load("//lib/siso.star", "siso")
 
 luci.bucket(
     name = "webrtc",
@@ -60,7 +61,8 @@ defaults.set(
     os = os.LINUX_DEFAULT,
     cpu = cpu.X86_64,
     build_numbers = True,
-    execution_timeout = 2 * time.hour,
+    contact_team_email = "webrtc-infra@google.com",
+    execution_timeout = 3 * time.hour,
     properties = {
         "perf_dashboard_machine_group": "ChromiumWebRTC",
     },
@@ -79,6 +81,7 @@ targets.builder_defaults.set(
 
 builder(
     name = "WebRTC Chromium Android Builder",
+    description_html = "Testing WebRTC inside Chromium",
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium_webrtc",
@@ -97,7 +100,6 @@ builder(
             target_platform = builder_config.target_platform.ANDROID,
         ),
         android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-webrtc",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -113,6 +115,7 @@ builder(
 
 builder(
     name = "WebRTC Chromium Android Tester",
+    description_html = "Testing WebRTC inside Chromium",
     parent = "WebRTC Chromium Android Builder",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
@@ -133,7 +136,6 @@ builder(
             target_platform = builder_config.target_platform.ANDROID,
         ),
         android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-webrtc",
     ),
     targets = targets.bundle(
         targets = [
@@ -150,6 +152,7 @@ builder(
 
 builder(
     name = "WebRTC Chromium Linux Builder",
+    description_html = "Testing WebRTC inside Chromium",
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium_webrtc",
@@ -165,7 +168,6 @@ builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-webrtc",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -185,6 +187,7 @@ builder(
 
 builder(
     name = "WebRTC Chromium Linux Tester",
+    description_html = "Testing WebRTC inside Chromium",
     parent = "WebRTC Chromium Linux Builder",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
@@ -199,7 +202,6 @@ builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.LINUX,
         ),
-        build_gs_bucket = "chromium-webrtc",
     ),
     targets = targets.bundle(
         targets = [
@@ -213,6 +215,7 @@ builder(
 
 builder(
     name = "WebRTC Chromium Mac Builder",
+    description_html = "Testing WebRTC inside Chromium",
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium_webrtc",
@@ -228,7 +231,6 @@ builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.MAC,
         ),
-        build_gs_bucket = "chromium-webrtc",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -249,6 +251,7 @@ builder(
 
 builder(
     name = "WebRTC Chromium Mac Tester",
+    description_html = "Testing WebRTC inside Chromium",
     parent = "WebRTC Chromium Mac Builder",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
@@ -263,7 +266,6 @@ builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.MAC,
         ),
-        build_gs_bucket = "chromium-webrtc",
     ),
     targets = targets.bundle(
         targets = [
@@ -277,6 +279,7 @@ builder(
 
 builder(
     name = "WebRTC Chromium Win Builder",
+    description_html = "Testing WebRTC inside Chromium",
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium_webrtc",
@@ -289,10 +292,9 @@ builder(
                 "mb",
             ],
             build_config = builder_config.build_config.RELEASE,
-            target_bits = 32,
+            target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-webrtc",
     ),
     gn_args = gn_args.config(
         configs = [
@@ -315,6 +317,7 @@ builder(
 
 builder(
     name = "WebRTC Chromium Win10 Tester",
+    description_html = "Testing WebRTC inside Chromium",
     parent = "WebRTC Chromium Win Builder",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
@@ -326,10 +329,9 @@ builder(
                 "mb",
             ],
             build_config = builder_config.build_config.RELEASE,
-            target_bits = 32,
+            target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-webrtc",
     ),
     targets = targets.bundle(
         targets = [

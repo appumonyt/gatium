@@ -48,15 +48,6 @@ BASE_FEATURE(kWebAuthCableExtensionAnywhere,
              "WebAuthenticationCableExtensionAnywhere",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-#if BUILDFLAG(IS_ANDROID)
-
-// Not yet enabled by default.
-BASE_FEATURE(kWebAuthnAndroidPasskeyCacheMigration,
-             "WebAuthenticationAndroidPasskeyCacheMigration",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-#endif  // BUILDFLAG(IS_ANDROID)
-
 // Enabled in M118. Remove in or after M121.
 BASE_FEATURE(kWebAuthnICloudKeychainForGoogle,
              "WebAuthenticationICloudKeychainForGoogle",
@@ -118,11 +109,6 @@ BASE_FEATURE(kWebAuthnHelloSignal,
              "WebAuthenticationHelloSignal",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Default enabled in M132. Remove in or after M135.
-BASE_FEATURE(kWebAuthnSkipHybridConfigIfSystemSupported,
-             "WebAuthenticationSkipHybridConfigIfSystemSupported",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // Disabled by default.
 BASE_FEATURE(kDigitalCredentialsHybridLinking,
              "DigitalCredentialsHybridLinking",
@@ -142,21 +128,6 @@ BASE_FEATURE(kWebAuthnPasskeyUpgrade,
 BASE_FEATURE(kWebAuthnEnclaveAttestation,
              "WebAuthenticationEnclaveAttestation",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-// Default enabled in M134. Remove in or after M137.
-BASE_FEATURE(kWebAuthnNewBfCacheHandling,
-             "WebAuthenticationNewBfCacheHandling",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Default enabled in M134. Remove in or after M137.
-BASE_FEATURE(kWebAuthnNoAccountTimeout,
-             "WebAuthenticationNoAccountTimeout",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Default enabled in M134. Remove in or after M137.
-BASE_FEATURE(kSyncSecurityDomainBeforePINRenewal,
-             "kWebAuthenticationSyncSecurityDomainBeforePINRenewal",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Default enabled in M135. Remove in or after M138.
 BASE_FEATURE(kWebAuthnMicrosoftSoftwareUnexportableKeyProvider,
@@ -214,5 +185,21 @@ BASE_FEATURE(kWebAuthnLargeBlobForICloudKeychain,
              "WebAuthenticationLargeBlobICloudKeychain",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_MAC)
+
+// Default enabled in M140. Remove in or after M143.
+BASE_FEATURE(kWebAuthnLargeBlobForGPM,
+             "WebAuthenticationLargeBlobGPM",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Deprecation flag. Intended to be disabled once the enclave no longer requires
+// a PIN generation number.
+BASE_FEATURE(kWebAuthnSendPinGeneration,
+             "WebAuthenticationSendPinGeneration",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Not yet enabled by default.
+BASE_FEATURE(kWebAuthnWrapCohortData,
+             "WebAuthenticationWrapCohortData",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace device

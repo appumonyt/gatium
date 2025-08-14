@@ -33,10 +33,10 @@
 #include "chrome/browser/password_manager/chrome_password_change_service.h"
 #include "chrome/browser/password_manager/chrome_webauthn_credentials_delegate.h"
 #include "chrome/browser/password_manager/chrome_webauthn_credentials_delegate_factory.h"
-#include "chrome/browser/password_manager/field_info_manager_factory.h"
+#include "chrome/browser/password_manager/factories/field_info_manager_factory.h"
+#include "chrome/browser/password_manager/factories/password_reuse_manager_factory.h"
 #include "chrome/browser/password_manager/password_change_service_factory.h"
 #include "chrome/browser/password_manager/password_manager_settings_service_factory.h"
-#include "chrome/browser/password_manager/password_reuse_manager_factory.h"
 #include "chrome/browser/password_manager/profile_password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -88,6 +88,7 @@
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/browser/password_manager_setting.h"
 #include "components/password_manager/core/browser/password_manager_settings_service.h"
+#include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/browser/password_requirements_service.h"
 #include "components/password_manager/core/browser/password_store/password_store_backend_error.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
@@ -137,13 +138,12 @@
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/device_info.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/android/tab_web_contents_delegate_android.h"
 #include "chrome/browser/keyboard_accessory/android/manual_filling_controller.h"
 #include "chrome/browser/keyboard_accessory/android/password_accessory_controller.h"
 #include "chrome/browser/keyboard_accessory/android/password_accessory_controller_impl.h"
-#include "chrome/browser/password_manager/android/access_loss/password_access_loss_warning_bridge_impl.h"
 #include "chrome/browser/password_manager/android/account_chooser_dialog_android.h"
 #include "chrome/browser/password_manager/android/auto_signin_first_run_dialog_android.h"
 #include "chrome/browser/password_manager/android/auto_signin_prompt_controller.h"
@@ -151,7 +151,6 @@
 #include "chrome/browser/password_manager/android/credential_leak_controller_android.h"
 #include "chrome/browser/password_manager/android/grouped_affiliations/acknowledge_grouped_credential_sheet_bridge.h"
 #include "chrome/browser/password_manager/android/grouped_affiliations/acknowledge_grouped_credential_sheet_controller.h"
-#include "chrome/browser/password_manager/android/local_passwords_migration_warning_util.h"
 #include "chrome/browser/password_manager/android/one_time_passwords/android_sms_otp_backend_factory.h"
 #include "chrome/browser/password_manager/android/password_checkup_launcher_helper_impl.h"
 #include "chrome/browser/password_manager/android/password_generation_controller.h"
@@ -169,6 +168,7 @@
 #include "components/webauthn/android/webauthn_cred_man_delegate.h"
 #include "components/webauthn/android/webauthn_cred_man_delegate_factory.h"
 #else
+#include "chrome/browser/actor/actor_keyed_service.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/hats/hats_service.h"
 #include "chrome/browser/ui/hats/hats_service_factory.h"
@@ -191,9 +191,8 @@
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-using base::android::BuildInfo;
 using password_manager::CredentialCache;
-using password_manager_android_util::GmsVersionCohort;
+using password_manager::PasswordCredentialFillerImpl;
 #endif
 
 using autofill::mojom::FocusedFieldType;
@@ -201,7 +200,6 @@ using autofill::password_generation::PasswordGenerationType;
 using password_manager::BadMessageReason;
 using password_manager::ContentPasswordManagerDriverFactory;
 using password_manager::FieldInfoManager;
-using password_manager::PasswordCredentialFillerImpl;
 using password_manager::PasswordForm;
 using password_manager::PasswordManagerClientHelper;
 using password_manager::PasswordManagerDriver;
@@ -226,30 +224,6 @@ constexpr char kPasswordBreachEntryTrigger[] = "PASSWORD_ENTRY";
 // TODO(crbug.com/41485955): Get rid of DeprecatedGetOriginAsURL().
 url::Origin URLToOrigin(GURL url) {
   return url::Origin::Create(url.DeprecatedGetOriginAsURL());
-}
-
-void ShowAccessLossWarning(PrefService* prefs,
-                           base::WeakPtr<content::WebContents> web_contents,
-                           Profile* profile) {
-  if (!web_contents) {
-    return;
-  }
-  PasswordAccessLossWarningBridgeImpl bridge;
-  bridge.MaybeShowAccessLossNoticeSheet(
-      prefs, web_contents->GetTopLevelNativeWindow(), profile,
-      /*called_at_startup=*/true,
-      password_manager_android_util::PasswordAccessLossWarningTriggers::
-          kChromeStartup);
-}
-
-void MaybeShowPostMigrationSheetWrapper(
-    base::WeakPtr<content::WebContents> web_contents,
-    Profile* profile) {
-  if (!web_contents) {
-    return;
-  }
-  local_password_migration::MaybeShowPostMigrationSheet(
-      web_contents->GetTopLevelNativeWindow(), profile);
 }
 
 #endif
@@ -341,7 +315,7 @@ bool ChromePasswordManagerClient::IsFillingEnabled(const GURL& url) const {
 
 bool ChromePasswordManagerClient::IsAutoSignInEnabled() const {
 #if BUILDFLAG(IS_ANDROID)
-  if (BuildInfo::GetInstance()->is_automotive()) {
+  if (base::android::device_info::is_automotive()) {
     return false;
   }
 #endif
@@ -394,15 +368,8 @@ bool ChromePasswordManagerClient::PromptUserToSaveOrUpdatePassword(
     return false;
   }
 
-  // base::Unretained() is safe: If the callback is called, AccountStorageNotice
-  // is alive, then so are its parent ChromePasswordManagerClient, its sibling
-  // SaveUpdatePasswordMessageDelegate and web_contents() (the client is per
-  // web_contents()).
-  MaybeShowAccountStorageNotice(base::BindOnce(
-      &SaveUpdatePasswordMessageDelegate::DisplaySaveUpdatePasswordPrompt,
-      base::Unretained(&save_update_password_message_delegate_),
-      base::Unretained(web_contents()), std::move(form_to_save),
-      update_password, base::Unretained(this)));
+  save_update_password_message_delegate_.DisplaySaveUpdatePasswordPrompt(
+      web_contents(), std::move(form_to_save), update_password, this);
 #else
   PasswordsClientUIDelegate* manage_passwords_ui_controller =
       PasswordsClientUIDelegateFromWebContents(web_contents());
@@ -551,18 +518,9 @@ bool ChromePasswordManagerClient::PromptUserToChooseCredentials(
 void ChromePasswordManagerClient::ShowPasswordManagerErrorMessage(
     password_manager::ErrorMessageFlowType flow_type,
     password_manager::PasswordStoreBackendErrorType error_type) {
-  bool oldGMSSavingDisabled = error_type ==
-                              password_manager::PasswordStoreBackendErrorType::
-                                  kGMSCoreOutdatedSavingDisabled;
-  bool oldGMSSavingPossible = error_type ==
-                              password_manager::PasswordStoreBackendErrorType::
-                                  kGMSCoreOutdatedSavingPossible;
-  password_manager_android_util::PasswordManagerUtilBridge util_bridge;
-  bool noPlayStore = !util_bridge.IsPlayStoreAppPresent();
-  bool login_db_deprecation_enabled = base::FeatureList::IsEnabled(
-      password_manager::features::kLoginDbDeprecationAndroid);
-  if ((oldGMSSavingDisabled || oldGMSSavingPossible) &&
-      (noPlayStore || login_db_deprecation_enabled)) {
+  using enum password_manager::PasswordStoreBackendErrorType;
+  if (error_type == kGMSCoreOutdatedSavingDisabled ||
+      error_type == kGMSCoreOutdatedSavingPossible) {
     // Warning messages about old GMS Core versions should not be shown if there
     // is no store or if the login DB deprecation has begun.
     return;
@@ -676,45 +634,17 @@ void ChromePasswordManagerClient::ContinueShowKeyboardReplacingSurface(
   // without being called.
   auto split_delay_callback =
       base::SplitOnceCallback(std::move(delay_callback));
-  password_manager::ContentPasswordManagerDriver* content_driver =
+  password_manager::ContentPasswordManagerDriver* driver =
       static_cast<password_manager::ContentPasswordManagerDriver*>(
           weak_driver.get());
   if (GetOrCreateCredManController()->Show(
           GetWebAuthnCredManDelegateForDriver(weak_driver.get()),
           std::make_unique<PasswordCredentialFillerImpl>(weak_driver, request),
-          content_driver->AsWeakPtrImpl(),
-          request.field.show_webauthn_credentials,
+          driver->AsWeakPtrImpl(), request.field.show_webauthn_credentials,
           std::move(split_delay_callback.first))) {
     return;
   }
 
-  // base::Unretained() is safe: if the callback is called, AccountStorageNotice
-  // is alive, then so is its parent ChromePasswordManagerClient.
-  MaybeShowAccountStorageNotice(base::BindOnce(
-      &ChromePasswordManagerClient::
-          ShowKeyboardReplacingSurfaceOnAccountStorageNoticeDone,
-      base::Unretained(this), content_driver->AsWeakPtrImpl(),
-      request.field,  // Intentional & cheap copy.
-      std::make_unique<PasswordCredentialFillerImpl>(weak_driver, request),
-      std::move(split_delay_callback.second)));
-}
-
-void ChromePasswordManagerClient::
-    ShowKeyboardReplacingSurfaceOnAccountStorageNoticeDone(
-        base::WeakPtr<password_manager::ContentPasswordManagerDriver>
-            weak_driver,
-        autofill::TriggeringField triggering_field,
-        std::unique_ptr<PasswordCredentialFillerImpl> filler,
-        password_manager::CredManController::PasskeyDelayCallback
-            delay_callback) {
-  // TODO(crbug.com/346748438): Maybe don't show TTF if there was a navigation.
-  if (!weak_driver) {
-    // No further suggestions are possible: without the driver, there is no
-    // PasswordAutofillManager anymore.
-    return;
-  }
-
-  password_manager::ContentPasswordManagerDriver* driver = weak_driver.get();
   auto* webauthn_delegate = GetWebAuthnCredentialsDelegateForDriver(driver);
   std::vector<password_manager::PasskeyCredential> passkeys;
   bool should_show_hybrid_option = false;
@@ -725,7 +655,7 @@ void ChromePasswordManagerClient::
       passkeys = *maybe_passkeys.value();
       should_show_hybrid_option =
           webauthn_delegate->IsSecurityKeyOrHybridFlowAvailable();
-    } else if (!delay_callback.is_null() &&
+    } else if (!split_delay_callback.second.is_null() &&
                maybe_passkeys.error() ==
                    password_manager::WebAuthnCredentialsDelegate::
                        PasskeysUnavailableReason::kNotReceived) {
@@ -734,17 +664,19 @@ void ChromePasswordManagerClient::
                              RequestNotificationWhenPasskeysReady,
                          webauthn_delegate->AsWeakPtr());
 
-      std::move(delay_callback).Run(std::move(notification_callback));
+      std::move(split_delay_callback.second)
+          .Run(std::move(notification_callback));
       return;
     }
   }
 
-  const PasswordForm* form_to_fill = password_manager_.GetParsedObservedForm(
-      driver, triggering_field.element_id);
+  const PasswordForm* form_to_fill =
+      password_manager_.GetParsedObservedForm(driver, request.field.element_id);
   auto ttf_controller_autofill_delegate =
       std::make_unique<TouchToFillControllerAutofillDelegate>(
           this, GetDeviceAuthenticator(), webauthn_delegate->AsWeakPtr(),
-          std::move(filler), form_to_fill, triggering_field.element_id,
+          std::make_unique<PasswordCredentialFillerImpl>(weak_driver, request),
+          form_to_fill, request.field.element_id,
           TouchToFillControllerAutofillDelegate::ShowHybridOption(
               should_show_hybrid_option));
 
@@ -756,7 +688,7 @@ void ChromePasswordManagerClient::
       std::move(passkeys), driver->AsWeakPtrImpl());
   if (!ttf_controller->Show(std::move(ttf_controller_autofill_delegate),
                             GetWebAuthnCredManDelegateForDriver(driver))) {
-    driver->GetPasswordAutofillManager()->ShowSuggestions(triggering_field);
+    driver->GetPasswordAutofillManager()->ShowSuggestions(request.field);
   }
 }
 #endif
@@ -771,13 +703,14 @@ bool ChromePasswordManagerClient::IsReauthBeforeFillingRequired(
   return GetPasswordFeatureManager()
       ->IsBiometricAuthenticationBeforeFillingEnabled();
 #elif BUILDFLAG(IS_ANDROID)
-  if (base::android::BuildInfo::GetInstance()->is_automotive()) {
+  if (base::android::device_info::is_automotive()) {
     CHECK(authenticator);
     return true;
   }
   if (!authenticator || !GetPrefs()) {
     return false;
   }
+
   device_reauth::BiometricStatus biometric_status =
       authenticator->GetBiometricAvailabilityStatus();
   base::UmaHistogramBoolean(
@@ -1179,6 +1112,10 @@ ChromePasswordManagerClient::GetHttpAuthManager() {
   return &httpauth_manager_;
 }
 
+password_manager::OtpManager* ChromePasswordManagerClient::GetOtpManager() {
+  return &otp_manager_;
+}
+
 autofill::AutofillCrowdsourcingManager*
 ChromePasswordManagerClient::GetAutofillCrowdsourcingManager() {
   if (auto* client =
@@ -1418,16 +1355,6 @@ void ChromePasswordManagerClient::NavigateToManagePasswordsPage(
   }
   ::NavigateToManagePasswordsPage(browser, referrer);
 #endif
-}
-
-void ChromePasswordManagerClient::InformPasswordChangeServiceOfOtpPresent() {
-  ChromePasswordChangeService* password_change_service =
-      PasswordChangeServiceFactory::GetForProfile(profile_);
-  if (password_change_service &&
-      password_change_service->GetPasswordChangeDelegate(web_contents())) {
-    password_change_service->GetPasswordChangeDelegate(web_contents())
-        ->OnOtpFieldDetected(web_contents());
-  }
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1840,33 +1767,6 @@ ChromePasswordManagerClient::GetOrCreateTouchToFillController() {
   return touch_to_fill_controller_.get();
 }
 
-void ChromePasswordManagerClient::MaybeShowAccountStorageNotice(
-    base::OnceClosure callback) {
-  // Unretained() is safe because `this` outlives `account_storage_notice_`.
-  auto destroy_notice_cb = base::BindOnce(
-      [](ChromePasswordManagerClient* client) {
-        client->account_storage_notice_.reset();
-      },
-      base::Unretained(this));
-  const bool had_notice = account_storage_notice_.get();
-  account_storage_notice_ = AccountStorageNotice::MaybeShow(
-      SyncServiceFactory::GetForProfile(profile_), profile_->GetPrefs(),
-      web_contents()->GetNativeView()->GetWindowAndroid(),
-      std::move(destroy_notice_cb).Then(std::move(callback)));
-  // MaybeShow() will return non-null at most once, since this is a one-off
-  // notice. So the possible cases are:
-  // - `account_storage_notice_` was null and stayed so:  No notice shown, just
-  //   invokes `callback`.
-  // - `account_storage_notice_` was null and became non-null: Shows the notice.
-  // - (Speculative) `account_storage_notice_` was non-null and became null:
-  //   Hides the notice and executes `callback`. The alternative would be to
-  //   ignore `callback` and wait for `account_storage_notice_` to go away, but
-  //   that's dangerous (if there's a bug and `account_storage_notice_` is never
-  //   reset, the method would always no-op, breaking the saving/filling
-  //   callers).
-  CHECK(!had_notice || !account_storage_notice_);
-}
-
 password_manager::CredManController*
 ChromePasswordManagerClient::GetOrCreateCredManController() {
   if (!cred_man_controller_) {
@@ -1892,6 +1792,25 @@ credential_management::ContentCredentialManager*
 ChromePasswordManagerClient::GetContentCredentialManager() {
   return &content_credential_manager_;
 }
+
+password_manager::UndoPasswordChangeController*
+ChromePasswordManagerClient::GetUndoPasswordChangeController() {
+  return &undo_password_change_controller_;
+}
+
+#if !BUILDFLAG(IS_ANDROID)
+bool ChromePasswordManagerClient::IsActorTaskActive() {
+  actor::ActorKeyedService* actor_service =
+      actor::ActorKeyedService::Get(profile_);
+  if (!actor_service) {
+    return false;
+  }
+
+  const tabs::TabInterface* tab_interface =
+      tabs::TabInterface::MaybeGetFromContents(web_contents());
+  return tab_interface && actor_service->IsAnyTaskActingOnTab(*tab_interface);
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 ChromePasswordManagerClient::ChromePasswordManagerClient(
     content::WebContents* web_contents)
@@ -1923,16 +1842,12 @@ ChromePasswordManagerClient::ChromePasswordManagerClient(
   autofill_managers_observation_.Observe(
       web_contents, autofill::ScopedAutofillManagersObservation::
                         InitializationPolicy::kObservePreexistingManagers);
+}
 
-#if BUILDFLAG(IS_ANDROID)
-  // This prevents the access loss warning from trying to show on opening new
-  // tabs after the initial attempt to show the sheet on startup.
-  static bool tried_launching_access_loss_warning_on_startup = false;
-  if (!tried_launching_access_loss_warning_on_startup) {
-    tried_launching_access_loss_warning_on_startup = true;
-    TryToShowAccessLossWarningSheet();
-  }
-#endif  // BUILDFLAG(IS_ANDROID)
+void ChromePasswordManagerClient::RenderFrameDeleted(
+    content::RenderFrameHost* render_frame_host) {
+  otp_manager_.OnRenderFrameDeleted(
+      autofill::LocalFrameToken(render_frame_host->GetFrameToken().value()));
 }
 
 void ChromePasswordManagerClient::PrimaryPageChanged(content::Page& page) {
@@ -1972,6 +1887,10 @@ void ChromePasswordManagerClient::PrimaryPageChanged(content::Page& page) {
 
   // Hide form filling UI on navigating away.
   HideFillingUI();
+
+  undo_password_change_controller_.OnNavigation(
+      page.GetMainDocument().GetLastCommittedOrigin(),
+      page.GetMainDocument().GetPageUkmSourceId());
 }
 
 void ChromePasswordManagerClient::WebContentsDestroyed() {
@@ -1989,6 +1908,20 @@ void ChromePasswordManagerClient::WebContentsDestroyed() {
             messages::DismissReason::TAB_DESTROYED);
   }
 #endif
+}
+
+void ChromePasswordManagerClient::DidFinishNavigation(
+    content::NavigationHandle* navigation) {
+  if (!navigation->HasCommitted() || navigation->IsSameDocument()) {
+    return;
+  }
+
+  if (navigation->IsInPrimaryMainFrame()) {
+    otp_manager_.OnDidFinishNavigationInMainFrame();
+  } else {
+    otp_manager_.OnDidFinishNavigationInIframe(autofill::LocalFrameToken(
+        navigation->GetRenderFrameHost()->GetFrameToken().value()));
+  }
 }
 
 void ChromePasswordManagerClient::ResourceLoadComplete(
@@ -2009,12 +1942,6 @@ void ChromePasswordManagerClient::OnFieldTypesDetermined(
     autofill::AutofillManager& manager,
     autofill::FormGlobalId form_id,
     FieldTypeSource source) {
-  if (source != FieldTypeSource::kAutofillServer &&
-      !base::FeatureList::IsEnabled(
-          password_manager::features::kPasswordFormClientsideClassifier)) {
-    return;
-  }
-
   std::optional<autofill::RendererForms> renderer_forms =
       autofill::RendererFormsFromBrowserForm(manager, form_id);
   if (!renderer_forms.has_value()) {
@@ -2037,19 +1964,29 @@ void ChromePasswordManagerClient::OnFieldTypesDetermined(
         base::ToVector(form.fields(), &autofill::FormFieldData::global_id);
     switch (source) {
       case FieldTypeSource::kAutofillServer:
-      case FieldTypeSource::kAutofillAiModel:
-        password_manager_.ProcessAutofillPredictions(
-            driver, form,
-            manager.GetServerPredictionsForForm(form_id, field_ids));
+      case FieldTypeSource::kAutofillAiModel: {
+        auto server_predictions =
+            manager.GetServerPredictionsForForm(form_id, field_ids);
+        password_manager_.ProcessAutofillPredictions(driver, form,
+                                                     server_predictions);
+        otp_manager_.ProcessServerPredictions(form, server_predictions);
         break;
+      }
       case FieldTypeSource::kHeuristicsOrAutocomplete: {
         auto predictions = manager.GetHeursticPredictionForForm(
             autofill::HeuristicSource::kPasswordManagerMachineLearning, form_id,
             field_ids);
-        password_manager_.ProcessClassificationModelPredictions(driver, form,
-                                                                predictions);
+        if (base::FeatureList::IsEnabled(
+                password_manager::features::
+                    kApplyClientsideModelPredictionsForPasswordTypes)) {
+          password_manager_.ProcessClassificationModelPredictions(driver, form,
+                                                                  predictions);
+        }
 
-        if (PredictionsContainOtpFields(predictions)) {
+        if (PredictionsContainOtpFields(predictions) &&
+            base::FeatureList::IsEnabled(
+                password_manager::features::
+                    kApplyClientsideModelPredictionsForOtps)) {
           otp_manager_.ProcessClassificationModelPredictions(form, predictions);
         }
         break;
@@ -2272,83 +2209,6 @@ gfx::RectF ChromePasswordManagerClient::TransformToRootCoordinates(
 #if BUILDFLAG(IS_ANDROID)
 void ChromePasswordManagerClient::ResetErrorMessageDelegate() {
   password_manager_error_message_delegate_.reset();
-}
-
-void ChromePasswordManagerClient::TryToShowPostPasswordMigrationSheet() {
-  // This is to run the function after all the initialization tasks have been
-  // completed.
-  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE, base::BindOnce(&MaybeShowPostMigrationSheetWrapper,
-                                web_contents()->GetWeakPtr(), profile_));
-}
-
-void ChromePasswordManagerClient::TryToShowAccessLossWarningSheet() {
-  PasswordAccessLossWarningBridgeImpl bridge;
-  // If the feature is not enabled or it's too early to show the startup warning
-  // sheet, the method ends.
-  if (!bridge.ShouldShowAccessLossNoticeSheet(GetPrefs(),
-                                              /*called_at_startup=*/true)) {
-    return;
-  }
-
-  GmsVersionCohort gms_version_cohort =
-      password_manager_android_util::GetGmsVersionCohort();
-  if (gms_version_cohort == GmsVersionCohort::kFullUpmSupport &&
-      !password_manager_android_util::LastMigrationAttemptToUpmLocalFailed()) {
-    // There is already full UPM support. No need to show any warning.
-    return;
-  }
-
-  if (GetPrefs()
-          ->FindPreference(
-              password_manager::prefs::kEmptyProfileStoreLoginDatabase)
-          ->IsDefaultValue()) {
-    // The state of the login db is unknown. This pref is initialized on
-    // startup, so it should be available in the next session at the latest.
-    return;
-  }
-
-  if (!GetPrefs()->GetBoolean(
-          password_manager::prefs::kEmptyProfileStoreLoginDatabase)) {
-    // This is to run the function after all the initialization tasks have been
-    // completed.
-    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(&ShowAccessLossWarning, GetPrefs(),
-                                  web_contents()->GetWeakPtr(), profile_));
-    return;
-  }
-
-  // Unless a user has account UPM support, no passwords in the login DB means
-  // they're not a password manager user, so they shouldn't see the warning.
-  if (gms_version_cohort != GmsVersionCohort::kOnlyAccountUpmSupport) {
-    return;
-  }
-
-  // If the user has only account UPM support, they might still have passwords
-  // in GMS core. The support for this state will be removed in the future, so
-  // they also need to see the warning.
-  const syncer::SyncService* sync_service =
-      SyncServiceFactory::GetForProfile(profile_);
-  // If the user hasn't chosen to sync passwords, they don't store passwords in
-  // this version of GMS Core.
-  if (!sync_service ||
-      !password_manager::sync_util::HasChosenToSyncPasswords(sync_service)) {
-    return;
-  }
-
-  // The user is syncing, the login DB is empty and the GMS Core version only
-  // supports account passwords. An empty login DB combined with the other two
-  // conditions implies that the user has access to the GMS core storage,
-  // because either all their passwords were migrated and then removed or they
-  // never had any passwords in the first place, so they never needed migration.
-  password_manager::PasswordStoreInterface* profile_password_store =
-      GetProfilePasswordStore();
-  password_access_loss_warning_startup_launcher_ =
-      std::make_unique<PasswordAccessLossWarningStartupLauncher>(
-          base::BindOnce(&ShowAccessLossWarning, GetPrefs(),
-                         web_contents()->GetWeakPtr(), profile_));
-  password_access_loss_warning_startup_launcher_->FetchPasswordsAndShowWarning(
-      profile_password_store);
 }
 #endif
 

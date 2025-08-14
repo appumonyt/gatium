@@ -18,9 +18,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "base/observer_list_threadsafe.h"
-#include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_core_observer.h"
 #include "content/browser/service_worker/service_worker_identifiability_metrics.h"
+#include "content/browser/service_worker/service_worker_process_manager.h"
+#include "content/browser/service_worker/service_worker_registry.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_routing_id.h"
@@ -48,6 +49,7 @@ namespace content {
 
 class BrowserContext;
 class ChromeBlobStorageContext;
+class ServiceWorkerContextCore;
 class ServiceWorkerContextObserver;
 class StoragePartitionImpl;
 
@@ -177,6 +179,9 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
                              ServiceWorkerVersion::Status status) override;
   void OnWindowOpened(const GURL& script_url, const GURL& url) override;
   void OnClientNavigated(const GURL& script_url, const GURL& url) override;
+  void OnPushEventFinished(
+      const GURL& script_url,
+      const std::optional<std::vector<GURL>>& requested_urls) override;
 
   // ServiceWorkerContext implementation:
   void AddObserver(ServiceWorkerContextObserver* observer) override;

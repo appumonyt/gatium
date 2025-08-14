@@ -31,6 +31,7 @@
 
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/safety_checks.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
@@ -385,6 +386,13 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
       break;
   }
   IDBRequest::AsyncTraceState metrics(tracing_type);
+
+  // This function is known to be heap allocation heavy and performance
+  // critical. Extra memory safety checks can introduce regression
+  // (https://crbug.com/425145252) and these are disabled here.
+  // TODO(https://crbug.com/433423496): Optimize to remove this annotation.
+  base::ScopedSafetyChecksExclusion scoped_unsafe;
+
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidStateError,
@@ -575,6 +583,13 @@ IDBRequest* IDBObjectStore::Delete(ScriptState* script_state,
                metadata_->name.Utf8());
   IDBRequest::AsyncTraceState metrics(
       IDBRequest::TypeForMetrics::kObjectStoreDelete);
+
+  // This function is known to be heap allocation heavy and performance
+  // critical. Extra memory safety checks can introduce regression
+  // (https://crbug.com/425145252) and these are disabled here.
+  // TODO(https://crbug.com/433423496): Optimize to remove this annotation.
+  base::ScopedSafetyChecksExclusion scoped_unsafe;
+
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidStateError,
@@ -714,11 +729,14 @@ class IndexPopulator final : public NativeEventListener {
 
     DCHECK_EQ(ExecutionContext::From(script_state_), execution_context);
     DCHECK_EQ(event->type(), event_type_names::kSuccess);
-    EventTarget* target = event->target();
+    EventTarget* target = event->RawTarget();
     IDBRequest* request = static_cast<IDBRequest*>(target);
 
+    // This event would be dispatched by native code, so create scopes required
+    // by possible V8 usage within.
     ScriptState::Scope scope(script_state_);
-
+    v8::MicrotasksScope microtasksScope(
+        script_state_->GetContext(), v8::MicrotasksScope::kDoNotRunMicrotasks);
     IDBAny* cursor_any = request->ResultAsAny();
     IDBCursorWithValue* cursor = nullptr;
     if (cursor_any->GetType() == IDBAny::kIDBCursorWithValueType)

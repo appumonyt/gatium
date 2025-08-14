@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/tabs/fade_footer_view.h"
 
+#include "base/byte_count.h"
 #include "base/check.h"
 #include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
@@ -48,6 +49,7 @@ ui::ColorId GetTabAlertColor(tabs::TabAlert alert_state) {
       break;
     case tabs::TabAlert::TAB_CAPTURING:
     case tabs::TabAlert::PIP_PLAYING:
+    case tabs::TabAlert::ACTOR_ACCESSING:
     case tabs::TabAlert::GLIC_ACCESSING:
     case tabs::TabAlert::GLIC_SHARING:
       icon_color = kColorHoverCardTabAlertPipPlayingIcon;
@@ -164,9 +166,9 @@ void FadeAlertFooterRow::SetData(const AlertFooterRowData& data) {
   std::optional<tabs::TabAlert> alert_state = data.alert_state;
   if (data.should_show_discard_status) {
     std::u16string row_text;
-    if (data.memory_savings_in_bytes > 0) {
+    if (data.memory_savings_in_bytes > base::ByteCount(0)) {
       const std::u16string formatted_memory_usage =
-          ui::FormatBytes(data.memory_savings_in_bytes);
+          ui::FormatBytes(base::ByteCount(data.memory_savings_in_bytes));
       row_text = l10n_util::GetStringFUTF16(
           IDS_HOVERCARD_INACTIVE_TAB_MEMORY_SAVINGS, formatted_memory_usage);
     } else {

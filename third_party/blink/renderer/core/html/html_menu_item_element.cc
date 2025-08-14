@@ -175,12 +175,6 @@ FocusableState HTMLMenuItemElement::SupportsFocus(UpdateBehavior) const {
 
 bool HTMLMenuItemElement::IsKeyboardFocusableSlow(
     UpdateBehavior update_behavior) const {
-  // Interest invoker targets with partial interest aren't keyboard focusable.
-  if (IsInPartialInterestPopover()) {
-    CHECK(RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled(
-        GetDocument().GetExecutionContext()));
-    return false;
-  }
   // Menuitems are keyboard focusable if they are focusable and don't have a
   // negative tabindex set.
   return IsFocusable(update_behavior) && tabIndex() >= 0;
@@ -207,7 +201,8 @@ void HTMLMenuItemElement::DefaultEventHandler(Event& event) {
     setChecked(!checked());
 
     // Menuitems with a commandfor will dispatch a CommandEvent on the
-    // invoker, and run HandleCommandInternal to perform default logic.
+    // target of the invoker, and run HandleCommandInternal to perform default
+    // logic.
     if (auto* command_target = commandForElement()) {
       auto action =
           GetCommandEventType(FastGetAttribute(html_names::kCommandAttr));

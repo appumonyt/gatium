@@ -47,11 +47,9 @@ struct GPU_COMMAND_BUFFER_COMMON_EXPORT ContextCreationAttribs {
 
   gl::GpuPreference gpu_preference = gl::GpuPreference::kLowPower;
 
-  bool bind_generates_resource = true;
   bool fail_if_major_perf_caveat = false;
   bool lose_context_when_out_of_memory = false;
   bool enable_gles2_interface = true;
-  bool enable_grcontext = false;
   bool enable_raster_interface = false;
   bool enable_gpu_rasterization = false;
 

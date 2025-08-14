@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/performance_controls/memory_saver_bubble_view.h"
 
+#include "base/byte_count.h"
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -116,7 +117,8 @@ views::BubbleDialogModelHost* MemorySaverBubbleView::ShowBubble(
       memory_saver::GetDiscardedMemorySavingsInBytes(web_contents);
 
   ui::DialogModelLabel::TextReplacement memory_savings_text =
-      ui::DialogModelLabel::CreatePlainText(ui::FormatBytes(memory_savings));
+      ui::DialogModelLabel::CreatePlainText(
+          ui::FormatBytes(base::ByteCount(memory_savings)));
 
   Profile* const profile = browser->profile();
   const bool is_guest = profile->IsGuestSession();
@@ -147,14 +149,8 @@ views::BubbleDialogModelHost* MemorySaverBubbleView::ShowBubble(
   auto* bubble = bubble_unique.get();
   auto* const toolbar_button_provider =
       BrowserView::GetBrowserViewForBrowser(browser)->toolbar_button_provider();
-  views::Button* highlighted_button;
-  if (IsPageActionMigrated(PageActionIconType::kMemorySaver)) {
-    highlighted_button =
-        toolbar_button_provider->GetPageActionView(kActionShowMemorySaverChip);
-  } else {
-    highlighted_button = toolbar_button_provider->GetPageActionIconView(
-        PageActionIconType::kMemorySaver);
-  }
+  views::Button* highlighted_button =
+      toolbar_button_provider->GetPageActionView(kActionShowMemorySaverChip);
   bubble->SetHighlightedButton(highlighted_button);
 
   views::Widget* const widget =

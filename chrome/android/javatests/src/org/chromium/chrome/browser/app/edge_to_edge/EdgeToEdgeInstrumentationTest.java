@@ -71,9 +71,7 @@ import java.io.IOException;
 @MinAndroidSdkLevel(Build.VERSION_CODES.R)
 @EnableFeatures({
     ChromeFeatureList.DRAW_CUTOUT_EDGE_TO_EDGE,
-    ChromeFeatureList.DRAW_KEY_NATIVE_EDGE_TO_EDGE,
-    ChromeFeatureList.EDGE_TO_EDGE_BOTTOM_CHIN,
-    ChromeFeatureList.EDGE_TO_EDGE_WEB_OPT_IN
+    ChromeFeatureList.EDGE_TO_EDGE_BOTTOM_CHIN
 })
 public class EdgeToEdgeInstrumentationTest {
     @Rule
@@ -379,7 +377,7 @@ public class EdgeToEdgeInstrumentationTest {
                         + "opted in.",
                 Color.TRANSPARENT,
                 mActivity.getWindow().getNavigationBarColor());
-        assertNavigationBarColor(mActivity.getActivityTab().getBackgroundColor());
+        assertNavigationBarColor(mActivityTestRule.getActivityTab().getBackgroundColor());
 
         TabUiTestHelper.enterTabSwitcher(mActivity);
         assertEquals(
@@ -392,12 +390,11 @@ public class EdgeToEdgeInstrumentationTest {
                 "Should stay toEdge upon leaving the Tab Switcher.",
                 Color.TRANSPARENT,
                 mActivity.getWindow().getNavigationBarColor());
-        assertNavigationBarColor(mActivity.getActivityTab().getBackgroundColor());
+        assertNavigationBarColor(mActivityTestRule.getActivityTab().getBackgroundColor());
     }
 
     @Test
     @MediumTest
-    @EnableFeatures(ChromeFeatureList.EDGE_TO_EDGE_SAFE_AREA_CONSTRAINT)
     public void testSafeAreaConstraint() {
         loadSafeAreaConstrainPage();
 
@@ -454,12 +451,12 @@ public class EdgeToEdgeInstrumentationTest {
     }
 
     private void assertNavigationBarColor(int color) {
-        assertEquals(
-                "Nav bar color is different.",
-                color,
-                mActivity
-                        .getEdgeToEdgeManager()
-                        .getEdgeToEdgeSystemBarColorHelper()
-                        .getNavigationBarColor());
+        CriteriaHelper.pollUiThread(
+                () ->
+                        color
+                                == mActivity
+                                        .getEdgeToEdgeManager()
+                                        .getEdgeToEdgeSystemBarColorHelper()
+                                        .getNavigationBarColor());
     }
 }

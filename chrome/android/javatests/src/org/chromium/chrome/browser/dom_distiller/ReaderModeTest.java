@@ -15,7 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import static org.chromium.base.test.transit.Triggers.noopTo;
-import static org.chromium.chrome.browser.dom_distiller.ReaderModeManager.DOM_DISTILLER_SCHEME;
+import static org.chromium.components.embedder_support.util.UrlConstants.DISTILLER_SCHEME;
 
 import android.app.Activity;
 import android.app.PendingIntent;
@@ -129,7 +129,7 @@ public class ReaderModeTest implements CustomMainActivityStart {
     @MediumTest
     public void testReaderModeInCct() throws TimeoutException {
         mDownloadTestRule.loadUrl(mURL);
-        Tab originalTab = mDownloadTestRule.getActivity().getActivityTab();
+        Tab originalTab = mDownloadTestRule.getActivityTab();
         String innerHtml = getInnerHtml(originalTab);
         assertThat(innerHtml).doesNotContain("article-header");
 
@@ -151,10 +151,11 @@ public class ReaderModeTest implements CustomMainActivityStart {
     @Test
     @MediumTest
     @EnableFeatures(DomDistillerFeatures.READER_MODE_DISTILL_IN_APP)
+    @DisabledTest(message = "https://crbug.com/436904664")
     public void testReaderModeInRegularTab() throws TimeoutException {
         mDownloadTestRule.loadUrl(mURL);
 
-        Tab originalTab = mDownloadTestRule.getActivity().getActivityTab();
+        Tab originalTab = mDownloadTestRule.getActivityTab();
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
                     originalTab
@@ -170,7 +171,7 @@ public class ReaderModeTest implements CustomMainActivityStart {
     @DisabledTest(message = "https://crbug.com/423646543")
     public void testReaderModeInCct_Downloaded() throws TimeoutException {
         mDownloadTestRule.loadUrl(mURL);
-        Tab originalTab = mDownloadTestRule.getActivity().getActivityTab();
+        Tab originalTab = mDownloadTestRule.getActivityTab();
         String innerHtml = getInnerHtml(originalTab);
         assertThat(innerHtml).doesNotContain("article-header");
 
@@ -229,7 +230,7 @@ public class ReaderModeTest implements CustomMainActivityStart {
                 mURL,
                 true);
 
-        Tab originalTab = mDownloadTestRule.getActivity().getActivityTab();
+        Tab originalTab = mDownloadTestRule.getActivityTab();
         assertTrue(originalTab.isIncognito());
         String innerHtml = getInnerHtml(originalTab);
         assertThat(innerHtml).doesNotContain("article-header");
@@ -269,7 +270,7 @@ public class ReaderModeTest implements CustomMainActivityStart {
                 });
 
         // Load the page that has an offline copy. The offline page should be shown.
-        Tab tab = mDownloadTestRule.getActivity().getActivityTab();
+        Tab tab = mDownloadTestRule.getActivityTab();
         Assert.assertFalse(isOfflinePage(tab));
         mDownloadTestRule.loadUrl(ChromeTabUtils.getUrlOnUiThread(tab).getSpec());
         Assert.assertTrue(isOfflinePage(tab));
@@ -286,7 +287,7 @@ public class ReaderModeTest implements CustomMainActivityStart {
     @DisabledTest(message = "https://crbug.com/423967273")
     public void testPreferenceInCct() throws TimeoutException {
         mDownloadTestRule.loadUrl(mURL);
-        Tab originalTab = mDownloadTestRule.getActivity().getActivityTab();
+        Tab originalTab = mDownloadTestRule.getActivityTab();
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
                     originalTab
@@ -309,9 +310,9 @@ public class ReaderModeTest implements CustomMainActivityStart {
     public void testPreferenceInTab() throws TimeoutException {
         mDownloadTestRule.loadUrl(
                 DomDistillerUrlUtils.getDistillerViewUrlFromUrl(
-                        DOM_DISTILLER_SCHEME, mURL, PAGE_TITLE));
+                        DISTILLER_SCHEME, mURL, PAGE_TITLE));
 
-        Tab tab = mDownloadTestRule.getActivity().getActivityTab();
+        Tab tab = mDownloadTestRule.getActivityTab();
         waitForDistillation(PAGE_TITLE, tab);
 
         doTestSettingPreferences(mDownloadTestRule.getActivity(), tab);

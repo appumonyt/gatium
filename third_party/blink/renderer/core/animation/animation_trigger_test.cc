@@ -59,7 +59,8 @@ TEST_P(AnimationTriggerTest, ComputeBoundariesTest) {
       #target {
         animation: anim 1s both;
         width: 100px; height: 50px; background: blue;
-        animation-trigger: view();
+        timeline-trigger: --trigger view();
+        animation-trigger: --trigger;
       }
       #spacer { width: 200px; height: 200px; }
     </style>
@@ -71,10 +72,7 @@ TEST_P(AnimationTriggerTest, ComputeBoundariesTest) {
   )HTML");
 
   Element* target = GetDocument().getElementById(AtomicString("target"));
-  ElementAnimations* animations = target->GetElementAnimations();
-  CSSAnimation* animation =
-      DynamicTo<CSSAnimation>((*animations->Animations().begin()).key.Get());
-  AnimationTrigger* trigger = animation->GetTrigger();
+  AnimationTrigger* trigger = target->NamedTriggers()->begin()->value.Get();
 
   UpdateAllLifecyclePhasesForTest();
 

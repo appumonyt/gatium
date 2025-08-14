@@ -20,6 +20,10 @@ BASE_FEATURE(kSyncSharedTabGroupAccountData,
              "SyncSharedTabGroupAccountData",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kSyncSharedComment,
+             "SyncSharedComment",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kUnoPhase2FollowUp,
              "UnoPhase2FollowUp",
@@ -147,7 +151,7 @@ BASE_FEATURE(kSyncEnablePasswordsSyncErrorMessageAlternative,
 #if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kSyncTrustedVaultInfobarImprovements,
              "SyncTrustedVaultInfobarImprovements",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_IOS)
 
 #if BUILDFLAG(IS_IOS)
@@ -155,5 +159,11 @@ BASE_FEATURE(kSyncTrustedVaultInfobarMessageImprovements,
              "SyncTrustedVaultInfobarMessageImprovements",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_IOS)
+
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+BASE_FEATURE(kSyncWalletPublicPasses,
+             "SyncWalletPublicPasses",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
 }  // namespace syncer

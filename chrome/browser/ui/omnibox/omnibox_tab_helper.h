@@ -33,7 +33,7 @@ class OmniboxTabHelper
     : public content::WebContentsUserData<OmniboxTabHelper>,
       public page_content_annotations::PageContentExtractionService::Observer,
       public content::WebContentsObserver,
-      public blink::mojom::FrameMetadataObserver {
+      public blink::mojom::PaidContentMetadataObserver {
  public:
   // Observer to listen for updates from OmniboxTabHelper.
   class Observer : public base::CheckedObserver {
@@ -74,9 +74,6 @@ class OmniboxTabHelper
   // Returns std::nullopt if the page content wasn't yet extracted and therefore
   // the signal could not be calculated.
   std::optional<bool> IsPagePaywalled();
-
-  // Returns the previously observed omnibox focus state.
-  OmniboxFocusState focus_state() const;
 
  private:
   OmniboxTabHelper(content::WebContents* contents, Profile* profile);
@@ -123,7 +120,6 @@ class OmniboxTabHelper
   // Whether the timings from a navigation to the omnibox being focused have
   // been logged for this navigation.
   bool logged_current_navigation_timings_ = false;
-  OmniboxFocusState focus_state_ = OmniboxFocusState::OMNIBOX_FOCUS_NONE;
 
   // Observer to observer Annotated Page Content updates. Updates are fire on
   // every page, not only the current tab. The page content is generated a few
@@ -135,8 +131,8 @@ class OmniboxTabHelper
 
   base::ObserverList<Observer> observers_;
 
-  mojo::Receiver<blink::mojom::FrameMetadataObserver>
-      frame_metadata_observer_receiver_{this};
+  mojo::Receiver<blink::mojom::PaidContentMetadataObserver>
+      paid_content_metadata_observer_receiver_{this};
 };
 
 #endif  // CHROME_BROWSER_UI_OMNIBOX_OMNIBOX_TAB_HELPER_H_

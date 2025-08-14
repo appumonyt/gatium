@@ -38,7 +38,6 @@
 #include "services/network/public/mojom/referrer_policy.mojom-blink-forward.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
-#include "third_party/blink/public/mojom/devtools/inspector_issue.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/permissions_policy/policy_disposition.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/v8_cache_options.mojom-blink-forward.h"
@@ -177,6 +176,8 @@ class CORE_EXPORT ExecutionContext : public Supplementable<ExecutionContext>,
   virtual bool IsContextThread() const { return true; }
 
   virtual bool ShouldInstallV8Extensions() const { return false; }
+
+  virtual void MaybeRecordNetworkRequestUrlForPushEvents(const KURL& url) {}
 
   virtual void CountUseOnlyInCrossSiteIframe(mojom::blink::WebFeature feature) {
   }
@@ -484,6 +485,14 @@ class CORE_EXPORT ExecutionContext : public Supplementable<ExecutionContext>,
     return net::StorageAccessApiStatus::kNone;
   }
 
+  std::optional<uint64_t> CanvasNoiseToken() const {
+    return canvas_noise_token_;
+  }
+
+  void SetCanvasNoiseToken(std::optional<uint64_t> token) {
+    canvas_noise_token_ = token;
+  }
+
  protected:
   ExecutionContext(v8::Isolate* isolate, Agent* agent, bool is_window = false);
   ~ExecutionContext() override;
@@ -547,6 +556,8 @@ class CORE_EXPORT ExecutionContext : public Supplementable<ExecutionContext>,
       runtime_feature_state_override_context_;
 
   bool require_trusted_types_ = false;
+
+  std::optional<uint64_t> canvas_noise_token_;
 };
 
 }  // namespace blink

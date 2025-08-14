@@ -17,6 +17,7 @@
 #include "cc/paint/paint_record.h"
 #include "cc/paint/skia_paint_image_generator.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkCPURecorder.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
@@ -239,8 +240,12 @@ SkISize PaintImage::GetSupportedDecodeSize(const SkISize& requested_size,
       }
       return SkISize::Make(width(), height());
     case AuxImage::kGainmap:
-      return gainmap_paint_image_generator_->GetSupportedDecodeSize(
-          requested_size);
+      if (gainmap_paint_image_generator_) {
+        return gainmap_paint_image_generator_->GetSupportedDecodeSize(
+            requested_size);
+      }
+      // Note that this is different from the default image behavior.
+      return SkISize(0, 0);
   }
 }
 
@@ -302,8 +307,7 @@ bool PaintImage::DecodeFromSkImage(SkPixmap pixmap,
   auto image = GetSkImageForFrame(frame_index, client_id);
   DCHECK(image);
   if (color_space) {
-    image = image->makeColorSpace(static_cast<GrDirectContext*>(nullptr),
-                                  color_space);
+    image = image->makeColorSpace(skcpu::Recorder::TODO(), color_space, {});
     if (!image)
       return false;
   }
@@ -354,7 +358,7 @@ gfx::ContentColorUsage PaintImage::GetContentColorUsage() const {
   }
 
   // Gainmap images are always HDR.
-  if (HasGainmap()) {
+  if (HasGainmapInfo()) {
     return gfx::ContentColorUsage::kHDR;
   }
 
@@ -461,7 +465,7 @@ std::string PaintImage::ToString() const {
       << " completion_state_: " << static_cast<int>(completion_state_)
       << " is_multipart_: " << is_multipart_
       << " may_be_lcp_candidate_: " << may_be_lcp_candidate_
-      << " has gainmap: " << HasGainmap() << " is YUV: "
+      << " has gainmap: " << HasGainmapInfo() << " is YUV: "
       << IsYuv(SkYUVAPixmapInfo::SupportedDataTypes::All(), AuxImage::kDefault);
   return str.str();
 }

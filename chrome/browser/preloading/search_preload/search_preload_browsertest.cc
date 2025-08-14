@@ -36,6 +36,7 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/navigation/preloading_headers.h"
 
 namespace {
@@ -55,6 +56,44 @@ enum class PrerenderFinalStatus {
 };
 
 }  // namespace alternative_content
+
+class HistogramTesterWrapper {
+ public:
+  HistogramTesterWrapper() = default;
+  ~HistogramTesterWrapper() = default;
+
+  template <typename T>
+  void ExpectUma(std::string_view name,
+                 std::vector<T> values,
+                 const base::Location& location = FROM_HERE) {
+    std::map<T, size_t> counts;
+    for (auto& value : values) {
+      counts[value]++;
+    }
+
+    histogram_tester_.ExpectTotalCount(name, values.size(), location);
+    for (auto& [value, count] : counts) {
+      histogram_tester_.ExpectBucketCount(name, value, count, location);
+    }
+  }
+
+  template <typename T>
+  void ExpectUma(std::string_view name,
+                 std::initializer_list<T> values,
+                 const base::Location& location = FROM_HERE) {
+    ExpectUma(name, std::vector<T>(values), location);
+  }
+
+  // Special case for an empty initializer `{}`.
+  void ExpectUma(std::string_view name,
+                 void* values,
+                 const base::Location& location = FROM_HERE) {
+    ExpectUma(name, std::vector<int>({}), location);
+  }
+
+ private:
+  base::HistogramTester histogram_tester_;
+};
 
 constexpr static char kSearchTerms_502OnPrefetch[] = "502-on-prefetch";
 
@@ -256,15 +295,16 @@ class SearchPreloadBrowserTestBase : public PlatformBrowserTest,
   std::unique_ptr<net::test_server::HttpResponse> HandleSearchRequest(
       const net::test_server::HttpRequest& request) {
     const bool is_prefetch =
-        request.headers.find(blink::kPurposeHeaderName) !=
+        request.headers.find(blink::kSecPurposeHeaderName) !=
             request.headers.end() &&
-        request.headers.find(blink::kPurposeHeaderName)->second ==
-            blink::kSecPurposePrefetchHeaderValue;
-    CHECK_EQ(is_prefetch,
-             request.headers.find(blink::kSecPurposeHeaderName) !=
-                     request.headers.end() &&
-                 request.headers.find(blink::kSecPurposeHeaderName)->second ==
-                     blink::kSecPurposePrefetchPrerenderHeaderValue);
+        (request.headers.find(blink::kSecPurposeHeaderName)->second ==
+             blink::kSecPurposePrefetchHeaderValue ||
+         request.headers.find(blink::kSecPurposeHeaderName)->second ==
+             blink::kSecPurposePrefetchAnonymousClientIpHeaderValue ||
+         request.headers.find(blink::kSecPurposeHeaderName)->second ==
+             blink::kSecPurposePrefetchPrerenderHeaderValue ||
+         request.headers.find(blink::kSecPurposeHeaderName)->second ==
+             blink::kSecPurposePrefetchPrerenderPreviewHeaderValue);
 
     if (request.GetURL().spec().find(kSearchTerms_502OnPrefetch) !=
             std::string::npos &&
@@ -477,6 +517,7 @@ class SearchPreloadBrowserTest : public SearchPreloadBrowserTestBase {
 // - Prefetch is used.
 IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
                        OnAutocompleteResultChanged_TriggersPrefetch) {
+  HistogramTesterWrapper uma_tester;
   SetUpTemplateURLService();
   SetUpSearchPreloadService({
       .no_vary_search_data_cache = R"(key-order, params, except=("q"))",
@@ -510,6 +551,12 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
   EXPECT_EQ(0, request_collector().CountByPath(urls.prerender));
   EXPECT_EQ(0, request_collector().CountByPath(urls.navigation));
 
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+                       {SearchPreloadSignalResult::kPrefetchTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+                       {});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnPress.Prefetch", {});
+
   histogram_tester().ExpectBucketCount(
       "Prerender.Experimental.PrerenderHostFinalStatus.Embedder_"
       "DefaultSearchEngine",
@@ -529,6 +576,7 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
 // - Prefetch is used.
 IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
                        OnAutocompleteResultChanged_TriggeredPrefetchIsHeld) {
+  HistogramTesterWrapper uma_tester;
   SetUpTemplateURLService();
   SetUpSearchPreloadService({
       .no_vary_search_data_cache = R"(key-order, params, except=("q"))",
@@ -569,6 +617,14 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
   EXPECT_EQ(0, request_collector().CountByPath(urls.prerender));
   EXPECT_EQ(0, request_collector().CountByPath(urls.navigation));
 
+  uma_tester.ExpectUma(
+      "Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+      {SearchPreloadSignalResult::kPrefetchTriggered,
+       SearchPreloadSignalResult::kNotTriggeredAlreadyTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+                       {});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnPress.Prefetch", {});
+
   histogram_tester().ExpectBucketCount(
       "Prerender.Experimental.PrerenderHostFinalStatus.Embedder_"
       "DefaultSearchEngine",
@@ -586,6 +642,7 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
 IN_PROC_BROWSER_TEST_F(
     SearchPreloadBrowserTest,
     OnAutocompleteResultChanged_TriggersPrefetchAndPrerender) {
+  HistogramTesterWrapper uma_tester;
   SetUpTemplateURLService();
   SetUpSearchPreloadService({
       .no_vary_search_data_cache = R"(key-order, params, except=("q"))",
@@ -630,6 +687,12 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(0, request_collector().CountByPath(urls.prerender));
   EXPECT_EQ(0, request_collector().CountByPath(urls.navigation));
 
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+                       {SearchPreloadSignalResult::kPrefetchTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+                       {SearchPreloadSignalResult::kPrerenderTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnPress.Prefetch", {});
+
   histogram_tester().ExpectBucketCount(
       "Prerender.Experimental.PrerenderHostFinalStatus.Embedder_"
       "DefaultSearchEngine",
@@ -649,6 +712,7 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(
     SearchPreloadBrowserTest,
     OnAutocompleteResultChanged_TriggersPrefetchThenPrerender) {
+  HistogramTesterWrapper uma_tester;
   SetUpTemplateURLService();
   SetUpSearchPreloadService({
       .no_vary_search_data_cache = R"(key-order, params, except=("q"))",
@@ -699,6 +763,14 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(0, request_collector().CountByPath(urls.prerender));
   EXPECT_EQ(0, request_collector().CountByPath(urls.navigation));
 
+  uma_tester.ExpectUma(
+      "Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+      {SearchPreloadSignalResult::kPrefetchTriggered,
+       SearchPreloadSignalResult::kNotTriggeredAlreadyTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+                       {SearchPreloadSignalResult::kPrerenderTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnPress.Prefetch", {});
+
   histogram_tester().ExpectBucketCount(
       "Prerender.Experimental.PrerenderHostFinalStatus.Embedder_"
       "DefaultSearchEngine",
@@ -714,6 +786,7 @@ IN_PROC_BROWSER_TEST_F(
 // - Prefetch is used.
 IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
                        OnNavigationLikely_TriggersPrefetch) {
+  HistogramTesterWrapper uma_tester;
   SetUpTemplateURLService(/*prefetch_likely_navigations=*/true);
   SetUpSearchPreloadService({
       .no_vary_search_data_cache = R"(key-order, params, except=("q"))",
@@ -751,6 +824,13 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
   // Prefetch is used.
   EXPECT_EQ(1, request_collector().CountByPath(urls.prefetch_on_press));
   EXPECT_EQ(0, request_collector().CountByPath(urls.navigation));
+
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+                       {});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+                       {});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnPress.Prefetch",
+                       {SearchPreloadSignalResult::kPrefetchTriggered});
 }
 
 // `OnNavigationLikely()` doesn't trigger prefetch if default search provider
@@ -792,6 +872,7 @@ IN_PROC_BROWSER_TEST_F(
 // - Prefetch is used.
 IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
                        OnAutocompleteResultChanged_Then_OnNavigationLikely) {
+  HistogramTesterWrapper uma_tester;
   SetUpTemplateURLService(/*prefetch_likely_navigations=*/true);
   SetUpSearchPreloadService({
       .no_vary_search_data_cache = R"(key-order, params, except=("q"))",
@@ -833,6 +914,14 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
   EXPECT_EQ(1, request_collector().CountByPath(urls.prefetch_on_suggest));
   EXPECT_EQ(0, request_collector().CountByPath(urls.prefetch_on_press));
   EXPECT_EQ(0, request_collector().CountByPath(urls.navigation));
+
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+                       {SearchPreloadSignalResult::kPrefetchTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+                       {});
+  uma_tester.ExpectUma(
+      "Omnibox.DsePreload.SignalResult.OnPress.Prefetch",
+      {SearchPreloadSignalResult::kNotTriggeredAlreadyTriggered});
 }
 
 // Scenario:
@@ -845,8 +934,11 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
 //   - Prefetch matching fails due to lack of No-Vary-Search hint and "pf=cs"
 //     param.
 // - Prefetch is not used.
-IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
-                       TriggersPrefetchButMatchingFailsDueToNoVarySearchHint) {
+// TODO(crbug.com/434918482): Re-enable this test.
+IN_PROC_BROWSER_TEST_F(
+    SearchPreloadBrowserTest,
+    DISABLED_TriggersPrefetchButMatchingFailedDueToNoVarySearchHint) {
+  HistogramTesterWrapper uma_tester;
   SetUpTemplateURLService();
   SetUpSearchPreloadService({
       .no_vary_search_data_cache = std::nullopt,
@@ -881,6 +973,12 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
   EXPECT_EQ(1, request_collector().CountByPath(urls.prefetch_on_suggest));
   EXPECT_EQ(1, request_collector().CountByPath(urls.navigation));
 
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+                       {SearchPreloadSignalResult::kPrefetchTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+                       {});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnPress.Prefetch", {});
+
   // No-Vary-Search data cache is updated.
   histogram_tester().ExpectUniqueSample(
       "Omnibox.DsePreload.Prefetch.NoVarySearchDataCacheUpdate",
@@ -904,9 +1002,18 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest,
 //   - Prefetch matching fails due to lack of No-Vary-Search hint and "pf=cs"
 //     param.
 // - Prefetch is not used.
+// TODO(crbug.com/434918482): Re-enable this test on Mac.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_TriggersPrefetchAndPrerenderButPrerenderFailsDueToNoVarySearchHint \
+  DISABLED_TriggersPrefetchAndPrerenderButPrerenderFailsDueToNoVarySearchHint
+#else
+#define MAYBE_TriggersPrefetchAndPrerenderButPrerenderFailsDueToNoVarySearchHint \
+  TriggersPrefetchAndPrerenderButPrerenderFailsDueToNoVarySearchHint
+#endif
 IN_PROC_BROWSER_TEST_F(
     SearchPreloadBrowserTest,
-    TriggersPrefetchAndPrerenderButPrerenderFailsDueToNoVarySearchHint) {
+    MAYBE_TriggersPrefetchAndPrerenderButPrerenderFailsDueToNoVarySearchHint) {
+  HistogramTesterWrapper uma_tester;
   SetUpTemplateURLService();
   SetUpSearchPreloadService({
       .no_vary_search_data_cache = std::nullopt,
@@ -944,6 +1051,12 @@ IN_PROC_BROWSER_TEST_F(
   // Prefetch nor prerender aren't used.
   EXPECT_EQ(1, request_collector().CountByPath(urls.prefetch_on_suggest));
   EXPECT_EQ(1, request_collector().CountByPath(urls.navigation));
+
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+                       {SearchPreloadSignalResult::kPrefetchTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+                       {SearchPreloadSignalResult::kPrerenderTriggered});
+  uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnPress.Prefetch", {});
 
   histogram_tester().ExpectUniqueSample(
       "Prerender.Experimental.PrerenderHostFinalStatus.Embedder_"
@@ -1052,6 +1165,7 @@ IN_PROC_BROWSER_TEST_F(
 
   auto check = [&](std::string original_query,
                    const bool is_triggered_expected) {
+    HistogramTesterWrapper uma_tester;
     request_collector().Reset();
 
     std::string search_terms = original_query;
@@ -1158,6 +1272,7 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest_Limit,
 
   auto check = [&](std::string original_query,
                    const bool is_triggered_expected) {
+    HistogramTesterWrapper uma_tester;
     request_collector().Reset();
 
     std::string search_terms = original_query;
@@ -1179,6 +1294,19 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest_Limit,
     EXPECT_EQ(is_triggered_expected,
               request_collector().CountByPath(urls.prefetch_on_suggest));
     EXPECT_EQ(0, request_collector().CountByPath(urls.prerender));
+
+    if (is_triggered_expected) {
+      uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+                           {SearchPreloadSignalResult::kPrefetchTriggered});
+      uma_tester.ExpectUma(
+          "Omnibox.DsePreload.SignalResult.OnSuggest.Prerender", {});
+    } else {
+      uma_tester.ExpectUma(
+          "Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+          {SearchPreloadSignalResult::kNotTriggeredLimitExceeded});
+      uma_tester.ExpectUma(
+          "Omnibox.DsePreload.SignalResult.OnSuggest.Prerender", {});
+    }
   };
 
   check("one", true);
@@ -1202,6 +1330,7 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest_Limit,
 
   auto check = [&](std::string original_query,
                    const bool is_triggered_expected) {
+    HistogramTesterWrapper uma_tester;
     request_collector().Reset();
 
     std::string search_terms = original_query;
@@ -1230,6 +1359,15 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest_Limit,
     EXPECT_EQ(is_triggered_expected,
               request_collector().CountByPath(urls.prefetch_on_press));
     EXPECT_EQ(0, request_collector().CountByPath(urls.prerender));
+
+    if (is_triggered_expected) {
+      uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnPress.Prefetch",
+                           {SearchPreloadSignalResult::kPrefetchTriggered});
+    } else {
+      uma_tester.ExpectUma(
+          "Omnibox.DsePreload.SignalResult.OnPress.Prefetch",
+          {SearchPreloadSignalResult::kNotTriggeredLimitExceeded});
+    }
   };
 
   check("one", true);
@@ -1253,6 +1391,7 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest_Limit,
 
   auto check = [&](std::string original_query, const bool is_triggered_expected,
                    std::vector<std::string> queries_cancelled_prerender) {
+    HistogramTesterWrapper uma_tester;
     request_collector().Reset();
 
     std::string search_terms = original_query;
@@ -1288,6 +1427,20 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest_Limit,
     EXPECT_EQ(is_triggered_expected,
               request_collector().CountByPath(urls.prefetch_on_suggest));
     EXPECT_EQ(0, request_collector().CountByPath(urls.prerender));
+
+    if (is_triggered_expected) {
+      uma_tester.ExpectUma("Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+                           {SearchPreloadSignalResult::kPrefetchTriggered});
+      uma_tester.ExpectUma(
+          "Omnibox.DsePreload.SignalResult.OnSuggest.Prerender",
+          {SearchPreloadSignalResult::kPrerenderTriggered});
+    } else {
+      uma_tester.ExpectUma(
+          "Omnibox.DsePreload.SignalResult.OnSuggest.Prefetch",
+          {SearchPreloadSignalResult::kNotTriggeredLimitExceeded});
+      uma_tester.ExpectUma(
+          "Omnibox.DsePreload.SignalResult.OnSuggest.Prerender", {});
+    }
   };
 
   check("one", true, {});
@@ -1430,6 +1583,7 @@ IN_PROC_BROWSER_TEST_F(SearchPreloadBrowserTest_Ttl, LimitCaresTtl) {
 
   auto check = [&](std::string original_query,
                    const bool is_triggered_expected) {
+    HistogramTesterWrapper uma_tester;
     request_collector().Reset();
 
     std::string search_terms = original_query;

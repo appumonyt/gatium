@@ -14,6 +14,7 @@
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/scoped_block_popups_pref.h"
 #import "ios/chrome/test/earl_grey/web_http_server_chrome_test_case.h"
+#import "ios/chrome/test/scoped_eg_synchronization_disabler.h"
 #import "ios/testing/earl_grey/earl_grey_test.h"
 #import "ios/testing/earl_grey/matchers.h"
 #import "ios/web/public/test/http_server/http_server.h"
@@ -80,7 +81,15 @@ class ScopedBlockPopupsException {
 
 // Opens the block popups settings page and verifies that accessibility is set
 // up properly.
-- (void)testAccessibilityOfBlockPopupSettings {
+// TODO(crbug.com/438657821): Flaky on device.
+#if TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+#define MAYBE_testAccessibilityOfBlockPopupSettings \
+  FLAKY_testAccessibilityOfBlockPopupSettings
+#else
+#define MAYBE_testAccessibilityOfBlockPopupSettings \
+  testAccessibilityOfBlockPopupSettings
+#endif
+- (void)MAYBE_testAccessibilityOfBlockPopupSettings {
   [ChromeEarlGreyUI openSettingsMenu];
   [ChromeEarlGreyUI tapSettingsMenuButton:ContentSettingsButton()];
   [[EarlGrey selectElementWithMatcher:BlockPopupsSettingsButton()]
@@ -90,6 +99,9 @@ class ScopedBlockPopupsException {
                                    @"block_popups_settings_view_controller")]
       assertWithMatcher:grey_notNil()];
   [ChromeEarlGrey verifyAccessibilityForCurrentScreen];
+
+  // Disable EarlGrey synchronization to avoid infinite spinner loop.
+  ScopedSynchronizationDisabler disabler;
 
   // Close the settings menu.
   [[EarlGrey selectElementWithMatcher:NavigationBarBackButton()]
@@ -216,6 +228,9 @@ class ScopedBlockPopupsException {
                             grey_not(grey_accessibilityTrait(
                                 UIAccessibilityTraitNotEnabled)),
                             nil)] assertWithMatcher:grey_sufficientlyVisible()];
+
+  // Disable EarlGrey synchronization to avoid infinite spinner loop.
+  ScopedSynchronizationDisabler disabler;
 
   // Close the settings menu.
   [[EarlGrey selectElementWithMatcher:NavigationBarBackButton()]

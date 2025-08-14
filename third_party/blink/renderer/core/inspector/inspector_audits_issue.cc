@@ -719,8 +719,8 @@ void AuditsIssue::ReportPartitioningBlobURLIssue(
 void AuditsIssue::ReportPropertyRuleIssue(
     Document* document,
     const KURL& url,
-    WTF::OrdinalNumber line,
-    WTF::OrdinalNumber column,
+    OrdinalNumber line,
+    OrdinalNumber column,
     protocol::Audits::PropertyRuleIssueReason reason,
     const String& propertyValue) {
   if (!document || !document->GetExecutionContext()) {
@@ -753,11 +753,10 @@ void AuditsIssue::ReportPropertyRuleIssue(
       AuditsIssue(std::move(issue)));
 }
 
-void AuditsIssue::ReportStylesheetLoadingLateImportIssue(
-    Document* document,
-    const KURL& url,
-    WTF::OrdinalNumber line,
-    WTF::OrdinalNumber column) {
+void AuditsIssue::ReportStylesheetLoadingLateImportIssue(Document* document,
+                                                         const KURL& url,
+                                                         OrdinalNumber line,
+                                                         OrdinalNumber column) {
   if (!document || !document->GetExecutionContext()) {
     return;
   }
@@ -791,8 +790,8 @@ void AuditsIssue::ReportStylesheetLoadingRequestFailedIssue(
     const KURL& url,
     const String& request_id,
     const KURL& initiator_url,
-    WTF::OrdinalNumber initiator_line,
-    WTF::OrdinalNumber initiator_column,
+    OrdinalNumber initiator_line,
+    OrdinalNumber initiator_column,
     const String& failureMessage) {
   if (!document || !document->GetExecutionContext()) {
     return;
@@ -868,7 +867,9 @@ void AuditsIssue::ReportElementAccessibilityIssue(
     DOMNodeId node_id,
     ElementAccessibilityIssueReason issue_reason,
     bool has_disallowed_attributes) {
-  CHECK(HTMLSelectElement::CustomizableSelectEnabled(document));
+  if (!document->GetExecutionContext()) {
+    return;
+  }
 
   auto select_accessibility_issue_details =
       protocol::Audits::ElementAccessibilityIssueDetails::create()
@@ -894,7 +895,7 @@ void AuditsIssue::ReportElementAccessibilityIssue(
 }
 
 // static
-void AuditsIssue::ReportUserReidentificationIssue(
+void AuditsIssue::ReportUserReidentificationResourceBlockedIssue(
     LocalFrame* frame,
     std::optional<std::string> devtools_request_id,
     const KURL& affected_request_url) {
@@ -924,6 +925,32 @@ void AuditsIssue::ReportUserReidentificationIssue(
                    .build();
 
   frame->DomWindow()->AddInspectorIssue(AuditsIssue(std::move(issue)));
+}
+
+// static
+void AuditsIssue::ReportUserReidentificationCanvasNoisedIssue(
+    SourceLocation* source_location,
+    ExecutionContext* execution_context) {
+  auto reidentification_issue_details =
+      protocol::Audits::UserReidentificationIssueDetails::create()
+          .setType(protocol::Audits::UserReidentificationIssueTypeEnum::
+                       NoisedCanvasReadback)
+          .setSourceCodeLocation(CreateProtocolLocation(*source_location))
+          .build();
+
+  auto protocol_issue_details =
+      protocol::Audits::InspectorIssueDetails::create()
+          .setUserReidentificationIssueDetails(
+              std::move(reidentification_issue_details))
+          .build();
+
+  auto issue = protocol::Audits::InspectorIssue::create()
+                   .setCode(protocol::Audits::InspectorIssueCodeEnum::
+                                UserReidentificationIssue)
+                   .setDetails(std::move(protocol_issue_details))
+                   .build();
+
+  execution_context->AddInspectorIssue(AuditsIssue(std::move(issue)));
 }
 
 AuditsIssue AuditsIssue::CreateContentSecurityPolicyIssue(

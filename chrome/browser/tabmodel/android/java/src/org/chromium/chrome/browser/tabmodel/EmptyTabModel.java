@@ -20,6 +20,7 @@ import org.chromium.chrome.browser.tab.TabLaunchType;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 
 import java.util.Iterator;
+import java.util.Set;
 
 /** Singleton class intended to stub out Tab model before it has been created. */
 @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
@@ -57,6 +58,9 @@ public class EmptyTabModel implements IncognitoTabModelInternal {
     public @Nullable Profile getProfile() {
         return null;
     }
+
+    @Override
+    public void associateWithBrowserWindow(long nativeAndroidBrowserWindow) {}
 
     @Override
     public boolean isIncognito() {
@@ -229,4 +233,25 @@ public class EmptyTabModel implements IncognitoTabModelInternal {
 
     @Override
     public void broadcastSessionRestoreComplete() {}
+
+    @Override
+    public void setTabsMultiSelected(Set<Integer> tabIds, boolean isSelected) {}
+
+    @Override
+    public void clearMultiSelection(boolean notifyObservers) {}
+
+    @Override
+    public boolean isTabMultiSelected(int tabId) {
+        return false;
+    }
+
+    @Override
+    public int getMultiSelectedTabsCount() {
+        return 0;
+    }
+
+    @Override
+    public int findFirstNonPinnedTabIndex() {
+        return 0;
+    }
 }

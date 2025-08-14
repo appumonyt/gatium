@@ -327,6 +327,7 @@
 <translation id="2240366984605217732">Layout</translation>
 <translation id="224421911978987610">Lang­zeit­­belich­tung</translation>
 <translation id="2244834438220057800">grünen</translation>
+<translation id="2248689665683494517">minimalistisches Stillleben mit einigen Klatschmohnblüten in einer Glasvase vor schwarzem Hintergrund</translation>
 <translation id="225692081236532131">Aktivierungsstatus</translation>
 <translation id="2267285889943769271">Screenshot hinzufügen</translation>
 <translation id="2268044343513325586">Verfeinern</translation>
@@ -768,7 +769,7 @@
 <translation id="437477383107495720">Hasen</translation>
 <translation id="4376423484621194274">Dein Administrator lässt das Schließen von <ph name="APP_NAME" /> nicht zu</translation>
 <translation id="4378373042927530923">Nicht ausgeführt</translation>
-<translation id="4378551569595875038">Verbindung...</translation>
+<translation id="4378551569595875038">Verbinden...</translation>
 <translation id="4382484599443659549">PDF</translation>
 <translation id="4383322413532809099">Wenn du Titel für deine Aufnahme erstellen möchtest, starte dein Gerät (<ph name="DEVICE_TYPE" />) neu</translation>
 <translation id="4394049700291259645">Deaktivieren</translation>
@@ -1393,7 +1394,7 @@
 <translation id="7135814714616751706">Tastenkombinationen suchen</translation>
 <translation id="7138614237884624401">Vereinfachter Text</translation>
 <translation id="7138668887584231801">Nicht genügend Wörter für eine Zusammenfassung</translation>
-<translation id="7143207342074048698">Verbindung...</translation>
+<translation id="7143207342074048698">Verbinden...</translation>
 <translation id="7144878232160441200">Wiederholen</translation>
 <translation id="7144954474087165241">Pagode</translation>
 <translation id="7147557737960578492">Durch Auswahl einer anderen Taste neu zuweisen</translation>
@@ -1450,7 +1451,7 @@
 <translation id="7343649194310845056">Netzwerkgeräte</translation>
 <translation id="7344788170842919262">erdig</translation>
 <translation id="7346768383111016081">Steuerelement auf der Spielaktion platzieren, um über die Tastatur zu spielen</translation>
-<translation id="7352651011704765696">Ein Problem ist aufgetreten.</translation>
+<translation id="7352651011704765696">Ein Problem ist aufgetreten</translation>
 <translation id="7353413232959255829">Suchergebnis <ph name="LIST_POSITION" /> von <ph name="LIST_SIZE" />: <ph name="SEARCH_RESULT_TEXT" />. Drücke die Eingabetaste, um die Tastenkombination aufzurufen.</translation>
 <translation id="7359657277149375382">Dateityp</translation>
 <translation id="73631062356239394">Diagnosedaten teilen</translation>

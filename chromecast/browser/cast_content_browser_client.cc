@@ -88,6 +88,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "ipc/constants.mojom.h"
 #include "media/audio/audio_thread_impl.h"
 #include "media/base/media_switches.h"
 #include "media/gpu/buildflags.h"
@@ -114,7 +115,7 @@
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/device_info.h"
 #include "chromecast/media/audio/cast_audio_manager_android.h"  // nogncheck
 #include "components/crash/core/app/crashpad.h"
 #include "media/audio/android/audio_manager_android.h"
@@ -168,7 +169,7 @@ CastContentBrowserClient::CastContentBrowserClient(
   extra_enable_features.push_back(
       &::media::kUseTaskRunnerForMojoAudioDecoderService);
 
-  if (base::android::BuildInfo::GetInstance()->is_tv()) {
+  if (base::android::device_info::is_tv()) {
     // Use the software decoder provided by MediaCodec instead of the built in
     // software decoder. This can improve av sync quality.
     extra_enable_features.push_back(&::media::kAllowMediaCodecSoftwareDecoder);
@@ -812,7 +813,7 @@ void CastContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
     int render_frame_id,
     const std::optional<url::Origin>& request_initiator_origin,
     NonNetworkURLLoaderFactoryMap* factories) {
-  if (render_frame_id == MSG_ROUTING_NONE) {
+  if (render_frame_id == IPC::mojom::kRoutingIdNone) {
     LOG(ERROR) << "Service worker not supported.";
     return;
   }

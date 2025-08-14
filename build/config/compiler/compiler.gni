@@ -48,6 +48,12 @@ declare_args() {
   # With GCC, warnings in no-Chromium code are always not treated as errors.
   treat_warnings_as_errors = true
 
+  # How clang should report warnings, either false to report in the usual
+  # manner, or true to add source range information to the diagnostics in
+  # a form suitable for subsequent processing with scripts. With GCC, or
+  # on Windows, the warning format is not affected.
+  diagnostics_print_source_range_info = false
+
   # How many symbols to include in the build. This affects the performance of
   # the build since the symbols are large and dealing with them is slow.
   #   2 means regular build with symbols.
@@ -129,9 +135,6 @@ declare_args() {
   use_ml_inliner = host_os == "linux" && is_android &&
                    !llvm_android_mainline  # https://crbug.com/1468680
 
-  # Set to true to use the android unwinder V2 implementation.
-  use_android_unwinder_v2 = true
-
   # Whether we should consider the profile we're using to be accurate. Accurate
   # profiles have the benefit of (potentially substantial) binary size
   # reductions, by instructing the compiler to optimize cold and uncovered
@@ -168,6 +171,14 @@ assert(is_clang || !use_sized_deallocation,
 if (use_thin_lto && is_debug) {
   print("WARNING: ThinLTO (use_thin_lto=true) doesn't work with debug" +
         " (is_debug=true) build.")
+}
+
+compiler_logs = []
+
+if (use_thin_lto) {
+  compiler_logs += [ "use_thin_lto=true" ]
+} else {
+  compiler_logs += [ "use_thin_lto=false" ]
 }
 
 # Determine whether to enable or disable frame pointers, based on the platform
@@ -264,9 +275,9 @@ if (strip_absolute_paths_from_debug_symbols_default) {
 clang_need_input_root_absolute_path = !strip_absolute_paths_from_debug_symbols
 
 if (clang_need_input_root_absolute_path) {
-  compiler_logs = [ "clang_need_input_root_absolute_path=true" ]
+  compiler_logs += [ "clang_need_input_root_absolute_path=true" ]
 } else {
-  compiler_logs = [ "clang_need_input_root_absolute_path=false" ]
+  compiler_logs += [ "clang_need_input_root_absolute_path=false" ]
 }
 
 # TODO: https://issues.chromium.org/40120210 - remove this

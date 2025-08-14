@@ -39,6 +39,7 @@
 #include "media/webrtc/webrtc_features.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/testing/video_frame_utils.h"
 #include "third_party/blink/renderer/platform/webrtc/testing/mock_webrtc_video_frame_adapter_shared_resources.h"
 #include "third_party/blink/renderer/platform/webrtc/webrtc_video_frame_adapter.h"
@@ -129,8 +130,7 @@ class FakeNativeBufferI420 : public blink::WebRtcVideoFrameAdapter {
   FakeNativeBufferI420(int width, int height, bool allow_to_i420)
       : blink::WebRtcVideoFrameAdapter(
             media::VideoFrame::CreateBlackFrame(gfx::Size(480, 360)),
-            base::MakeRefCounted<WebRtcVideoFrameAdapter::SharedResources>(
-                nullptr)),
+            WebRtcVideoFrameAdapter::SharedResources::Create(nullptr)),
         width_(width),
         height_(height),
         allow_to_i420_(allow_to_i420),
@@ -1017,8 +1017,14 @@ class RTCVideoEncoderEncodeTest : public RTCVideoEncoderTest,
   }
 
   ~RTCVideoEncoderEncodeTest() override = default;
-  void SetUp() override { RTCVideoEncoderTest::SetUp(); }
-  void TearDown() override { RTCVideoEncoderTest::TearDown(); }
+  void SetUp() override {
+    blink::Platform::SetMainThreadTaskRunnerForTesting();
+    RTCVideoEncoderTest::SetUp();
+  }
+  void TearDown() override {
+    RTCVideoEncoderTest::TearDown();
+    blink::Platform::SetMainThreadTaskRunnerForTesting();
+  }
 
  protected:
   base::test::ScopedFeatureList feature_list_;
@@ -1332,8 +1338,7 @@ TEST_F(RTCVideoEncoderEncodeTest, SoftwareFallbackOnBadEncodeInput) {
   frame->set_timestamp(base::Milliseconds(1));
   webrtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_adapter(
       new webrtc::RefCountedObject<WebRtcVideoFrameAdapter>(
-          frame, base::MakeRefCounted<WebRtcVideoFrameAdapter::SharedResources>(
-                     nullptr)));
+          frame, WebRtcVideoFrameAdapter::SharedResources::Create(nullptr)));
   std::vector<webrtc::VideoFrameType> frame_types;
 
   // The frame type check is done in media thread asynchronously. The error is
@@ -1445,8 +1450,7 @@ TEST_F(RTCVideoEncoderEncodeTest, AcceptsRepeatedWrappedMediaVideoFrame) {
   frame->set_timestamp(base::Milliseconds(1));
   webrtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_adapter(
       new webrtc::RefCountedObject<WebRtcVideoFrameAdapter>(
-          frame, base::MakeRefCounted<WebRtcVideoFrameAdapter::SharedResources>(
-                     nullptr)));
+          frame, WebRtcVideoFrameAdapter::SharedResources::Create(nullptr)));
   std::vector<webrtc::VideoFrameType> frame_types;
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             rtc_encoder_->Encode(webrtc::VideoFrame::Builder()
@@ -2614,8 +2618,7 @@ TEST_F(RTCVideoEncoderEncodeTest, EncodeFrameWithAdapter) {
       gfx::Size(kInputFrameWidth, kInputFrameHeight));
   webrtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_adapter(
       new webrtc::RefCountedObject<WebRtcVideoFrameAdapter>(
-          frame, base::MakeRefCounted<WebRtcVideoFrameAdapter::SharedResources>(
-                     nullptr)));
+          frame, WebRtcVideoFrameAdapter::SharedResources::Create(nullptr)));
   std::vector<webrtc::VideoFrameType> frame_types;
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             rtc_encoder_->Encode(webrtc::VideoFrame::Builder()
@@ -2631,8 +2634,7 @@ TEST_F(RTCVideoEncoderEncodeTest, EncodeFrameWithAdapter) {
   frame = media::VideoFrame::CreateBlackFrame(
       gfx::Size(kInputFrameWidth * 2, kInputFrameHeight * 2));
   frame_adapter = new webrtc::RefCountedObject<WebRtcVideoFrameAdapter>(
-      frame,
-      base::MakeRefCounted<WebRtcVideoFrameAdapter::SharedResources>(nullptr));
+      frame, WebRtcVideoFrameAdapter::SharedResources::Create(nullptr));
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             rtc_encoder_->Encode(webrtc::VideoFrame::Builder()
                                      .set_video_frame_buffer(frame_adapter)

@@ -35,9 +35,7 @@
 #include "base/unguessable_token.h"
 #include "components/services/storage/indexed_db/locks/partitioned_lock_id.h"
 #include "components/services/storage/indexed_db/locks/partitioned_lock_manager.h"
-#include "components/services/storage/privileged/mojom/indexed_db_client_state_checker.mojom-shared.h"
 #include "components/services/storage/privileged/mojom/indexed_db_client_state_checker.mojom.h"
-#include "components/services/storage/privileged/mojom/indexed_db_internals_types.mojom-forward.h"
 #include "components/services/storage/privileged/mojom/indexed_db_internals_types.mojom.h"
 #include "content/browser/indexed_db/indexed_db_external_object.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
@@ -53,7 +51,7 @@
 #include "content/browser/indexed_db/instance/pending_connection.h"
 #include "content/browser/indexed_db/instance/transaction.h"
 #include "content/browser/indexed_db/status.h"
-#include "ipc/ipc_channel.h"
+#include "ipc/constants.mojom.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
@@ -155,7 +153,7 @@ BuildLockRequestsForSqlite(uint32_t database_id,
 // database, so they are kept separately, and sent back with the original data
 // so that the render process can amend the returned object.
 blink::mojom::IDBReturnValuePtr ConvertValueToReturnValue(
-    BackingStore::Transaction& transaction,
+    Transaction& transaction,
     IndexedDBValue value,
     blink::IndexedDBKey primary_key,
     blink::IndexedDBKeyPath key_path) {
@@ -170,7 +168,7 @@ blink::mojom::IDBReturnValuePtr ConvertValueToReturnValue(
 
 // Returns an `IDBReturnValuePtr` created from the cursor's current position.
 blink::mojom::IDBReturnValuePtr ExtractReturnValueFromCursorValue(
-    BackingStore::Transaction& transaction,
+    Transaction& transaction,
     const IndexedDBObjectStoreMetadata& object_store_metadata,
     BackingStore::Cursor& cursor) {
   IndexedDBValue value(std::move(cursor.GetValue()));
@@ -227,6 +225,22 @@ int64_t Database::version() const {
 
 bool Database::IsInitialized() const {
   return backing_store_db_ != nullptr;
+}
+
+StatusOr<int64_t> Database::DeleteDatabase(std::vector<PartitionedLock> locks,
+                                           base::OnceClosure on_complete) {
+  if (!backing_store_db_) {
+    return blink::IndexedDBDatabaseMetadata::DEFAULT_VERSION;
+  }
+
+  const int64_t old_version = version();
+  Status s = backing_store_db_->DeleteDatabase(std::move(locks),
+                                               std::move(on_complete));
+  backing_store_db_.reset();
+  if (!s.ok()) {
+    return base::unexpected(s);
+  }
+  return old_version;
 }
 
 std::vector<PartitionedLockManager::PartitionedLockRequest>
@@ -545,9 +559,9 @@ Status Database::GetOperation(int64_t object_store_id,
       key_path = object_store_metadata.key_path;
     }
 
-    blink::mojom::IDBReturnValuePtr mojo_value = ConvertValueToReturnValue(
-        *transaction->BackingStoreTransaction(), std::move(value),
-        std::move(primary_key), std::move(key_path));
+    blink::mojom::IDBReturnValuePtr mojo_value =
+        ConvertValueToReturnValue(*transaction, std::move(value),
+                                  std::move(primary_key), std::move(key_path));
     std::move(callback).Run(
         blink::mojom::IDBDatabaseGetResult::NewValue(std::move(mojo_value)));
     return Status::OK();
@@ -605,8 +619,8 @@ Status Database::GetOperation(int64_t object_store_id,
   }
 
   blink::mojom::IDBReturnValuePtr mojo_value = ConvertValueToReturnValue(
-      *transaction->BackingStoreTransaction(), std::move(value),
-      std::move(primary_key_return), std::move(key_path_return));
+      *transaction, std::move(value), std::move(primary_key_return),
+      std::move(key_path_return));
   std::move(callback).Run(
       blink::mojom::IDBDatabaseGetResult::NewValue(std::move(mojo_value)));
   return Status::OK();
@@ -792,9 +806,8 @@ Status Database::GetAllOperation(
                                        /*index_key=*/std::nullopt);
     } else if (result_type == blink::mojom::IDBGetAllResultType::Values) {
       blink::mojom::IDBReturnValuePtr return_value =
-          ExtractReturnValueFromCursorValue(
-              *transaction->BackingStoreTransaction(), object_store_metadata,
-              **cursor);
+          ExtractReturnValueFromCursorValue(*transaction, object_store_metadata,
+                                            **cursor);
       return_record = blink::mojom::IDBRecord::New(
           /*primary_key=*/std::nullopt, std::move(return_value),
           /*index_key=*/std::nullopt);
@@ -802,9 +815,8 @@ Status Database::GetAllOperation(
       // Construct the record, which includes the primary key, value and index
       // key.
       blink::mojom::IDBReturnValuePtr return_value =
-          ExtractReturnValueFromCursorValue(
-              *transaction->BackingStoreTransaction(), object_store_metadata,
-              **cursor);
+          ExtractReturnValueFromCursorValue(*transaction, object_store_metadata,
+                                            **cursor);
       std::optional<IndexedDBKey> index_key;
       if (index_id != IndexedDBIndexMetadata::kInvalidId) {
         // The index key only exists for `IDBIndex::getAllRecords()`.
@@ -896,8 +908,7 @@ Status Database::OpenCursorOperation(
 
   blink::mojom::IDBValuePtr mojo_value;
   if (cursor->Value()) {
-    mojo_value = transaction->BackingStoreTransaction()->BuildMojoValue(
-        std::move(*cursor->Value()));
+    mojo_value = transaction->BuildMojoValue(std::move(*cursor->Value()));
   }
 
   std::move(params->callback)
@@ -1056,14 +1067,14 @@ void Database::NotifyOfIdbInternalsRelevantChange() {
 }
 
 // kIDBMaxMessageSize is defined based on the original
-// IPC::Channel::kMaximumMessageSize value.  We use kIDBMaxMessageSize to
+// IPC::mojom::kChannelMaximumMessageSize value.  We use kIDBMaxMessageSize to
 // limit the size of arguments we pass into our Mojo calls.  We want to ensure
 // this value is always no bigger than the current kMaximumMessageSize value
 // which also ensures it is always no bigger than the current Mojo message
 // size limit.
 static_assert(
-    blink::mojom::kIDBMaxMessageSize <= IPC::Channel::kMaximumMessageSize,
-    "kIDBMaxMessageSize is bigger than IPC::Channel::kMaximumMessageSize");
+    blink::mojom::kIDBMaxMessageSize <= IPC::mojom::kChannelMaximumMessageSize,
+    "kIDBMaxMessageSize is bigger than IPC::mojom::kChannelMaximumMessageSize");
 
 void Database::CallUpgradeTransactionStartedForTesting(int64_t old_version) {
   connection_coordinator_.OnUpgradeTransactionStarted(old_version);

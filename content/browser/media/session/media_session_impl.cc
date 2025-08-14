@@ -93,6 +93,11 @@ class MediaSessionData : public base::SupportsUserData::Data {
     return data;
   }
 
+  static MediaSessionData* Get(BrowserContext* context) {
+    return static_cast<MediaSessionData*>(
+        context->GetUserData(kMediaSessionDataName));
+  }
+
   const base::UnguessableToken& source_id() const { return source_id_; }
 
  private:
@@ -172,6 +177,12 @@ MediaSession* MediaSession::GetIfExists(WebContents* contents) {
 const base::UnguessableToken& MediaSession::GetSourceId(
     BrowserContext* browser_context) {
   return MediaSessionData::GetOrCreate(browser_context)->source_id();
+}
+
+const base::UnguessableToken* MediaSession::MaybeGetSourceId(
+    BrowserContext* browser_context) {
+  auto* data = MediaSessionData::Get(browser_context);
+  return data ? &data->source_id() : nullptr;
 }
 
 // static
@@ -786,10 +797,20 @@ void MediaSessionImpl::SetAudioFocusGroupId(
 }
 
 RenderFrameHost* MediaSessionImpl::GetRoutedFrame() {
-  if (!routed_service_) {
-    return nullptr;
+  if (routed_service_) {
+    return routed_service_->GetRenderFrameHost();
   }
-  return routed_service_->GetRenderFrameHost();
+  return ComputeFrameForRouting(/*ensure_service=*/false);
+}
+
+std::optional<media_session::MediaPosition>
+MediaSessionImpl::GetMediaSessionPosition() {
+  return position_;
+}
+
+const media_session::MediaMetadata&
+MediaSessionImpl::GetMediaSessionMetadata() {
+  return metadata_;
 }
 
 void MediaSessionImpl::StartDucking() {
@@ -1607,7 +1628,9 @@ bool MediaSessionImpl::IsServiceActiveForRenderFrameHost(RenderFrameHost* rfh) {
 }
 
 void MediaSessionImpl::UpdateRoutedService() {
-  MediaSessionServiceImpl* new_service = ComputeServiceForRouting();
+  RenderFrameHost* rfh = ComputeFrameForRouting(/*ensure_service=*/true);
+  MediaSessionServiceImpl* new_service =
+      rfh ? services_[rfh->GetGlobalId()] : nullptr;
 
   if (new_service == routed_service_)
     return;
@@ -1620,40 +1643,46 @@ void MediaSessionImpl::UpdateRoutedService() {
   RebuildAndNotifyMediaPositionChanged();
 }
 
-MediaSessionServiceImpl* MediaSessionImpl::ComputeServiceForRouting() {
-  // The service selection strategy is: select a frame that has a playing/paused
-  // player and has a corresponding MediaSessionService and return the
-  // corresponding MediaSessionService. If multiple frames satisfy the criteria,
-  // prefer the top-most frame.
+// Select a frame that has a playing or paused media player, or has a
+// MediaSessionService created to handle media session APIs without having a
+// media player. Select the top-most frame if multiple frames satisfy the
+// criteria. If |ensure_service| is set to true, the selected frame must also
+// have a corresponding MediaSessionService.
+RenderFrameHost* MediaSessionImpl::ComputeFrameForRouting(bool ensure_service) {
+  // First collect all the frames that have a playing or paused media player.
   std::set<RenderFrameHost*> frames;
   for (const auto& player : normal_players_) {
     RenderFrameHost* frame = player.first.observer->render_frame_host();
-    if (frame)
+    if (frame) {
       frames.insert(frame);
+    }
   }
-
   for (const auto& player : one_shot_players_) {
     RenderFrameHost* frame = player.observer->render_frame_host();
-    if (frame)
+    if (frame) {
       frames.insert(frame);
+    }
   }
 
+  // Compute to find the frame with the minimum depth.
   RenderFrameHost* best_frame = nullptr;
   size_t min_depth = std::numeric_limits<size_t>::max();
   std::map<RenderFrameHost*, size_t> map_rfh_to_depth;
 
   for (RenderFrameHost* frame : frames) {
     size_t depth = ComputeFrameDepth(frame, &map_rfh_to_depth);
-    if (depth >= min_depth)
+    if (depth >= min_depth) {
       continue;
-    if (!IsServiceActiveForRenderFrameHost(frame))
+    }
+    if (ensure_service && !IsServiceActiveForRenderFrameHost(frame)) {
       continue;
+    }
     best_frame = frame;
     min_depth = depth;
   }
 
-  // If we don't have a suitable frame yet, then take the topmost frame that has
-  // a MediaSessionService.
+  // If we cannot find a suitable frame, take the top-most frame with an active
+  // MediaSessionService.
   if (!best_frame && base::FeatureList::IsEnabled(
                          blink::features::kMediaSessionEnterPictureInPicture)) {
     // `FrameTree::Nodes()` iterates in breadth-first order, so this is
@@ -1670,7 +1699,7 @@ MediaSessionServiceImpl* MediaSessionImpl::ComputeServiceForRouting() {
     }
   }
 
-  return best_frame ? services_[best_frame->GetGlobalId()] : nullptr;
+  return best_frame;
 }
 
 void MediaSessionImpl::OnMediaMutedStatusChanged(bool mute) {

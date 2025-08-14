@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/ai/language_model_prompt_builder.h"
 
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/mojom/ai/ai_language_model.mojom-blink-forward.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
@@ -40,11 +41,11 @@ constexpr char kSchemaPrefix[] =
     "\n\nRemember to respond in JSON that follows this \"JSON Schema\" "
     "specification:\n";
 
-using ResolveCallback = base::OnceCallback<void(
-    WTF::Vector<mojom::blink::AILanguageModelPromptPtr>)>;
+using ResolveCallback =
+    base::OnceCallback<void(Vector<mojom::blink::AILanguageModelPromptPtr>)>;
 using RejectCallback = base::OnceCallback<void(const ScriptValue& error)>;
 
-LanguageModelMessageContent* MakeMessageTextContent(const WTF::String& value) {
+LanguageModelMessageContent* MakeMessageTextContent(const String& value) {
   auto* content = MakeGarbageCollected<LanguageModelMessageContent>();
   content->setType(
       V8LanguageModelMessageType(V8LanguageModelMessageType::Enum::kText));
@@ -103,9 +104,9 @@ class LanguageModelPromptBuilder
   explicit LanguageModelPromptBuilder(
       ScriptState* script_state,
       AbortSignal* abort_signal,
-      WTF::HashSet<mojom::blink::AILanguageModelPromptType> allowed_types,
+      HashSet<mojom::blink::AILanguageModelPromptType> allowed_types,
       const V8LanguageModelPrompt* input,
-      const WTF::String& json_schema,
+      const String& json_schema,
       ResolveCallback resolve_callback,
       RejectCallback reject_callback);
   void Trace(Visitor*) const override;
@@ -147,9 +148,9 @@ class LanguageModelPromptBuilder
   void ToMojo(String prompt, PendingEntry* entry);
   void ToMojo(AudioBuffer* audio_buffer, PendingEntry* entry);
   void ToMojo(Blob* blob, PendingEntry* entry);
-  void ToMojo(V8ImageBitmapSource* bitmap, PendingEntry* entry);
   void AudioToMojo(base::span<uint8_t> bytes, PendingEntry* entry);
-  void BitmapToMojo(base::span<uint8_t> bytes, PendingEntry* entry);
+  void BitmapToMojo(std::variant<DOMDataView*, V8ImageBitmapSource*> source,
+                    PendingEntry* entry);
 
   // Called when an ImageBitmap is finished decoding.
   void OnBitmapLoaded(PendingEntry* entry,
@@ -157,13 +158,13 @@ class LanguageModelPromptBuilder
                       ImageBitmap* bitmap);
 
   SelfKeepAlive<LanguageModelPromptBuilder> keep_alive_{this};
-  WTF::Vector<mojom::blink::AILanguageModelPromptPtr> processed_prompts_;
+  Vector<mojom::blink::AILanguageModelPromptPtr> processed_prompts_;
 
   int processed_remaining_ = 0;
   Member<ScriptState> script_state_;
   Member<AbortSignal> abort_signal_;
-  WTF::HashSet<mojom::blink::AILanguageModelPromptType> allowed_types_;
-  WTF::String json_schema_;
+  HashSet<mojom::blink::AILanguageModelPromptType> allowed_types_;
+  String json_schema_;
 
   ResolveCallback resolve_callback_;
   RejectCallback reject_callback_;
@@ -172,9 +173,9 @@ class LanguageModelPromptBuilder
 LanguageModelPromptBuilder::LanguageModelPromptBuilder(
     ScriptState* script_state,
     AbortSignal* abort_signal,
-    WTF::HashSet<mojom::blink::AILanguageModelPromptType> allowed_types,
+    HashSet<mojom::blink::AILanguageModelPromptType> allowed_types,
     const V8LanguageModelPrompt* input,
-    const WTF::String& json_schema,
+    const String& json_schema,
     ResolveCallback resolve_callback,
     RejectCallback reject_callback)
     : script_state_(script_state),
@@ -208,6 +209,12 @@ void LanguageModelPromptBuilder::Resolve() {
   if (!json_schema_.empty()) {
     // Make sure the last prompt is a user prompt that the schema instructions
     // get appended to.
+    mojom::blink::AILanguageModelPromptPtr prefix_prompt;
+    // Pop the prefix prompt to make sure it will always be at the end.
+    if (!processed_prompts_.empty() && processed_prompts_.back()->is_prefix) {
+      prefix_prompt = std::move(processed_prompts_.back());
+      processed_prompts_.pop_back();
+    }
     if (processed_prompts_.empty() ||
         processed_prompts_.back()->role !=
             mojom::blink::AILanguageModelPromptRole::kUser) {
@@ -218,6 +225,9 @@ void LanguageModelPromptBuilder::Resolve() {
     processed_prompts_.back()->content.push_back(
         mojom::blink::AILanguageModelPromptContent::NewText(
             StrCat({kSchemaPrefix, json_schema_})));
+    if (prefix_prompt) {
+      processed_prompts_.push_back(std::move(prefix_prompt));
+    }
   }
   std::move(resolve_callback_).Run(std::move(processed_prompts_));
   Cleanup();
@@ -328,8 +338,8 @@ void LanguageModelPromptBuilder::Build(const V8LanguageModelPrompt* input) {
           content, message_index, content_index++);
       task_runner->PostTask(
           FROM_HERE,
-          WTF::BindOnce(&LanguageModelPromptBuilder::ProcessEntry,
-                        WrapPersistent(this), WrapPersistent(pending_entry)));
+          BindOnce(&LanguageModelPromptBuilder::ProcessEntry,
+                   WrapPersistent(this), WrapPersistent(pending_entry)));
     }
     message_index++;
   }
@@ -376,16 +386,22 @@ void LanguageModelPromptBuilder::ProcessEntry(PendingEntry* pending_entry) {
       UseCounter::Count(ExecutionContext::From(script_state_),
                         WebFeature::kLanguageModel_Prompt_Input_Image);
       if (content_value->IsV8ImageBitmapSource()) {
-        ToMojo(content_value->GetAsV8ImageBitmapSource(), pending_entry);
+        BitmapToMojo(content_value->GetAsV8ImageBitmapSource(), pending_entry);
         return;
       }
       if (content_value->IsArrayBuffer()) {
-        BitmapToMojo(content_value->GetAsArrayBuffer()->Content()->ByteSpan(),
-                     pending_entry);
+        DOMArrayBuffer* array_buffer = content_value->GetAsArrayBuffer();
+        BitmapToMojo(
+            DOMDataView::Create(array_buffer, 0, array_buffer->ByteLength()),
+            pending_entry);
         return;
       }
       if (content_value->IsArrayBufferView()) {
-        BitmapToMojo(content_value->GetAsArrayBufferView()->ByteSpan(),
+        NotShared<DOMArrayBufferView> array_buffer_view =
+            content_value->GetAsArrayBufferView();
+        BitmapToMojo(DOMDataView::Create(array_buffer_view->BufferBase(),
+                                         array_buffer_view->byteOffset(),
+                                         array_buffer_view->byteLength()),
                      pending_entry);
         return;
       }
@@ -451,7 +467,7 @@ void LanguageModelPromptBuilder::ToMojo(AudioBuffer* audio_buffer,
   // AudioBus::CreateByMixingToMono.
   audio_data->channel_count = 1;
   base::span<const float> channel0 = audio_buffer->getChannelData(0)->AsSpan();
-  audio_data->data = WTF::Vector<float>(channel0.size());
+  audio_data->data = Vector<float>(channel0.size());
   for (size_t i = 0; i < channel0.size(); ++i) {
     audio_data->data[i] = channel0[i];
     // If second channel exists, average the two channels to produce mono.
@@ -486,29 +502,12 @@ void LanguageModelPromptBuilder::AudioToMojo(base::span<uint8_t> bytes,
   audio_data->channel_count = bus->NumberOfChannels();
   CHECK_EQ(audio_data->channel_count, 1);
   // TODO(crbug.com/382180351): Avoid a copy.
-  audio_data->data = WTF::Vector<float>(bus->length());
+  audio_data->data = Vector<float>(bus->length());
   std::copy_n(bus->Channel(0)->Data(), bus->Channel(0)->length(),
               audio_data->data.begin());
   OnPromptContentProcessed(mojom::blink::AILanguageModelPromptContent::NewAudio(
                                std::move(audio_data)),
                            entry);
-}
-
-void LanguageModelPromptBuilder::BitmapToMojo(base::span<uint8_t> bytes,
-                                              PendingEntry* entry) {
-  scoped_refptr<SharedBuffer> buffer = SharedBuffer::Create(bytes);
-  if (!ImageDecoder::HasSufficientDataToSniffMimeType(*buffer.get())) {
-    Reject(DOMException::Create(
-        "Image bytes does not contain a recognized image format.",
-        DOMException::GetErrorName(DOMExceptionCode::kDataError)));
-    return;
-  }
-
-  // TODO(crbug.com/416797732): Using a blob is likely inefficient here. Avoid
-  // sending to the browser and back.
-  ToMojo(MakeGarbageCollected<V8ImageBitmapSource>(
-             Blob::Create(bytes, ImageDecoder::SniffMimeType(buffer))),
-         entry);
 }
 
 void LanguageModelPromptBuilder::ToMojo(Blob* blob, PendingEntry* entry) {
@@ -550,28 +549,40 @@ class ThenCallback : public ThenCallable<Type, ThenCallback<Type, ReactType>> {
   base::OnceCallback<void(ScriptState*, ReactType)> callback;
 };
 
-void LanguageModelPromptBuilder::ToMojo(V8ImageBitmapSource* bitmap,
-                                        PendingEntry* entry) {
+void LanguageModelPromptBuilder::BitmapToMojo(
+    std::variant<DOMDataView*, V8ImageBitmapSource*> source,
+    PendingEntry* entry) {
   v8::Isolate* isolate = script_state_->GetIsolate();
   v8::TryCatch try_catch(isolate);
   ExceptionState exception_state(isolate);
+
   // Note: GetBitmapFromV8ImageBitmapSource doesn't support async which is
   // required for blobs so async ImageBitmapFactories::CreateImageBitmap is
   // preferred.
   // TODO(crbug.com/419321438): Change CreateImageBitmap to not use JS promises.
-  ImageBitmapFactories::CreateImageBitmap(
-      script_state_, bitmap, MakeGarbageCollected<ImageBitmapOptions>(),
-      exception_state)
-      .Then(
-          script_state_,
-          MakeGarbageCollected<ThenCallback<ImageBitmap>>(
-              WTF::BindOnce(&LanguageModelPromptBuilder::OnBitmapLoaded,
-                            WrapPersistent(this), WrapPersistent(entry))),
-          MakeGarbageCollected<ThenCallback<IDLAny, ScriptValue>>(WTF::BindOnce(
-              [](LanguageModelPromptBuilder* builder, ScriptState* script_state,
-                 ScriptValue value) { builder->Reject(std::move(value)); },
-              WrapPersistent(this))));
+  ScriptPromise<ImageBitmap> promise = std::visit(
+      absl::Overload{
+          [&](const DOMDataView* data_view) {
+            return ImageBitmapFactories::CreateImageBitmap(
+                script_state_, data_view,
+                MakeGarbageCollected<ImageBitmapOptions>(), exception_state);
+          },
+          [&](const V8ImageBitmapSource* bitmap_source) {
+            return ImageBitmapFactories::CreateImageBitmap(
+                script_state_, bitmap_source,
+                MakeGarbageCollected<ImageBitmapOptions>(), exception_state);
+          }},
+      source);
 
+  promise.Then(
+      script_state_,
+      MakeGarbageCollected<ThenCallback<ImageBitmap>>(
+          BindOnce(&LanguageModelPromptBuilder::OnBitmapLoaded,
+                   WrapPersistent(this), WrapPersistent(entry))),
+      MakeGarbageCollected<ThenCallback<IDLAny, ScriptValue>>(BindOnce(
+          [](LanguageModelPromptBuilder* builder, ScriptState* script_state,
+             ScriptValue value) { builder->Reject(std::move(value)); },
+          WrapPersistent(this))));
   if (exception_state.HadException()) {
     CHECK(try_catch.HasCaught());
     this->Reject(ScriptValue(isolate, try_catch.Exception()));
@@ -609,8 +620,8 @@ void ConvertPromptInputsToMojo(
     ScriptState* script_state,
     AbortSignal* abort_signal,
     const V8LanguageModelPrompt* input,
-    WTF::HashSet<mojom::blink::AILanguageModelPromptType> allowed_types,
-    const WTF::String& json_schema,
+    HashSet<mojom::blink::AILanguageModelPromptType> allowed_types,
+    const String& json_schema,
     ResolveCallback resolve_callback,
     RejectCallback reject_callback) {
   MakeGarbageCollected<LanguageModelPromptBuilder>(

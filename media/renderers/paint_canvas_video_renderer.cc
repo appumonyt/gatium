@@ -222,8 +222,9 @@ void SynchronizeVideoFrameRead(
     std::unique_ptr<gpu::RasterScopedAccess> ri_access = nullptr) {
   WaitAndReplaceSyncTokenClient client(ri, std::move(ri_access));
   video_frame->UpdateReleaseSyncToken(&client);
-  if (!video_frame->metadata().read_lock_fences_enabled)
+  if (!video_frame->metadata().read_lock_fences_enabled) {
     return;
+  }
 
   unsigned query_id = 0;
   ri->GenQueriesEXT(1, &query_id);
@@ -247,8 +248,9 @@ void SynchronizeVideoFrameRead(
     std::unique_ptr<gpu::RasterScopedAccess> ri_access = nullptr) {
   WaitAndReplaceSyncTokenClient client(gl, std::move(ri_access));
   video_frame->UpdateReleaseSyncToken(&client);
-  if (!video_frame->metadata().read_lock_fences_enabled)
+  if (!video_frame->metadata().read_lock_fences_enabled) {
     return;
+  }
 
   unsigned query_id = 0;
   gl->GenQueriesEXT(1, &query_id);
@@ -312,8 +314,9 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
 
   // Indivisible heights must process any remaining rows in the last task.
   size_t rows = (chunk_end - chunk_start) * rows_per_chunk;
-  if (task_index + 1 == n_tasks)
+  if (task_index + 1 == n_tasks) {
     rows += height % rows_per_chunk;
+  }
 
   struct PlaneMetaData {
     size_t stride;
@@ -570,8 +573,9 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
               plane_meta[VideoFrame::Plane::kUV].data.get()),
           plane_meta[VideoFrame::Plane::kUV].stride, pixels, row_bytes, matrix,
           width, rows);
-      if (!OUTPUT_ARGB)
+      if (!OUTPUT_ARGB) {
         libyuv::ARGBToABGR(pixels, row_bytes, pixels, row_bytes, width, rows);
+      }
       break;
 
     case PIXEL_FORMAT_YUV422P12:
@@ -607,9 +611,7 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
 
 #if !BUILDFLAG(IS_ANDROID)
 // Valid gl texture internal format that can try to use direct uploading path.
-bool ValidFormatForDirectUploading(
-    GrGLenum format,
-    unsigned int type) {
+bool ValidFormatForDirectUploading(GrGLenum format, unsigned int type) {
   switch (format) {
     case GL_RGBA:
       return type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_SHORT_4_4_4_4;
@@ -745,8 +747,9 @@ class VideoImageGenerator : public cc::PaintImageGenerator {
     SkYUVAInfo::Subsampling subsampling;
     std::tie(plane_config, subsampling) =
         VideoPixelFormatAsSkYUVAInfoValues(frame_->format());
-    if (plane_config == SkYUVAInfo::PlaneConfig::kUnknown)
+    if (plane_config == SkYUVAInfo::PlaneConfig::kUnknown) {
       return false;
+    }
 
     // Don't use the YUV conversion path for multi-plane RGB frames.
     if (frame_->format() == PIXEL_FORMAT_I444 &&
@@ -754,8 +757,9 @@ class VideoImageGenerator : public cc::PaintImageGenerator {
       return false;
     }
 
-    if (!info)
+    if (!info) {
       return true;
+    }
 
     SkYUVColorSpace yuv_color_space;
     if (!frame_->ColorSpace().ToSkYUVColorSpace(frame_->BitDepth(),
@@ -830,18 +834,41 @@ class VideoTextureBacking : public cc::TextureBacking {
   }
 
   explicit VideoTextureBacking(
-      scoped_refptr<gpu::ClientSharedImage> shared_image,
-      const SkImageInfo& info,
-      scoped_refptr<viz::RasterContextProvider> raster_context_provider)
-      : sk_image_info_(info), shared_image_(std::move(shared_image)) {
-    CHECK(shared_image_);
+      scoped_refptr<viz::RasterContextProvider> raster_context_provider,
+      const gfx::Size& coded_size,
+      const gfx::ColorSpace& color_space)
+      : sk_image_info_(SkImageInfo::Make(gfx::SizeToSkISize(coded_size),
+                                         kRGBA_8888_SkColorType,
+                                         kPremul_SkAlphaType,
+                                         color_space.ToSkColorSpace())) {
     raster_context_provider_ = std::move(raster_context_provider);
+    auto* sii = raster_context_provider_->SharedImageInterface();
+
+    // This SI is used to cache the VideoFrame. We will eventually read out
+    // its contents into a destination GL texture via the GLES2 interface.
+    gpu::SharedImageUsageSet flags = gpu::SHARED_IMAGE_USAGE_GLES2_READ |
+                                     gpu::SHARED_IMAGE_USAGE_RASTER_READ;
+    // We copy the contents of the source VideoFrame *into* the
+    // cached SI over the raster interface - the usage bits depend on
+    // whether OOP-Raster is enabled.
+    flags |= gpu::SHARED_IMAGE_USAGE_RASTER_WRITE;
+    if (raster_context_provider_->ContextCapabilities().gpu_rasterization) {
+      flags |= gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
+    } else {
+      flags |= gpu::SHARED_IMAGE_USAGE_GLES2_WRITE;
+    }
+
+    shared_image_ =
+        sii->CreateSharedImage({SHARED_IMAGE_FORMAT, coded_size, color_space,
+                                flags, "PaintCanvasVideoRenderer"},
+                               gpu::kNullSurfaceHandle);
+    CHECK(shared_image_);
+    sync_token_ = shared_image_->creation_sync_token();
   }
 
   ~VideoTextureBacking() override {
-    auto* ri = raster_context_provider_->RasterInterface();
-    gpu::SyncToken sync_token;
-    ri->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+    gpu::SyncToken sync_token =
+        gpu::RasterScopedAccess::EndAccess(std::move(ri_access_));
     auto* sii = raster_context_provider_->SharedImageInterface();
     sii->DestroySharedImage(sync_token, std::move(shared_image_));
   }
@@ -861,6 +888,10 @@ class VideoTextureBacking : public cc::TextureBacking {
   // Returns false when failing to create SkImage, and true if the creation
   // is successful or not necessary.
   bool BeginAccess(gpu::raster::RasterInterface* ri) {
+    CHECK(!ri_access_);
+    ri_access_ =
+        shared_image_->BeginRasterAccess(ri, sync_token_, /*readonly=*/true);
+
     if (raster_context_provider()->ContextCapabilities().gpu_rasterization) {
       return true;
     }
@@ -885,7 +916,11 @@ class VideoTextureBacking : public cc::TextureBacking {
     return true;
   }
 
-  void clear_access() { access_.reset(); }
+  void clear_access() {
+    access_.reset();
+    CHECK(ri_access_);
+    sync_token_ = gpu::RasterScopedAccess::EndAccess(std::move(ri_access_));
+  }
 
   sk_sp<SkImage> GetSkImageViaReadback() override {
     sk_sp<SkData> image_pixels =
@@ -938,6 +973,11 @@ class VideoTextureBacking : public cc::TextureBacking {
     ctx->flushAndSubmit(sk_image_);
   }
 
+  const gpu::SyncToken& sync_token() { return sync_token_; }
+  void UpdateSyncToken(const gpu::SyncToken& sync_token) {
+    sync_token_ = sync_token;
+  }
+
  private:
   sk_sp<SkImage> sk_image_;
   SkImageInfo sk_image_info_;
@@ -948,6 +988,9 @@ class VideoTextureBacking : public cc::TextureBacking {
   scoped_refptr<gpu::ClientSharedImage> shared_image_;
 
   std::unique_ptr<ScopedSharedImageAccess> access_;
+
+  std::unique_ptr<gpu::RasterScopedAccess> ri_access_;
+  gpu::SyncToken sync_token_;
 };
 
 PaintCanvasVideoRenderer::PaintCanvasVideoRenderer()
@@ -1070,10 +1113,11 @@ void PaintCanvasVideoRenderer::Paint(
     auto sy = SkFloatToScalar(rotated_dest_size.height() /
                               video_frame->visible_rect().height());
     if (needs_mirror) {
-      if (has_flipped_size)
+      if (has_flipped_size) {
         sy *= -1;
-      else
+      } else {
         sx *= -1;
+      }
     }
     canvas->scale(sx, sy);
     canvas->translate(
@@ -1220,8 +1264,9 @@ void FlipAndConvertY16(const VideoFrame* video_frame,
         }
         continue;
       } else if (format == GL_RED) {
-        while (row < row_end)
+        while (row < row_end) {
           *out_row++ = *row++ / 65535.f;
+        }
         continue;
       }
       // For other formats, hit NOTREACHED below.
@@ -1614,12 +1659,12 @@ bool PaintCanvasVideoRenderer::CopyVideoFrameYUVDataToGLTexture(
   }
 
   // Recreate both the caches if not set.
-  if (!rgb_shared_image_cache_ && !yuv_shared_image_cache_) {
+  if (!rgb_shared_image_cache_) {
     rgb_shared_image_cache_ = std::make_unique<VideoFrameSharedImageCache>();
+  }
+  if (!yuv_shared_image_cache_) {
     yuv_shared_image_cache_ = std::make_unique<VideoFrameSharedImageCache>();
   }
-
-  DCHECK(rgb_shared_image_cache_ && yuv_shared_image_cache_);
 
   // We need a shared image to receive the intermediate RGB result. Try to reuse
   // one if compatible, otherwise create a new one.
@@ -1634,9 +1679,9 @@ bool PaintCanvasVideoRenderer::CopyVideoFrameYUVDataToGLTexture(
   // Pass the rgb sync token here to be waited upon before performing raster
   // tasks.
   internals::ConvertYuvVideoFrameToRgbSharedImage(
-      video_frame.get(), raster_context_provider, rgb_shared_image->mailbox(),
-      rgb_sync_token,
-      /*use_visible_rect=*/false, yuv_shared_image_cache_.get());
+      video_frame.get(), raster_context_provider, rgb_shared_image,
+      rgb_sync_token, /*use_visible_rect=*/false,
+      yuv_shared_image_cache_.get());
 
   gpu::SyncToken post_conversion_sync_token;
   raster_context_provider->RasterInterface()->GenUnverifiedSyncTokenCHROMIUM(
@@ -1757,8 +1802,9 @@ PaintCanvasVideoRenderer::Cache::~Cache() = default;
 
 bool PaintCanvasVideoRenderer::Cache::Recycle() {
   paint_image = cc::PaintImage();
-  if (!texture_backing->unique())
+  if (!texture_backing->unique()) {
     return false;
+  }
 
   // Flush any pending GPU work using this texture.
   texture_backing->FlushPendingSkiaOps();
@@ -1794,7 +1840,6 @@ bool PaintCanvasVideoRenderer::UpdateLastImage(
     auto* ri = raster_context_provider->RasterInterface();
     DCHECK(ri);
     const auto video_frame_si = video_frame->shared_image();
-    scoped_refptr<gpu::ClientSharedImage> client_shared_image;
 
     // Create or reuse a texture backing for the cached copy.
     if (cache_ && cache_->texture_backing &&
@@ -1803,7 +1848,6 @@ bool PaintCanvasVideoRenderer::UpdateLastImage(
         cache_->coded_size == video_frame->coded_size() && cache_->Recycle()) {
       // We can reuse the shared image from the previous cache.
       cache_->frame_id = video_frame->unique_id();
-      client_shared_image = cache_->texture_backing->GetSharedImage();
 
       // NOTE: It is necessary to let go of read access to the cached copy
       // here because the below copy operation takes readwrite access to that
@@ -1812,30 +1856,18 @@ bool PaintCanvasVideoRenderer::UpdateLastImage(
       cache_->texture_backing->clear_access();
     } else {
       cache_.emplace(video_frame->unique_id());
-      auto* sii = raster_context_provider->SharedImageInterface();
-
-      // This SI is used to cache the VideoFrame. We will eventually read out
-      // its contents into a destination GL texture via the GLES2 interface.
-      gpu::SharedImageUsageSet flags = gpu::SHARED_IMAGE_USAGE_GLES2_READ;
-      // We copy the contents of the source VideoFrame *into* the
-      // cached SI over the raster interface - the usage bits depend on
-      // whether OOP-Raster is enabled.
-      flags |= gpu::SHARED_IMAGE_USAGE_RASTER_WRITE;
-      if (gpu_rasterization) {
-        flags |= gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
-      } else {
-        flags |= gpu::SHARED_IMAGE_USAGE_GLES2_WRITE;
-      }
-      client_shared_image = sii->CreateSharedImage(
-          {SHARED_IMAGE_FORMAT, video_frame->coded_size(),
-           video_frame->CompatRGBColorSpace(), flags,
-           "PaintCanvasVideoRenderer"},
-          gpu::kNullSurfaceHandle);
-      CHECK(client_shared_image);
-      ri->WaitSyncTokenCHROMIUM(sii->GenUnverifiedSyncToken().GetConstData());
+      cache_->texture_backing = sk_make_sp<VideoTextureBacking>(
+          raster_context_provider, video_frame->coded_size(),
+          video_frame->CompatRGBColorSpace());
     }
+    scoped_refptr<gpu::ClientSharedImage> client_shared_image =
+        cache_->texture_backing->GetSharedImage();
 
     // Copy into the shared image backing of the cached copy.
+    std::unique_ptr<gpu::RasterScopedAccess> dst_ri_access =
+        client_shared_image->BeginRasterAccess(
+            ri, cache_->texture_backing->sync_token(),
+            /*readonly=*/false);
     std::unique_ptr<gpu::RasterScopedAccess> src_ri_access =
         video_frame_si->BeginRasterAccess(ri, video_frame->acquire_sync_token(),
                                           /*readonly=*/true);
@@ -1852,26 +1884,14 @@ bool PaintCanvasVideoRenderer::UpdateLastImage(
     SynchronizeVideoFrameRead(video_frame, ri,
                               raster_context_provider->ContextSupport(),
                               std::move(src_ri_access));
+    gpu::SyncToken sync_token =
+        gpu::RasterScopedAccess::EndAccess(std::move(dst_ri_access));
+    cache_->texture_backing->UpdateSyncToken(sync_token);
 
     cache_->coded_size = video_frame->coded_size();
 
     // In OOPR mode, we can keep the entire TextureBacking. In non-OOPR,
     // we can recycle the mailbox/texture, but have to replace the SkImage.
-    if (!gpu_rasterization) {
-      if (!cache_->texture_backing) {
-        cache_->texture_backing = sk_make_sp<VideoTextureBacking>(
-            std::move(client_shared_image), SkImageInfo(),
-            raster_context_provider);
-      }
-    } else if (!cache_->texture_backing) {
-      SkImageInfo sk_image_info = SkImageInfo::Make(
-          gfx::SizeToSkISize(cache_->coded_size), kRGBA_8888_SkColorType,
-          kPremul_SkAlphaType,
-          video_frame->CompatRGBColorSpace().ToSkColorSpace());
-      cache_->texture_backing = sk_make_sp<VideoTextureBacking>(
-          std::move(client_shared_image), sk_image_info,
-          raster_context_provider);
-    }
     paint_image_builder.set_texture_backing(cache_->texture_backing,
                                             cc::PaintImage::GetNextContentId());
 
@@ -1906,7 +1926,7 @@ bool PaintCanvasVideoRenderer::CanUseCopyVideoFrameToSharedImage(
 gpu::SyncToken PaintCanvasVideoRenderer::CopyVideoFrameToSharedImage(
     viz::RasterContextProvider* raster_context_provider,
     scoped_refptr<VideoFrame> video_frame,
-    const gpu::Mailbox& dest_mailbox,
+    scoped_refptr<gpu::ClientSharedImage> dest_shared_image,
     const gpu::SyncToken& dest_sync_token,
     bool use_visible_rect) {
   auto* ri = raster_context_provider->RasterInterface();
@@ -1916,27 +1936,29 @@ gpu::SyncToken PaintCanvasVideoRenderer::CopyVideoFrameToSharedImage(
   if (video_frame->HasSharedImage()) {
     auto source_rect = use_visible_rect ? video_frame->visible_rect()
                                         : gfx::Rect(video_frame->coded_size());
-    std::unique_ptr<gpu::RasterScopedAccess> ri_access =
+    std::unique_ptr<gpu::RasterScopedAccess> dst_ri_access =
+        dest_shared_image->BeginRasterAccess(ri, dest_sync_token,
+                                             /*readonly=*/false);
+    std::unique_ptr<gpu::RasterScopedAccess> src_ri_access =
         video_frame->shared_image()->BeginRasterAccess(
             ri, video_frame->acquire_sync_token(), /*readonly=*/true);
-    ri->WaitSyncTokenCHROMIUM(dest_sync_token.GetConstData());
-    ri->CopySharedImage(video_frame->shared_image()->mailbox(), dest_mailbox, 0,
-                        0, source_rect.x(), source_rect.y(),
-                        source_rect.width(), source_rect.height());
-    ri->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+    ri->CopySharedImage(video_frame->shared_image()->mailbox(),
+                        dest_shared_image->mailbox(), 0, 0, source_rect.x(),
+                        source_rect.y(), source_rect.width(),
+                        source_rect.height());
+    sync_token = gpu::RasterScopedAccess::EndAccess(std::move(dst_ri_access));
 
     // If VideoFrame has textures, we need to update SyncToken or to keep frame
     // alive until gpu is done with copy if `read_lock_fences_enabled` is set.
     // This is to make sure decoder doesn't re-use frame before copy is done.
     SynchronizeVideoFrameRead(std::move(video_frame), ri,
                               raster_context_provider->ContextSupport(),
-                              std::move(ri_access));
+                              std::move(src_ri_access));
   } else {
     // TODO(vasilyt): Add caching support
     sync_token = internals::ConvertYuvVideoFrameToRgbSharedImage(
-        video_frame.get(), raster_context_provider, dest_mailbox,
-        dest_sync_token, use_visible_rect,
-        /*shared_image_cache=*/nullptr);
+        video_frame.get(), raster_context_provider, dest_shared_image,
+        dest_sync_token, use_visible_rect, /*shared_image_cache=*/nullptr);
   }
 
   return sync_token;

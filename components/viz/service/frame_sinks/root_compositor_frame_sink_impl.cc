@@ -532,12 +532,14 @@ void RootCompositorFrameSinkImpl::SetNeedsBeginFrame(bool needs_begin_frame) {
   support_->SetNeedsBeginFrame(needs_begin_frame);
 }
 
-void RootCompositorFrameSinkImpl::SetWantsAnimateOnlyBeginFrames() {
-  support_->SetWantsAnimateOnlyBeginFrames();
-}
-
-void RootCompositorFrameSinkImpl::SetAutoNeedsBeginFrame() {
-  support_->SetAutoNeedsBeginFrame();
+void RootCompositorFrameSinkImpl::SetParams(
+    mojom::CompositorFrameSinkParamsPtr params) {
+  if (params->wants_animate_only_begin_frames) {
+    support_->SetWantsAnimateOnlyBeginFrames();
+  }
+  if (params->auto_needs_begin_frame) {
+    support_->SetAutoNeedsBeginFrame();
+  }
 }
 
 void RootCompositorFrameSinkImpl::SubmitCompositorFrame(
@@ -556,7 +558,7 @@ void RootCompositorFrameSinkImpl::SubmitCompositorFrame(
 
   const auto result = support_->MaybeSubmitCompositorFrame(
       local_surface_id, std::move(frame), std::move(hit_test_region_list),
-      submit_time, SubmitCompositorFrameSyncCallback());
+      submit_time);
   if (result == SubmitResult::ACCEPTED)
     return;
 
@@ -566,15 +568,6 @@ void RootCompositorFrameSinkImpl::SubmitCompositorFrame(
               << " because " << reason;
   compositor_frame_sink_receiver_.ResetWithReason(static_cast<uint32_t>(result),
                                                   reason);
-}
-
-void RootCompositorFrameSinkImpl::SubmitCompositorFrameSync(
-    const LocalSurfaceId& local_surface_id,
-    CompositorFrame frame,
-    std::optional<HitTestRegionList> hit_test_region_list,
-    uint64_t submit_time,
-    SubmitCompositorFrameSyncCallback callback) {
-  NOTIMPLEMENTED();
 }
 
 void RootCompositorFrameSinkImpl::NotifyNewLocalSurfaceIdExpectedWhilePaused() {

@@ -95,6 +95,7 @@
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tab_dialogs.h"
 #include "chrome/browser/ui/thumbnails/thumbnail_tab_helper.h"
+#include "chrome/browser/ui/views/tab_sharing/tab_capture_contents_border_helper.h"
 #include "chrome/browser/v8_compile_hints/v8_compile_hints_tab_helper.h"
 #include "chrome/browser/vr/vr_tab_helper.h"
 #include "chrome/common/buildflags.h"
@@ -118,8 +119,6 @@
 #include "components/download/content/factory/navigation_monitor_factory.h"
 #include "components/download/content/public/download_navigation_observer.h"
 #include "components/enterprise/buildflags/buildflags.h"
-#include "components/fingerprinting_protection_filter/interventions/browser/interventions_web_contents_helper.h"
-#include "components/fingerprinting_protection_filter/interventions/common/interventions_features.h"
 #include "components/history/content/browser/web_contents_top_sites_observer.h"
 #include "components/history/core/browser/top_sites.h"
 #include "components/infobars/content/content_infobar_manager.h"
@@ -148,18 +147,18 @@
 #include "components/webapps/browser/installable/installable_manager.h"
 #include "components/webapps/browser/installable/ml_installability_promoter.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/buildflags.h"
 #include "extensions/buildflags/buildflags.h"
 #include "media/base/media_switches.h"
 #include "net/base/features.h"
 #include "pdf/buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "rlz/buildflags/buildflags.h"
 #include "third_party/blink/public/common/features.h"
 #include "ui/accessibility/accessibility_features.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/android_info.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "chrome/browser/android/oom_intervention/oom_intervention_tab_helper.h"
@@ -238,6 +237,7 @@
 #include "chrome/browser/extensions/app_tab_helper.h"
 #include "chrome/browser/extensions/navigation_extension_enabler.h"
 #include "chrome/browser/ui/extensions/extension_side_panel_utils.h"
+#include "chrome/browser/web_applications/isolated_web_apps/window_management/window_management_content_setting_observer.h"
 #include "chrome/browser/web_applications/policy/pre_redirection_url_observer.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "extensions/common/extension_features.h"
@@ -257,7 +257,6 @@
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "chrome/browser/plugins/plugin_observer.h"
-#include "chrome/browser/ui/hung_plugin_tab_helper.h"
 #endif
 
 #if BUILDFLAG(ENABLE_PRINTING)
@@ -348,8 +347,8 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   // The sensitive content client has to be instantiated after the autofill
   // client, because the sensitive content client starts a flow which uses
   // `ScopedAutofillManagersObservation`.
-  if (base::android::BuildInfo::GetInstance()->sdk_int() >=
-          base::android::SdkVersion::SDK_VERSION_V &&
+  if (base::android::android_info::sdk_int() >=
+          base::android::android_info::SdkVersion::SDK_VERSION_V &&
       base::FeatureList::IsEnabled(
           sensitive_content::features::kSensitiveContent)) {
     sensitive_content::AndroidSensitiveContentClient::CreateForWebContents(
@@ -364,13 +363,6 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
         HostContentSettingsMapFactory::GetForProfile(profile),
         TrackingProtectionSettingsFactory::GetForProfile(profile),
         profile->IsIncognitoProfile());
-  }
-
-  if (fingerprinting_protection_interventions::features::
-          IsCanvasInterventionsEnabledForIncognitoState(
-              profile->IsIncognitoProfile())) {
-    fingerprinting_protection_interventions::InterventionsWebContentsHelper::
-        CreateForWebContents(web_contents, profile->IsIncognitoProfile());
   }
 
   // Only create the IpProtectionStatus if the User Bypass feature is enabled.
@@ -571,22 +563,15 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   tpcd::metadata::TpcdMetadataDevtoolsObserver::CreateForWebContents(
       web_contents);
   tpcd::trial::ValidityService::MaybeCreateForWebContents(web_contents);
+#if !BUILDFLAG(IS_ANDROID)
+  TabCaptureContentsBorderHelper::CreateForWebContents(web_contents);
+#endif  // BUILDFLAG(IS_ANDROID)
   TrustedVaultEncryptionKeysTabHelper::CreateForWebContents(web_contents);
-#if BUILDFLAG(IS_ANDROID)
-  if (base::FeatureList::IsEnabled(features::kSafetyHub)) {
-    auto* service = RevokedPermissionsServiceFactory::GetForProfile(profile);
-    if (service) {
-      RevokedPermissionsService::TabHelper::CreateForWebContents(web_contents,
-                                                                 service);
-    }
-  }
-#else   // BUILDFLAG(IS_ANDROID)
   auto* service = RevokedPermissionsServiceFactory::GetForProfile(profile);
   if (service) {
     RevokedPermissionsService::TabHelper::CreateForWebContents(web_contents,
                                                                service);
   }
-#endif  // BUILDFLAG(IS_ANDROID)
   ukm::InitializeSourceUrlRecorderForWebContents(web_contents);
   v8_compile_hints::V8CompileHintsTabHelper::MaybeCreateForWebContents(
       web_contents);
@@ -753,6 +738,8 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   extensions::AppTabHelper::CreateForWebContents(web_contents);
   extensions::NavigationExtensionEnabler::CreateForWebContents(web_contents);
   extensions::WebNavigationTabObserver::CreateForWebContents(web_contents);
+  web_app::WindowManagementContentSettingObserver::CreateForWebContents(
+      web_contents);
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
@@ -767,7 +754,6 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
 #endif
 
 #if BUILDFLAG(ENABLE_PLUGINS)
-  HungPluginTabHelper::CreateForWebContents(web_contents);
   PluginObserver::CreateForWebContents(web_contents);
 #endif
 

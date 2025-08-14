@@ -11,6 +11,7 @@ import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabT
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.ICON;
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.INDIVIDUAL_BUTTON_KEYS;
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.SIDE_SHEET_MAXIMIZE_BUTTON;
+import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.TYPE;
 import static org.chromium.chrome.browser.customtabs.features.toolbar.CustomTabToolbarButtonsProperties.VISIBLE;
 
 import android.app.Activity;
@@ -21,13 +22,13 @@ import android.view.View;
 import androidx.browser.customtabs.CustomTabsIntent;
 
 import org.chromium.base.Callback;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.ActivityTabProvider;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider.CustomTabProfileType;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider.TitleVisibility;
 import org.chromium.chrome.browser.browserservices.intents.CustomButtonParams;
-import org.chromium.chrome.browser.customtabs.CustomTabFeatureOverridesManager;
 import org.chromium.chrome.browser.customtabs.features.CustomTabDimensionUtils;
 import org.chromium.chrome.browser.customtabs.features.minimizedcustomtab.CustomTabMinimizeDelegate;
 import org.chromium.chrome.browser.customtabs.features.partialcustomtab.PartialCustomTabSideSheetStrategy.MaximizeButtonCallback;
@@ -39,6 +40,7 @@ import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.toolbar.menu_button.MenuButtonCoordinator;
 import org.chromium.chrome.browser.toolbar.optional_button.ButtonData;
 import org.chromium.chrome.browser.toolbar.top.OptionalBrowsingModeButtonController;
+import org.chromium.chrome.browser.ui.appmenu.AppMenuHandler;
 import org.chromium.ui.modelutil.ListModelChangeProcessor;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyListModel;
@@ -55,6 +57,7 @@ public class CustomTabToolbarButtonsCoordinator
             mCustomActionButtonsMcp;
     private final PropertyModel mModel;
     private final CustomTabToolbarButtonsMediator mMediator;
+    private final boolean mIsOptionalButtonSupported;
 
     public CustomTabToolbarButtonsCoordinator(
             Activity activity,
@@ -62,7 +65,7 @@ public class CustomTabToolbarButtonsCoordinator
             BrowserServicesIntentDataProvider intentDataProvider,
             Callback<CustomButtonParams> customButtonClickCallback,
             CustomTabMinimizeDelegate minimizeDelegate,
-            @Nullable CustomTabFeatureOverridesManager featureOverridesManager,
+            Supplier<AppMenuHandler> appMenuHandler,
             CustomTabToolbar.@Nullable OmniboxParams omniboxParams,
             ActivityLifecycleDispatcher lifecycleDispatcher,
             ActivityTabProvider tabProvider) {
@@ -82,6 +85,7 @@ public class CustomTabToolbarButtonsCoordinator
                         // #setCloseButtonClickHandler.
                         : new CloseButtonData();
 
+        mIsOptionalButtonSupported = intentDataProvider.isOptionalButtonSupported();
         int toolbarWidth = CustomTabDimensionUtils.getInitialWidth(activity, intentDataProvider);
         boolean omniboxEnabled = omniboxParams != null;
         boolean titleVisible =
@@ -117,11 +121,11 @@ public class CustomTabToolbarButtonsCoordinator
                         activity,
                         minimizeDelegate,
                         intentDataProvider,
-                        featureOverridesManager,
                         lifecycleDispatcher,
                         tabProvider);
         view.setOnNewWidthMeasuredListener(mMediator);
         view.setOnColorSchemeChangedObserver(mMediator);
+        view.setAppMenuHandler(appMenuHandler);
     }
 
     public void destroy() {
@@ -140,12 +144,12 @@ public class CustomTabToolbarButtonsCoordinator
 
     @Override
     public void setOptionalButtonData(@Nullable ButtonData buttonData) {
-        mMediator.setOptionalButtonData(buttonData);
+        if (mIsOptionalButtonSupported) mMediator.setOptionalButtonData(buttonData);
     }
 
     @Override
     public boolean isOptionalButtonVisible() {
-        return false;
+        return mIsOptionalButtonSupported ? mMediator.isOptionalButtonVisible() : false;
     }
 
     /**
@@ -202,6 +206,7 @@ public class CustomTabToolbarButtonsCoordinator
                     new PropertyModel.Builder(INDIVIDUAL_BUTTON_KEYS)
                             .with(VISIBLE, true)
                             .with(ICON, customButton.getIcon(context))
+                            .with(TYPE, customButton.getType())
                             .with(
                                     CLICK_LISTENER,
                                     v -> customButtonClickCallback.onResult(customButton))

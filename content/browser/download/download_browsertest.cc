@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 // This file contains download browser tests that are known to be runnable
 // in a pure content context.  Over time tests should be migrated here.
 
@@ -56,6 +51,7 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_request_utils.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_paths.h"
@@ -91,7 +87,6 @@
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/cpp/content_decoding_interceptor.h"
 #include "services/network/public/cpp/features.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -106,9 +101,6 @@
 #include "content/browser/plugin_service_impl.h"
 #endif
 
-#if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
-#endif
 
 using ::testing::_;
 using ::testing::AllOf;
@@ -1160,8 +1152,10 @@ class DownloadContentTest : public ContentBrowserTest {
 
     // Check the contents.
     EXPECT_EQ(value, file_contents);
-    if (memcmp(file_contents.c_str(), value.c_str(), expected_size) != 0)
+    if (UNSAFE_TODO(
+            memcmp(file_contents.c_str(), value.c_str(), expected_size)) != 0) {
       return false;
+    }
 
     return true;
   }
@@ -1205,7 +1199,8 @@ class DownloadContentTest : public ContentBrowserTest {
 
       pattern =
           TestDownloadHttpResponse::GetPatternBytes(seed, offset, bytes_read);
-      ASSERT_EQ(0, memcmp(pattern.data(), &data.front(), bytes_read))
+      UNSAFE_TODO(
+          ASSERT_EQ(0, memcmp(pattern.data(), &data.front(), bytes_read)))
           << "Comparing block at offset " << offset << " and length "
           << bytes_read;
       offset += bytes_read;
@@ -1844,7 +1839,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadOctetStream) {
   plugin_info.name = kTestPluginName;
   plugin_info.mime_types.push_back(
       WebPluginMimeType(kTestMimeType, kTestFileType, ""));
-  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
+  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_BROWSER_INTERNAL_PLUGIN;
   PluginServiceImpl::GetInstance()->RegisterInternalPlugin(plugin_info, false);
 
   // The following is served with a Content-Type of application/octet-stream.
@@ -1871,7 +1866,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   plugin_info.name = kTestPluginName;
   plugin_info.mime_types.push_back(
       WebPluginMimeType(kTestMimeType, kTestFileType, ""));
-  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
+  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_BROWSER_INTERNAL_PLUGIN;
   PluginServiceImpl::GetInstance()->RegisterInternalPlugin(plugin_info, false);
 
   // The following is served with a Content-Type of application/octet-stream.
@@ -1897,7 +1892,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   plugin_info.name = kTestPluginName;
   plugin_info.mime_types.push_back(
       WebPluginMimeType(kTestMimeType, kTestFileType, ""));
-  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
+  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_BROWSER_INTERNAL_PLUGIN;
   PluginServiceImpl::GetInstance()->RegisterInternalPlugin(plugin_info, false);
 
   // The following is served with a Content-Type of application/octet-stream.
@@ -1924,7 +1919,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   plugin_info.name = kTestPluginName;
   plugin_info.mime_types.push_back(
       WebPluginMimeType(kTestMimeType, kTestFileType, ""));
-  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
+  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_BROWSER_INTERNAL_PLUGIN;
   PluginServiceImpl::GetInstance()->RegisterInternalPlugin(plugin_info, false);
 
   // The following is served with a Content-Type of application/octet-stream.

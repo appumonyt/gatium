@@ -4,6 +4,9 @@
 
 package org.chromium.ui.test.util.modaldialog;
 
+import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.view.View;
 
 import androidx.activity.ComponentDialog;
@@ -16,6 +19,8 @@ import org.chromium.base.Callback;
 import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.modaldialog.ModalDialogProperties;
 import org.chromium.ui.modelutil.PropertyModel;
+
+import java.util.ArrayList;
 
 /**
  * A fake ModalDialogManager for use in tests involving modals. Unlike ModalDialogManager, this
@@ -83,6 +88,23 @@ public class FakeModalDialogManager extends ModalDialogManager {
     }
 
     @CalledByNativeForTesting
+    public void toggleCheckbox() {
+        boolean isCurrentlyChecked = mShownDialogModel.get(ModalDialogProperties.CHECKBOX_CHECKED);
+
+        mShownDialogModel.set(ModalDialogProperties.CHECKBOX_CHECKED, !isCurrentlyChecked);
+        ModalDialogProperties.Controller controller =
+                mShownDialogModel.get(ModalDialogProperties.CONTROLLER);
+        if (controller != null) {
+            controller.onCheckboxChecked(!isCurrentlyChecked);
+        }
+    }
+
+    @CalledByNativeForTesting
+    public boolean isCheckboxChecked() {
+        return mShownDialogModel.get(ModalDialogProperties.CHECKBOX_CHECKED);
+    }
+
+    @CalledByNativeForTesting
     public int getButtonStyles() {
         return mShownDialogModel.get(ModalDialogProperties.BUTTON_STYLES);
     }
@@ -92,6 +114,51 @@ public class FakeModalDialogManager extends ModalDialogManager {
         return mShownDialogModel.get(ModalDialogProperties.MESSAGE_PARAGRAPHS).stream()
                 .map(String::valueOf)
                 .toArray(String[]::new);
+    }
+
+    @CalledByNativeForTesting
+    public Bitmap getTitleIcon() {
+        Drawable icon = mShownDialogModel.get(ModalDialogProperties.TITLE_ICON);
+        if (icon instanceof BitmapDrawable) {
+            return ((BitmapDrawable) icon).getBitmap();
+        }
+        return null;
+    }
+
+    @CalledByNativeForTesting
+    public void clickMenuItem(int index) {
+        mShownDialogModel.get(ModalDialogProperties.MENU_ITEMS).get(index).getCallback().run();
+    }
+
+    @CalledByNativeForTesting
+    public String[] getMenuItemTexts() {
+        ArrayList<ModalDialogProperties.ModalDialogMenuItem> items =
+                mShownDialogModel.get(ModalDialogProperties.MENU_ITEMS);
+        if (items == null) {
+            return new String[0];
+        }
+        return items.stream()
+                .map(ModalDialogProperties.ModalDialogMenuItem::getText)
+                .toArray(String[]::new);
+    }
+
+    @CalledByNativeForTesting
+    public Bitmap[] getMenuItemIcons() {
+        ArrayList<ModalDialogProperties.ModalDialogMenuItem> items =
+                mShownDialogModel.get(ModalDialogProperties.MENU_ITEMS);
+        if (items == null) {
+            return new Bitmap[0];
+        }
+        return items.stream()
+                .map(
+                        item -> {
+                            Drawable icon = item.getIcon();
+                            if (icon instanceof BitmapDrawable) {
+                                return ((BitmapDrawable) icon).getBitmap();
+                            }
+                            return null;
+                        })
+                .toArray(Bitmap[]::new);
     }
 
     public PropertyModel getShownDialogModel() {

@@ -147,7 +147,6 @@ class WebString;
 class WebURL;
 struct FramePolicy;
 struct JavaScriptFrameworkDetectionResult;
-struct SoftNavigationMetrics;
 }  // namespace blink
 
 namespace gfx {
@@ -204,23 +203,22 @@ class CONTENT_EXPORT RenderFrameImpl
   // Creates a new RenderFrame with |routing_id|. If |previous_frame_token| is
   // not provided, it creates the Blink WebLocalFrame and inserts it into
   // the frame tree after the frame identified by |previous_sibling_routing_id|,
-  // or as the first child if |previous_sibling_routing_id| is MSG_ROUTING_NONE.
-  // Otherwise, the frame is semi-orphaned until it commits, at which point it
-  // replaces the previous object identified by |previous_frame_token|. The
-  // previous object can either be a RenderFrame or a RenderFrameProxy.
-  // The frame's opener is set to the frame identified by |opener_routing_id|.
-  // The frame is created as a child of the RenderFrame identified by
-  // |parent_routing_id| or as the top-level frame if
-  // the latter is MSG_ROUTING_NONE.
-  // |devtools_frame_token| is passed from the browser and corresponds to the
-  // owner FrameTreeNode. It can only be used for tagging requests and calls
-  // for context frame attribution. It should never be passed back to the
-  // browser as a frame identifier in the control flows calls.
-  // The |widget_params| is not null if the frame is to be a local root, which
-  // means it will own a RenderWidget, in which case the |widget_params| hold
-  // the routing id and initialization properties for the RenderWidget.
-  // The |web_view| param will only be set when the frame to be created will use
-  // new WebView, instead of using the previous Frame's WebView. This is only
+  // or as the first child if |previous_sibling_routing_id| is
+  // IPC::mojom::kRoutingIdNone. Otherwise, the frame is semi-orphaned until it
+  // commits, at which point it replaces the previous object identified by
+  // |previous_frame_token|. The previous object can either be a RenderFrame or
+  // a RenderFrameProxy. The frame's opener is set to the frame identified by
+  // |opener_routing_id|. The frame is created as a child of the RenderFrame
+  // identified by |parent_routing_id| or as the top-level frame if the latter
+  // is IPC::mojom::kRoutingIdNone. |devtools_frame_token| is passed from the
+  // browser and corresponds to the owner FrameTreeNode. It can only be used for
+  // tagging requests and calls for context frame attribution. It should never
+  // be passed back to the browser as a frame identifier in the control flows
+  // calls. The |widget_params| is not null if the frame is to be a local root,
+  // which means it will own a RenderWidget, in which case the |widget_params|
+  // hold the routing id and initialization properties for the RenderWidget. The
+  // |web_view| param will only be set when the frame to be created will use new
+  // WebView, instead of using the previous Frame's WebView. This is only
   // possible for provisional main RenderFrames that will do a local main
   // RenderFrame swap later on with the frame that has the token
   // |previous_frame_token|.
@@ -252,11 +250,6 @@ class CONTENT_EXPORT RenderFrameImpl
       const blink::DocumentToken& document_token,
       blink::mojom::PolicyContainerPtr policy_container,
       bool is_for_nested_main_frame);
-
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-  // Returns the RenderFrameImpl for the given routing ID.
-  static RenderFrameImpl* FromRoutingID(int routing_id);
-#endif
 
   // Just like RenderFrame::FromWebFrame but returns the implementation.
   static RenderFrameImpl* FromWebFrame(blink::WebFrame* web_frame);
@@ -340,32 +333,14 @@ class CONTENT_EXPORT RenderFrameImpl
   // gone, and clean up code that depends on it.
   bool in_frame_tree() { return in_frame_tree_; }
 
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-  // IPC::Sender
-  bool Send(IPC::Message* msg) override;
-
-  // IPC::Listener
-  bool OnMessageReceived(const IPC::Message& msg) override;
-
-#define LEGACY_IPC_OVERRIDE override
-#else
-#define LEGACY_IPC_OVERRIDE
-#endif
-
   void OnAssociatedInterfaceRequest(const std::string& interface_name,
-                                    mojo::ScopedInterfaceEndpointHandle handle)
-      LEGACY_IPC_OVERRIDE;
-
-#undef LEGACY_IPC_OVERRIDE
+                                    mojo::ScopedInterfaceEndpointHandle handle);
 
   // RenderFrame implementation:
   RenderFrame* GetMainRenderFrame() override;
   RenderAccessibility* GetRenderAccessibility() override;
   std::unique_ptr<AXTreeSnapshotter> CreateAXTreeSnapshotter(
       ui::AXMode ax_mode) override;
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-  int GetRoutingID() override;
-#endif
   blink::WebLocalFrame* GetWebFrame() override;
   const blink::WebLocalFrame* GetWebFrame() const override;
   blink::WebView* GetWebView() override;
@@ -485,6 +460,7 @@ class CONTENT_EXPORT RenderFrameImpl
       std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
           subresource_loader_factories,
       const blink::DocumentToken& document_token,
+      const base::UnguessableToken& devtools_navigation_token,
       blink::mojom::PolicyContainerPtr policy_container,
       mojom::AlternativeErrorPageOverrideInfoPtr alternative_error_page_info,
       mojom::NavigationClient::CommitFailedNavigationCallback
@@ -622,7 +598,8 @@ class CONTENT_EXPORT RenderFrameImpl
       const blink::SubresourceLoadMetrics& subresource_load_metrics) override;
   void DidObserveNewFeatureUsage(
       const blink::UseCounterFeature& feature) override;
-  void DidObserveSoftNavigation(blink::SoftNavigationMetrics metrics) override;
+  void DidObserveSoftNavigation(
+      blink::SoftNavigationMetricsForReporting metrics) override;
   void DidObserveLayoutShift(double score, bool after_input_or_scroll) override;
   void DidCreateScriptContext(v8::Local<v8::Context> context,
                               int world_id) override;
@@ -798,6 +775,8 @@ class CONTENT_EXPORT RenderFrameImpl
   // committing a navigation, but in some cases (about:srcdoc, initial empty
   // document) it may be inherited from the parent or opener.
   blink::ChildURLLoaderFactoryBundle* GetLoaderFactoryBundle() override;
+
+  void SetNewFeatureUsageCallback(NewFeatureUsageCallback callback) override;
 
  protected:
   explicit RenderFrameImpl(CreateParams params);
@@ -1070,7 +1049,8 @@ class CONTENT_EXPORT RenderFrameImpl
       ui::PageTransition transition,
       const network::ParsedPermissionsPolicy& permissions_policy_header,
       const blink::DocumentPolicyFeatureState& document_policy_header,
-      const std::optional<base::UnguessableToken>& embedding_token);
+      const std::optional<base::UnguessableToken>& embedding_token,
+      std::optional<blink::PageState> previous_page_state);
 
   // Updates the navigation history depending on the passed parameters.
   // This could result either in the creation of a new entry or a modification
@@ -1248,10 +1228,6 @@ class CONTENT_EXPORT RenderFrameImpl
 
   blink::LocalFrameToken frame_token_;
 
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-  const int routing_id_;
-#endif
-
   const int process_label_id_;
 
   // Keeps track of which future subframes the browser process has history items
@@ -1270,6 +1246,10 @@ class CONTENT_EXPORT RenderFrameImpl
 
   // All the registered observers.
   base::ObserverList<RenderFrameObserver>::Unchecked observers_;
+
+  // The callback to send the feature usage to the browser process through
+  // PageLoadMetrics.
+  NewFeatureUsageCallback new_feature_usage_callback_;
 
   // The text selection the last time DidChangeSelection got called. May contain
   // additional characters before and after the selected text, for IMEs. The

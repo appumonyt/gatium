@@ -6,10 +6,12 @@
 
 #include <memory>
 
+#include "base/android/device_info.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "components/collaboration/internal/collaboration_controller.h"
+#include "components/collaboration/public/pref_names.h"
 #include "components/collaboration/test_support/mock_collaboration_controller_delegate.h"
 #include "components/data_sharing/public/data_sharing_service.h"
 #include "components/data_sharing/public/features.h"
@@ -26,9 +28,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
-#endif  // BUILDFLAG(IS_ANDROID)
 
 using data_sharing::GroupData;
 using data_sharing::GroupId;
@@ -61,17 +60,19 @@ class CollaborationServiceImplTest : public testing::Test {
 
   void SetUp() override {
 #if BUILDFLAG(IS_ANDROID)
-    if (base::android::BuildInfo::GetInstance()->is_automotive()) {
+    if (base::android::device_info::is_automotive()) {
       // TODO(crbug.com/399444939): Re-enable once automotive is supported.
       GTEST_SKIP() << "Test shouldn't run on automotive builders.";
     }
 #endif
     test_sync_service_ = std::make_unique<syncer::TestSyncService>();
-    profile_pref_service_.registry()->RegisterBooleanPref(prefs::kSigninAllowed,
-                                                          true);
+    profile_pref_service_.registry()->RegisterIntegerPref(
+        prefs::kSharedTabGroupsManagedAccountSetting, 0 /* enabled */);
+    profile_pref_service_.registry()->RegisterBooleanPref(
+        ::prefs::kSigninAllowed, true);
 #if BUILDFLAG(IS_IOS)
     local_pref_service_.registry()->RegisterIntegerPref(
-        prefs::kBrowserSigninPolicy,
+        ::prefs::kBrowserSigninPolicy,
         static_cast<int>(BrowserSigninMode::kEnabled));
 #endif
     InitService();
@@ -179,7 +180,7 @@ TEST_F(CollaborationServiceImplTest, GetServiceStatus_SigninDisabled) {
       data_sharing::features::kDataSharingFeature);
 
   // Set signin preference to disable signin.
-  profile_pref_service_.SetBoolean(prefs::kSigninAllowed, false);
+  profile_pref_service_.SetBoolean(::prefs::kSigninAllowed, false);
 
   InitService();
 
@@ -191,7 +192,7 @@ TEST_F(CollaborationServiceImplTest, GetServiceStatus_SigninDisabled) {
   EXPECT_EQ(service_->GetServiceStatus().IsAllowedToCreate(), false);
 
 #if !BUILDFLAG(IS_IOS)
-  profile_pref_service_.SetManagedPref(prefs::kSigninAllowed,
+  profile_pref_service_.SetManagedPref(::prefs::kSigninAllowed,
                                        base::Value(false));
   EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
             CollaborationStatus::kDisabledForPolicy);
@@ -203,6 +204,8 @@ TEST_F(CollaborationServiceImplTest, GetServiceStatus_ManagedAccount) {
   feature_list.InitAndEnableFeature(
       data_sharing::features::kDataSharingFeature);
   InitService();
+  profile_pref_service_.SetInteger(prefs::kSharedTabGroupsManagedAccountSetting,
+                                   1 /* disabled */);
 
   EXPECT_EQ(service_->GetServiceStatus().signin_status,
             SigninStatus::kNotSignedIn);

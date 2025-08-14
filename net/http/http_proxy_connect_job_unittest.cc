@@ -1300,7 +1300,7 @@ TEST_P(HttpProxyConnectJobTest, SpdySessionKeyDisableSecureDns) {
                          SessionUsage::kProxy, SocketTag(),
                          NetworkAnonymizationKey(), SecureDnsPolicy::kDisable,
                          /*disable_cert_verification_network_fetches=*/true),
-          /* enable_ip_based_pooling = */ false,
+          /* enable_ip_based_pooling_for_h2 = */ false,
           /* is_websocket = */ false, NetLogWithSource()));
   EXPECT_FALSE(
       common_connect_job_params_->spdy_session_pool->FindAvailableSession(
@@ -1309,7 +1309,7 @@ TEST_P(HttpProxyConnectJobTest, SpdySessionKeyDisableSecureDns) {
                          SessionUsage::kProxy, SocketTag(),
                          NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
                          /*disable_cert_verification_network_fetches=*/true),
-          /* enable_ip_based_pooling = */ false,
+          /* enable_ip_based_pooling_for_h2 = */ false,
           /* is_websocket = */ false, NetLogWithSource()));
 }
 
@@ -1386,7 +1386,7 @@ TEST_P(HttpProxyConnectJobTest, SpdyInadequateTransportSecurity) {
                          SessionUsage::kProxy, SocketTag(),
                          NetworkAnonymizationKey(), SecureDnsPolicy::kDisable,
                          /*disable_cert_verification_network_fetches=*/true),
-          /*enable_ip_based_pooling=*/false,
+          /*enable_ip_based_pooling_for_h2=*/false,
           /*is_websocket=*/false, NetLogWithSource()));
 }
 
@@ -1435,7 +1435,7 @@ TEST_P(HttpProxyConnectJobTest, SpdyValidAlps) {
                          SessionUsage::kProxy, SocketTag(),
                          NetworkAnonymizationKey(), SecureDnsPolicy::kDisable,
                          /*disable_cert_verification_network_fetches=*/true),
-          /*enable_ip_based_pooling=*/false,
+          /*enable_ip_based_pooling_for_h2=*/false,
           /*is_websocket=*/false, NetLogWithSource()));
 }
 
@@ -1472,7 +1472,7 @@ TEST_P(HttpProxyConnectJobTest, SpdyInvalidAlpsCheckEnabled) {
                          SessionUsage::kProxy, SocketTag(),
                          NetworkAnonymizationKey(), SecureDnsPolicy::kDisable,
                          /*disable_cert_verification_network_fetches=*/true),
-          /*enable_ip_based_pooling=*/false,
+          /*enable_ip_based_pooling_for_h2=*/false,
           /*is_websocket=*/false, NetLogWithSource()));
 }
 
@@ -1517,7 +1517,7 @@ TEST_P(HttpProxyConnectJobTest, SpdyInvalidAlpsCheckDisabled) {
                          SessionUsage::kProxy, SocketTag(),
                          NetworkAnonymizationKey(), SecureDnsPolicy::kDisable,
                          /*disable_cert_verification_network_fetches=*/true),
-          /*enable_ip_based_pooling=*/false,
+          /*enable_ip_based_pooling_for_h2=*/false,
           /*is_websocket=*/false, NetLogWithSource()));
 }
 
@@ -2427,10 +2427,15 @@ TEST_F(HttpProxyConnectQuicJobTest, RequestQuicProxy) {
   // and a TransportSocketParams which is totally unused but must be non-null.
   ProxyChain proxy_chain = ProxyChain::ForIpProtection({ProxyServer(
       ProxyServer::SCHEME_QUIC, HostPortPair(kQuicProxyHost, 443))});
-  SSLConfig quic_ssl_config;
+  SSLConfig quic_proxy_ssl_config;
+  // The SSLConfig is expected to have already had
+  // `disable_cert_verification_network_fetches` set to true since this is a
+  // connection to a proxy.
+  quic_proxy_ssl_config.disable_cert_verification_network_fetches = true;
+
   scoped_refptr<HttpProxySocketParams> http_proxy_socket_params =
       base::MakeRefCounted<HttpProxySocketParams>(
-          quic_ssl_config, HostPortPair(kEndpointHost, 443), proxy_chain,
+          quic_proxy_ssl_config, HostPortPair(kEndpointHost, 443), proxy_chain,
           /*proxy_chain_index=*/0, /*tunnel=*/true,
           TRAFFIC_ANNOTATION_FOR_TESTS, NetworkAnonymizationKey(),
           SecureDnsPolicy::kAllow);
@@ -2471,10 +2476,12 @@ TEST_F(HttpProxyConnectQuicJobTest, QuicProxyRequestUsesRfcV1) {
 
   ProxyChain proxy_chain = ProxyChain::ForIpProtection({ProxyServer(
       ProxyServer::SCHEME_QUIC, HostPortPair(kQuicProxyHost, 443))});
-  SSLConfig quic_ssl_config;
+  SSLConfig quic_proxy_ssl_config;
+  quic_proxy_ssl_config.disable_cert_verification_network_fetches = true;
+
   scoped_refptr<HttpProxySocketParams> http_proxy_socket_params =
       base::MakeRefCounted<HttpProxySocketParams>(
-          quic_ssl_config, HostPortPair(kEndpointHost, 443), proxy_chain,
+          quic_proxy_ssl_config, HostPortPair(kEndpointHost, 443), proxy_chain,
           /*proxy_chain_index=*/0, /*tunnel=*/true,
           TRAFFIC_ANNOTATION_FOR_TESTS, NetworkAnonymizationKey(),
           SecureDnsPolicy::kAllow);
@@ -2517,10 +2524,12 @@ TEST_F(HttpProxyConnectQuicJobTest, RequestMultipleQuicProxies) {
       ProxyServer(ProxyServer::SCHEME_HTTPS, HostPortPair("hproxy1", 443)),
       ProxyServer(ProxyServer::SCHEME_HTTPS, HostPortPair("hproxy2", 443)),
   });
-  SSLConfig quic_ssl_config;
+  SSLConfig quic_proxy_ssl_config;
+  quic_proxy_ssl_config.disable_cert_verification_network_fetches = true;
+
   scoped_refptr<HttpProxySocketParams> http_proxy_socket_params =
       base::MakeRefCounted<HttpProxySocketParams>(
-          quic_ssl_config, HostPortPair(kEndpointHost, 443), proxy_chain,
+          quic_proxy_ssl_config, HostPortPair(kEndpointHost, 443), proxy_chain,
           /*proxy_chain_index=*/1, /*tunnel=*/true,
           TRAFFIC_ANNOTATION_FOR_TESTS, NetworkAnonymizationKey(),
           SecureDnsPolicy::kAllow);

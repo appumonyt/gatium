@@ -933,9 +933,7 @@ TEST_F(IdleHelperTest, OnPendingTasksChanged_TwoTasksAtTheSameTime) {
 class MultiThreadedIdleHelperTest : public IdleHelperTest {
  public:
 #if DCHECK_IS_ON()
-  ~MultiThreadedIdleHelperTest() override {
-    WTF::SetIsBeforeThreadCreatedForTest();
-  }
+  ~MultiThreadedIdleHelperTest() override { SetIsBeforeThreadCreatedForTest(); }
 #endif
 
   void PostIdleTaskFromNewThread(int* run_count) {
@@ -946,11 +944,10 @@ class MultiThreadedIdleHelperTest : public IdleHelperTest {
     std::unique_ptr<NonMainThread> thread = NonMainThread::CreateThread(
         ThreadCreationParams(ThreadType::kTestThread)
             .SetThreadNameForTest("TestBackgroundThread"));
-    PostCrossThreadTask(
-        *thread->GetTaskRunner(), FROM_HERE,
-        CrossThreadBindOnce(&PostIdleTaskFromBackgroundThread,
-                            idle_task_runner_, delay,
-                            WTF::CrossThreadUnretained(run_count)));
+    PostCrossThreadTask(*thread->GetTaskRunner(), FROM_HERE,
+                        CrossThreadBindOnce(&PostIdleTaskFromBackgroundThread,
+                                            idle_task_runner_, delay,
+                                            CrossThreadUnretained(run_count)));
     thread.reset();
   }
 
@@ -960,7 +957,7 @@ class MultiThreadedIdleHelperTest : public IdleHelperTest {
       base::TimeDelta delay,
       int* run_count) {
     auto callback = ConvertToBaseOnceCallback(CrossThreadBindOnce(
-        &IdleTestTask, WTF::CrossThreadUnretained(run_count), nullptr));
+        &IdleTestTask, CrossThreadUnretained(run_count), nullptr));
     if (delay.is_zero()) {
       idle_task_runner->PostIdleTask(FROM_HERE, std::move(callback));
     } else {

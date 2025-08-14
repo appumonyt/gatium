@@ -3,23 +3,25 @@
 # found in the LICENSE file.
 """Definitions of builders in the tryserver.blink builder group."""
 
-load("//lib/builders.star", "cpu", "os", "siso")
-load("//lib/builder_config.star", "builder_config")
-load("//lib/branches.star", "branches")
-load("//lib/html.star", "linkify")
-load("//lib/try.star", "try_")
-load("//lib/consoles.star", "consoles")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/targets.star", "targets")
+load("@chromium-luci//branches.star", "branches")
+load("@chromium-luci//builder_config.star", "builder_config")
+load("@chromium-luci//builders.star", "cpu", "os")
+load("@chromium-luci//consoles.star", "consoles")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//html.star", "linkify")
+load("@chromium-luci//targets.star", "targets")
+load("@chromium-luci//try.star", "try_")
+load("//lib/siso.star", "siso")
+load("//lib/try_constants.star", "try_constants")
 
 try_.defaults.set(
-    executable = try_.DEFAULT_EXECUTABLE,
+    executable = try_constants.DEFAULT_EXECUTABLE,
     builder_group = "tryserver.blink",
-    pool = try_.DEFAULT_POOL,
+    pool = try_constants.DEFAULT_POOL,
     cores = 8,
     contact_team_email = "chrome-blink-engprod@google.com",
-    execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
-    service_account = try_.DEFAULT_SERVICE_ACCOUNT,
+    execution_timeout = try_constants.DEFAULT_EXECUTION_TIMEOUT,
+    service_account = try_constants.DEFAULT_SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
 )
@@ -152,7 +154,6 @@ _rebaseline_builder(
             target_bits = 64,
             target_platform = builder_config.target_platform.WIN,
         ),
-        build_gs_bucket = "chromium-fyi-archive",
     ),
     builder_config_settings = builder_config.try_settings(
         retry_failed_shards = False,
@@ -729,7 +730,6 @@ _rebaseline_builder(
         android_config = builder_config.android_config(
             config = "base_config",
         ),
-        build_gs_bucket = "chromium-android-archive",
     ),
     builder_config_settings = builder_config.try_settings(
         retry_failed_shards = False,

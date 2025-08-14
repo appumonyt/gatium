@@ -10,7 +10,6 @@
 #include "base/time/time.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 #include "third_party/blink/renderer/core/paint/timing/lcp_objects.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_visualizer.h"
 #include "third_party/blink/renderer/core/scroll/scroll_types.h"
@@ -25,8 +24,10 @@ class Image;
 class ImagePaintTimingDetector;
 class ImageResourceContent;
 class LargestContentfulPaintCalculator;
+class LayoutBoxModelObject;
 class LayoutObject;
 class LocalFrameView;
+class Node;
 class PropertyTreeStateOrAlias;
 class MediaTiming;
 class TextPaintTimingDetector;
@@ -68,7 +69,17 @@ class CORE_EXPORT PaintTimingDetector
       const MediaTiming& media_timing,
       const PropertyTreeStateOrAlias& current_paint_chunk_properties,
       const gfx::Rect& image_border);
+  static void NotifyFirstVideoFrame(
+      const LayoutObject&,
+      const gfx::Size& intrinsic_size,
+      const MediaTiming& media_timing,
+      const PropertyTreeStateOrAlias& current_paint_chunk_properties,
+      const gfx::Rect& image_border);
   inline static void NotifyTextPaint(const gfx::Rect& text_visual_rect);
+
+  // Called when the "src" attribute changes on a <video> element and the change
+  // is attributable to an interaction.
+  static void NotifyInteractionTriggeredVideoSrcChange(const LayoutObject&);
 
   void NotifyImageFinished(const LayoutObject&, const MediaTiming*);
   void LayoutObjectWillBeDestroyed(const LayoutObject&);
@@ -183,12 +194,8 @@ class ScopedPaintTimingDetectorBlockPaintHook {
  private:
   friend class PaintTimingDetector;
   inline static void AggregateTextPaint(const gfx::Rect& visual_rect) {
-    // Ideally we'd assert that |top_| exists, but there may be text nodes that
-    // do not have an ancestor non-anonymous block layout objects in the layout
-    // tree. An example of this is a multicol div, since the
-    // LayoutMultiColumnFlowThread is in a different layer from the DIV. In
-    // these cases, |top_| will be null. This is a known bug, see the related
-    // crbug.com/933479.
+    // TODO(crbug.com/40614549): This check was allegedly needed for legacy
+    // multicol, but that implementation is now gone. Turn into DCHECK?
     if (top_ && top_->data_) {
       top_->data_->aggregated_visual_rect_.Union(visual_rect);
     }

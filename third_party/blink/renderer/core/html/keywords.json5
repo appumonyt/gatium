@@ -84,6 +84,8 @@
     "open",
     // command for input and select
     "show-picker",
+    // command for interest invokers (`interestfor`)
+    "toggle-interest",
     // command for number input
     "step-up",
     "step-down",
@@ -240,5 +242,11 @@
     "-internal-print-header",
     "-internal-print-footer",
     "-internal-print-page-number",
+
+    // ElementInternals.type
+    // https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ElementInternalsType/explainer.md
+    "button",
+    "reset",
+    "submit",
   ],
 }

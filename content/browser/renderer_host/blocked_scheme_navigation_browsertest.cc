@@ -22,6 +22,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
@@ -34,7 +35,6 @@
 #include "content/shell/browser/shell_download_manager_delegate.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "storage/browser/file_system/external_mount_points.h"
 #include "storage/common/file_system/file_system_mount_option.h"
 #include "storage/common/file_system/file_system_types.h"
@@ -132,7 +132,7 @@ void RegisterFakePlugin() {
   const char kPdfMimeType[] = "application/pdf";
   const char kPdfFileType[] = "pdf";
   WebPluginInfo plugin_info;
-  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS;
+  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_BROWSER_INTERNAL_PLUGIN;
   plugin_info.name = kPluginName;
   plugin_info.mime_types.emplace_back(kPdfMimeType, kPdfFileType,
                                       std::string());

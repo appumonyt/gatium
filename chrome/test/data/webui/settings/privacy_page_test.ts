@@ -5,13 +5,13 @@
 // clang-format off
 import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
-import type {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import type {CrToastElement} from 'chrome://settings/lazy_load.js';
 import {ClearBrowsingDataBrowserProxyImpl, ContentSetting, ContentSettingsTypes, CookieControlsMode, SiteSettingsPrefsBrowserProxyImpl} from 'chrome://settings/lazy_load.js';
 import type {CrLinkRowElement, Route, SettingsPrefsElement, SettingsPrivacyPageElement, SyncStatus} from 'chrome://settings/settings.js';
 import {CrSettingsPrefs, HatsBrowserProxyImpl, MetricsBrowserProxyImpl, PrivacyGuideInteractions, PrivacyPageBrowserProxyImpl, resetRouterForTesting, Router, routes, StatusAction, TrustSafetyInteraction} from 'chrome://settings/settings.js';
 import {assertEquals, assertFalse, assertTrue, assertThrows} from 'chrome://webui-test/chai_assert.js';
-import {isChildVisible, isVisible} from 'chrome://webui-test/test_util.js';
+import {eventToPromise, isChildVisible, isVisible} from 'chrome://webui-test/test_util.js';
 import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
 import {TestClearBrowsingDataBrowserProxy} from './test_clear_browsing_data_browser_proxy.js';
@@ -123,8 +123,11 @@ suite('PrivacyPage', function() {
     assertTrue(!!dialog);
   });
 
-  test('showDeletionConfirmationToast', function() {
-    assertFalse(page.$.deleteBrowsingDataToast.open);
+  test('showDeletionConfirmationToast', async function() {
+    const toast = page.shadowRoot!.querySelector<CrToastElement>(
+        '#deleteBrowsingDataToast');
+    assertTrue(!!toast);
+    assertFalse(toast.open);
     page.$.clearBrowsingData.click();
     flush();
 
@@ -136,10 +139,12 @@ suite('PrivacyPage', function() {
       composed: true,
       detail: {deletionConfirmationText: 'test'},
     }));
+    dialog.$.deleteBrowsingDataDialog.close();
+    await eventToPromise('close', dialog);
     flush();
 
-    assertTrue(page.$.deleteBrowsingDataToast.open);
-    assertEquals('test', page.$.deleteBrowsingDataToast.textContent!.trim());
+    assertTrue(toast.open);
+    assertEquals('test', toast.textContent!.trim());
   });
 
   // TODO(crbug.com/417690232): Update once its kBundledSecuritySettings is
@@ -275,12 +280,10 @@ suite('ContentSettingsVisibility', function() {
     // except
     //   1. protocol handlers,
     //   2. pdf documents,
-    //   3. protected content (except on chromeos and win),
+    //   3. protected content (is in its own element),
     //   4. notifications (is in its own element)
-    let expectedPagesCount = redesignedPages.length - 4;
-    // <if expr="is_chromeos or is_win">
-    expectedPagesCount += 1;
-    // </if>
+    //   5. geolocation (is in its own element)
+    const expectedPagesCount = redesignedPages.length - 4;
 
     assertEquals(
         page.shadowRoot!
@@ -386,23 +389,6 @@ suite(`CookiesSubpage`, function() {
     return flushTasks();
   });
 
-  test('cookiesSubpageAttributes', async function() {
-    // The subpage is only in the DOM if the corresponding route is open.
-    page.shadowRoot!
-        .querySelector<CrLinkRowElement>('#thirdPartyCookiesLinkRow')!.click();
-    await flushTasks();
-
-    const cookiesSubpage =
-        page.shadowRoot!.querySelector<PolymerElement>('#cookies');
-    assertTrue(!!cookiesSubpage);
-    assertEquals(
-        page.i18n('thirdPartyCookiesPageTitle'),
-        cookiesSubpage.getAttribute('page-title'));
-    const associatedControl = cookiesSubpage.get('associatedControl');
-    assertTrue(!!associatedControl);
-    assertEquals('thirdPartyCookiesLinkRow', associatedControl.id);
-  });
-
   test('clickCookiesRow', async function() {
     const thirdPartyCookiesLinkRow =
         page.shadowRoot!.querySelector<HTMLElement>(
@@ -434,11 +420,9 @@ suite('CookiesSubpageRedesignDisabled', function() {
   }
 
   test(
-      'cookiesLinkRowSublabelAlwaysBlock3pcsIncognitoDisabled',
-      async function() {
+      'cookiesLinkRowSublabel', async function() {
         loadTimeData.overrideValues({
           is3pcdCookieSettingsRedesignEnabled: false,
-          isAlwaysBlock3pcsIncognitoEnabled: false,
         });
         resetRouterForTesting();
 
@@ -458,7 +442,7 @@ suite('CookiesSubpageRedesignDisabled', function() {
             'prefs.profile.cookie_controls_mode.value',
             CookieControlsMode.INCOGNITO_ONLY);
         assertEquals(
-            page.i18n('thirdPartyCookiesLinkRowSublabelDisabledIncognito'),
+            page.i18n('thirdPartyCookiesLinkRowSublabelEnabled'),
             thirdPartyCookiesLinkRow.subLabel,
         );
 
@@ -469,27 +453,6 @@ suite('CookiesSubpageRedesignDisabled', function() {
             page.i18n('thirdPartyCookiesLinkRowSublabelDisabled'),
             thirdPartyCookiesLinkRow.subLabel);
       });
-
-  test('cookiesLinkRowSublabel', async function() {
-    loadTimeData.overrideValues({
-      is3pcdCookieSettingsRedesignEnabled: false,
-      isAlwaysBlock3pcsIncognitoEnabled: true,
-    });
-    resetRouterForTesting();
-
-    await createPage();
-
-    page.set(
-        'prefs.profile.cookie_controls_mode.value',
-        CookieControlsMode.INCOGNITO_ONLY);
-    const thirdPartyCookiesLinkRow =
-        page.shadowRoot!.querySelector<CrLinkRowElement>(
-            '#thirdPartyCookiesLinkRow');
-    assertTrue(!!thirdPartyCookiesLinkRow);
-    assertEquals(
-        page.i18n('thirdPartyCookiesLinkRowSublabelEnabled'),
-        thirdPartyCookiesLinkRow.subLabel);
-  });
 });
 
 suite(`IncognitoTrackingProtectionsSubpage`, function() {
@@ -554,53 +517,6 @@ suite(`IncognitoTrackingProtectionsSubpage`, function() {
     await flushTasks();
 
     assertFalse(isChildVisible(page, '#incognitoTrackingProtectionsLinkRow'));
-  });
-});
-
-suite(`AllSitesSubpage`, function() {
-  let page: SettingsPrivacyPageElement;
-  let settingsPrefs: SettingsPrefsElement;
-
-  suiteSetup(function() {
-    resetRouterForTesting();
-
-    settingsPrefs = document.createElement('settings-prefs');
-    return CrSettingsPrefs.initialized;
-  });
-
-  setup(function() {
-    document.body.innerHTML = window.trustedTypes!.emptyHTML;
-
-    page = document.createElement('settings-privacy-page');
-    page.prefs = settingsPrefs.prefs!;
-    document.body.appendChild(page);
-    return flushTasks();
-  });
-
-  test('allSitesViewShowsAllSitesTitle', async function() {
-    Router.getInstance().navigateTo(routes.SITE_SETTINGS_ALL);
-    await flushTasks();
-
-    const allSitesSubpage =
-        page.shadowRoot!.querySelector<PolymerElement>('#allSites');
-    assertTrue(!!allSitesSubpage);
-    assertEquals(
-        page.i18n('siteSettingsAllSites'),
-        allSitesSubpage.getAttribute('page-title'));
-  });
-
-  test('rwsFilterViewShowsRwsTitle', async function() {
-    const searchParams =
-        new URLSearchParams('searchSubpage=related:foobar.com');
-    Router.getInstance().navigateTo(routes.SITE_SETTINGS_ALL, searchParams);
-    await flushTasks();
-
-    const allSitesSubpage =
-        page.shadowRoot!.querySelector<PolymerElement>('#allSites');
-    assertTrue(!!allSitesSubpage);
-    assertEquals(
-        loadTimeData.getStringF('allSitesRwsFilterViewTitle', 'foobar.com'),
-        allSitesSubpage.getAttribute('page-title'));
   });
 });
 

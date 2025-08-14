@@ -82,7 +82,6 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   bool allow_file_access_from_file_urls = false;
   bool webgl1_enabled = true;
   bool webgl2_enabled = true;
-  bool pepper_3d_enabled = false;
   bool privileged_webgl_extensions_enabled = false;
   bool webgl_errors_to_console_enabled = true;
   bool hide_scrollbars = false;
@@ -453,6 +452,15 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // Whether API-specific interventions aimed at reducing the efficacy of
   // fingerprinting are enabled.
   bool api_based_fingerprinting_interventions_enabled = false;
+
+  // Whether fingerprinting protection based on page content is enabled.
+  bool content_based_fingerprinting_protection_enabled = false;
+
+#if BUILDFLAG(IS_ANDROID)
+  // Whether every traversable mainframe same-doc navigation will increment the
+  // `viz::LocalSurfaceId` from the impl thread.
+  bool increment_local_surface_id_for_mainframe_same_doc_navigation = true;
+#endif  // BUILDFLAG(IS_ANDROID)
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

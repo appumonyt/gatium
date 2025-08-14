@@ -184,7 +184,6 @@ class KeyAccessibilityEnabler;
 class KeyboardBacklightColorController;
 class KeyboardBrightnessControlDelegate;
 class KeyboardControllerImpl;
-class KeyboardModifierMetricsRecorder;
 class LaserPointerController;
 class LobsterController;
 class LocalAuthenticationRequestController;
@@ -267,6 +266,7 @@ class SystemTrayNotifier;
 class TabletModeController;
 class ToastManagerImpl;
 class ToplevelWindowEventHandler;
+class ClipboardImageModelFactory;
 class ClipboardHistoryControllerImpl;
 class TouchDevicesController;
 class UserEducationController;
@@ -625,9 +625,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   KeyboardControllerImpl* keyboard_controller() {
     return keyboard_controller_.get();
   }
-  KeyboardModifierMetricsRecorder* keyboard_modifier_metrics_recorder() {
-    return keyboard_modifier_metrics_recorder_.get();
-  }
   TouchscreenMetricsRecorder* touchscreen_metrics_recorder() {
     return touchscreen_metrics_recorder_.get();
   }
@@ -973,6 +970,9 @@ class ASH_EXPORT Shell : public SessionObserver,
   // Initializes the root window so that it can host browser windows.
   void InitRootWindow(aura::Window* root_window);
 
+  // Close All windows that are considered application windows.
+  void CloseAllAppWindows();
+
   // Destroys all child windows including widgets across all roots.
   void CloseAllRootWindowChildWindows();
 
@@ -1013,8 +1013,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<InputDeviceSettingsDispatcher>
       input_device_settings_dispatcher_;
   std::unique_ptr<InputDeviceTracker> input_device_tracker_;
-  std::unique_ptr<KeyboardModifierMetricsRecorder>
-      keyboard_modifier_metrics_recorder_;
   std::unique_ptr<TouchscreenMetricsRecorder> touchscreen_metrics_recorder_;
   std::unique_ptr<InputDeviceKeyAliasManager> input_device_key_alias_manager_;
   std::unique_ptr<ShortcutInputHandler> shortcut_input_handler_;
@@ -1149,6 +1147,7 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<SystemSoundsDelegate> system_sounds_delegate_;
   std::unique_ptr<api::TasksController> tasks_controller_;
   std::unique_ptr<ToastManagerImpl> toast_manager_;
+  std::unique_ptr<ClipboardImageModelFactory> clipboard_image_model_factory_;
   std::unique_ptr<ClipboardHistoryControllerImpl> clipboard_history_controller_;
   std::unique_ptr<TouchDevicesController> touch_devices_controller_;
   std::unique_ptr<UserEducationController> user_education_controller_;

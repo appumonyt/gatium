@@ -125,6 +125,10 @@ HttpAuthManager* PasswordManagerClient::GetHttpAuthManager() {
   return nullptr;
 }
 
+OtpManager* PasswordManagerClient::GetOtpManager() {
+  return nullptr;
+}
+
 autofill::AutofillCrowdsourcingManager*
 PasswordManagerClient::GetAutofillCrowdsourcingManager() {
   return nullptr;
@@ -198,5 +202,16 @@ void PasswordManagerClient::RefreshPasswordManagerSettingsIfNeeded() const {
 
 void PasswordManagerClient::TriggerSignIn(
     signin_metrics::AccessPoint access_point) const {}
+
+UndoPasswordChangeController*
+PasswordManagerClient::GetUndoPasswordChangeController() {
+  return nullptr;
+}
+
+#if !BUILDFLAG(IS_ANDROID)
+bool PasswordManagerClient::IsActorTaskActive() {
+  return false;
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace password_manager

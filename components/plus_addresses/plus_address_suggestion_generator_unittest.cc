@@ -18,8 +18,8 @@
 #include "components/autofill/core/common/autofill_test_utils.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/unique_ids.h"
+#include "components/plus_addresses/core/common/features.h"
 #include "components/plus_addresses/fake_plus_address_allocator.h"
-#include "components/plus_addresses/features.h"
 #include "components/plus_addresses/grit/plus_addresses_strings.h"
 #include "components/plus_addresses/plus_address_allocator.h"
 #include "components/plus_addresses/plus_address_test_utils.h"
@@ -273,11 +273,11 @@ TEST_F(PlusAddressSuggestionGeneratorTest, NoSuggestionsOnLoginForm) {
       autofill::test::CreateTestPasswordFormData());
   ASSERT_THAT(login_form.fields(), SizeIs(2));
   const autofill::FormFieldData focused_field = login_form.fields()[0];
-  const base::flat_map<FieldGlobalId, autofill::FieldTypeGroup>
-      form_field_type_groups = {
-          {focused_field.global_id(), autofill::FieldTypeGroup::kUsernameField},
-          {login_form.fields()[1].global_id(),
-           autofill::FieldTypeGroup::kPasswordField}};
+  const base::flat_map<FieldGlobalId, autofill::FieldTypeGroupSet>
+      form_field_type_groups = {{focused_field.global_id(),
+                                 {autofill::FieldTypeGroup::kUsernameField}},
+                                {login_form.fields()[1].global_id(),
+                                 {autofill::FieldTypeGroup::kPasswordField}}};
   PasswordFormClassification classification;
   classification.type = PasswordFormClassification::Type::kLoginForm;
   classification.username_field = focused_field.global_id();
@@ -308,12 +308,13 @@ TEST_F(PlusAddressSuggestionGeneratorTest,
   form = SetGeneratedFrameTokenAndHostFormId(std::move(form));
   ASSERT_THAT(form.fields(), SizeIs(3));
   const autofill::FormFieldData focused_field = form.fields()[0];
-  const base::flat_map<FieldGlobalId, autofill::FieldTypeGroup>
+  const base::flat_map<FieldGlobalId, autofill::FieldTypeGroupSet>
       form_field_type_groups = {
-          {focused_field.global_id(), autofill::FieldTypeGroup::kUsernameField},
+          {focused_field.global_id(),
+           {autofill::FieldTypeGroup::kUsernameField}},
           {form.fields()[1].global_id(),
-           autofill::FieldTypeGroup::kPasswordField},
-          {form.fields()[2].global_id(), autofill::FieldTypeGroup::kName}};
+           {autofill::FieldTypeGroup::kPasswordField}},
+          {form.fields()[2].global_id(), {autofill::FieldTypeGroup::kName}}};
   PasswordFormClassification classification;
   classification.type = PasswordFormClassification::Type::kLoginForm;
   classification.username_field = focused_field.global_id();

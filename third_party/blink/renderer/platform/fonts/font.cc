@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/platform/fonts/text_fragment_paint_info.h"
 #include "third_party/blink/renderer/platform/fonts/text_run_paint_info.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/bidi_paragraph.h"
 #include "third_party/blink/renderer/platform/text/character.h"
 #include "third_party/blink/renderer/platform/text/text_run.h"
@@ -464,6 +465,22 @@ float Font::TextAutoSpaceInlineSize() const {
   NOTREACHED();
 }
 
+std::pair<float, bool> Font::TabWidthInternal(const SimpleFontData* font_data,
+                                              const TabSize& tab_size) const {
+  const auto& font_description = GetFontDescription();
+  float letter_spacing = font_description.LetterSpacing();
+  if (!font_data) {
+    return {letter_spacing, false};
+  }
+  float word_spacing = font_description.WordSpacing();
+  float base_tab_width = tab_size.GetPixelSize(font_data->SpaceWidth(),
+                                               letter_spacing, word_spacing);
+  if (!base_tab_width) {
+    return {letter_spacing, false};
+  }
+  return {base_tab_width, true};
+}
+
 float Font::TabWidth(const SimpleFontData* font_data,
                      const TabSize& tab_size,
                      float position) const {
@@ -471,7 +488,13 @@ float Font::TabWidth(const SimpleFontData* font_data,
   if (!base_tab_width)
     return GetFontDescription().LetterSpacing();
 
-  float distance_to_tab_stop = base_tab_width - fmodf(position, base_tab_width);
+  float modulized_position = fmodf(position, base_tab_width);
+  if (RuntimeEnabledFeatures::TabWidthNegativePositionEnabled() &&
+      modulized_position < 0) [[unlikely]] {
+    modulized_position += base_tab_width;
+  }
+
+  float distance_to_tab_stop = base_tab_width - modulized_position;
 
   // Let the minimum width be the half of the space width so that it's always
   // recognizable.  if the distance to the next tab stop is less than that,
@@ -484,14 +507,19 @@ float Font::TabWidth(const SimpleFontData* font_data,
 
 LayoutUnit Font::TabWidth(const TabSize& tab_size, LayoutUnit position) const {
   const SimpleFontData* font_data = PrimaryFont();
-  if (!font_data)
-    return LayoutUnit::FromFloatCeil(GetFontDescription().LetterSpacing());
-  float base_tab_width = tab_size.GetPixelSize(font_data->SpaceWidth());
-  if (!base_tab_width)
-    return LayoutUnit::FromFloatCeil(GetFontDescription().LetterSpacing());
+  auto [base_tab_width, is_successed] = TabWidthInternal(font_data, tab_size);
+  if (!is_successed) {
+    return LayoutUnit::FromFloatCeil(base_tab_width);
+  }
 
-  LayoutUnit distance_to_tab_stop = LayoutUnit::FromFloatFloor(
-      base_tab_width - fmodf(position, base_tab_width));
+  float modulized_position = fmodf(position, base_tab_width);
+  if (RuntimeEnabledFeatures::TabWidthNegativePositionEnabled() &&
+      modulized_position < 0) [[unlikely]] {
+    modulized_position += base_tab_width;
+  }
+
+  LayoutUnit distance_to_tab_stop =
+      LayoutUnit::FromFloatFloor(base_tab_width - modulized_position);
 
   // Let the minimum width be the half of the space width so that it's always
   // recognizable.  if the distance to the next tab stop is less than that,

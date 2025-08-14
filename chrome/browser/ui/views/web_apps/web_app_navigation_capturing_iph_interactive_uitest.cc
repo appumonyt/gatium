@@ -137,9 +137,7 @@ class WebAppNavigationCapturingIphUiTest : public InteractiveFeaturePromoTest {
   auto OpenApp(const webapps::AppId& app_id) {
     auto steps =
         Steps(InstrumentNextTab(kAppPageId, AnyBrowser()), Do([this, app_id]() {
-                web_app::LaunchWebAppBrowser(browser()->profile(), app_id)
-                    ->window()
-                    ->GetElementContext();
+                web_app::LaunchWebAppBrowser(browser()->profile(), app_id);
               }),
               InAnyContext(WaitForShow(kAppPageId)));
     AddDescriptionPrefix(steps, base::StrCat({"OpenApp( ", app_id, " )"}));
@@ -309,8 +307,15 @@ IN_PROC_BROWSER_TEST_P(WebAppNavigationCapturingIphUiTestParameterized,
               NavigationCapturingV2Enabled())));
 }
 
+// TODO(crbug.com/433312075): Shift-click click does not work (consistently?) on
+// Mac.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_IPHShownOnLinkShiftClick DISABLED_IPHShownOnLinkShiftClick
+#else
+#define MAYBE_IPHShownOnLinkShiftClick IPHShownOnLinkShiftClick
+#endif
 IN_PROC_BROWSER_TEST_P(WebAppNavigationCapturingIphUiTestParameterized,
-                       IPHShownOnLinkShiftClick) {
+                       MAYBE_IPHShownOnLinkShiftClick) {
   const webapps::AppId app_id_a = InstallTestWebApp(GetStartUrl());
   const webapps::AppId app_id_b = InstallTestWebApp(GetDestinationUrl());
   RunTestSequence(

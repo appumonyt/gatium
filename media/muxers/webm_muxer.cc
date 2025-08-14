@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "media/muxers/webm_muxer.h"
 
 #include <algorithm>
@@ -19,8 +14,10 @@
 #include <variant>
 
 #include "base/check.h"
+#include "base/compiler_specific.h"
 #include "base/containers/circular_deque.h"
 #include "base/containers/span.h"
+#include "base/containers/span_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -74,32 +71,28 @@ constexpr uint8_t codec_private[4] = {
 
 }  // namespace av1
 
-// Force new clusters at a maximum rate of 10 Hz.
-constexpr base::TimeDelta kMinimumForcedClusterDuration =
-    base::Milliseconds(100);
-
-void WriteOpusHeader(const AudioParameters& params, uint8_t* header) {
+void WriteOpusHeader(const AudioParameters& params,
+                     base::span<uint8_t> header) {
   // See https://wiki.xiph.org/OggOpus#ID_Header.
   // Set magic signature.
-  std::string label = "OpusHead";
-  memcpy(header + OPUS_EXTRADATA_LABEL_OFFSET, label.c_str(), label.size());
+  static constexpr char label[] = "OpusHead";
+  base::SpanWriter writer(header);
+  writer.Write(base::byte_span_from_cstring(label));
   // Set Opus version.
-  header[OPUS_EXTRADATA_VERSION_OFFSET] = 1;
+  writer.WriteU8LittleEndian(1);
   // Set channel count.
   DCHECK_LE(params.channels(), 2);
-  header[OPUS_EXTRADATA_CHANNELS_OFFSET] = params.channels();
+  writer.WriteU8LittleEndian(params.channels());
   // Set pre-skip
   uint16_t skip = 0;
-  memcpy(header + OPUS_EXTRADATA_SKIP_SAMPLES_OFFSET, &skip, sizeof(uint16_t));
+  writer.WriteU16LittleEndian(skip);
   // Set original input sample rate in Hz.
-  uint32_t sample_rate = params.sample_rate();
-  memcpy(header + OPUS_EXTRADATA_SAMPLE_RATE_OFFSET, &sample_rate,
-         sizeof(uint32_t));
+  writer.WriteU32LittleEndian(params.sample_rate());
   // Set output gain in dB.
   uint16_t gain = 0;
-  memcpy(header + OPUS_EXTRADATA_GAIN_OFFSET, &gain, 2);
-
-  header[OPUS_EXTRADATA_CHANNEL_MAPPING_OFFSET] = 0;
+  writer.WriteU16LittleEndian(gain);
+  // Set channel mapping family (Mono or L/R Stereo).
+  writer.WriteU8LittleEndian(0);
 }
 
 static double GetFrameRate(const Muxer::VideoParameters& params) {
@@ -243,8 +236,10 @@ mkvmuxer::int32 WebmMuxer::Delegate::Write(const void* buf,
   DVLOG(2) << __func__ << " len " << len;
   DCHECK(buf);
 
-  last_data_output_timestamp_ = base::TimeTicks::Now();
-  const auto result = DoWrite(buf, len);
+  const auto result = DoWrite(
+      // SAFETY: Caller is explicitly calling us with a `buf` of size `len` from
+      // a 3rd party library that we can't change to use spans.
+      UNSAFE_BUFFERS(base::span(static_cast<const uint8_t*>(buf), len)));
   position_ += len;
   return result;
 }
@@ -262,7 +257,7 @@ WebmMuxer::WebmMuxer(AudioCodec audio_codec,
       has_audio_(has_audio),
       max_data_output_interval_(
           std::max(max_data_output_interval.value_or(base::TimeDelta()),
-                   kMinimumForcedClusterDuration)),
+                   kMinimumForcedOutputDuration)),
       delegate_(std::move(delegate)) {
   DCHECK(has_video_ || has_audio_);
   DCHECK(delegate_);
@@ -394,7 +389,7 @@ bool WebmMuxer::PutFrame(EncodedFrame frame,
   DVLOG(2) << __func__ << " - " << (audio_params ? "A " : "V ")
            << frame.data->size() << "B ts " << relative_timestamp;
   if (audio_params) {
-    MaybeForceNewCluster();
+    MaybeForceNewCluster(relative_timestamp);
     if (!audio_track_index_) {
       AddAudioTrack(*audio_params);
     }
@@ -480,20 +475,21 @@ bool WebmMuxer::WriteWebmFrame(EncodedFrame frame,
                                  frame.data->is_key_frame());
 }
 
-void WebmMuxer::MaybeForceNewCluster() {
+void WebmMuxer::MaybeForceNewCluster(base::TimeDelta media_relative_timestamp) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (!has_video_ || max_data_output_interval_.is_zero() ||
-      delegate_->last_data_output_timestamp().is_null()) {
-    return;
-  }
-
-  // TODO(crbug.com/40876732): consider if cluster output should be based on
-  // media timestamps
-  if (base::TimeTicks::Now() - delegate_->last_data_output_timestamp() >=
-      max_data_output_interval_) {
-    TRACE_EVENT0("media", "ForceNewClusterOnNextFrame");
-    segment_.ForceNewClusterOnNextFrame();
+  // Forces a new cluster on the next frame if the time since the last flush
+  // exceeds the max data output interval. This ensures that data is output
+  // periodically.
+  if (cluster_origin_.has_value()) {
+    if (media_relative_timestamp - *cluster_origin_ >=
+        max_data_output_interval_) {
+      TRACE_EVENT0("media", "ForceNewClusterOnNextFrame");
+      segment_.ForceNewClusterOnNextFrame();
+      cluster_origin_ = media_relative_timestamp;
+    }
+  } else {
+    cluster_origin_ = media_relative_timestamp;
   }
 }
 

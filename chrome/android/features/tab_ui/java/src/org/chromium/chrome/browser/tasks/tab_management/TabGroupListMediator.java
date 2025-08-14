@@ -16,6 +16,7 @@ import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.bookmarks.PendingRunnable;
 import org.chromium.chrome.browser.data_sharing.DataSharingTabManager;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.hub.PaneManager;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab_ui.ActionConfirmationManager;
@@ -67,6 +68,8 @@ public class TabGroupListMediator {
     private final boolean mEnableContainment;
     private final DataSharingTabManager mDataSharingTabManager;
     private final TabGroupRemovedMessageMediator mTabGroupRemovedMessageMediator;
+    private final @Nullable PersistentVersioningMessageMediator
+            mPersistentVersioningMessageMediator;
 
     private final TabModelObserver mTabModelObserver =
             new TabModelObserver() {
@@ -190,6 +193,7 @@ public class TabGroupListMediator {
      * @param enableContainment Whether containment is enabled.
      * @param dataSharingTabManager The {@link} DataSharingTabManager to start collaboration flows.
      * @param tabGroupRemovedMessageMediator The mediator for the tab group removed message card.
+     * @param persistentVersioningMessageMediator Used to show persistent versioning messages.
      */
     public TabGroupListMediator(
             Context context,
@@ -207,7 +211,8 @@ public class TabGroupListMediator {
             SyncService syncService,
             boolean enableContainment,
             DataSharingTabManager dataSharingTabManager,
-            TabGroupRemovedMessageMediator tabGroupRemovedMessageMediator) {
+            TabGroupRemovedMessageMediator tabGroupRemovedMessageMediator,
+            @Nullable PersistentVersioningMessageMediator persistentVersioningMessageMediator) {
         mContext = context;
         mModelList = modelList;
         mPropertyModel = propertyModel;
@@ -224,6 +229,7 @@ public class TabGroupListMediator {
         mEnableContainment = enableContainment;
         mDataSharingTabManager = dataSharingTabManager;
         mTabGroupRemovedMessageMediator = tabGroupRemovedMessageMediator;
+        mPersistentVersioningMessageMediator = persistentVersioningMessageMediator;
 
         mFilter.addObserver(mTabModelObserver);
         if (mTabGroupSyncService != null) {
@@ -253,12 +259,24 @@ public class TabGroupListMediator {
     private void repopulateModelList() {
         destroyAndClearAllRows(mModelList, DESTROYABLE);
         mTabGroupRemovedMessageMediator.queueMessageIfNeeded();
+        if (mPersistentVersioningMessageMediator != null) {
+            mPersistentVersioningMessageMediator.queueMessageIfNeeded();
+        }
 
         GroupWindowChecker sortUtil = new GroupWindowChecker(mTabGroupSyncService, mFilter);
         List<SavedTabGroup> sortedTabGroups =
                 sortUtil.getSortedGroupList(
                         this::shouldShowGroupByState,
-                        (a, b) -> Long.compare(b.creationTimeMs, a.creationTimeMs));
+                        (a, b) -> {
+                            if (ChromeFeatureList.sAndroidTabDeclutterArchiveTabGroups
+                                    .isEnabled()) {
+                                return Long.compare(
+                                        TabUiUtils.getGroupLastUpdatedTimestamp(b),
+                                        TabUiUtils.getGroupLastUpdatedTimestamp(a));
+                            } else {
+                                return Long.compare(b.creationTimeMs, a.creationTimeMs);
+                            }
+                        });
         for (SavedTabGroup savedTabGroup : sortedTabGroups) {
             TabGroupRowMediator rowMediator =
                     new TabGroupRowMediator(
@@ -286,4 +304,3 @@ public class TabGroupListMediator {
         return groupWindowState != GroupWindowState.IN_ANOTHER;
     }
 }
-

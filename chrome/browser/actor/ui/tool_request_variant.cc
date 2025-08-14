@@ -12,6 +12,9 @@ ConvertToVariantFn::~ConvertToVariantFn() = default;
 void ConvertToVariantFn::Apply(const ActivateTabToolRequest& tr) {
   var_ = ToolRequestVariant(tr);
 }
+void ConvertToVariantFn::Apply(const AttemptLoginToolRequest& tr) {
+  var_ = ToolRequestVariant(tr);
+}
 void ConvertToVariantFn::Apply(const ClickToolRequest& tr) {
   var_ = ToolRequestVariant(tr);
 }
@@ -31,6 +34,9 @@ void ConvertToVariantFn::Apply(const MoveMouseToolRequest& tr) {
   var_ = ToolRequestVariant(tr);
 }
 void ConvertToVariantFn::Apply(const NavigateToolRequest& tr) {
+  var_ = ToolRequestVariant(tr);
+}
+void ConvertToVariantFn::Apply(const ScriptToolRequest& tr) {
   var_ = ToolRequestVariant(tr);
 }
 void ConvertToVariantFn::Apply(const ScrollToolRequest& tr) {

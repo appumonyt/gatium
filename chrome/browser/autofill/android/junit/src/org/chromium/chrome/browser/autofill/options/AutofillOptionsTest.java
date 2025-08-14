@@ -17,11 +17,9 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import static org.chromium.chrome.browser.autofill.AndroidAutofillAvailabilityStatus.ANDROID_AUTOFILL_MANAGER_NOT_AVAILABLE;
 import static org.chromium.chrome.browser.autofill.AndroidAutofillAvailabilityStatus.ANDROID_AUTOFILL_SERVICE_IS_GOOGLE;
 import static org.chromium.chrome.browser.autofill.AndroidAutofillAvailabilityStatus.AVAILABLE;
 import static org.chromium.chrome.browser.autofill.AndroidAutofillAvailabilityStatus.NOT_ALLOWED_BY_POLICY;
-import static org.chromium.chrome.browser.autofill.AndroidAutofillAvailabilityStatus.UNKNOWN_ANDROID_AUTOFILL_SERVICE;
 import static org.chromium.chrome.browser.autofill.AutofillClientProviderUtils.setAutofillAvailabilityToUseForTesting;
 import static org.chromium.chrome.browser.autofill.options.AutofillOptionsProperties.ON_THIRD_PARTY_TOGGLE_CHANGED;
 import static org.chromium.chrome.browser.autofill.options.AutofillOptionsProperties.THIRD_PARTY_AUTOFILL_ENABLED;
@@ -51,8 +49,8 @@ import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 import org.robolectric.annotation.Config;
 
-import org.chromium.base.FeatureOverrides;
 import org.chromium.base.test.BaseRobolectricTestRunner;
+import org.chromium.base.test.util.Features.DisableFeatures;
 import org.chromium.base.test.util.Features.EnableFeatures;
 import org.chromium.base.test.util.HistogramWatcher;
 import org.chromium.chrome.R;
@@ -62,7 +60,6 @@ import org.chromium.chrome.browser.feedback.HelpAndFeedbackLauncherFactory;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.preferences.Pref;
 import org.chromium.chrome.browser.profiles.Profile;
-import org.chromium.components.autofill.AutofillFeatures;
 import org.chromium.components.browser_ui.settings.TextMessagePreference;
 import org.chromium.components.prefs.PrefService;
 import org.chromium.components.user_prefs.UserPrefsJni;
@@ -80,7 +77,6 @@ import java.util.Optional;
 /** Unit tests for autofill options settings screen. */
 @RunWith(BaseRobolectricTestRunner.class)
 @Config(manifest = Config.NONE)
-@EnableFeatures(AutofillFeatures.AUTOFILL_VIRTUAL_VIEW_STRUCTURE_ANDROID)
 public class AutofillOptionsTest {
 
     private static final String SKIP_ALL_CHECKS_PARAM_VALUE = "skip_all_checks";
@@ -117,7 +113,7 @@ public class AutofillOptionsTest {
                         AutofillOptionsFragment.class,
                         AutofillOptionsFragment.createRequiredArgs(
                                 AutofillOptionsReferrer.SETTINGS),
-                        R.style.Theme_MaterialComponents);
+                        R.style.Theme_BrowserUI_DayNight);
         mScenario.onFragment(
                 fragment -> {
                     mFragment =
@@ -136,6 +132,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void constructedWithPrefAsDefaultForOption() {
         setAutofillAvailabilityToUseForTesting(AVAILABLE);
         doReturn(true).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
@@ -152,6 +149,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void optionDisabledForAwgUpdatesOnResume() {
         setAutofillAvailabilityToUseForTesting(ANDROID_AUTOFILL_SERVICE_IS_GOOGLE);
         doReturn(false).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
@@ -180,6 +178,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void optionDisabledByPolicy() {
         setAutofillAvailabilityToUseForTesting(NOT_ALLOWED_BY_POLICY);
         doReturn(false).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
@@ -198,75 +197,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
-    public void optionEnabledWithSpecialOverrideForAwg() {
-        setAutofillAvailabilityToUseForTesting(ANDROID_AUTOFILL_SERVICE_IS_GOOGLE);
-        addFeatureOverrideToSkipChecks(ONLY_SKIP_AWG_CHECK_PARAM_VALUE);
-        doReturn(false).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
-
-        // Toggling on resume is to align with prefs and shouldn't trigger restart/dialogs.
-        PropertyModel model =
-                new AutofillOptionsCoordinator(mFragment, this::assertModalNotUsed, Assert::fail)
-                        .initializeNow();
-
-        // On construction (assuming Awg is set), the setting is turned off but may change.
-        assertFalse(model.get(THIRD_PARTY_AUTOFILL_ENABLED));
-        assertTrue(getRadioButtonComponent().isEnabled());
-        assertHintDisplays(getSpannableString(R.string.autofill_options_hint_3p_setting_ready));
-    }
-
-    @Test
-    @SmallTest
-    public void overrideForAwgDoesntAllowOtherChecksToBeSkipped() {
-        setAutofillAvailabilityToUseForTesting(ANDROID_AUTOFILL_MANAGER_NOT_AVAILABLE);
-        addFeatureOverrideToSkipChecks(ONLY_SKIP_AWG_CHECK_PARAM_VALUE);
-        doReturn(false).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
-
-        // Toggling on resume is to align with prefs and shouldn't trigger restart/dialogs.
-        PropertyModel model =
-                new AutofillOptionsCoordinator(mFragment, this::assertModalNotUsed, Assert::fail)
-                        .initializeNow();
-
-        // On construction, the setting is turned off and can't change.
-        assertFalse(model.get(THIRD_PARTY_AUTOFILL_ENABLED));
-        assertFalse(getRadioButtonComponent().isEnabled());
-    }
-
-    @Test
-    @SmallTest
-    public void genericOverrideAllowsOtherChecksToBeSkipped() {
-        setAutofillAvailabilityToUseForTesting(UNKNOWN_ANDROID_AUTOFILL_SERVICE);
-        addFeatureOverrideToSkipChecks(SKIP_ALL_CHECKS_PARAM_VALUE);
-
-        // Toggling on resume is to align with prefs and shouldn't trigger restart/dialogs.
-        PropertyModel model =
-                new AutofillOptionsCoordinator(mFragment, this::assertModalNotUsed, Assert::fail)
-                        .initializeNow();
-
-        // On construction, the setting is turned off but can change.
-        assertFalse(model.get(THIRD_PARTY_AUTOFILL_ENABLED));
-        assertTrue(getRadioButtonComponent().isEnabled());
-    }
-
-    @Test
-    @SmallTest
-    public void optionEnabledWithGenericOverrideForAwg() {
-        setAutofillAvailabilityToUseForTesting(ANDROID_AUTOFILL_SERVICE_IS_GOOGLE);
-        addFeatureOverrideToSkipChecks(SKIP_ALL_CHECKS_PARAM_VALUE);
-        doReturn(false).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
-
-        // Toggling on resume is to align with prefs and shouldn't trigger restart/dialogs.
-        PropertyModel model =
-                new AutofillOptionsCoordinator(mFragment, this::assertModalNotUsed, Assert::fail)
-                        .initializeNow();
-
-        // On construction (assuming Awg is set), the setting is turned off but may change.
-        assertFalse(model.get(THIRD_PARTY_AUTOFILL_ENABLED));
-        assertTrue(getRadioButtonComponent().isEnabled());
-        assertHintDisplays(getSpannableString(R.string.autofill_options_hint_3p_setting_ready));
-    }
-
-    @Test
-    @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void optionEnabledToSwitchOffAwg() {
         setAutofillAvailabilityToUseForTesting(ANDROID_AUTOFILL_SERVICE_IS_GOOGLE);
         doReturn(true).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
@@ -285,6 +216,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void toggledOptionRecordedInHistogram() {
         HistogramWatcher histogramWatcher =
                 HistogramWatcher.newSingleRecordWatcher(
@@ -318,6 +250,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void updateSettingsFromPrefOnViewCreated() {
         doReturn(true).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
         assertEquals(DEFAULT, getRadioButtonComponent().getSelectedOption()); // Not updated!
@@ -330,6 +263,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void toggledOptionSetsPrefAndRestarts() {
         HistogramWatcher histogramWatcher =
                 HistogramWatcher.newSingleRecordWatcher(
@@ -353,6 +287,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void toggledOptionResetsWithoutConfirmation() {
         HistogramWatcher histogramWatcher =
                 HistogramWatcher.newSingleRecordWatcher(
@@ -377,6 +312,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void toggledOptionResetsWhenDismissed() {
         doReturn(false).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
         PropertyModel model =
@@ -397,6 +333,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void setPrefTogglesOptionOnResume() {
         doReturn(false).when(mPrefs).getBoolean(Pref.AUTOFILL_USING_VIRTUAL_VIEW_STRUCTURE);
         // Toggling on resume is to align with prefs and shouldn't trigger restart/dialogs.
@@ -416,6 +353,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void suppliesTitle() {
         AutofillOptionsCoordinator.createFor(mFragment, this::assertModalNotUsed, Assert::fail);
 
@@ -424,7 +362,8 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
-    public void setsPref() {
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
+    public void setsPrefOld() {
         // Update on initial binding. Shouldn't trigger dialogs or restart.
         AutofillOptionsCoordinator.createFor(mFragment, this::assertModalNotUsed, Assert::fail);
 
@@ -447,6 +386,31 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @EnableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
+    public void setsPref() {
+        // Update on initial binding. Shouldn't trigger dialogs or restart.
+        AutofillOptionsCoordinator.createFor(mFragment, this::assertModalNotUsed, Assert::fail);
+
+        assertEquals(
+                AutofillOptionsFragment.PREF_AUTOFILL_THIRD_PARTY_FILLING,
+                getRadioButtonComponent().getKey());
+        assertEquals(
+                getRadioButtonComponent().getDefaultButton().getPrimaryText(),
+                getString(R.string.autofill_third_party_filling_default));
+        assertEquals(
+                getRadioButtonComponent().getDefaultButton().getDescriptionText(),
+                getString(R.string.autofill_third_party_filling_default_description_new));
+        assertEquals(
+                getRadioButtonComponent().getOptInButton().getPrimaryText(),
+                getString(R.string.autofill_third_party_filling_opt_in));
+        assertEquals(
+                getRadioButtonComponent().getOptInButton().getDescriptionText(),
+                getString(R.string.autofill_third_party_filling_opt_in_description_new));
+    }
+
+    @Test
+    @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void injectedHelpTriggersAutofillHelp() {
         Menu helpMenu = mock(Menu.class);
         MenuItem helpItem = mock(MenuItem.class);
@@ -468,6 +432,7 @@ public class AutofillOptionsTest {
 
     @Test
     @SmallTest
+    @DisableFeatures(ChromeFeatureList.THIRD_PARTY_DISABLE_CHROME_AUTOFILL_SETTINGS_SCREEN)
     public void passedReferrerRecordedInHistogram() {
         HistogramWatcher histogramWatcher =
                 HistogramWatcher.newSingleRecordWatcher(
@@ -549,12 +514,5 @@ public class AutofillOptionsTest {
         assertTrue(hint.isShown());
         assertNotNull(hint.getSummary());
         assertEquals(message.toString(), hint.getSummary().toString());
-    }
-
-    private void addFeatureOverrideToSkipChecks(String checksToSkip) {
-        FeatureOverrides.newBuilder()
-                .enable(ChromeFeatureList.AUTOFILL_VIRTUAL_VIEW_STRUCTURE_ANDROID)
-                .param("skip_compatibility_check", checksToSkip)
-                .apply();
     }
 }

@@ -9,7 +9,6 @@
 #include "base/check.h"
 #include "base/notreached.h"
 #include "build/build_config.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/switches.h"
 
@@ -37,10 +36,6 @@ constexpr char kAudioSandbox[] = "audio";
 constexpr char kServiceSandbox[] = "service";
 constexpr char kServiceSandboxWithJit[] = "service_with_jit";
 constexpr char kSpeechRecognitionSandbox[] = "speech_recognition";
-
-#if BUILDFLAG(ENABLE_PPAPI) && !BUILDFLAG(IS_WIN)
-constexpr char kPpapiSandbox[] = "ppapi";
-#endif
 
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_WIN)
@@ -70,6 +65,7 @@ constexpr char kVideoCaptureSandbox[] = "video_capture";
 #endif
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+constexpr char kShapeDetectionSandbox[] = "shape_detection";
 // USE_LINUX_VIDEO_ACCELERATION implies IS_LINUX || IS_CHROMEOS, so this double
 // #if is redundant, however, we cannot include "media/gpu/buildflags.h" on all
 // platforms, only one those that need to evaluate the use..., hence this
@@ -84,7 +80,6 @@ constexpr char kHardwareVideoEncodingSandbox[] = "hardware_video_encoding";
 constexpr char kImeSandbox[] = "ime";
 constexpr char kTtsSandbox[] = "tts";
 constexpr char kNearbySandbox[] = "nearby";
-constexpr char kShapeDetectionSandbox[] = "shape_detection";
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
 constexpr char kLibassistantSandbox[] = "libassistant";
 #endif  // BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
@@ -123,27 +118,15 @@ void SetCommandLineFlagsForSandboxType(base::CommandLine* command_line,
       } else {
         command_line->AppendSwitch(switches::kNoSandbox);
       }
-      break;
+      return;
     case Sandbox::kRenderer:
       DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
              switches::kRendererProcess);
-      break;
+      return;
     case Sandbox::kGpu:
       DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
              switches::kGpuProcess);
-      break;
-#if BUILDFLAG(ENABLE_PPAPI) && !BUILDFLAG(IS_WIN)
-    case Sandbox::kPpapi:
-      if (command_line->GetSwitchValueASCII(switches::kProcessType) ==
-          switches::kUtilityProcess) {
-        command_line->AppendSwitchASCII(switches::kServiceSandboxType,
-                                        kPpapiSandbox);
-      } else {
-        DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
-               switches::kPpapiPluginProcess);
-      }
-      break;
-#endif
+      return;
     case Sandbox::kService:
     case Sandbox::kServiceWithJit:
     case Sandbox::kUtility:
@@ -164,6 +147,7 @@ void SetCommandLineFlagsForSandboxType(base::CommandLine* command_line,
     case Sandbox::kWindowsSystemProxyResolver:
 #endif  // BUILDFLAG(IS_WIN)
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+    case Sandbox::kShapeDetection:
 #if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
     case Sandbox::kHardwareVideoDecoding:
     case Sandbox::kHardwareVideoEncoding:
@@ -173,7 +157,6 @@ void SetCommandLineFlagsForSandboxType(base::CommandLine* command_line,
     case Sandbox::kIme:
     case Sandbox::kTts:
     case Sandbox::kNearby:
-    case Sandbox::kShapeDetection:
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
     case Sandbox::kLibassistant:
 #endif  // BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
@@ -199,12 +182,13 @@ void SetCommandLineFlagsForSandboxType(base::CommandLine* command_line,
       command_line->AppendSwitchASCII(
           switches::kServiceSandboxType,
           StringFromUtilitySandboxType(sandbox_type));
-      break;
+      return;
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
     case Sandbox::kZygoteIntermediateSandbox:
-      break;
+      return;
 #endif
   }
+  NOTREACHED();
 }
 
 sandbox::mojom::Sandbox SandboxTypeFromCommandLine(
@@ -228,16 +212,6 @@ sandbox::mojom::Sandbox SandboxTypeFromCommandLine(
     if (command_line.HasSwitch(switches::kDisableGpuSandbox))
       return Sandbox::kNoSandbox;
     return Sandbox::kGpu;
-  }
-
-#if BUILDFLAG(ENABLE_PPAPI) && !BUILDFLAG(IS_WIN)
-  if (process_type == switches::kPpapiPluginProcess)
-    return Sandbox::kPpapi;
-#endif
-
-  // NaCl tests on all platforms use the loader process.
-  if (process_type == switches::kNaClLoaderProcess) {
-    return Sandbox::kUtility;
   }
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
@@ -270,10 +244,6 @@ std::string StringFromUtilitySandboxType(Sandbox sandbox_type) {
       return kNetworkSandbox;
     case Sandbox::kOnDeviceModelExecution:
       return kOnDeviceModelExecutionSandbox;
-#if BUILDFLAG(ENABLE_PPAPI) && !BUILDFLAG(IS_WIN)
-    case Sandbox::kPpapi:
-      return kPpapiSandbox;
-#endif
     case Sandbox::kCdm:
       return kCdmSandbox;
     case Sandbox::kPrintCompositor:
@@ -324,6 +294,8 @@ std::string StringFromUtilitySandboxType(Sandbox sandbox_type) {
       return kMirroringSandbox;
 #endif
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+    case Sandbox::kShapeDetection:
+      return kShapeDetectionSandbox;
 #if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
     case Sandbox::kHardwareVideoDecoding:
       return kHardwareVideoDecodingSandbox;
@@ -340,8 +312,6 @@ std::string StringFromUtilitySandboxType(Sandbox sandbox_type) {
       return kTtsSandbox;
     case Sandbox::kNearby:
       return kNearbySandbox;
-    case Sandbox::kShapeDetection:
-      return kShapeDetectionSandbox;
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
     case Sandbox::kLibassistant:
       return kLibassistantSandbox;
@@ -355,6 +325,7 @@ std::string StringFromUtilitySandboxType(Sandbox sandbox_type) {
 #endif
       NOTREACHED();
   }
+  NOTREACHED();
 }
 
 sandbox::mojom::Sandbox UtilitySandboxTypeFromString(
@@ -388,11 +359,6 @@ sandbox::mojom::Sandbox UtilitySandboxTypeFromString(
   if (sandbox_string == kOnDeviceModelExecutionSandbox) {
     return Sandbox::kOnDeviceModelExecution;
   }
-#if BUILDFLAG(ENABLE_PPAPI) && !BUILDFLAG(IS_WIN)
-  if (sandbox_string == kPpapiSandbox) {
-    return Sandbox::kPpapi;
-  }
-#endif
   if (sandbox_string == kCdmSandbox) {
     return Sandbox::kCdm;
   }
@@ -452,6 +418,9 @@ sandbox::mojom::Sandbox UtilitySandboxTypeFromString(
   }
 #endif
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+  if (sandbox_string == kShapeDetectionSandbox) {
+    return Sandbox::kShapeDetection;
+  }
 #if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
   if (sandbox_string == kHardwareVideoDecodingSandbox) {
     return Sandbox::kHardwareVideoDecoding;
@@ -470,9 +439,6 @@ sandbox::mojom::Sandbox UtilitySandboxTypeFromString(
   }
   if (sandbox_string == kNearbySandbox) {
     return Sandbox::kNearby;
-  }
-  if (sandbox_string == kShapeDetectionSandbox) {
-    return Sandbox::kShapeDetection;
   }
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
   if (sandbox_string == kLibassistantSandbox) {

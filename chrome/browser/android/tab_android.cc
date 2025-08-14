@@ -114,8 +114,6 @@ WEB_CONTENTS_USER_DATA_KEY_IMPL(TabAndroidHelper);
 
 namespace tabs {
 
-DEFINE_HANDLE_FACTORY(TabInterface);
-
 // static
 TabInterface* TabInterface::GetFromContents(
     content::WebContents* web_contents) {
@@ -124,8 +122,16 @@ TabInterface* TabInterface::GetFromContents(
   return tab_android;
 }
 
+const TabInterface* TabInterface::GetFromContents(
+    const content::WebContents* web_contents) {
+  const auto* tab_android = TabAndroid::FromWebContents(web_contents);
+  CHECK(tab_android);
+  return tab_android;
+}
+
 // static
-TabInterface* MaybeGetFromContents(content::WebContents* web_contents) {
+TabInterface* TabInterface::MaybeGetFromContents(
+    content::WebContents* web_contents) {
   return TabAndroid::FromWebContents(web_contents);
 }
 
@@ -400,6 +406,10 @@ void TabAndroid::InitWebContents(
       resource_coordinator::ResourceCoordinatorTabHelper::IsLoaded(
           web_contents_.get()));
 
+  const SessionID session_id =
+      sessions::SessionTabHelper::IdForTab(web_contents_.get());
+  CHECK(session_id.is_valid());
+  SetSessionId(session_id.id());
   SetWindowSessionID(session_window_id_);
 
   ContextMenuHelper::FromWebContents(web_contents())
@@ -509,6 +519,7 @@ void TabAndroid::ReleaseWebContents(JNIEnv* env) {
   // Remove the link from the native WebContents to |this|, since the
   // lifetimes of the two objects are no longer intertwined.
   TabAndroidHelper::SetTabForWebContents(released_contents, nullptr);
+  ClearSessionId();
 
   synced_tab_delegate_->ResetWebContents();
 }
@@ -638,6 +649,11 @@ bool TabAndroid::IsVisible() const {
   return !IsHidden();
 }
 
+bool TabAndroid::IsSelected() const {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return Java_TabImpl_isMultiSelected(env, weak_java_tab_.get(env));
+}
+
 // TODO(crbug.com/409366905): Finish TabInterface implementation.
 base::CallbackListSubscription TabAndroid::RegisterDidBecomeVisible(
     DidBecomeVisibleCallback callback) {
@@ -757,6 +773,14 @@ void TabAndroid::OnAncestorChanged(base::PassKey<tabs::TabCollection>) {
   if (parent_collection_) {
     UpdateProperties();
   }
+}
+
+ui::UnownedUserDataHost& TabAndroid::GetUnownedUserDataHost() {
+  return unowned_user_data_host_;
+}
+
+const ui::UnownedUserDataHost& TabAndroid::GetUnownedUserDataHost() const {
+  return unowned_user_data_host_;
 }
 
 TabAndroid::TabAndroid(Profile* profile, int tab_id)

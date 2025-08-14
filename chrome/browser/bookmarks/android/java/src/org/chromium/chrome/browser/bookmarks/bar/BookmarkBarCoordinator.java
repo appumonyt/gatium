@@ -30,6 +30,7 @@ import org.chromium.chrome.browser.browser_controls.TopControlLayer;
 import org.chromium.chrome.browser.browser_controls.TopControlsStacker;
 import org.chromium.chrome.browser.browser_controls.TopControlsStacker.TopControlType;
 import org.chromium.chrome.browser.browser_controls.TopControlsStacker.TopControlVisibility;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.ui.modelutil.MVCListAdapter.ModelList;
@@ -39,7 +40,11 @@ import org.chromium.ui.modelutil.SimpleRecyclerViewAdapter;
 
 /** Coordinator for the bookmark bar which provides users with bookmark access from top chrome. */
 @NullMarked
-public class BookmarkBarCoordinator implements TopControlLayer, BookmarkBarVisibilityObserver {
+public class BookmarkBarCoordinator
+        implements TopControlLayer,
+                BookmarkBarVisibilityObserver,
+                View.OnLayoutChangeListener,
+                BrowserControlsStateProvider.Observer {
 
     private final SimpleRecyclerViewAdapter mItemsAdapter;
     private final BookmarkBarItemsLayoutManager mBookmarkBarItemsLayoutManager;
@@ -47,7 +52,7 @@ public class BookmarkBarCoordinator implements TopControlLayer, BookmarkBarVisib
     private final BookmarkBar mView;
     private final TopControlsStacker mTopControlsStacker;
     private final Callback<@Nullable Void> mHeightChangeCallback;
-    private final View.OnLayoutChangeListener mOnLayoutChangeListener;
+    private final BrowserControlsStateProvider mBrowserControlsStateProvider;
 
     /**
      * Constructs the bookmark bar coordinator.
@@ -74,15 +79,10 @@ public class BookmarkBarCoordinator implements TopControlLayer, BookmarkBarVisib
             TopControlsStacker topControlsStacker) {
         mView = (BookmarkBar) viewStub.inflate();
         mHeightChangeCallback = heightChangeCallback;
-        mOnLayoutChangeListener =
-                (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-                    final int oldHeight = oldBottom - oldTop;
-                    final int newHeight = bottom - top;
-                    if (newHeight != oldHeight) {
-                        mHeightChangeCallback.onResult(null);
-                    }
-                };
-        mView.addOnLayoutChangeListener(mOnLayoutChangeListener);
+        mView.addOnLayoutChangeListener(this);
+
+        mBrowserControlsStateProvider = browserControlsStateProvider;
+        mBrowserControlsStateProvider.addObserver(this);
 
         // Bind view/model for 'All Bookmarks' button.
         final var allBookmarksButtonModel =
@@ -116,15 +116,15 @@ public class BookmarkBarCoordinator implements TopControlLayer, BookmarkBarVisib
                 new BookmarkBarMediator(
                         activity,
                         allBookmarksButtonModel,
-                        browserControlsStateProvider,
-                        this::getTopControlHeight,
                         itemsModel,
                         mBookmarkBarItemsLayoutManager.getItemsOverflowSupplier(),
                         model,
                         profileSupplier,
                         currentTab,
                         bookmarkOpener,
-                        bookmarkManagerOpenerSupplier);
+                        bookmarkManagerOpenerSupplier,
+                        itemsContainer,
+                        mView);
         PropertyModelChangeProcessor.create(model, mView, BookmarkBarViewBinder::bind);
 
         mTopControlsStacker = topControlsStacker;
@@ -136,20 +136,16 @@ public class BookmarkBarCoordinator implements TopControlLayer, BookmarkBarVisib
         mTopControlsStacker.removeControl(this);
         mItemsAdapter.destroy();
         mMediator.destroy();
-        mView.removeOnLayoutChangeListener(mOnLayoutChangeListener);
+        mView.removeOnLayoutChangeListener(this);
+        mBrowserControlsStateProvider.removeObserver(this);
     }
 
-    /**
-     * @return The view for the bookmark bar.
-     */
-    public View getView() {
-        return mView;
+    public boolean isVisible() {
+        return mView != null && mView.getVisibility() == VISIBLE;
     }
 
-    private BookmarkBarButton inflateBookmarkBarButton(ViewGroup parent) {
-        return (BookmarkBarButton)
-                LayoutInflater.from(parent.getContext())
-                        .inflate(R.layout.bookmark_bar_button, parent, false);
+    public void setVisibility(boolean isVisible) {
+        mMediator.setVisibility(isVisible);
     }
 
     /** Requests focus within the bookmark bar. */
@@ -169,6 +165,8 @@ public class BookmarkBarCoordinator implements TopControlLayer, BookmarkBarVisib
     public boolean hasKeyboardFocus() {
         return mView.getFocusedChild() != null;
     }
+
+    // TopControlLayer implementation:
 
     @Override
     public @TopControlType int getTopControlType() {
@@ -191,10 +189,79 @@ public class BookmarkBarCoordinator implements TopControlLayer, BookmarkBarVisib
                 : TopControlVisibility.HIDDEN;
     }
 
+    @Override
+    public void onTopControlLayerHeightChanged(int topControlsHeight, int topControlsMinHeight) {
+        assert ChromeFeatureList.sTopControlsRefactor.isEnabled()
+                : "onTopControlLayerHeightChanged should not be called unless refactor is enabled";
+
+        // Here we are subtracting the height of the TopControl, |mView|, to bottom align the
+        // BookmarkBar relative to the other TopControls.
+        // TODO(crbug.com/417238089): We should not hardcode this offset functionality since it
+        // assumes an absolute BookmarkBar position, and fails when topControlsHeight becomes 0.
+        mMediator.setTopMargin(topControlsHeight - getTopControlHeight());
+    }
+
     // BookmarkBarVisibilityObserver implementation:
 
     @Override
     public void onMaxWidthChanged(int maxWidth) {
         mBookmarkBarItemsLayoutManager.setItemMaxWidth(maxWidth);
+    }
+
+    // View.OnLayoutChangeListener implementation:
+
+    @Override
+    public void onLayoutChange(
+            View v,
+            int left,
+            int top,
+            int right,
+            int bottom,
+            int oldLeft,
+            int oldTop,
+            int oldRight,
+            int oldBottom) {
+        final int oldHeight = oldBottom - oldTop;
+        final int newHeight = bottom - top;
+        if (newHeight != oldHeight) {
+            mHeightChangeCallback.onResult(null);
+        }
+    }
+
+    // BrowserControlsStateProvider.Observer implementation:
+
+    @Override
+    public void onControlsOffsetChanged(
+            int topOffset,
+            int topControlsMinHeightOffset,
+            boolean topControlsMinHeightChanged,
+            int bottomOffset,
+            int bottomControlsMinHeightOffset,
+            boolean bottomControlsMinHeightChanged,
+            boolean requestNewFrame,
+            boolean isVisibilityForced) {
+        // When the top controls offset has changed to a non-zero value, it means that the top
+        // controls are scrolling offscreen (or still coming back onscreen). When in this state,
+        // we want to hide the Android widgets (which are controlled by the Mediator). We do not
+        // also set the sceneLayer visibility here because we want that to be what is shown.
+        mMediator.setVisibility(mBrowserControlsStateProvider.getTopControlOffset() == 0);
+    }
+
+    @Override
+    public void onTopControlsHeightChanged(int topControlsHeight, int topControlsMinHeight) {
+        // TODO(crbug.com/430058918): Replace w/ positioning construct like `BottomControlsStacker`.
+        // NOTE: Top controls height is the sum of all top browser control heights which includes
+        // that of the bookmark bar. Subtract the bookmark bar's height from the top controls height
+        // when calculating top margin in order to bottom align the bookmark bar relative to other
+        // top browser controls.
+        mMediator.setTopMargin(topControlsHeight - getTopControlHeight());
+    }
+
+    // Private methods:
+
+    private BookmarkBarButton inflateBookmarkBarButton(ViewGroup parent) {
+        return (BookmarkBarButton)
+                LayoutInflater.from(parent.getContext())
+                        .inflate(R.layout.bookmark_bar_button, parent, false);
     }
 }

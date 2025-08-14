@@ -69,8 +69,9 @@ BASE_FEATURE(kShareNSExtensionItemKillSwitch,
   if (base::FeatureList::IsEnabled(kShareNSExtensionItemKillSwitch)) {
     return _shareURL;
   }
-  if ([activityType isEqualToString:UIActivityTypeMessage]) {
-    // Message does not seem to support NSItemProvider.
+  if ([activityType isEqualToString:UIActivityTypeMessage] ||
+      [activityType isEqualToString:UIActivityTypeMail]) {
+    // Message and mail do not seem to support NSItemProvider.
     return _shareURL;
   }
   NSItemProvider* provider =
@@ -92,7 +93,9 @@ BASE_FEATURE(kShareNSExtensionItemKillSwitch,
   };
   NSExtensionItem* item = [[NSExtensionItem alloc] init];
   item.attachments = @[ provider ];
-  item.attributedTitle = [[NSAttributedString alloc] initWithString:_subject];
+  if (_subject) {
+    item.attributedTitle = [[NSAttributedString alloc] initWithString:_subject];
+  }
   return item;
 }
 

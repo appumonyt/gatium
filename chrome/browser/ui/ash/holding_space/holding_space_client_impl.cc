@@ -131,20 +131,22 @@ void HoldingSpaceClientImpl::CopyImageToClipboard(const HoldingSpaceItem& item,
   }
 
   // Reading and decoding of the image file needs to be done on an I/O thread.
-  base::ThreadPool::PostTaskAndReply(
-      FROM_HERE,
-      {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-       base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
-      base::BindOnce(&clipboard_util::ReadFileAndCopyToClipboardLocal,
-                     item.file().file_path),
-      base::BindOnce(
-          [](SuccessCallback callback) {
-            // We don't currently receive a signal regarding whether image
-            // decoding was successful or not. For the time being, assume
-            // success when the task runs until proven otherwise.
-            std::move(callback).Run(/*success=*/true);
-          },
-          std::move(callback)));
+  clipboard_util::ReadFileAndCopyToClipboard(
+      item.file().file_path,
+      base::BindOnce([](clipboard_util::ReadFileAndCopyToClipboardResult result)
+                         -> bool {
+        using Result = clipboard_util::ReadFileAndCopyToClipboardResult;
+        switch (result) {
+          case Result::kSuccess:
+            return true;
+          case Result::kFailedToReadFile:
+            LOG(ERROR) << "Failed to read the screenshot file";
+            return false;
+          case Result::kFailedToDecodeImage:
+            LOG(ERROR) << "Failed to decode the screenshot image";
+            return false;
+        }
+      }).Then(std::move(callback)));
 }
 
 base::FilePath HoldingSpaceClientImpl::CrackFileSystemUrl(
@@ -261,23 +263,6 @@ void HoldingSpaceClientImpl::OpenItems(
             weak_factory_.GetWeakPtr(), barrier_closure, complete_success_ptr,
             item->file().file_path, item->type()));
   }
-}
-
-void HoldingSpaceClientImpl::OpenMyFiles(SuccessCallback callback) {
-  auto file_path = file_manager::util::GetMyFilesFolderForProfile(profile_);
-  if (file_path.empty()) {
-    std::move(callback).Run(/*success=*/false);
-    return;
-  }
-  file_manager::util::OpenItem(
-      profile_, file_path, platform_util::OPEN_FOLDER,
-      base::BindOnce(
-          [](SuccessCallback callback,
-             platform_util::OpenOperationResult result) {
-            const bool success = result == platform_util::OPEN_SUCCEEDED;
-            std::move(callback).Run(success);
-          },
-          std::move(callback)));
 }
 
 void HoldingSpaceClientImpl::PinFiles(

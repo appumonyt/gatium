@@ -18,6 +18,8 @@ import org.chromium.components.browsing_data.content.BrowsingDataInfo;
 import org.chromium.components.content_settings.ContentSettingValues;
 import org.chromium.components.content_settings.ContentSettingsType;
 import org.chromium.components.content_settings.SessionModel;
+import org.chromium.components.permissions.PermissionsAndroidFeatureList;
+import org.chromium.components.permissions.PermissionsAndroidFeatureMap;
 import org.chromium.content_public.browser.BrowserContextHandle;
 import org.chromium.content_public.browser.ContentFeatureList;
 import org.chromium.content_public.browser.ContentFeatureMap;
@@ -93,9 +95,9 @@ public class WebsitePermissionsFetcher {
             case ContentSettingsType.SOUND:
                 return WebsitePermissionsType.CONTENT_SETTING_EXCEPTION;
             case ContentSettingsType.AR:
+            case ContentSettingsType.AUTO_PICTURE_IN_PICTURE:
             case ContentSettingsType.CLIPBOARD_READ_WRITE:
             case ContentSettingsType.FILE_SYSTEM_WRITE_GUARD:
-            case ContentSettingsType.GEOLOCATION:
             case ContentSettingsType.HAND_TRACKING:
             case ContentSettingsType.IDLE_DETECTION:
             case ContentSettingsType.MEDIASTREAM_CAMERA:
@@ -107,6 +109,7 @@ public class WebsitePermissionsFetcher {
             case ContentSettingsType.SENSORS:
             case ContentSettingsType.VR:
             case ContentSettingsType.LOCAL_NETWORK_ACCESS:
+            case ContentSettingsType.WINDOW_MANAGEMENT:
                 return WebsitePermissionsType.PERMISSION_INFO;
             case ContentSettingsType.STORAGE_ACCESS:
                 return WebsitePermissionsType.EMBEDDED_PERMISSION;
@@ -114,9 +117,22 @@ public class WebsitePermissionsFetcher {
             case ContentSettingsType.SERIAL_GUARD:
             case ContentSettingsType.USB_GUARD:
                 return WebsitePermissionsType.CHOSEN_OBJECT_INFO;
+            case ContentSettingsType.GEOLOCATION:
+                if (!PermissionsAndroidFeatureMap.isEnabled(
+                        PermissionsAndroidFeatureList.APPROXIMATE_GEOLOCATION_PERMISSION)) {
+                    return WebsitePermissionsType.PERMISSION_INFO;
+                }
+                break;
+            case ContentSettingsType.GEOLOCATION_WITH_OPTIONS:
+                if (PermissionsAndroidFeatureMap.isEnabled(
+                        PermissionsAndroidFeatureList.APPROXIMATE_GEOLOCATION_PERMISSION)) {
+                    return WebsitePermissionsType.PERMISSION_INFO;
+                }
+                break;
             default:
                 return null;
         }
+        return null;
     }
 
     /**
@@ -711,12 +727,7 @@ public class WebsitePermissionsFetcher {
                 Set<String> originToWebsite = new HashSet<>();
                 Map<String, List<Website>> rwsOwnerToMember = new HashMap<>();
                 for (Website site : mSites.values()) {
-                    // Use the origin when RWS UI feature is enabled to include
-                    // subdomain variations in the members
-                    String rwsMemberHostname =
-                            mSiteSettingsDelegate.shouldShowPrivacySandboxRwsUi()
-                                    ? site.getAddress().getOrigin()
-                                    : site.getAddress().getDomainAndRegistry();
+                    String rwsMemberHostname = site.getAddress().getDomainAndRegistry();
                     String rwsOwnerHostname =
                             mSiteSettingsDelegate.getRelatedWebsiteSetOwner(
                                     site.getAddress().getOrigin());

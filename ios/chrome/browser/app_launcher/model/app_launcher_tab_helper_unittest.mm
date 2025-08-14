@@ -162,8 +162,7 @@ class AppLauncherTabHelperTest : public PlatformTest {
     TestProfileIOS::Builder builder;
     builder.AddTestingFactory(
         ReadingListModelFactory::GetInstance(),
-        base::BindRepeating(&BuildReadingListModelWithFakeStorage,
-                            std::vector<scoped_refptr<ReadingListEntry>>()));
+        ReadingListModelTestingFactoryWithFakeStorage({}));
     profile_ = std::move(builder).Build();
     abuse_detector_ = [[FakeAppLauncherAbuseDetector alloc] init];
     AppLauncherTabHelper::CreateForWebState(&web_state_, abuse_detector_,
@@ -228,7 +227,8 @@ class AppLauncherTabHelperTest : public PlatformTest {
     EXPECT_TRUE(model->DeleteAllEntries(FROM_HERE));
     model->AddOrReplaceEntry(pending_url, "unread",
                              reading_list::ADDED_VIA_CURRENT_APP,
-                             /*estimated_read_time=*/base::TimeDelta());
+                             /*estimated_read_time=*/std::nullopt,
+                             /*creation_time=*/std::nullopt);
     abuse_detector_.policy = is_app_blocked ? ExternalAppLaunchPolicyBlock
                                             : ExternalAppLaunchPolicyAllow;
     ui::PageTransition transition_type =

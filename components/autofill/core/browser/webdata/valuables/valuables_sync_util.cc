@@ -4,7 +4,6 @@
 
 #include "components/autofill/core/browser/webdata/valuables/valuables_sync_util.h"
 
-#include "base/uuid.h"
 #include "components/sync/protocol/autofill_valuable_specifics.pb.h"
 #include "url/gurl.h"
 
@@ -16,8 +15,7 @@ AutofillValuableSpecifics CreateSpecificsFromLoyaltyCard(
     const LoyaltyCard& card) {
   AutofillValuableSpecifics specifics = sync_pb::AutofillValuableSpecifics();
   specifics.set_id(card.id().value());
-  sync_pb::AutofillValuableSpecifics::LoyaltyCard* loyalty_card =
-      specifics.mutable_loyalty_card();
+  sync_pb::LoyaltyCard* loyalty_card = specifics.mutable_loyalty_card();
   loyalty_card->set_merchant_name(card.merchant_name());
   loyalty_card->set_program_name(card.program_name());
   loyalty_card->set_program_logo(card.program_logo().possibly_invalid_spec());
@@ -55,21 +53,6 @@ std::unique_ptr<syncer::EntityData> CreateEntityDataFromLoyaltyCard(
   specifics->CopyFrom(card_specifics);
 
   return entity_data;
-}
-
-bool AreAutofillLoyaltyCardSpecificsValid(
-    const AutofillValuableSpecifics& specifics) {
-  const auto HasEmptyOrValidProgramLogo =
-      [](const AutofillValuableSpecifics& specifics) {
-        return !specifics.loyalty_card().has_program_logo() ||
-               specifics.loyalty_card().program_logo().empty() ||
-               GURL(specifics.loyalty_card().program_logo()).is_valid();
-      };
-
-  return !specifics.id().empty() && specifics.has_loyalty_card() &&
-         !specifics.loyalty_card().loyalty_card_number().empty() &&
-         !specifics.loyalty_card().merchant_name().empty() &&
-         HasEmptyOrValidProgramLogo(specifics);
 }
 
 AutofillValuableSpecifics TrimAutofillValuableSpecificsDataForCaching(

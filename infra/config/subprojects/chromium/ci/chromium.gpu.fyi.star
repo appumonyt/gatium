@@ -3,29 +3,33 @@
 # found in the LICENSE file.
 """Definitions of builders in the chromium.gpu.fyi builder group."""
 
-load("//lib/args.star", "args")
-load("//lib/branches.star", "branches")
-load("//lib/builder_config.star", "builder_config")
-load("//lib/builder_health_indicators.star", "health_spec")
-load("//lib/builders.star", "cpu", "gardener_rotations", "siso")
-load("//lib/ci.star", "ci")
-load("//lib/consoles.star", "consoles")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/targets.star", "targets")
+load("@chromium-luci//args.star", "args")
+load("@chromium-luci//branches.star", "branches")
+load("@chromium-luci//builder_config.star", "builder_config")
+load("@chromium-luci//builder_health_indicators.star", "health_spec")
+load("@chromium-luci//builders.star", "cpu")
+load("@chromium-luci//ci.star", "ci")
+load("@chromium-luci//consoles.star", "consoles")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//targets.star", "targets")
+load("//lib/ci_constants.star", "ci_constants")
+load("//lib/gardener_rotations.star", "gardener_rotations")
+load("//lib/gpu.star", "gpu")
+load("//lib/siso.star", "siso")
 
 ci.defaults.set(
-    executable = ci.DEFAULT_EXECUTABLE,
+    executable = ci_constants.DEFAULT_EXECUTABLE,
     builder_group = "chromium.gpu.fyi",
-    pool = ci.gpu.POOL,
+    pool = gpu.ci.POOL,
     gardener_rotations = gardener_rotations.CHROMIUM_GPU,
     contact_team_email = "chrome-gpu-infra@google.com",
     execution_timeout = 6 * time.hour,
-    health_spec = health_spec.DEFAULT,
+    health_spec = health_spec.default(),
     properties = {
         "perf_dashboard_machine_group": "ChromiumGPUFYI",
     },
-    service_account = ci.gpu.SERVICE_ACCOUNT,
-    shadow_service_account = ci.gpu.SHADOW_SERVICE_ACCOUNT,
+    service_account = gpu.ci.SERVICE_ACCOUNT,
+    shadow_service_account = gpu.ci.SHADOW_SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
     thin_tester_cores = 2,
@@ -77,8 +81,8 @@ consoles.console_view(
 )
 
 def gpu_fyi_windows_builder(*, name, **kwargs):
-    kwargs.setdefault("execution_timeout", ci.DEFAULT_EXECUTION_TIMEOUT)
-    return ci.gpu.windows_builder(name = name, **kwargs)
+    kwargs.setdefault("execution_timeout", ci_constants.DEFAULT_EXECUTION_TIMEOUT)
+    return gpu.ci.windows_builder(name = name, **kwargs)
 
 ci.thin_tester(
     name = "Android FYI Release (NVIDIA Shield TV)",
@@ -585,7 +589,7 @@ ci.thin_tester(
     ),
 )
 
-ci.gpu.linux_builder(
+gpu.ci.linux_builder(
     name = "ChromeOS FYI Release (amd64-generic)",
     description_html = "Runs release GPU tests on ChromeOS amd64-generic VMs",
     builder_spec = builder_config.builder_spec(
@@ -679,96 +683,7 @@ ci.gpu.linux_builder(
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
 
-ci.gpu.linux_builder(
-    name = "ChromeOS FYI Release Skylab (volteer)",
-    description_html = "Runs release GPU tests on Skylab-hosted ChromeOS volteer devices",
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "chromeos",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "chromium",
-            apply_configs = [
-                "mb",
-            ],
-            build_config = builder_config.build_config.RELEASE,
-            target_arch = builder_config.target_arch.INTEL,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.CHROMEOS,
-            target_cros_boards = [
-                "volteer",
-            ],
-        ),
-        # Tests are not run serially on this tester due to the increased
-        # overhead from Skylab making builds take ~2x as long compared to
-        # the VM builder. A 6+ hour cycle time for a CI tester is quite
-        # long, so enable parallel suites to reduce build times.
-        skylab_upload_location = builder_config.skylab_upload_location(
-            gs_bucket = "chromium-ci-skylab",
-            gs_extra = "chromeos_gpu",
-        ),
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "gpu_tests",
-            "chromeos_device",
-            "volteer",
-            "ozone_headless",
-            "release_builder",
-            "try_builder",
-            "remoteexec",
-            "dcheck_off",
-            "no_symbols",
-            "is_skylab",
-            "chromeos",
-            "x64",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            targets.bundle(
-                targets = [
-                    "gpu_fyi_chromeos_release_gtests_volteer_skylab",
-                    "gpu_fyi_chromeos_release_telemetry_tests_volteer_skylab",
-                ],
-            ),
-        ],
-        additional_compile_targets = [
-            "chromiumos_preflight",
-        ],
-        per_test_modifications = {
-            "expected_color_pixel_passthrough_test VOLTEER_PUBLIC_RELEASE_LKGM": targets.mixin(
-                args = [
-                    "--service-account=/creds/service_accounts/skylab-drone.json",
-                ],
-            ),
-            "pixel_skia_gold_passthrough_test VOLTEER_PUBLIC_RELEASE_LKGM": targets.mixin(
-                args = [
-                    "--service-account=/creds/service_accounts/skylab-drone.json",
-                ],
-            ),
-        },
-    ),
-    targets_settings = targets.settings(
-        browser_config = targets.browser_config.CROS_CHROME,
-        os_type = targets.os_type.CROS,
-        use_android_merge_script_by_default = False,
-        use_swarming = False,
-    ),
-    # TODO(crbug.com/40942991): This config is experimental and currently
-    # is too difficult for gardeners to keep green.
-    gardener_rotations = args.ignore_default(None),
-    console_view_entry = consoles.console_view_entry(
-        category = "ChromeOS|Intel",
-        short_name = "vlt",
-    ),
-    siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
-)
-
-ci.gpu.linux_builder(
+gpu.ci.linux_builder(
     name = "GPU FYI Android arm Builder",
     description_html = "Builds release Android arm binaries for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -810,7 +725,7 @@ ci.gpu.linux_builder(
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
 
-ci.gpu.linux_builder(
+gpu.ci.linux_builder(
     name = "GPU FYI Android arm64 Builder",
     branch_selector = branches.selector.ANDROID_BRANCHES,
     description_html = "Builds release Android arm64 binaries for GPU testing",
@@ -856,7 +771,7 @@ ci.gpu.linux_builder(
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
 
-ci.gpu.linux_builder(
+gpu.ci.linux_builder(
     name = "GPU FYI Linux Wayland Builder",
     description_html = "Builds release Linux x64 binaries with Wayland enabled for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -892,7 +807,7 @@ ci.gpu.linux_builder(
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
 
-ci.gpu.linux_builder(
+gpu.ci.linux_builder(
     name = "GPU FYI Linux Builder",
     description_html = "Builds release Linux x64 binaries for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -929,7 +844,7 @@ ci.gpu.linux_builder(
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
 
-ci.gpu.linux_builder(
+gpu.ci.linux_builder(
     name = "GPU FYI Linux Builder (dbg)",
     description_html = "Builds debug Linux x64 binaries for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -963,7 +878,7 @@ ci.gpu.linux_builder(
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
 
-ci.gpu.linux_builder(
+gpu.ci.linux_builder(
     name = "Linux FYI GPU TSAN Release",
     description_html = "Builds release Linux x64 binaries with TSan enabled for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -1012,7 +927,7 @@ ci.gpu.linux_builder(
     ),
 )
 
-ci.gpu.mac_builder(
+gpu.ci.mac_builder(
     name = "GPU FYI Mac Builder",
     description_html = "Builds release Mac x64 binaries for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -1048,7 +963,7 @@ ci.gpu.mac_builder(
     ),
 )
 
-ci.gpu.mac_builder(
+gpu.ci.mac_builder(
     name = "GPU FYI Mac Builder (asan)",
     description_html = "Builds release Mac x64 binaries with ASan enabled for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -1083,7 +998,7 @@ ci.gpu.mac_builder(
     ),
 )
 
-ci.gpu.mac_builder(
+gpu.ci.mac_builder(
     name = "GPU FYI Mac Builder (dbg)",
     description_html = "Builds debug Mac x64 binaries for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -1119,7 +1034,7 @@ ci.gpu.mac_builder(
     ),
 )
 
-ci.gpu.mac_builder(
+gpu.ci.mac_builder(
     name = "GPU FYI Mac arm64 Builder",
     description_html = "Builds release Mac arm64 binaries for GPU testing",
     builder_spec = builder_config.builder_spec(
@@ -1481,10 +1396,8 @@ ci.thin_tester(
     ),
     targets = targets.bundle(
         targets = [
-            "gpu_noop_sleep_telemetry_test",
-            # TODO(crbug.com/396611134): Enable actual tests.
-            # "gpu_fyi_linux_release_gtests",
-            # "gpu_fyi_linux_release_telemetry_tests",
+            "gpu_fyi_linux_release_gtests",
+            "gpu_fyi_linux_release_telemetry_tests",
         ],
         mixins = [
             "linux_amd_rx_7600_stable",
@@ -2887,6 +2800,49 @@ ci.thin_tester(
 )
 
 ci.thin_tester(
+    name = "Win11 FYI x64 Experimental Release (Intel Arc 140V)",
+    description_html = "GPU tests on exp Windows 11 Intel Arc 140V configs",
+    parent = "GPU FYI Win x64 Builder",
+    builder_spec = builder_config.builder_spec(
+        execution_mode = builder_config.execution_mode.TEST,
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.WIN,
+        ),
+        run_tests_serially = True,
+    ),
+    targets = targets.bundle(
+        targets = [
+            "gpu_noop_sleep_telemetry_test",
+        ],
+        mixins = [
+            "very_limited_capacity_bot",
+            "gpu_win11_intel_arc_140v_experimental",
+        ],
+    ),
+    targets_settings = targets.settings(
+        browser_config = targets.browser_config.RELEASE_X64,
+        os_type = targets.os_type.WINDOWS,
+    ),
+    gardener_rotations = args.ignore_default(None),
+    # Uncomment this entry when this experimental tester is actually in use.
+    # console_view_entry = consoles.console_view_entry(
+    #     category = "Windows|11|x64|Intel",
+    #     short_name = "exp",
+    # ),
+    list_view = "chromium.gpu.experimental",
+    execution_timeout = 12 * time.hour,
+)
+
+ci.thin_tester(
     name = "Win11 FYI x64 Release (AMD RX 7600)",
     description_html = "Runs release GPU tests on stable Windows 11/AMD RX 7600 configs",
     parent = "GPU FYI Win x64 Builder",
@@ -2935,6 +2891,53 @@ ci.thin_tester(
         category = "Windows|11|x64|AMD",
         short_name = "rel",
     ),
+)
+
+ci.thin_tester(
+    name = "Win11 FYI x64 Experimental Release (NVIDIA RTX 4070 Super)",
+    description_html = "Runs release GPU tests on experimental Windows 11/NVIDIA RTX 4070 configs",
+    parent = "GPU FYI Win x64 Builder",
+    builder_spec = builder_config.builder_spec(
+        execution_mode = builder_config.execution_mode.TEST,
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.WIN,
+        ),
+        run_tests_serially = True,
+    ),
+    targets = targets.bundle(
+        # When the experimental driver is identical to the stable driver, this
+        # should be running the gpu_noop_sleep_telemetry_test. Otherwise, it
+        # should be running the same test_suites as
+        # 'Win11 FYI x64 Release (NVIDIA RTX 4070 Super)'
+        targets = [
+            "gpu_fyi_win_gtests",
+            "gpu_fyi_win_release_telemetry_tests",
+            "gpu_fyi_win_optional_isolated_scripts",
+        ],
+        mixins = [
+            "limited_capacity_bot",
+            "win11_nvidia_rtx_4070_super_experimental",
+        ],
+    ),
+    targets_settings = targets.settings(
+        browser_config = targets.browser_config.RELEASE_X64,
+        os_type = targets.os_type.WINDOWS,
+    ),
+    # Uncomment this entry when this experimental tester is actually in use.
+    console_view_entry = consoles.console_view_entry(
+        category = "Windows|11|x64|Nvidia",
+        short_name = "exp",
+    ),
+    list_view = "chromium.gpu.experimental",
 )
 
 ci.thin_tester(

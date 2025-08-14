@@ -59,6 +59,7 @@
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/optional_util.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -76,7 +77,6 @@
 #include "net/base/prioritized_dispatcher.h"
 #include "net/base/request_priority.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/base/url_util.h"
 #include "net/dns/dns_alias_utility.h"
 #include "net/dns/dns_client.h"
@@ -134,7 +134,6 @@
 #include <net/if.h>
 #include "net/base/sys_addrinfo.h"
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
 #else  // !BUILDFLAG(IS_ANDROID)
 #include <ifaddrs.h>
 #endif  // BUILDFLAG(IS_ANDROID)
@@ -1683,7 +1682,8 @@ void HostResolverManager::TryServingAllJobsFromHosts() {
   }
 }
 
-void HostResolverManager::OnIPAddressChanged() {
+void HostResolverManager::OnIPAddressChanged(
+    NetworkChangeNotifier::IPAddressChangeType change_type) {
   DCHECK(!IsBoundToNetwork());
   last_ipv6_probe_time_ = base::TimeTicks();
   // Abandon all ProbeJobs.

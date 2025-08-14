@@ -25,6 +25,9 @@
 #import "ios/chrome/browser/badges/ui_bundled/badge_mediator.h"
 #import "ios/chrome/browser/badges/ui_bundled/badge_view_controller.h"
 #import "ios/chrome/browser/badges/ui_bundled/badge_view_visibility_delegate.h"
+#import "ios/chrome/browser/badges/ui_bundled/incognito_badge_mediator.h"
+#import "ios/chrome/browser/badges/ui_bundled/incognito_badge_view_controller.h"
+#import "ios/chrome/browser/badges/ui_bundled/incognito_badge_view_visibility_delegate.h"
 #import "ios/chrome/browser/contextual_panel/entrypoint/coordinator/contextual_panel_entrypoint_coordinator.h"
 #import "ios/chrome/browser/contextual_panel/entrypoint/coordinator/contextual_panel_entrypoint_coordinator_delegate.h"
 #import "ios/chrome/browser/contextual_panel/entrypoint/ui/contextual_panel_entrypoint_visibility_delegate.h"
@@ -77,9 +80,12 @@
 #import "ios/chrome/browser/shared/public/commands/page_action_menu_entry_point_commands.h"
 #import "ios/chrome/browser/shared/public/commands/search_image_with_lens_command.h"
 #import "ios/chrome/browser/shared/public/features/features.h"
+#import "ios/chrome/browser/shared/public/prototypes/diamond/new_tab_prototype_view_controller.h"
 #import "ios/chrome/browser/shared/ui/util/layout_guide_names.h"
 #import "ios/chrome/browser/shared/ui/util/pasteboard_util.h"
 #import "ios/chrome/browser/shared/ui/util/util_swift.h"
+#import "ios/chrome/browser/sharing/ui_bundled/sharing_coordinator.h"
+#import "ios/chrome/browser/sharing/ui_bundled/sharing_params.h"
 #import "ios/chrome/browser/url_loading/model/image_search_param_generator.h"
 #import "ios/chrome/browser/url_loading/model/url_loading_browser_agent.h"
 #import "ios/chrome/browser/url_loading/model/url_loading_params.h"
@@ -101,8 +107,9 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
 @interface LocationBarCoordinator () <
     ContextualPanelEntrypointCoordinatorDelegate,
     LoadQueryCommands,
-    LocationBarViewControllerDelegate,
+    LocationBarModelDelegateWebStateProvider,
     LocationBarSteadyViewConsumer,
+    LocationBarViewControllerDelegate,
     WebLocationBarDelegate,
     OmniboxStateProvider,
     URLDragDataSource> {
@@ -112,6 +119,8 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
   std::unique_ptr<FullscreenUIUpdater> _omniboxFullscreenUIUpdater;
   // Observer that updates BadgeViewController for fullscreen events.
   std::unique_ptr<FullscreenUIUpdater> _badgeFullscreenUIUpdater;
+  // Observer that updates IncognitoBadgeViewController for fullscreen events.
+  std::unique_ptr<FullscreenUIUpdater> _incognitoBadgeFullscreenUIUpdater;
 
   // Facade objects used by `_toolbarCoordinator`.
   // Must outlive `_toolbarCoordinator`.
@@ -124,6 +133,11 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
 @property(nonatomic, strong) BadgeMediator* badgeMediator;
 // ViewController for the badges displayed in the LocationBar.
 @property(nonatomic, strong) BadgeViewController* badgeViewController;
+// Mediator for the incognito badge displayed in the LocationBar.
+@property(nonatomic, strong) IncognitoBadgeMediator* incognitoBadgeMediator;
+// ViewController for the incognito badge displayed in the LocationBar.
+@property(nonatomic, strong)
+    IncognitoBadgeViewController* incognitoBadgeViewController;
 // Coordinator for the contextual panel entrypoint.
 @property(nonatomic, strong)
     ContextualPanelEntrypointCoordinator* contextualPanelEntrypointCoordinator;
@@ -146,7 +160,10 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
 @property(nonatomic, strong) URLDragDropHandler* dragDropHandler;
 @end
 
-@implementation LocationBarCoordinator
+@implementation LocationBarCoordinator {
+  // TODO(crbug.com/429955447): Remove when diamond prototype is cleaned.
+  SharingCoordinator* _sharingCoordinator;
+}
 
 #pragma mark - Accessors
 
@@ -208,8 +225,8 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
 
   _locationBar = std::make_unique<WebLocationBarImpl>(self);
   _locationBar->SetURLLoader(self);
-  _locationBarModelDelegate.reset(new LocationBarModelDelegateIOS(
-      self.browser->GetWebStateList(), self.profile));
+  _locationBarModelDelegate.reset(
+      new LocationBarModelDelegateIOS(self, self.profile));
   _locationBarModel = std::make_unique<LocationBarModelImpl>(
       _locationBarModelDelegate.get(), kMaxURLDisplayChars);
 
@@ -217,7 +234,7 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
       initWithBaseViewController:nil
                          browser:self.browser
                    omniboxClient:std::make_unique<ChromeOmniboxClientIOS>(
-                                     _locationBar.get(), self.profile,
+                                     _locationBar.get(), self.browser,
                                      feature_engagement::TrackerFactory::
                                          GetForProfile(self.profile))
                    isLensOverlay:NO];
@@ -235,7 +252,7 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
       didMoveToParentViewController:self.viewController];
   self.viewController.offsetProvider = [self.omniboxCoordinator offsetProvider];
 
-  if (!isIncognito && IsContextualPanelEnabled()) {
+  if (IsContextualPanelEnabled()) {
     self.contextualPanelEntrypointCoordinator =
         [[ContextualPanelEntrypointCoordinator alloc]
             initWithBaseViewController:self.viewController
@@ -282,8 +299,7 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
       self.browser, OverlayModality::kInfobarBanner);
   self.badgeMediator =
       [[BadgeMediator alloc] initWithWebStateList:self.webStateList
-                                 overlayPresenter:overlayPresenter
-                                      isIncognito:isIncognito];
+                                 overlayPresenter:overlayPresenter];
   self.badgeMediator.consumer = self.badgeViewController;
   // TODO(crbug.com/40670043): Use HandlerForProtocol after commands protocol
   // clean up.
@@ -295,12 +311,35 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
   _badgeFullscreenUIUpdater = std::make_unique<FullscreenUIUpdater>(
       fullscreenController, self.badgeViewController);
 
+  // Create incognito badge view controller and mediator for an incognito
+  // profile.
+  if (isIncognito) {
+    self.incognitoBadgeViewController = [[IncognitoBadgeViewController alloc]
+        initWithButtonFactory:buttonFactory];
+    self.incognitoBadgeViewController.visibilityDelegate =
+        [self.viewController incognitoBadgeViewVisibilityDelegate];
+
+    [self.viewController
+        addChildViewController:self.incognitoBadgeViewController];
+    [self.viewController
+        setIncognitoBadgeView:self.incognitoBadgeViewController.view];
+    [self.incognitoBadgeViewController
+        didMoveToParentViewController:self.viewController];
+
+    self.incognitoBadgeMediator =
+        [[IncognitoBadgeMediator alloc] initWithWebStateList:self.webStateList];
+    self.incognitoBadgeMediator.consumer = self.incognitoBadgeViewController;
+    _incognitoBadgeFullscreenUIUpdater = std::make_unique<FullscreenUIUpdater>(
+        fullscreenController, self.incognitoBadgeViewController);
+  }
+
   self.mediator = [[LocationBarMediator alloc] initWithIsIncognito:isIncognito];
   self.mediator.templateURLService =
       ios::TemplateURLServiceFactory::GetForProfile(self.profile);
   self.mediator.consumer = self.viewController;
   self.mediator.webStateList = self.webStateList;
-  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate)) {
+  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate) ||
+      base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2)) {
     PlaceholderService* placeholderService =
         ios::PlaceholderServiceFactory::GetForProfile(self.profile);
     self.mediator.placeholderService = placeholderService;
@@ -341,6 +380,9 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
       stopDispatchingToTarget:self.viewController
                                   .pageActionMenuEntryPointHandler];
 
+  [_sharingCoordinator stop];
+  _sharingCoordinator = nil;
+
   [self.contextualPanelEntrypointCoordinator stop];
   self.contextualPanelEntrypointCoordinator.delegate = nil;
   self.contextualPanelEntrypointCoordinator = nil;
@@ -353,6 +395,10 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
   [self.badgeMediator disconnect];
   self.badgeMediator = nil;
   _locationBar.reset();
+
+  [self.incognitoBadgeMediator disconnect];
+  self.incognitoBadgeMediator = nil;
+  self.incognitoBadgeViewController = nil;
 
   self.viewController = nil;
   [self.mediator disconnect];
@@ -369,6 +415,7 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
   _locationBarModelDelegate = nullptr;
 
   _badgeFullscreenUIUpdater = nullptr;
+  _incognitoBadgeFullscreenUIUpdater = nullptr;
   _omniboxFullscreenUIUpdater = nullptr;
   self.started = NO;
 }
@@ -502,6 +549,13 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
   self.isCancellingOmniboxEdit = NO;
 }
 
+#pragma mark - LocationBarModelDelegateWebStateProvider
+
+- (web::WebState*)webStateForLocationBarModelDelegate:
+    (const LocationBarModelDelegateIOS*)locationBarModelDelegate {
+  return self.webStateList->GetActiveWebState();
+}
+
 #pragma mark - WebLocationBarDelegate
 
 - (web::WebState*)webState {
@@ -521,11 +575,40 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
 #pragma mark - LocationBarViewControllerDelegate
 
 - (void)locationBarSteadyViewTapped {
-  [self focusOmnibox];
+  if (IsDiamondPrototypeEnabled()) {
+    NewTabPrototypeViewController* newTab =
+        [[NewTabPrototypeViewController alloc]
+            initWithBaseViewController:self.baseViewController
+                               browser:self.browser
+                          isNewTabPage:NO
+                     shouldExitTabGrid:NO];
+    [self.viewController presentViewController:newTab
+                                      animated:YES
+                                    completion:nil];
+  } else {
+    [self focusOmnibox];
+  }
 }
 
 - (void)locationBarCopyTapped {
   StoreURLInPasteboard(self.webState->GetVisibleURL());
+}
+
+- (void)locationBarShareTapped {
+  CHECK(IsDiamondPrototypeEnabled());
+  const GURL visibleURL = self.webState->GetVisibleURL();
+  NSString* title = base::SysUTF16ToNSString(self.webState->GetTitle());
+
+  SharingParams* params =
+      [[SharingParams alloc] initWithURL:visibleURL
+                                   title:title
+                                scenario:SharingScenario::TabShareButton];
+  _sharingCoordinator = [[SharingCoordinator alloc]
+      initWithBaseViewController:self.viewController
+                         browser:self.browser
+                          params:params
+                      originView:self.viewController.view];
+  [_sharingCoordinator start];
 }
 
 - (void)locationBarRequestScribbleTargetFocus {
@@ -579,12 +662,18 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
 
 - (BOOL)canShowLargeContextualPanelEntrypoint:
     (ContextualPanelEntrypointCoordinator*)coordinator {
+  if (IsDiamondPrototypeEnabled()) {
+    return NO;
+  }
   return [self.viewController canShowLargeContextualPanelEntrypoint];
 }
 
 - (void)setLocationBarLabelCenteredBetweenContent:
             (ContextualPanelEntrypointCoordinator*)coordinator
                                          centered:(BOOL)centered {
+  if (IsDiamondPrototypeEnabled()) {
+    return;
+  }
   [self.viewController setLocationBarLabelCenteredBetweenContent:centered];
 }
 

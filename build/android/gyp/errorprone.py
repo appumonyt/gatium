@@ -31,7 +31,6 @@ ERRORPRONE_WARNINGS_TO_DISABLE = [
     'InlineMeInliner',
     'InlineMeSuggester',
     # High priority to enable:
-    'HidingField',
     'AlreadyChecked',
     'DirectInvocationOnMock',
     'MockNotUsedInProduction',
@@ -126,6 +125,11 @@ ERRORPRONE_WARNINGS_TO_DISABLE = [
     # Assigning to fields marked as @Mock or @Spy. Suggested fix is to delete
     # assignments, which would break tests in many cases.
     'UnnecessaryAssignment',
+    # Serveral instances of using a string right before the String.format(),
+    # which seems better than inlining.
+    'InlineFormatString',
+    # Low priority.
+    'EffectivelyPrivate',
 ]
 
 # Full list of checks: https://errorprone.info/bugpatterns
@@ -153,9 +157,6 @@ ERRORPRONE_WARNINGS_TO_ENABLE = [
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--skip-build-server',
-                      action='store_true',
-                      help='Avoid using the build server.')
   parser.add_argument('--use-build-server',
                       action='store_true',
                       help='Always use the build server.')
@@ -173,11 +174,11 @@ def main():
   compile_java_argv += ['--jar-path', options.stamp]
 
   # Use the build server for errorprone runs.
-  if not options.skip_build_server and (server_utils.MaybeRunCommand(
+  if server_utils.MaybeRunCommand(
       name=options.stamp,
       argv=sys.argv,
       stamp_file=options.stamp,
-      use_build_server=options.use_build_server)):
+      use_build_server=options.use_build_server):
     compile_java.main(compile_java_argv, write_depfile_only=True)
     return
 
@@ -198,9 +199,11 @@ def main():
     #     https://github.com/uber/NullAway/issues/1104
     # errorprone_flags += ['-XepOpt:NullAway:CheckContracts=true']
 
+    # TODO(agrieve): Re-enable once we sort out nullability of
+    #     ObservableSuppliers. https://crbug.com/430320400
     # Make it a warning to use assumeNonNull() with a @NonNull.
-    errorprone_flags += [('-XepOpt:NullAway:CastToNonNullMethod='
-                          'org.chromium.build.NullUtil.assumeNonNull')]
+    #errorprone_flags += [('-XepOpt:NullAway:CastToNonNullMethod='
+    #                      'org.chromium.build.NullUtil.assumeNonNull')]
     # Detect "assert foo != null" as a null check.
     errorprone_flags += ['-XepOpt:NullAway:AssertsEnabled=true']
     # Do not ignore @Nullable & @NonNull in non-@NullMarked classes.

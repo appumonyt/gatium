@@ -112,8 +112,10 @@ class VideoFrameSubmitter::FrameSinkBundleProxy
   }
 
   // Not used by VideoFrameSubmitter.
-  void SetWantsAnimateOnlyBeginFrames() override { NOTREACHED(); }
-  void SetAutoNeedsBeginFrame() override { NOTREACHED(); }
+  void SetParams(
+      viz::mojom::blink::CompositorFrameSinkParamsPtr params) override {
+    NOTREACHED();
+  }
 
   void SubmitCompositorFrame(
       const viz::LocalSurfaceId& local_surface_id,
@@ -127,16 +129,6 @@ class VideoFrameSubmitter::FrameSinkBundleProxy
     bundle_->SubmitCompositorFrame(
         frame_sink_id_.sink_id(), local_surface_id, std::move(frame),
         std::move(hit_test_region_list), submit_time);
-  }
-
-  // Not used by VideoFrameSubmitter.
-  void SubmitCompositorFrameSync(
-      const viz::LocalSurfaceId& local_surface_id,
-      viz::CompositorFrame frame,
-      std::optional<viz::HitTestRegionList> hit_test_region_list,
-      uint64_t submit_time,
-      SubmitCompositorFrameSyncCallback callback) override {
-    NOTREACHED();
   }
 
   // Not used by VideoFrameSubmitter.
@@ -154,7 +146,7 @@ class VideoFrameSubmitter::FrameSinkBundleProxy
       viz::mojom::blink::LayerContextSettingsPtr settings) override {}
 
 #if BUILDFLAG(IS_ANDROID)
-  void SetThreads(const WTF::Vector<viz::Thread>& threads) override {
+  void SetThreads(const Vector<viz::Thread>& threads) override {
     bundle_->SetThreads(frame_sink_id_.sink_id(), threads);
   }
 #endif
@@ -352,7 +344,7 @@ void VideoFrameSubmitter::OnGpuChannelLost() {
 }
 
 void VideoFrameSubmitter::DidReceiveCompositorFrameAck(
-    WTF::Vector<viz::ReturnedResource> resources) {
+    Vector<viz::ReturnedResource> resources) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   ReclaimResources(std::move(resources));
 
@@ -367,8 +359,8 @@ void VideoFrameSubmitter::DidReceiveCompositorFrameAck(
 
 void VideoFrameSubmitter::OnBeginFrame(
     const viz::BeginFrameArgs& args,
-    const WTF::HashMap<uint32_t, viz::FrameTimingDetails>& timing_details,
-    WTF::Vector<viz::ReturnedResource> resources) {
+    const HashMap<uint32_t, viz::FrameTimingDetails>& timing_details,
+    Vector<viz::ReturnedResource> resources) {
   if (!resources.empty()) {
     ReclaimResources(std::move(resources));
   }
@@ -378,7 +370,7 @@ void VideoFrameSubmitter::OnBeginFrame(
 
   last_begin_frame_args_ = args;
 
-  WTF::Vector<uint32_t> frame_tokens;
+  Vector<uint32_t> frame_tokens;
   for (const auto& id : timing_details.Keys())
     frame_tokens.push_back(id);
   std::sort(frame_tokens.begin(), frame_tokens.end());
@@ -533,7 +525,7 @@ void VideoFrameSubmitter::OnBeginFrame(
 }
 
 void VideoFrameSubmitter::ReclaimResources(
-    WTF::Vector<viz::ReturnedResource> resources) {
+    Vector<viz::ReturnedResource> resources) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   resource_provider_->ReceiveReturnsFromParent(std::move(resources));
 
@@ -646,7 +638,7 @@ void VideoFrameSubmitter::StartSubmitting() {
       &VideoFrameSubmitter::OnContextLost, base::Unretained(this)));
 
 #if BUILDFLAG(IS_ANDROID)
-  WTF::Vector<viz::Thread> threads;
+  Vector<viz::Thread> threads;
   threads.push_back(viz::Thread{base::PlatformThread::CurrentId(),
                                 viz::Thread::Type::kVideo});
   threads.push_back(viz::Thread{Platform::Current()->GetIOThreadId(),

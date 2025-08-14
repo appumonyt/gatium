@@ -18,7 +18,7 @@
 #include "url/origin.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/device_info.h"
 #endif
 
 namespace password_manager {
@@ -55,7 +55,8 @@ bool LeakedPasswordDetails::operator==(
 CredentialLeakType CreateLeakType(IsSaved is_saved,
                                   IsReused is_reused,
                                   IsSyncing is_syncing,
-                                  HasChangePasswordUrl has_change_password) {
+                                  HasChangePasswordUrl has_change_password,
+                                  IsSavedAsBackup is_saved_as_backup) {
   CredentialLeakType leak_type = 0;
   if (is_saved) {
     leak_type |= kPasswordSaved;
@@ -69,11 +70,18 @@ CredentialLeakType CreateLeakType(IsSaved is_saved,
   if (has_change_password) {
     leak_type |= kHasChangePasswordUrl;
   }
+  if (is_saved_as_backup) {
+    leak_type |= kPasswordSavedAsBackup;
+  }
   return leak_type;
 }
 
 bool IsPasswordSaved(CredentialLeakType leak_type) {
   return leak_type & CredentialLeakFlags::kPasswordSaved;
+}
+
+bool IsPasswordSavedAsBackup(CredentialLeakType leak_type) {
+  return leak_type & CredentialLeakFlags::kPasswordSavedAsBackup;
 }
 
 bool IsPasswordUsedOnOtherSites(CredentialLeakType leak_type) {
@@ -100,7 +108,7 @@ std::u16string GetLeakDetectionTooltip() {
 
 bool ShouldCheckPasswords(CredentialLeakType leak_type) {
 #if BUILDFLAG(IS_ANDROID)
-  if (base::android::BuildInfo::GetInstance()->is_automotive()) {
+  if (base::android::device_info::is_automotive()) {
     return false;
   }
 #endif

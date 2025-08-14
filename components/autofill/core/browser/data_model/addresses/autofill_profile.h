@@ -26,6 +26,7 @@
 #include "components/autofill/core/browser/data_model/usage_history_information.h"
 #include "components/autofill/core/browser/data_quality/addresses/profile_token_quality.h"
 #include "components/autofill/core/browser/field_types.h"
+#include "components/signin/public/identity_manager/account_info.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/scoped_java_ref.h"
@@ -57,7 +58,12 @@ class AutofillProfile : public FormGroup {
     kAccount = 1,
     kAccountHome = 2,
     kAccountWork = 3,
-    kMaxValue = kAccountWork,
+    // This profile is stored locally. Data for this profile comes from the
+    // account. Not synced at all.
+    // TODO(crbug.com/356845298): Update the comment with the name of the
+    // manager handling the metadata updates once implemented.
+    kAccountNameEmail = 4,
+    kMaxValue = kAccountNameEmail,
   };
 
   // These fields are, by default, the only candidates for being added to the
@@ -107,6 +113,9 @@ class AutofillProfile : public FormGroup {
                   AddressCountryCode country_code);
   AutofillProfile(RecordType record_type, AddressCountryCode country_code);
   explicit AutofillProfile(AddressCountryCode country_code);
+  // This constructor creates a profile of type `kAccountNameEmail` with the
+  // `AddressCountryCode` of the `Address` set to `kLegacyHierarchyCountryCode`.
+  explicit AutofillProfile(const AccountInfo& info);
 
   AutofillProfile(const AutofillProfile& profile);
   ~AutofillProfile() override;
@@ -140,6 +149,7 @@ class AutofillProfile : public FormGroup {
   void GetMatchingTypes(const std::u16string& text,
                         const std::string& app_locale,
                         FieldTypeSet* matching_types) const override;
+  using FormGroup::GetInfo;
   std::u16string GetInfo(const AutofillType& type,
                          const std::string& app_locale) const override;
   std::u16string GetRawInfo(FieldType type) const override;
@@ -352,6 +362,13 @@ class AutofillProfile : public FormGroup {
 
   // Clears all specified |fields| from the profile.
   void ClearFields(const FieldTypeSet& fields);
+
+  // If a regular name is written in phonetic spelling, the contents
+  // of the regular name tree should be moved to the phonetic name tree and the
+  // regular name tree should be cleared. The incorrect assignment happened in
+  // the past when we did not have proper support for phonetic names.
+  // TODO(crbug.com/359768803): Remove this method once the migration is done.
+  void MigrateRegularNameToPhoneticName();
 
   const ProfileTokenQuality& token_quality() const { return token_quality_; }
   ProfileTokenQuality& token_quality() { return token_quality_; }

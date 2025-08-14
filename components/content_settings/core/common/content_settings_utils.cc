@@ -19,8 +19,6 @@
 
 namespace content_settings {
 
-namespace {
-
 // Converts a |Value| to a |ContentSetting|. Returns a result if |value| encodes
 // a valid content setting, nullopt otherwise. Note that
 // |CONTENT_SETTING_DEFAULT| is encoded as a NULL value, so it is not allowed as
@@ -38,27 +36,6 @@ std::optional<ContentSetting> ParseContentSettingValue(
                                             : std::make_optional(setting);
 }
 
-std::optional<PermissionSetting> ValueToGeolocationSetting(
-    const base::Value& value) {
-  if (!value.is_dict()) {
-    return std::nullopt;
-  }
-  const auto& dict = value.GetDict();
-  ContentSetting approximate = IntToContentSetting(
-      dict.FindInt("approximate").value_or(CONTENT_SETTING_DEFAULT));
-  if (approximate == CONTENT_SETTING_DEFAULT) {
-    return std::nullopt;
-  }
-  auto precise = IntToContentSetting(
-      dict.FindInt("precise").value_or(CONTENT_SETTING_DEFAULT));
-  if (precise == CONTENT_SETTING_DEFAULT) {
-    return std::nullopt;
-  }
-  return GeolocationSetting{approximate, precise};
-}
-
-}  // namespace
-
 ContentSetting ValueToContentSetting(const base::Value& value) {
   auto setting = ParseContentSettingValue(value);
   DCHECK(setting.has_value()) << value.DebugString();
@@ -73,34 +50,6 @@ base::Value ContentSettingToValue(ContentSetting setting) {
   return base::Value(setting);
 }
 
-std::optional<PermissionSetting> ValueToPermissionSetting(
-    ContentSettingsType content_type,
-    const base::Value& value) {
-  switch (content_type) {
-    case ContentSettingsType::GEOLOCATION:
-      if (base::FeatureList::IsEnabled(
-              content_settings::features::kApproximateGeolocationPermission)) {
-        return ValueToGeolocationSetting(value);
-      } else {
-        return ParseContentSettingValue(value);
-      }
-    default:
-      return ParseContentSettingValue(value);
-  }
-}
-
-base::Value PermissionSettingToValue(const PermissionSetting& setting) {
-  return std::visit(
-      absl::Overload{
-          [](ContentSetting setting) { return ContentSettingToValue(setting); },
-          [](GeolocationSetting setting) {
-            base::Value::Dict dict;
-            dict.Set("approximate", setting.approximate);
-            dict.Set("precise", setting.precise);
-            return base::Value(std::move(dict));
-          }},
-      setting);
-}
 
 std::unique_ptr<base::Value> ToNullableUniquePtrValue(base::Value value) {
   if (value.is_none()) {

@@ -24,7 +24,6 @@ class RenderFrameHost;
 
 namespace actor {
 
-class AggregatedJournal;
 class PageToolRequest;
 class RenderFrameChangeObserver;
 
@@ -34,7 +33,7 @@ class RenderFrameChangeObserver;
 class PageTool : public Tool {
  public:
   PageTool(TaskId task_id,
-           AggregatedJournal& journal,
+           ToolDelegate& tool_delegate,
            const PageToolRequest& params);
   ~PageTool() override;
 
@@ -49,6 +48,8 @@ class PageTool : public Tool {
   std::string JournalEvent() const override;
   std::unique_ptr<ObservationDelayController> GetObservationDelayer()
       const override;
+  void UpdateTaskBeforeInvoke(ActorTask& task,
+                              InvokeCallback callback) const override;
 
  private:
   void FinishInvoke(mojom::ActionResultPtr result);
@@ -72,7 +73,7 @@ class PageTool : public Tool {
 
   // Set during TimeOfUseValidation. Contains the hit test result against
   // observed page content.
-  std::optional<optimization_guide::TargetNodeInfo> observed_target_node_info_;
+  mojom::ObservedToolTargetPtr observed_target_;
 
   base::WeakPtrFactory<PageTool> weak_ptr_factory_{this};
 };

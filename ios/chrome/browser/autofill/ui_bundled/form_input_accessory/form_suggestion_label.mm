@@ -24,7 +24,7 @@
 #import "ui/base/device_form_factor.h"
 #import "ui/base/l10n/l10n_util.h"
 
-using autofill::FillingProduct;
+using autofill::SuggestionType;
 
 namespace {
 
@@ -59,6 +59,9 @@ constexpr CGFloat kShadowOpacity = 1.0;
 
 // The preferred minimum width of the icon shown on the label.
 constexpr CGFloat kSuggestionIconWidth = 40;
+
+// The highlight color's alpha when using liquid glass.
+constexpr CGFloat kHighlightColorAlpha = 0.5;
 
 // Offset required to see half of the icon of the 2nd credit card suggestion
 // when the first credit card suggestion is at maximum width. This number
@@ -243,25 +246,69 @@ NSArray<UIView*>* TextViews(NSString* suggestion_text,
   return views;
 }
 
-// Returns whether the provided `suggestion` is a password suggestion.
+// Returns whether the provided `suggestion` is a password suggestion from the
+// user's saved data.
 bool IsPasswordSuggestion(FormSuggestion* suggestion) {
-  switch (GetFillingProductFromSuggestionType(suggestion.type)) {
-    case FillingProduct::kPassword:
+  switch (suggestion.type) {
+    case SuggestionType::kPasswordEntry:
+    case SuggestionType::kBackupPasswordEntry:
       return true;
-    case FillingProduct::kAddress:
-    case FillingProduct::kCreditCard:
-    case FillingProduct::kNone:
-    case FillingProduct::kMerchantPromoCode:
-    case FillingProduct::kIban:
-    case FillingProduct::kAutocomplete:
-    case FillingProduct::kCompose:
-    case FillingProduct::kPlusAddresses:
-    case FillingProduct::kAutofillAi:
-    case FillingProduct::kLoyaltyCard:
-    case FillingProduct::kIdentityCredential:
-    case FillingProduct::kDataList:
+    case SuggestionType::kAutocompleteEntry:
+    case SuggestionType::kAddressEntry:
+    case SuggestionType::kAddressEntryOnTyping:
+    case SuggestionType::kAddressFieldByFieldFilling:
+    case SuggestionType::kManageAddress:
+    case SuggestionType::kManageAutofillAi:
+    case SuggestionType::kManageCreditCard:
+    case SuggestionType::kManageIban:
+    case SuggestionType::kManagePlusAddress:
+    case SuggestionType::kManageLoyaltyCard:
+    case SuggestionType::kComposeResumeNudge:
+    case SuggestionType::kComposeDisable:
+    case SuggestionType::kComposeGoToSettings:
+    case SuggestionType::kComposeNeverShowOnThisSiteAgain:
+    case SuggestionType::kComposeProactiveNudge:
+    case SuggestionType::kComposeSavedStateNotification:
+    case SuggestionType::kDatalistEntry:
+    case SuggestionType::kTroubleSigningInEntry:
+    case SuggestionType::kFreeformFooter:
+    case SuggestionType::kAllSavedPasswordsEntry:
+    case SuggestionType::kGeneratePasswordEntry:
+    case SuggestionType::kAccountStoragePasswordEntry:
+    case SuggestionType::kPasswordFieldByFieldFilling:
+    case SuggestionType::kFillPassword:
+    case SuggestionType::kViewPasswordDetails:
+    case SuggestionType::kCreditCardEntry:
+    case SuggestionType::kInsecureContextPaymentDisabledMessage:
+    case SuggestionType::kSaveAndFillCreditCardEntry:
+    case SuggestionType::kScanCreditCard:
+    case SuggestionType::kVirtualCreditCardEntry:
+    case SuggestionType::kIbanEntry:
+    case SuggestionType::kBnplEntry:
+    case SuggestionType::kCreateNewPlusAddress:
+    case SuggestionType::kCreateNewPlusAddressInline:
+    case SuggestionType::kFillExistingPlusAddress:
+    case SuggestionType::kPlusAddressError:
+    case SuggestionType::kMerchantPromoCodeEntry:
+    case SuggestionType::kSeePromoCodeDetails:
+    case SuggestionType::kWebauthnCredential:
+    case SuggestionType::kWebauthnSignInWithAnotherDevice:
+    case SuggestionType::kIdentityCredential:
+    case SuggestionType::kTitle:
+    case SuggestionType::kSeparator:
+    case SuggestionType::kUndoOrClear:
+    case SuggestionType::kMixedFormMessage:
+    case SuggestionType::kDevtoolsTestAddresses:
+    case SuggestionType::kDevtoolsTestAddressByCountry:
+    case SuggestionType::kDevtoolsTestAddressEntry:
+    case SuggestionType::kFillAutofillAi:
+    case SuggestionType::kPendingStateSignin:
+    case SuggestionType::kLoyaltyCardEntry:
+    case SuggestionType::kAllLoyaltyCardsEntry:
+    case SuggestionType::kOneTimePasswordEntry:
       return false;
   }
+  NOTREACHED();
 }
 
 // Returns the text to display for a password suggestion.
@@ -304,6 +351,7 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
   // Client of this view.
   __weak id<FormSuggestionLabelDelegate> _delegate;
   FormSuggestion* _suggestion;
+  NSUInteger _suggestionIndex;
 }
 
 #pragma mark - Public
@@ -316,6 +364,7 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
   self = [super initWithFrame:CGRectZero];
   if (self) {
     _suggestion = suggestion;
+    _suggestionIndex = index;
     _delegate = delegate;
 
     UIStackView* stackView = [[UIStackView alloc] initWithArrangedSubviews:@[]];
@@ -327,7 +376,15 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
     stackView.spacing = kSpacing;
     stackView.translatesAutoresizingMaskIntoConstraints = NO;
     [self addSubview:stackView];
-    AddSameConstraints(stackView, self);
+    if (IsLiquidGlassEffectEnabled()) {
+      AddSameConstraintsToSides(
+          stackView, self,
+          LayoutSides::kTop | LayoutSides::kLeading | LayoutSides::kTrailing);
+      [stackView.heightAnchor constraintEqualToAnchor:self.heightAnchor]
+          .active = YES;
+    } else {
+      AddSameConstraints(stackView, self);
+    }
 
     if (suggestion.icon) {
       UIImageView* iconView = [[UIImageView alloc]
@@ -361,7 +418,7 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
         verticalStackView.spacing = kVerticalSpacing;
         [stackView addArrangedSubview:verticalStackView];
 
-        // Insert the next subviews vertically instead of horizonatally.
+        // Insert the next subviews vertically instead of horizontally.
         stackView = verticalStackView;
       }
     }
@@ -390,6 +447,9 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
     }
 
     [self setBackgroundColor:[self customBackgroundColor]];
+    if (IsLiquidGlassEffectEnabled()) {
+      [self setOpaque:NO];
+    }
 
     [self setClipsToBounds:YES];
     [self setUserInteractionEnabled:YES];
@@ -397,8 +457,8 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
     [self
         setAccessibilityLabel:AccessibilityLabel(
                                   suggestionText, suggestion.displayDescription,
-                                  suggestion.type == autofill::SuggestionType::
-                                                         kBackupPasswordEntry)];
+                                  suggestion.type ==
+                                      SuggestionType::kBackupPasswordEntry)];
     [self setAccessibilityValue:l10n_util::GetNSStringF(
                                     IDS_IOS_AUTOFILL_SUGGESTION_INDEX_VALUE,
                                     base::NumberToString16(index + 1),
@@ -419,12 +479,20 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
   return self;
 }
 
+- (FormSuggestion*)suggestion {
+  return _suggestion;
+}
+
+- (NSUInteger)suggestionIndex {
+  return _suggestionIndex;
+}
+
 #pragma mark - UIView
 
 - (void)layoutSubviews {
   [super layoutSubviews];
-  self.layer.cornerRadius = [self cornerRadius];
-  if (IsKeyboardAccessoryUpgradeEnabled()) {
+  [self setCornerRadius:[self cornerRadius]];
+  if (!IsLiquidGlassEffectEnabled() && IsKeyboardAccessoryUpgradeEnabled()) {
     self.layer.shadowRadius = kShadowRadius;
     self.layer.shadowOffset = CGSizeMake(0, kShadowVerticalOffset);
     self.layer.shadowOpacity = kShadowOpacity;
@@ -437,7 +505,12 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
 #pragma mark - UIResponder
 
 - (void)touchesBegan:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
-  [self setBackgroundColor:[UIColor colorNamed:kGrey300Color]];
+  UIColor* highlightColor = [UIColor colorNamed:kGrey300Color];
+  if (IsLiquidGlassEffectEnabled()) {
+    highlightColor =
+        [highlightColor colorWithAlphaComponent:kHighlightColorAlpha];
+  }
+  [self setBackgroundColor:highlightColor];
 }
 
 - (void)touchesMoved:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
@@ -460,8 +533,29 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
 
 #pragma mark - Private
 
+// Sets the corner radius. Can be dymamic if the liquid glass effect is enabled.
+- (void)setCornerRadius:(CGFloat)cornerRadius {
+#if defined(__IPHONE_26_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_26_0
+  if (IsLiquidGlassEffectEnabled()) {
+    if (@available(iOS 26, *)) {
+      self.cornerConfiguration = [UICornerConfiguration
+          configurationWithRadius:
+              [UICornerRadius
+                  containerConcentricRadiusWithMinimum:[self cornerRadius]]];
+      return;
+    }
+  }
+#endif  // defined(__IPHONE_26_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >=
+        // __IPHONE_26_0
+  self.layer.cornerRadius = [self cornerRadius];
+}
+
 // Color of the suggestion chips.
 - (UIColor*)customBackgroundColor {
+  if (IsLiquidGlassEffectEnabled()) {
+    return UIColor.clearColor;
+  }
+
   return
       [UIColor colorNamed:IsKeyboardAccessoryUpgradeEnabled() ? kBackgroundColor
                                                               : kGrey100Color];
@@ -479,9 +573,8 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
 
 // Returns whether this label is for a credit card suggestion.
 - (BOOL)isCreditCardSuggestion {
-  return (_suggestion.type == autofill::SuggestionType::kCreditCardEntry) ||
-         (_suggestion.type ==
-          autofill::SuggestionType::kVirtualCreditCardEntry);
+  return (_suggestion.type == SuggestionType::kCreditCardEntry) ||
+         (_suggestion.type == SuggestionType::kVirtualCreditCardEntry);
 }
 
 // Resize the icon if it's a credit card icon which requires an upscaling.
@@ -507,15 +600,15 @@ NSString* AccessibilityLabel(NSString* suggestion_text,
   CGSize windowSize = [[UIScreen mainScreen] bounds].size;
   CGFloat portraitScreenWidth = MIN(windowSize.width, windowSize.height);
   switch (_suggestion.type) {
-    case autofill::SuggestionType::kCreditCardEntry:
-    case autofill::SuggestionType::kVirtualCreditCardEntry: {
+    case SuggestionType::kCreditCardEntry:
+    case SuggestionType::kVirtualCreditCardEntry: {
       // Max width is just enough to show half of the credit card icon on the
       // 2nd suggestion, in portrait mode.
       CGFloat staticButtonsWidth = accessoryTrailingView.frame.size.width;
       maxWidth = (portraitScreenWidth - staticButtonsWidth) -
                  kHalfCreditCardIconOffset;
     } break;
-    case autofill::SuggestionType::kAddressEntry:
+    case SuggestionType::kAddressEntry:
       // Max width is half width, in portrait mode.
       maxWidth = portraitScreenWidth * 0.5;
       break;

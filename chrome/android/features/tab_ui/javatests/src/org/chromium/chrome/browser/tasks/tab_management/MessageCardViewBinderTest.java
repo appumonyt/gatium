@@ -30,6 +30,7 @@ import org.junit.runner.RunWith;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.BaseActivityTestRule;
 import org.chromium.base.test.util.Batch;
+import org.chromium.chrome.browser.tasks.tab_management.TabSwitcherMessageManager.MessageType;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
@@ -63,14 +64,15 @@ public class MessageCardViewBinderTest {
     private final AtomicBoolean mMessageServiceReviewCallbackRan = new AtomicBoolean();
     private final AtomicBoolean mMessageServiceDismissCallbackRan = new AtomicBoolean();
 
-    private final MessageCardView.ReviewActionProvider mUiReviewHandler =
+    private final MessageCardView.ActionProvider mUiReviewHandler =
             () -> mReviewButtonClicked.set(true);
-    private final MessageCardView.DismissActionProvider mUiDismissHandler =
-            (int messageType) -> mDismissButtonClicked.set(true);
-    private final MessageCardView.ReviewActionProvider mMessageServiceActionHandler =
+    private final MessageCardView.ActionProvider mUiDismissHandler =
+            () -> mDismissButtonClicked.set(true);
+    private final MessageCardView.ActionProvider mMessageServiceActionHandler =
             () -> mMessageServiceReviewCallbackRan.set(true);
-    private final MessageCardView.DismissActionProvider mMessageServiceDismissHandler =
-            (int messageType) -> mMessageServiceDismissCallbackRan.set(true);
+    private final MessageCardView.ServiceDismissActionProvider<@MessageType Integer>
+            mMessageServiceDismissHandler =
+                    messageType -> mMessageServiceDismissCallbackRan.set(true);
 
     @BeforeClass
     public static void setupSuite() {

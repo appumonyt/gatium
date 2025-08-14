@@ -42,6 +42,7 @@
 #include "ui/gfx/animation/animation.h"
 #include "ui/gfx/animation/animation_test_api.h"
 #include "ui/views/actions/action_view_controller.h"
+#include "ui/views/animation/ink_drop.h"
 #include "ui/views/background.h"
 #include "ui/views/interaction/element_tracker_views.h"
 #include "ui/views/interaction/interaction_test_util_views.h"
@@ -371,6 +372,38 @@ TEST_F(PageActionViewTest, TooltipText) {
   EXPECT_EQ(page_action_view()->GetTooltipText(), kTestText);
 }
 
+TEST_F(PageActionViewTest, Highlight) {
+  auto scoped_mode = gfx::AnimationTestApi::SetRichAnimationRenderMode(
+      gfx::Animation::RichAnimationRenderMode::FORCE_DISABLED);
+
+  views::InkDropHost* const ink_drop =
+      views::InkDrop::Get(page_action_view()->ink_drop_view());
+
+  EXPECT_CALL(*model(), GetVisible()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*model(), GetActionActive()).WillRepeatedly(Return(true));
+  page_action_view()->OnPageActionModelChanged(*model());
+  EXPECT_TRUE(ink_drop->GetHighlighted());
+
+  EXPECT_CALL(*model(), GetActionActive()).WillRepeatedly(Return(false));
+  page_action_view()->OnPageActionModelChanged(*model());
+  EXPECT_FALSE(ink_drop->GetHighlighted());
+}
+
+// Regression test to ensure proper clean up when the view is destroyed while
+// highlighted.
+TEST_F(PageActionViewTest, HandleDestructionWhileHighlighted) {
+  auto scoped_mode = gfx::AnimationTestApi::SetRichAnimationRenderMode(
+      gfx::Animation::RichAnimationRenderMode::FORCE_DISABLED);
+
+  views::InkDropHost* const ink_drop =
+      views::InkDrop::Get(page_action_view()->ink_drop_view());
+
+  EXPECT_CALL(*model(), GetVisible()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*model(), GetActionActive()).WillRepeatedly(Return(true));
+  page_action_view()->OnPageActionModelChanged(*model());
+  EXPECT_TRUE(ink_drop->GetHighlighted());
+}
+
 // Test that OnThemeChanged updates the icon image correctly.
 TEST_F(PageActionViewTest, OnThemeChangedUpdatesIconImage) {
   // If the default size is the intended icon size, this test is useless.
@@ -416,32 +449,6 @@ TEST_F(PageActionViewTest, UpdateIconImageHandlesDifferentImageTypes) {
   EXPECT_FALSE(page_action_view()
                    ->GetImageModel(views::Button::STATE_NORMAL)
                    ->IsVectorIcon());
-}
-
-// Test that UpdateBorder() applies correct padding to image that is not a
-// vector icon.
-TEST_F(PageActionViewTest, UpdateBorderUsesChipPaddingForBitmapIcon) {
-  SkBitmap bitmap;
-  bitmap.allocN32Pixels(kDefaultIconSize, kDefaultIconSize);
-  const ui::ImageModel bitmap_image =
-      ui::ImageModel::FromImage(gfx::Image::CreateFrom1xBitmap(bitmap));
-  EXPECT_CALL(*model(), GetImage()).WillRepeatedly(ReturnRef(bitmap_image));
-  ASSERT_FALSE(bitmap_image.IsVectorIcon());
-
-  EXPECT_CALL(*model(), ShouldShowSuggestionChip())
-      .WillRepeatedly(Return(true));
-  EXPECT_CALL(*model(), GetVisible()).WillRepeatedly(Return(true));
-
-  page_action_view()->OnPageActionModelChanged(*model());
-  page_action_view()->UpdateBorder();
-
-  const gfx::Insets expected_insets =
-      gfx::Insets::VH(GetLayoutConstant(LOCATION_BAR_CHILD_INTERIOR_PADDING),
-                      GetLayoutConstant(LOCATION_BAR_CHIP_PADDING));
-  EXPECT_EQ(page_action_view()->GetInsets(), expected_insets);
-  EXPECT_EQ(page_action_view()->GetMinimumSize(),
-            page_action_view()->GetImageContainerView()->GetPreferredSize() +
-                expected_insets.size());
 }
 
 // Test that the corner radii are consistent for chips, regardless of whether
@@ -831,6 +838,71 @@ TEST_F(PageActionViewAnimationTest, ChipExpandedCallbackAnimateOut) {
   FastForwardAnimation();
   run_loop.Run();
 }
+
+struct PageActionViewNonVectorImagePaddingTestParams {
+  int image_size_delta;
+};
+
+class PageActionViewNonVectorImagePaddingTest
+    : public PageActionViewTest,
+      public ::testing::WithParamInterface<
+          PageActionViewNonVectorImagePaddingTestParams> {};
+
+// Test that UpdateBorder() applies correct padding to image against different
+// sizes.
+TEST_P(PageActionViewNonVectorImagePaddingTest,
+       UpdateBorderUsesChipPaddingForBitmapIcon) {
+  const int image_size = kDefaultIconSize - GetParam().image_size_delta;
+
+  SkBitmap bitmap;
+  bitmap.allocN32Pixels(image_size, image_size);
+  const ui::ImageModel bitmap_image =
+      ui::ImageModel::FromImage(gfx::Image::CreateFrom1xBitmap(bitmap));
+  EXPECT_CALL(*model(), GetImage()).WillRepeatedly(ReturnRef(bitmap_image));
+  ASSERT_FALSE(bitmap_image.IsVectorIcon());
+
+  EXPECT_CALL(*model(), ShouldShowSuggestionChip())
+      .WillRepeatedly(Return(true));
+  EXPECT_CALL(*model(), GetVisible()).WillRepeatedly(Return(true));
+
+  page_action_view()->OnPageActionModelChanged(*model());
+  page_action_view()->UpdateBorder();
+
+  const int padding = (kDefaultIconSize - image_size) / 2;
+  const gfx::Insets expected_insets = gfx::Insets(padding);
+
+  EXPECT_EQ(page_action_view()->GetInsets(), expected_insets);
+  EXPECT_EQ(page_action_view()->GetMinimumSize(),
+            page_action_view()->GetImageContainerView()->GetPreferredSize() +
+                expected_insets.size());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    PageActionViewNonVectorImagePaddingTest,
+    ::testing::Values(
+        PageActionViewNonVectorImagePaddingTestParams{
+            .image_size_delta = 4,
+        },
+        PageActionViewNonVectorImagePaddingTestParams{
+            .image_size_delta = 2,
+        },
+        PageActionViewNonVectorImagePaddingTestParams{
+            .image_size_delta = 0,
+        }),
+    [](const ::testing::TestParamInfo<
+        PageActionViewNonVectorImagePaddingTest::ParamType>& info) {
+      switch (info.param.image_size_delta) {
+        case 4:
+          return "VerySmallImage";
+        case 2:
+          return "SmallImage";
+        case 0:
+          return "SimilarImage";
+        default:
+          NOTREACHED();
+      }
+    });
 
 }  // namespace
 }  // namespace page_actions

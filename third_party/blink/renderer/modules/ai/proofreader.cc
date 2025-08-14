@@ -87,7 +87,7 @@ ScriptPromise<V8Availability> Proofreader::availability(
     return promise;
   }
 
-  auto callback = WTF::BindOnce(
+  auto callback = BindOnce(
       [](ScriptPromiseResolver<V8Availability>* resolver,
          ExecutionContext* execution_context,
          mojom::blink::ModelAvailabilityCheckResult result) {
@@ -156,9 +156,6 @@ ScriptPromise<ProofreadResult> Proofreader::proofread(
     return ScriptPromise<ProofreadResult>();
   }
 
-  base::UmaHistogramEnumeration(
-      AIMetrics::GetAIAPIUsageMetricName(AIMetrics::AISessionType::kProofreader),
-      AIMetrics::AIAPI::kProofreaderProofread);
   base::UmaHistogramCounts1M(AIMetrics::GetAISessionRequestSizeMetricName(
                                  AIMetrics::AISessionType::kProofreader),
                              static_cast<int>(input.CharactersSizeInBytes()));
@@ -191,8 +188,8 @@ ScriptPromise<ProofreadResult> Proofreader::proofread(
       /*complete_callback=*/base::DoNothingWithBoundArgs(WrapPersistent(this)),
       /*overflow_callback=*/base::DoNothingWithBoundArgs(WrapPersistent(this)),
       /*resolve_override_callback=*/
-      WTF::BindOnce(&Proofreader::OnProofreadComplete, WrapPersistent(this),
-                    WrapPersistent(resolver)));
+      BindOnce(&Proofreader::OnProofreadComplete, WrapPersistent(this),
+               WrapPersistent(resolver)));
   remote_->Proofread(input, std::move(pending_remote));
 
   return promise;
@@ -204,10 +201,6 @@ void Proofreader::destroy(ScriptState* script_state,
     ThrowInvalidContextException(exception_state);
     return;
   }
-
-  base::UmaHistogramEnumeration(AIMetrics::GetAIAPIUsageMetricName(
-                                    AIMetrics::AISessionType::kProofreader),
-                                AIMetrics::AIAPI::kSessionDestroy);
 
   remote_.reset();
 }

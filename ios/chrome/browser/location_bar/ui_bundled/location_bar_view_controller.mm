@@ -19,6 +19,7 @@
 #import "components/prefs/pref_service.h"
 #import "components/strings/grit/components_strings.h"
 #import "ios/chrome/browser/fullscreen/ui_bundled/fullscreen_animator.h"
+#import "ios/chrome/browser/intelligence/bwg/utils/bwg_constants.h"
 #import "ios/chrome/browser/intelligence/features/features.h"
 #import "ios/chrome/browser/intelligence/page_action_menu/ui/page_action_menu_entrypoint_view.h"
 #import "ios/chrome/browser/lens/ui_bundled/lens_entrypoint.h"
@@ -89,6 +90,9 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
 
 // The injected text field.
 @property(nonatomic, weak) UIView* textField;
+
+// The injected incognito badge view.
+@property(nonatomic, strong) UIView* incognitoBadgeView;
 
 // The injected badge view.
 @property(nonatomic, strong) UIView* badgeView;
@@ -175,6 +179,11 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
   _badgeView = badgeView;
 }
 
+- (void)setIncognitoBadgeView:(UIView*)incognitoBadgeView {
+  CHECK(!self.incognitoBadgeView);
+  _incognitoBadgeView = incognitoBadgeView;
+}
+
 - (void)setContextualPanelEntrypointView:
     (UIView*)contextualPanelEntrypointView {
   DCHECK(!self.contextualPanelEntrypointView);
@@ -190,7 +199,11 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
   if (placeholderType == _placeholderType) {
     return;
   }
-  _placeholderType = placeholderType;
+  if (IsDiamondPrototypeEnabled()) {
+    _placeholderType = LocationBarPlaceholderType::kNone;
+  } else {
+    _placeholderType = placeholderType;
+  }
   if (self.isViewLoaded) {
     [self updatePlaceholderView];
   }
@@ -250,6 +263,11 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
   return self.locationBarSteadyView.readerModeChipVisibilityDelegate;
 }
 
+- (id<IncognitoBadgeViewVisibilityDelegate>)
+    incognitoBadgeViewVisibilityDelegate {
+  return self.locationBarSteadyView.incognitoBadgeViewVisibilityDelegate;
+}
+
 - (void)setHelpCommandsHandler:(id<HelpCommands>)helpCommandsHandler {
   _helpCommandsHandler = helpCommandsHandler;
 }
@@ -268,6 +286,10 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
         setContextualPanelEntrypointView:self.contextualPanelEntrypointView];
   }
 
+  if (self.incognitoBadgeView) {
+    [self.locationBarSteadyView setIncognitoBadgeView:self.incognitoBadgeView];
+  }
+
   DCHECK(self.badgeView) << "The badge view must be set at this point";
   [self.locationBarSteadyView setBadgeView:self.badgeView];
   if (self.readerModeChipView) {
@@ -282,7 +304,9 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
         forControlEvents:UIControlEventTouchUpInside];
     [self.layoutGuideCenter referenceView:_pageActionMenuEntrypointView
                                 underName:kPageActionMenuEntrypointGuide];
-  } else if (IsLensOverlayAvailable(_profilePrefs)) {
+  }
+
+  if (IsLensOverlayAvailable(_profilePrefs)) {
     _lensOverlayPlaceholderView = [[LensOverlayEntrypointButton alloc]
         initWithProfilePrefs:_profilePrefs];
     [self.layoutGuideCenter referenceView:_lensOverlayPlaceholderView
@@ -330,7 +354,7 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
                        withAction:@selector(sizeClassDidChange)];
   }
 
-  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdate)) {
+  if (base::FeatureList::IsEnabled(omnibox::kOmniboxMobileParityUpdateV2)) {
     _defaultSearchEngineIconView = [[UIImageView alloc] init];
     _defaultSearchEngineIconView.translatesAutoresizingMaskIntoConstraints = NO;
     _defaultSearchEngineIconView.contentMode = UIViewContentModeCenter;
@@ -338,20 +362,6 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
         _defaultSearchEngineIconView,
         CGSizeMake(kOmniboxLeadingImageSize + 12.0f, kOmniboxLeadingImageSize));
   }
-}
-
-- (void)viewWillDisappear:(BOOL)animated {
-  [super viewWillDisappear:animated];
-
-  [NSNotificationCenter.defaultCenter
-      removeObserver:self
-                name:UIPasteboardChangedNotification
-              object:nil];
-
-  [NSNotificationCenter.defaultCenter
-      removeObserver:self
-                name:UIApplicationDidBecomeActiveNotification
-              object:nil];
 }
 
 #if !defined(__IPHONE_17_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_17_0
@@ -666,6 +676,10 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
     state = kNoButton;
   }
 
+  if (IsDiamondPrototypeEnabled()) {
+    state = kNoButton;
+  }
+
   switch (state) {
     case kNoButton: {
       self.locationBarSteadyView.trailingButton.hidden = YES;
@@ -792,8 +806,21 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
 
 - (UIMenu*)contextMenuUIMenu:(NSArray<UIMenuElement*>*)suggestedActions {
   NSMutableArray<UIMenuElement*>* menuElements = [[NSMutableArray alloc] init];
-
   __weak __typeof__(self) weakSelf = self;
+
+  if (IsDiamondPrototypeEnabled() && !self.locationBarSteadyView.hidden) {
+    UIImage* image =
+        DefaultSymbolWithPointSize(kShareSymbol, kSymbolActionPointSize);
+    UIAction* copyAction = [UIAction
+        actionWithTitle:l10n_util::GetNSString(IDS_IOS_SHARE_BUTTON_LABEL)
+                  image:image
+             identifier:nil
+                handler:^(UIAction* action) {
+                  [weakSelf.delegate locationBarShareTapped];
+                }];
+    [menuElements addObject:copyAction];
+  }
+
   UIImage* pasteImage = nil;
   if (IsBottomOmniboxAvailable()) {
     pasteImage =
@@ -1027,7 +1054,7 @@ const CGFloat kShareIconBalancingHeightPadding = 1;
 - (void)handlePageActionMenuEntrypointTapped {
   // TODO(crbug.com/402827015): Log opens.
   if (IsDirectBWGEntryPoint()) {
-    [self.BWGHandler startBWGFlow];
+    [self.BWGHandler startBWGFlowWithEntryPoint:bwg::EntryPoint::OmniboxChip];
   } else {
     [self.pageActionMenuHandler showPageActionMenu];
   }

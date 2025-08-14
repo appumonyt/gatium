@@ -23,8 +23,8 @@ namespace {
 
 // Size of the Chrome logo.
 constexpr CGFloat kChromeLogoSize = 24;
-// Size of the close button.
-constexpr CGFloat kCloseButtonSize = 30;
+// Size of the close button when liquid glass is disabled.
+constexpr CGFloat kCloseButtonSizePreLiquidGlass = 30;
 // Size of the data type icons representing the different segments
 // of the segmented control.
 constexpr CGFloat kDataTypeIconSize = 18;
@@ -56,6 +56,11 @@ constexpr CGFloat kSegmentedControlLeadingSpacingWideLayout = 18;
 // the wide layout only.
 constexpr CGFloat kSegmentedControlTrailingSpacingWideLayout = 15;
 
+#if defined(__IPHONE_26_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_26_0
+// Size of the close button.
+constexpr CGFloat kCloseButtonSize = 44;
+#endif
+
 // Helper method to get the right segment index depending on the `data_type`.
 int GetSegmentIndexForDataType(ManualFillDataType data_type) {
   switch (data_type) {
@@ -68,6 +73,34 @@ int GetSegmentIndexForDataType(ManualFillDataType data_type) {
     case ManualFillDataType::kOther:
       NOTREACHED();
   }
+}
+
+// Returns the color to use for the view's background.
+UIColor* GetBackgroundColor() {
+#if defined(__IPHONE_26_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_26_0
+  if (@available(iOS 26, *)) {
+    return UIColor.clearColor;
+  }
+#endif
+
+  return [UIColor colorNamed:kGroupedPrimaryBackgroundColor];
+}
+
+// Returns the symbol configuration to use for the close button.
+UIImageSymbolConfiguration* GetCloseButtonSymbolConfiguration() {
+#if defined(__IPHONE_26_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_26_0
+  if (@available(iOS 26, *)) {
+    return [UIImageSymbolConfiguration
+        configurationWithPointSize:kCloseButtonSize
+                            weight:UIImageSymbolWeightThin
+                             scale:UIImageSymbolScaleDefault];
+  }
+#endif
+
+  return [UIImageSymbolConfiguration
+      configurationWithPointSize:kCloseButtonSizePreLiquidGlass
+                          weight:UIImageSymbolWeightRegular
+                           scale:UIImageSymbolScaleMedium];
 }
 
 }  // namespace
@@ -146,8 +179,7 @@ int GetSegmentIndexForDataType(ManualFillDataType data_type) {
   [super viewDidLoad];
 
   self.view.accessibilityIdentifier = manual_fill::kExpandedManualFillViewID;
-  self.view.backgroundColor =
-      [UIColor colorNamed:kGroupedPrimaryBackgroundColor];
+  self.view.backgroundColor = GetBackgroundColor();
 
   // Set the view's frame to get the right height initially. Once the view's
   // window is loaded in `viewDidAppear`, the view's height will be
@@ -361,10 +393,8 @@ int GetSegmentIndexForDataType(ManualFillDataType data_type) {
   closeButton.accessibilityLabel = l10n_util::GetNSString(
       IDS_IOS_EXPANDED_MANUAL_FILL_CLOSE_BUTTON_ACCESSIBILITY_LABEL);
 
-  UIImageSymbolConfiguration* symbolConfiguration = [UIImageSymbolConfiguration
-      configurationWithPointSize:kCloseButtonSize
-                          weight:UIImageSymbolWeightRegular
-                           scale:UIImageSymbolScaleMedium];
+  UIImageSymbolConfiguration* symbolConfiguration =
+      GetCloseButtonSymbolConfiguration();
   UIImage* buttonImage = SymbolWithPalette(
       DefaultSymbolWithConfiguration(kXMarkCircleFillSymbol,
                                      symbolConfiguration),

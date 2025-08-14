@@ -178,10 +178,10 @@ class DownloadBubbleSecurityViewTest : public ChromeViewsTestBase {
     profile_ = testing_profile_manager_.CreateTestingProfile("testing_profile");
     EXPECT_CALL(*manager_.get(), GetBrowserContext())
         .WillRepeatedly(testing::Return(profile_.get()));
-    window_ = std::make_unique<TestBrowserWindow>();
+    auto window = std::make_unique<TestBrowserWindow>();
     Browser::CreateParams params(profile_, true);
     params.type = Browser::TYPE_NORMAL;
-    params.window = window_.get();
+    params.window = window.release();
     browser_ = Browser::DeprecatedCreateOwnedForTesting(params);
 
     security_view_info_ = std::make_unique<DownloadBubbleSecurityViewInfo>();
@@ -298,7 +298,6 @@ class DownloadBubbleSecurityViewTest : public ChromeViewsTestBase {
   std::unique_ptr<testing::NiceMock<content::MockDownloadManager>> manager_;
   TestingProfileManager testing_profile_manager_;
   raw_ptr<Profile> profile_ = nullptr;
-  std::unique_ptr<TestBrowserWindow> window_;
   std::unique_ptr<Browser> browser_;
 };
 
@@ -319,7 +318,6 @@ TEST_F(DownloadBubbleSecurityViewTest,
             static_cast<int>(ui::mojom::DialogButton::kOk));
 
   // Two buttons, none prominent
-  security_view_->Reset();
   security_view_info_->InitializeForDownload(*row1_model_);
   security_view_info_->SetSubpageButtonsForTesting(
       {SubpageButton(DownloadCommands::Command::DISCARD, std::u16string(),
@@ -335,7 +333,6 @@ TEST_F(DownloadBubbleSecurityViewTest,
             static_cast<int>(ui::mojom::DialogButton::kNone));
 
   // One button, none prominent
-  security_view_->Reset();
   security_view_info_->InitializeForDownload(*row1_model_);
   security_view_info_->SetSubpageButtonsForTesting(
       {SubpageButton(DownloadCommands::Command::DISCARD, std::u16string(),
@@ -348,7 +345,6 @@ TEST_F(DownloadBubbleSecurityViewTest,
             static_cast<int>(ui::mojom::DialogButton::kNone));
 
   // No buttons, none prominent
-  security_view_->Reset();
   security_view_info_->InitializeForDownload(*row1_model_);
   security_view_info_->SetSubpageButtonsForTesting({});
   UpdateView();
@@ -542,7 +538,6 @@ TEST_F(DownloadBubbleSecurityViewTest, ResizesOnUpdate) {
   int short_width =
       bubble_delegate_->GetDialogClientView()->GetMinimumSize().width();
 
-  security_view_->Reset();
   security_view_info_->InitializeForDownload(*row1_model_);
   security_view_info_->SetSubpageButtonsForTesting({SubpageButton(
       DownloadCommands::Command::DISCARD,
@@ -555,7 +550,6 @@ TEST_F(DownloadBubbleSecurityViewTest, ResizesOnUpdate) {
 
   ASSERT_LT(short_width, medium_width);
 
-  security_view_->Reset();
   security_view_info_->InitializeForDownload(*row1_model_);
   security_view_info_->SetSubpageButtonsForTesting(
       {SubpageButton(DownloadCommands::Command::DISCARD, std::u16string(),
@@ -583,7 +577,6 @@ TEST_F(DownloadBubbleSecurityViewTest, InitializeAndReset) {
             OfflineItemUtils::GetContentIdForDownload(&download_item1_));
 
   // Reset and initialize with the other download.
-  security_view_->Reset();
   security_view_info_->InitializeForDownload(*row2_model_);
   EXPECT_TRUE(security_view_->IsInitialized());
   EXPECT_EQ(security_view_->content_id(),

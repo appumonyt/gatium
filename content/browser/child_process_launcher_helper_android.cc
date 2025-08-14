@@ -9,11 +9,10 @@
 #include <utility>
 #include <vector>
 
+#include "base/android/android_info.h"
 #include "base/android/apk_assets.h"
+#include "base/android/apk_info.h"
 #include "base/android/application_status_listener.h"
-#include "base/android/binder.h"
-#include "base/android/binder_box.h"
-#include "base/android/build_info.h"
 #include "base/android/jni_array.h"
 #include "base/base_switches.h"
 #include "base/feature_list.h"
@@ -116,17 +115,18 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
 
   // The child processes can't correctly retrieve host package information so we
   // rather feed this information through the command line.
-  auto* build_info = base::android::BuildInfo::GetInstance();
-  command_line()->AppendSwitchASCII(switches::kHostPackageName,
-                                    build_info->host_package_name());
+  command_line()->AppendSwitchASCII(
+      switches::kHostPackageName, base::android::apk_info::host_package_name());
   command_line()->AppendSwitchASCII(switches::kPackageName,
-                                    build_info->package_name());
-  command_line()->AppendSwitchASCII(switches::kHostPackageLabel,
-                                    build_info->host_package_label());
-  command_line()->AppendSwitchASCII(switches::kHostVersionCode,
-                                    build_info->host_version_code());
-  command_line()->AppendSwitchASCII(switches::kPackageVersionName,
-                                    build_info->package_version_name());
+                                    base::android::apk_info::package_name());
+  command_line()->AppendSwitchASCII(
+      switches::kHostPackageLabel,
+      base::android::apk_info::host_package_label());
+  command_line()->AppendSwitchASCII(
+      switches::kHostVersionCode, base::android::apk_info::host_version_code());
+  command_line()->AppendSwitchASCII(
+      switches::kPackageVersionName,
+      base::android::apk_info::package_version_name());
 
   return true;
 }
@@ -143,14 +143,6 @@ ChildProcessLauncherHelper::LaunchProcessOnLauncherThread(
 
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
-
-  std::vector<base::android::BinderRef> binders;
-  if (mojo_channel_->remote_endpoint().platform_handle().is_valid_binder()) {
-    base::LaunchOptions binder_options;
-    auto endpoint = mojo_channel_->TakeRemoteEndpoint();
-    endpoint.PrepareToPass(binder_options, *command_line());
-    binders = std::move(binder_options.binders);
-  }
 
   // Create the Command line String[]
   ScopedJavaLocalRef<jobjectArray> j_argv =
@@ -187,8 +179,7 @@ ChildProcessLauncherHelper::LaunchProcessOnLauncherThread(
   AddRef();  // Balanced by OnChildProcessStarted.
   java_peer_.Reset(Java_ChildProcessLauncherHelperImpl_createAndStart(
       env, reinterpret_cast<intptr_t>(this), j_argv, j_file_infos,
-      can_use_warm_up_connection,
-      base::android::PackBinderBox(env, std::move(binders))));
+      can_use_warm_up_connection));
 
   client_task_runner_->PostTask(
       FROM_HERE,

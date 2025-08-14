@@ -208,8 +208,15 @@ using chrome_test_util::TappableBookmarkNodeWithLabel;
                                           kBookmarksHomeSearchScrimIdentifier)]
       assertWithMatcher:grey_notNil()];
 
-  // Cancel.
-  [[EarlGrey selectElementWithMatcher:CancelButton()] performAction:grey_tap()];
+  // Cancel search.
+  if (iOS26_OR_ABOVE()) {
+    [[EarlGrey selectElementWithMatcher:SearchIconButton()]
+        performAction:grey_tap()];
+    [ChromeEarlGrey simulatePhysicalKeyboardEvent:@"escape" flags:0];
+  } else {
+    [[EarlGrey selectElementWithMatcher:CancelButton()]
+        performAction:grey_tap()];
+  }
 
   // Verify that scrim is not visible.
   [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
@@ -312,8 +319,13 @@ using chrome_test_util::TappableBookmarkNodeWithLabel;
       selectElementWithMatcher:TappableBookmarkNodeWithLabel(@"French URL")]
       assertWithMatcher:grey_nil()];
 
-  // Cancel.
-  [[EarlGrey selectElementWithMatcher:CancelButton()] performAction:grey_tap()];
+  // Cancel search.
+  if (iOS26_OR_ABOVE()) {
+    [ChromeEarlGrey simulatePhysicalKeyboardEvent:@"escape" flags:0];
+  } else {
+    [[EarlGrey selectElementWithMatcher:CancelButton()]
+        performAction:grey_tap()];
+  }
 
   // Verify all items are back.
   [[EarlGrey
@@ -338,19 +350,23 @@ using chrome_test_util::TappableBookmarkNodeWithLabel;
   [[EarlGrey selectElementWithMatcher:SearchIconButton()]
       performAction:grey_tap()];
 
-  // Verify we have no navigation bar.
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
-                                          kBookmarksHomeUIToolbarIdentifier)]
-      assertWithMatcher:grey_nil()];
+  if (!iOS26_OR_ABOVE()) {
+    // Verify we have no navigation bar.
+    [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
+                                            kBookmarksHomeUIToolbarIdentifier)]
+        assertWithMatcher:grey_nil()];
+  }
 
   // Search.
   [[EarlGrey selectElementWithMatcher:SearchIconButton()]
       performAction:grey_replaceText(@"First")];
 
-  // Verify we now have a navigation bar.
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
-                                          kBookmarksHomeUIToolbarIdentifier)]
-      assertWithMatcher:grey_notNil()];
+  if (!iOS26_OR_ABOVE()) {
+    // Verify we now have a navigation bar.
+    [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
+                                            kBookmarksHomeUIToolbarIdentifier)]
+        assertWithMatcher:grey_notNil()];
+  }
 }
 
 // Tests that you can long press and edit a bookmark and see edits when going
@@ -488,7 +504,7 @@ using chrome_test_util::TappableBookmarkNodeWithLabel;
   [BookmarkEarlGreyUI openMobileBookmarks];
 
   // Verify search bar is enabled.
-  [[EarlGrey selectElementWithMatcher:grey_kindOfClassName(@"UISearchBar")]
+  [[EarlGrey selectElementWithMatcher:SearchIconButton()]
       assertWithMatcher:grey_userInteractionEnabled()];
 
   // Change to edit mode
@@ -498,14 +514,14 @@ using chrome_test_util::TappableBookmarkNodeWithLabel;
       performAction:grey_tap()];
 
   // Verify search bar is disabled.
-  [[EarlGrey selectElementWithMatcher:grey_kindOfClassName(@"UISearchBar")]
+  [[EarlGrey selectElementWithMatcher:SearchIconButton()]
       assertWithMatcher:grey_not(grey_userInteractionEnabled())];
 
   // Cancel edito mode.
   [BookmarkEarlGreyUI closeContextBarEditMode];
 
   // Verify search bar is enabled.
-  [[EarlGrey selectElementWithMatcher:grey_kindOfClassName(@"UISearchBar")]
+  [[EarlGrey selectElementWithMatcher:SearchIconButton()]
       assertWithMatcher:grey_userInteractionEnabled()];
 }
 
@@ -523,10 +539,12 @@ using chrome_test_util::TappableBookmarkNodeWithLabel;
   // replaceText can properly handle \n.
   [ChromeEarlGrey simulatePhysicalKeyboardEvent:@"\n" flags:0];
 
-  // Verify we now have a navigation bar.
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
-                                          kBookmarksHomeUIToolbarIdentifier)]
-      assertWithMatcher:grey_notNil()];
+  if (!iOS26_OR_ABOVE()) {
+    // Verify we now have a navigation bar.
+    [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
+                                            kBookmarksHomeUIToolbarIdentifier)]
+        assertWithMatcher:grey_notNil()];
+  }
 
   [[EarlGrey selectElementWithMatcher:ContextBarLeadingButtonWithLabel(
                                           [BookmarkEarlGreyUI
@@ -715,7 +733,14 @@ using chrome_test_util::TappableBookmarkNodeWithLabel;
                                                      newFolderEnabled:NO];
 
   // Cancel search.
-  [[EarlGrey selectElementWithMatcher:CancelButton()] performAction:grey_tap()];
+  if (iOS26_OR_ABOVE()) {
+    [[EarlGrey selectElementWithMatcher:SearchIconButton()]
+        performAction:grey_tap()];
+    [ChromeEarlGrey simulatePhysicalKeyboardEvent:@"escape" flags:0];
+  } else {
+    [[EarlGrey selectElementWithMatcher:CancelButton()]
+        performAction:grey_tap()];
+  }
 
   // Verify Folder 1 has three bookmark nodes.
   [BookmarkEarlGrey verifyChildCount:3
@@ -789,12 +814,19 @@ using chrome_test_util::TappableBookmarkNodeWithLabel;
       assertWithMatcher:grey_notNil()];
 
   // Cancel search.
-  [[EarlGrey selectElementWithMatcher:CancelButton()] performAction:grey_tap()];
+  if (iOS26_OR_ABOVE()) {
+    [ChromeEarlGrey simulatePhysicalKeyboardEvent:@"escape" flags:0];
+  } else {
+    [[EarlGrey selectElementWithMatcher:CancelButton()]
+        performAction:grey_tap()];
+  }
 
   // Verify we have no navigation bar.
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
-                                          kBookmarksHomeUIToolbarIdentifier)]
-      assertWithMatcher:grey_nil()];
+  if (!iOS26_OR_ABOVE()) {
+    [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
+                                            kBookmarksHomeUIToolbarIdentifier)]
+        assertWithMatcher:grey_nil()];
+  }
 }
 
 // Tests that you can search folders.

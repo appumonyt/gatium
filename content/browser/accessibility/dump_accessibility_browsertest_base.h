@@ -22,6 +22,11 @@
 #include "ui/accessibility/platform/inspect/ax_inspect_scenario.h"
 #include "ui/accessibility/platform/inspect/ax_inspect_test_helper.h"
 
+namespace net::test_server {
+struct HttpRequest;
+class HttpResponse;
+}  // namespace net::test_server
+
 namespace ui {
 class BrowserAccessibilityManager;
 class BrowserAccessibility;
@@ -134,8 +139,9 @@ class DumpAccessibilityTestBase
   // as a sequence of strings.
   virtual std::vector<std::string> Dump() = 0;
 
-  // Add the default filters that are applied to all tests.
-  virtual std::vector<ui::AXPropertyFilter> DefaultFilters() const = 0;
+  // Add the default property filters that are applied to all tests.
+  // Subclasses can adjust the filters if and as needed.
+  virtual std::vector<ui::AXPropertyFilter> DefaultFilters() const;
 
   // This gets called if the diff didn't match; the test can print
   // additional useful info.
@@ -177,8 +183,8 @@ class DumpAccessibilityTestBase
   std::unique_ptr<ui::AXTreeFormatter> CreateFormatter() const;
 
   // Returns a list of captured events fired after the invoked action.
-  using InvokeAction = base::OnceCallback<EvalJsResult()>;
-  std::pair<EvalJsResult, std::vector<std::string>> CaptureEvents(
+  using InvokeAction = base::OnceCallback<base::Value()>;
+  virtual std::pair<base::Value, std::vector<std::string>> CaptureEvents(
       InvokeAction invoke_action);
 
   // Test scenario loaded from the test file.
@@ -233,6 +239,11 @@ class DumpAccessibilityTestBase
                                 : BrowserTestBase::embedded_test_server();
   }
 
+  // Helper methods for Material Design component testing
+  void SetUpMaterialDesignRequestHandler();
+  std::unique_ptr<net::test_server::HttpResponse> HandleMaterialDesignRequest(
+      const net::test_server::HttpRequest& request);
+
  private:
   std::string FormatWebContentsTree(const ui::AXTreeFormatter&) const;
 
@@ -264,6 +275,9 @@ class DumpAccessibilityTestBase
   // created using UseHttpsTestServer() and then called with
   // embedded_test_server().
   std::unique_ptr<net::EmbeddedTestServer> https_test_server_;
+
+  // Path to Material Design components in third_party for request handling
+  base::FilePath node_modules_dir_;
 };
 
 }  // namespace content

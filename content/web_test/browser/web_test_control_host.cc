@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/341324165): Fix and remove.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "content/web_test/browser/web_test_control_host.h"
 
 #include <stddef.h>
@@ -25,6 +20,7 @@
 #include "base/barrier_closure.h"
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -98,7 +94,6 @@
 #include "content/web_test/common/web_test_constants.h"
 #include "content/web_test/common/web_test_string_util.h"
 #include "content/web_test/common/web_test_switches.h"
-#include "ipc/ipc_channel_proxy.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 #include "net/cookies/cookie_util.h"
 #include "services/device/public/cpp/compute_pressure/buildflags.h"
@@ -1087,17 +1082,6 @@ void WebTestControlHost::RequestPointerLock(WebContents* web_contents) {
   next_pointer_lock_action_ = NextPointerLockAction::kWillSucceed;
 }
 
-void WebTestControlHost::PluginCrashed(const base::FilePath& plugin_path,
-                                       base::ProcessId plugin_pid) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  printer_->AddErrorMessage(
-      base::StringPrintf("#CRASHED - plugin (pid %" CrPRIdPid ")", plugin_pid));
-  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE,
-      base::BindOnce(base::IgnoreResult(&WebTestControlHost::DiscardMainWindow),
-                     weak_factory_.GetWeakPtr()));
-}
-
 void WebTestControlHost::TitleWasSet(NavigationEntry* entry) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   std::vector<std::string> logs = DumpTitleWasSet(main_window_->web_contents());
@@ -1424,9 +1408,9 @@ void WebTestControlHost::ReportResults() {
     // pixels are in fact initialized.
     MSAN_UNPOISON(pixel_dump_->getPixels(), pixel_dump_->computeByteSize());
     base::MD5Digest digest;
-    auto bytes =
+    auto bytes = UNSAFE_TODO(
         base::span(static_cast<const uint8_t*>(pixel_dump_->getPixels()),
-                   pixel_dump_->computeByteSize());
+                   pixel_dump_->computeByteSize()));
     base::MD5Sum(bytes, &digest);
     actual_pixel_hash_ = base::MD5DigestToBase16(digest);
 

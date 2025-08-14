@@ -59,6 +59,7 @@ InspectorStyleResolver::InspectorStyleResolver(
         element_pseudo_id == kPseudoIdBefore ||
         element_pseudo_id == kPseudoIdAfter ||
         element_pseudo_id == kPseudoIdPickerIcon ||
+        element_pseudo_id == kPseudoIdInterestHint ||
         element_pseudo_id == kPseudoIdMarker ||
         element_pseudo_id == kPseudoIdBackdrop ||
         element_pseudo_id == kPseudoIdColumn ||
@@ -123,8 +124,9 @@ InspectorStyleResolver::InspectorStyleResolver(
          pseudo_id = static_cast<PseudoId>(pseudo_id + 1)) {
       // Only highlight pseudos can be inherited.
       if (!PseudoElement::IsWebExposed(pseudo_id, element_) ||
-          !UsesHighlightPseudoInheritance(pseudo_id))
+          !IsHighlightPseudoElement(pseudo_id)) {
         continue;
+      }
 
       RuleIndexList* matched_rules = style_resolver.PseudoCSSRulesForElement(
           parent_element, pseudo_id, g_null_atom,

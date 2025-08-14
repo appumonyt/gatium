@@ -50,14 +50,17 @@
 #include "components/search_engines/template_url_data.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_starter_pack_data.h"
+#include "components/strings/grit/components_strings.h"
 #include "components/sync/base/features.h"
 #include "components/url_formatter/url_formatter.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/mime_util.h"
 #include "net/base/url_util.h"
 #include "third_party/metrics_proto/omnibox_input_type.pb.h"
+#include "third_party/search_engines_data/built_in_marketing_snippets.h"
 #include "third_party/search_engines_data/resources/definitions/prepopulated_engines.h"
 #include "ui/base/device_form_factor.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
 namespace {
@@ -217,6 +220,7 @@ std::string YandexSearchPathFromDeviceFormFactor() {
     case ui::DEVICE_FORM_FACTOR_TABLET:
     case ui::DEVICE_FORM_FACTOR_FOLDABLE:
     case ui::DEVICE_FORM_FACTOR_AUTOMOTIVE:
+    case ui::DEVICE_FORM_FACTOR_XR:
       return "search/pad/";
   }
   NOTREACHED();
@@ -258,7 +262,7 @@ TemplateURLRef::SearchTermsArgs::SearchTermsArgs(
 TemplateURLRef::SearchTermsArgs::SearchTermsArgs(const SearchTermsArgs& other) =
     default;
 
-TemplateURLRef::SearchTermsArgs::~SearchTermsArgs() {}
+TemplateURLRef::SearchTermsArgs::~SearchTermsArgs() = default;
 
 size_t TemplateURLRef::SearchTermsArgs::EstimateMemoryUsage() const {
   size_t res = 0;
@@ -294,7 +298,8 @@ TemplateURLRef::SearchTermsArgs::ContextualSearchParams::ContextualSearchParams(
     std::string target_lang,
     std::string fluent_languages,
     std::string related_searches_stamp,
-    bool apply_lang_hint)
+    bool apply_lang_hint,
+    bool use_snippet_as_subtitle)
     : version(version),
       contextual_cards_version(contextual_cards_version),
       home_country(home_country),
@@ -305,13 +310,14 @@ TemplateURLRef::SearchTermsArgs::ContextualSearchParams::ContextualSearchParams(
       target_lang(target_lang),
       fluent_languages(fluent_languages),
       related_searches_stamp(related_searches_stamp),
-      apply_lang_hint(apply_lang_hint) {}
+      apply_lang_hint(apply_lang_hint),
+      use_snippet_as_subtitle(use_snippet_as_subtitle) {}
 
 TemplateURLRef::SearchTermsArgs::ContextualSearchParams::ContextualSearchParams(
     const ContextualSearchParams& other) = default;
 
 TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
-    ~ContextualSearchParams() {}
+    ~ContextualSearchParams() = default;
 
 size_t
 TemplateURLRef::SearchTermsArgs::ContextualSearchParams::EstimateMemoryUsage()
@@ -333,7 +339,7 @@ TemplateURLRef::TemplateURLRef(const TemplateURL* owner, size_t index_in_owner)
   DCHECK_LT(index_in_owner_, owner_->alternate_urls().size());
 }
 
-TemplateURLRef::~TemplateURLRef() {}
+TemplateURLRef::~TemplateURLRef() = default;
 
 TemplateURLRef::TemplateURLRef(const TemplateURLRef& source) = default;
 
@@ -495,17 +501,6 @@ std::string TemplateURLRef::ReplaceSearchTerms(
     }
   }
 
-#if BUILDFLAG(IS_ANDROID)
-  if (!base::FeatureList::IsEnabled(
-          switches::kRemoveSearchEngineChoiceAttribution) &&
-      owner_->GetRegulatoryExtensionType() ==
-          RegulatoryExtensionType::kAndroidEEA) {
-    // Append attribution parameter to query originating from Play API search
-    // engine.
-    query_params.push_back("chrome_dse_attribution=1");
-  }
-#endif
-
   if (query_params.empty())
     return url;
 
@@ -635,11 +630,11 @@ bool TemplateURLRef::ExtractSearchTermsFromURL(
 
   // We need a search term in the template URL to extract something.
   if (search_term_key_.empty() &&
-      (search_term_key_location_ != url::Parsed::PATH))
+      search_term_key_location_ != url::Parsed::PATH)
     return false;
 
   // Host, port, and path must match.
-  if ((url.host() != host_) || (url.port() != port_) ||
+  if (url.host() != host_ || url.port() != port_ ||
       (!PathIsEqual(url) && (search_term_key_location_ != url::Parsed::PATH))) {
     return false;
   }
@@ -1139,6 +1134,8 @@ std::string TemplateURLRef::HandleReplacements(
           args.push_back("ctxsl_rs=" + params.related_searches_stamp);
         if (params.apply_lang_hint)
           args.push_back("ctxsl_applylh=1");
+        if (params.use_snippet_as_subtitle)
+          args.push_back("ctxs_usas=1");
 
         HandleReplacement(std::string(), base::JoinString(args, "&"),
                           replacement, &url);
@@ -1595,7 +1592,7 @@ TemplateURL::AssociatedExtensionInfo::AssociatedExtensionInfo(
       install_time(install_time),
       wants_to_be_default_engine(wants_to_be_default_engine) {}
 
-TemplateURL::AssociatedExtensionInfo::~AssociatedExtensionInfo() {}
+TemplateURL::AssociatedExtensionInfo::~AssociatedExtensionInfo() = default;
 
 size_t TemplateURL::AssociatedExtensionInfo::EstimateMemoryUsage() const {
   return base::trace_event::EstimateMemoryUsage(extension_id);
@@ -1636,7 +1633,9 @@ TemplateURL::TemplateURL(const TemplateURLData& data,
       extension_id, install_time, wants_to_be_default_engine);
 }
 
-TemplateURL::~TemplateURL() {}
+TemplateURL::TemplateURL(TemplateURL&& other) = default;
+
+TemplateURL::~TemplateURL() = default;
 
 bool TemplateURL::IsBetterThanConflictingEngine(
     const TemplateURL* other) const {
@@ -1813,7 +1812,7 @@ std::optional<std::string_view> TemplateURL::GetBaseBuiltinResourceId() const {
                 // It would be useful to disambiguate between regional variants
                 // of some engines that could be using different icons. It is
                 // not a use case we have for now, so that's unnecessary.
-                /*regional_prepopulated_engines=*/ {});
+                /*regional_prepopulated_engines=*/{});
 
     if (reference_builtin_engine &&
         reference_builtin_engine->base_builtin_resource_id) {
@@ -1833,6 +1832,25 @@ std::string TemplateURL::GetBuiltinImageResourceId() const {
     return base::StrCat({base_resource_id.value(), "_IMAGE"});
   }
   return "IDR_DEFAULT_FAVICON";
+}
+
+std::optional<std::u16string> TemplateURL::GetBuiltinMarketingSnippet() const {
+#if !BUILDFLAG(IS_ANDROID)
+  int snippet_resource_id =
+      kEnableBuiltinSearchProviderAssets
+          ? search_engines_data::GetMarketingSnippetResourceId(keyword())
+          : -1;
+
+  if (snippet_resource_id != -1) {
+    return l10n_util::GetStringUTF16(snippet_resource_id);
+  }
+#endif
+  return std::nullopt;
+}
+
+std::u16string TemplateURL::GetMarketingSnippet() const {
+  return GetBuiltinMarketingSnippet().value_or(l10n_util::GetStringFUTF16(
+      IDS_SEARCH_ENGINE_FALLBACK_MARKETING_SNIPPET, short_name()));
 }
 
 SearchEngineType TemplateURL::GetEngineType(

@@ -33,12 +33,12 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_usage_estimator.h"
+#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "net/base/features.h"
 #include "net/base/privacy_mode.h"
 #include "net/base/proxy_chain.h"
 #include "net/base/proxy_string_util.h"
-#include "net/base/tracing.h"
 #include "net/base/url_util.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/cert_verify_result.h"
@@ -2898,7 +2898,8 @@ void SpdySession::OnStreamFrameData(spdy::SpdyStreamId stream_id,
   if (data) {
     DCHECK_GT(len, 0u);
     CHECK_LE(len, static_cast<size_t>(kReadBufferSize));
-    buffer = std::make_unique<SpdyBuffer>(data, len);
+    buffer = std::make_unique<SpdyBuffer>(
+        base::as_byte_span(UNSAFE_TODO(base::span(data, len))));
 
     DecreaseRecvWindowSize(static_cast<int32_t>(len));
     buffer->AddConsumeCallback(base::BindRepeating(

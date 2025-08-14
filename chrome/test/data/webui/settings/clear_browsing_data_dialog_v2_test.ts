@@ -10,12 +10,13 @@ import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 import type {ClearBrowsingDataResult, SettingsCheckboxElement, SettingsClearBrowsingDataDialogV2Element, SettingsHistoryDeletionDialogElement} from 'chrome://settings/lazy_load.js';
 import {BrowsingDataType, ClearBrowsingDataBrowserProxyImpl, getDataTypePrefName, getTimePeriodString, TimePeriod} from 'chrome://settings/lazy_load.js';
 import type {SettingsPrefsElement} from 'chrome://settings/settings.js';
-import {CrSettingsPrefs, SignedInState, SyncBrowserProxyImpl} from 'chrome://settings/settings.js';
+import {CrSettingsPrefs, MetricsBrowserProxyImpl, SignedInState, StatusAction, SyncBrowserProxyImpl, Router, routes, resetRouterForTesting} from 'chrome://settings/settings.js';
 import {assertArrayEquals, assertEquals, assertFalse, assertNotReached, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 import {eventToPromise, isVisible} from 'chrome://webui-test/test_util.js';
 
 import {TestClearBrowsingDataBrowserProxy} from './test_clear_browsing_data_browser_proxy.js';
+import {TestMetricsBrowserProxy} from './test_metrics_browser_proxy.js';
 import {TestSyncBrowserProxy} from './test_sync_browser_proxy.js';
 
 // clang-format on
@@ -23,6 +24,7 @@ import {TestSyncBrowserProxy} from './test_sync_browser_proxy.js';
 suite('DeleteBrowsingDataDialog', function() {
   let testClearBrowsingDataBrowserProxy: TestClearBrowsingDataBrowserProxy;
   let testSyncBrowserProxy: TestSyncBrowserProxy;
+  let testMetricsBrowserProxy: TestMetricsBrowserProxy;
   let dialog: SettingsClearBrowsingDataDialogV2Element;
   let settingsPrefs: SettingsPrefsElement;
 
@@ -37,9 +39,16 @@ suite('DeleteBrowsingDataDialog', function() {
         testClearBrowsingDataBrowserProxy);
     testSyncBrowserProxy = new TestSyncBrowserProxy();
     SyncBrowserProxyImpl.setInstance(testSyncBrowserProxy);
+    testMetricsBrowserProxy = new TestMetricsBrowserProxy();
+    MetricsBrowserProxyImpl.setInstance(testMetricsBrowserProxy);
 
     setClearBrowsingDataPrefs(false);
+    loadTimeData.overrideValues({showGlicSettings: true});
     return createDialog();
+  });
+
+  teardown(function() {
+    resetRouterForTesting();
   });
 
   function setClearBrowsingDataPrefs(enableCheckboxes: boolean) {
@@ -237,6 +246,39 @@ suite('DeleteBrowsingDataDialog', function() {
     assertEquals(
         loadTimeData.getString('clearData'),
         dialog.$.deleteButton.innerText.trim());
+
+    // Sync paused: Button label should be "delete data from device".
+    webUIListenerCallback('sync-status-changed', {
+      signedInState: SignedInState.SYNCING,
+      hasError: true,
+      statusAction: StatusAction.REAUTHENTICATE,
+    });
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('deleteDataFromDevice'),
+        dialog.$.deleteButton.innerText.trim());
+
+    // <if expr="not is_chromeos">
+    // Account deletion disabled: Button label should be "delete data from
+    // device".
+    loadTimeData.overrideValues({isClearPrimaryAccountAllowed: false});
+    await createDialog();
+    webUIListenerCallback('sync-status-changed', {
+      signedInState: SignedInState.SYNCING,
+      hasError: false,
+    });
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('deleteDataFromDevice'),
+        dialog.$.deleteButton.innerText.trim());
+    // </if>
+  });
+
+  test('MetricsDialogCreated', async function() {
+    Router.getInstance().navigateTo(routes.CLEAR_BROWSER_DATA);
+    assertEquals(
+        'ClearBrowsingData_DialogCreated',
+        await testMetricsBrowserProxy.whenCalled('recordAction'));
   });
 
   test('ShowMoreButton', async function() {
@@ -262,6 +304,11 @@ suite('DeleteBrowsingDataDialog', function() {
 
     dialog.$.showMoreButton.click();
     await waitAfterNextRender(dialog);
+
+    assertEquals(
+        'Settings.DeleteBrowsingData.CheckboxesShowMoreClick',
+        await testMetricsBrowserProxy.whenCalled('recordAction'));
+
     // On show more click, all checkboxes should be visible in default order.
     verifyCheckboxesVisibleForDataTypesInOrder([
       BrowsingDataType.HISTORY,
@@ -593,11 +640,20 @@ suite('DeleteBrowsingDataDialog', function() {
         {showHistoryNotice: false, showPasswordsNotice: false});
     await promiseResolver.promise;
 
+
+    const metricTimePeriod = await testClearBrowsingDataBrowserProxy.whenCalled(
+        'recordSettingsClearBrowsingDataAdvancedTimePeriodHistogram');
+    assertEquals(TimePeriod.LAST_DAY, metricTimePeriod);
+
     // Verify dialog is closed after deletion is completed.
     assertFalse(dialog.$.deleteBrowsingDataDialog.open);
   });
 
   test('OtherGoogleDataRow', async function() {
+    loadTimeData.overrideValues({
+      showGlicSettings: false,
+    });
+    await createDialog();
     function setSignedInAndDseState(
         signedInState: SignedInState, isGoogleDse: boolean) {
       webUIListenerCallback('update-sync-state', {
@@ -675,6 +731,67 @@ suite('DeleteBrowsingDataDialog', function() {
     assertEquals(
         loadTimeData.getString('managePasswordsSubLabel'),
         dialog.$.manageOtherGoogleDataRow.subLabel);
+
+    // Case 7: User is signed-out, has Google as DSE, and actor flags are ON.
+    loadTimeData.overrideValues({
+      showGlicSettings: true,
+    });
+    await createDialog();
+    setSignedInAndDseState(SignedInState.SIGNED_OUT, /*isGoogleDse=*/ true);
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('manageOtherGoogleDataLabel'),
+        dialog.$.manageOtherGoogleDataRow.label);
+    assertEquals(
+        loadTimeData.getString('managePasswordsSubLabel'),
+        dialog.$.manageOtherGoogleDataRow.subLabel);
+
+    // Case 8: User is signed out, does not have Google as DSE. Actor flags are
+    // on.
+    setSignedInAndDseState(SignedInState.SIGNED_OUT, /*isGoogleDse=*/ false);
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('manageOtherDataLabel'),
+        dialog.$.manageOtherGoogleDataRow.label);
+    assertEquals(
+        loadTimeData.getString('manageOtherDataSubLabel'),
+        dialog.$.manageOtherGoogleDataRow.subLabel);
+
+    // Case 9: User is signed in, does not have Google as DSE. Actor flags on.
+    setSignedInAndDseState(SignedInState.SIGNED_IN, /*isGoogleDse=*/ false);
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('manageOtherDataLabel'),
+        dialog.$.manageOtherGoogleDataRow.label);
+    assertEquals(
+        loadTimeData.getString('manageSearchGeminiPasswordsSubLabel'),
+        dialog.$.manageOtherGoogleDataRow.subLabel);
+
+    // Case 10: User is signed-in, has Google as DSE. Actor flags are on.
+    setSignedInAndDseState(SignedInState.SIGNED_IN, /*isGoogleDse=*/ true);
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('manageOtherGoogleDataLabel'),
+        dialog.$.manageOtherGoogleDataRow.label);
+    assertEquals(
+        loadTimeData.getString('manageSearchGeminiPasswordsSubLabel'),
+        dialog.$.manageOtherGoogleDataRow.subLabel);
+
+    // TODO(crbug.com/429984946): Remove once crbug.com/429984946 launched.
+    // Case 11: User is signed-in, has Google as DSE. Integration flag is off.
+    loadTimeData.overrideValues({
+      showGlicSettings: true,
+      enableBrowsingHistoryActorIntegrationM1: false,
+    });
+    await createDialog();
+    setSignedInAndDseState(SignedInState.SIGNED_IN, /*isGoogleDse=*/ true);
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('manageOtherGoogleDataLabel'),
+        dialog.$.manageOtherGoogleDataRow.label);
+    assertEquals(
+        loadTimeData.getString('manageOtherDataSubLabel'),
+        dialog.$.manageOtherGoogleDataRow.subLabel);
   });
 
   test('NavigationToAndFromOtherGoogleData', async function() {
@@ -684,6 +801,9 @@ suite('DeleteBrowsingDataDialog', function() {
 
     dialog.$.manageOtherGoogleDataRow.click();
     await flushTasks();
+    assertEquals(
+        'Settings.DeleteBrowsingData.OtherDataEntryPointClick',
+        await testMetricsBrowserProxy.whenCalled('recordAction'));
 
     otherGoogleDataDialog =
         dialog.shadowRoot!.querySelector('settings-other-google-data-dialog');
@@ -803,6 +923,9 @@ suite('DeleteBrowsingDataDialog', function() {
     assertTrue(!!signOutLink);
     signOutLink.click();
     await testSyncBrowserProxy.whenCalled('signOut');
+    assertEquals(
+        'Settings.DeleteBrowsingData.CookiesSignOutLinkClick',
+        await testMetricsBrowserProxy.whenCalled('recordAction'));
   });
   // </if>
 });

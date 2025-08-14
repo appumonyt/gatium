@@ -24,6 +24,8 @@
 #include "services/webnn/webnn_context_impl.h"
 #include "services/webnn/webnn_context_provider_impl.h"
 #include "services/webnn/webnn_graph_impl.h"
+#include "services/webnn/webnn_tensor_impl.h"
+#include "services/webnn/webnn_test_environment.h"
 #include "services/webnn/webnn_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
@@ -51,18 +53,20 @@ class FakeWebNNGraphImpl final : public WebNNGraphImpl {
  public:
   FakeWebNNGraphImpl(
       mojo::PendingAssociatedReceiver<mojom::WebNNGraph> receiver,
-      WebNNContextImpl* context,
+      base::WeakPtr<WebNNContextImpl> context,
       ComputeResourceInfo compute_resource_info)
       : WebNNGraphImpl(std::move(receiver),
-                       context,
+                       std::move(context),
                        std::move(compute_resource_info),
                        /*devices=*/{}) {}
-  ~FakeWebNNGraphImpl() override = default;
 
  private:
+  ~FakeWebNNGraphImpl() override = default;
+
   void DispatchImpl(
-      base::flat_map<std::string, WebNNTensorImpl*> named_inputs,
-      base::flat_map<std::string, WebNNTensorImpl*> named_outputs) override {
+      base::flat_map<std::string, scoped_refptr<WebNNTensorImpl>> named_inputs,
+      base::flat_map<std::string, scoped_refptr<WebNNTensorImpl>> named_outputs)
+      override {
     NOTIMPLEMENTED();
   }
 };
@@ -106,8 +110,8 @@ class FakeWebNNContextImpl final : public WebNNContextImpl {
                WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
                CreateGraphImplCallback callback) {
               CHECK(context);
-              std::move(callback).Run(std::make_unique<FakeWebNNGraphImpl>(
-                  std::move(receiver), context.get(),
+              std::move(callback).Run(base::MakeRefCounted<FakeWebNNGraphImpl>(
+                  std::move(receiver), std::move(context),
                   std::move(compute_resource_info)));
             },
             std::move(receiver), AsWeakPtr(), std::move(compute_resource_info),
@@ -117,6 +121,14 @@ class FakeWebNNContextImpl final : public WebNNContextImpl {
   void CreateTensorImpl(
       mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
       mojom::TensorInfoPtr tensor_info,
+      CreateTensorImplCallback callback) override {
+    NOTIMPLEMENTED();
+  }
+
+  void CreateTensorFromMailboxImpl(
+      mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
+      mojom::TensorInfoPtr tensor_info,
+      gpu::Mailbox mailbox,
       CreateTensorImplCallback callback) override {
     NOTIMPLEMENTED();
   }
@@ -158,7 +170,7 @@ class WebNNGraphBuilderImplTest : public testing::Test {
   void SetUp() override {
     WebNNContextProviderImpl::SetBackendForTesting(&backend_for_testing_);
 
-    WebNNContextProviderImpl::CreateForTesting(
+    webnn_test_environment_.BindWebNNContextProvider(
         provider_remote_.BindNewPipeAndPassReceiver());
 
     base::test::TestFuture<mojom::CreateContextResultPtr> create_context_future;
@@ -194,6 +206,7 @@ class WebNNGraphBuilderImplTest : public testing::Test {
 
   FakeWebNNBackend backend_for_testing_;
 
+  test::WebNNTestEnvironment webnn_test_environment_;
   mojo::Remote<mojom::WebNNContextProvider> provider_remote_;
   mojo::Remote<mojom::WebNNContext> webnn_context_;
   mojo::AssociatedRemote<mojom::WebNNGraphBuilder> graph_builder_remote_;

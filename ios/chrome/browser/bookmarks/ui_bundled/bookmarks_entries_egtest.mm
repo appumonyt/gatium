@@ -135,7 +135,7 @@ id<GREYMatcher> AddBookmarkButton() {
   // Verify the delete confirmation button is gone after entering edit mode.
   [[[EarlGrey selectElementWithMatcher:BookmarksDeleteSwipeButton()]
       inRoot:grey_kindOfClassName(@"UITableView")]
-      assertWithMatcher:grey_nil()];
+      assertWithMatcher:grey_notVisible()];
 
   // Swipe action on "Second URL".  This should not bring out delete
   // confirmation button as swipe-to-delete is disabled in edit mode.
@@ -1109,10 +1109,6 @@ id<GREYMatcher> AddBookmarkButton() {
 - (void)testContextMenuOpenInNewWindow {
   if (![ChromeEarlGrey areMultipleWindowsSupported]) {
     EARL_GREY_TEST_DISABLED(@"Multiple windows can't be opened.");
-  }
-  if (@available(iOS 19.0, *)) {
-    // TODO(crbug.com/427699033): Re-enable test on iOS 26.
-    EARL_GREY_TEST_DISABLED(@"Test disabled on iOS 26.");
   }
 
   [BookmarkEarlGrey clearBookmarksPositionCache];

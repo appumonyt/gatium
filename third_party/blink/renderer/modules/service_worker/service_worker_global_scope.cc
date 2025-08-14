@@ -48,6 +48,7 @@
 #include "services/network/public/mojom/cookie_manager.mojom-blink.h"
 #include "services/network/public/mojom/cross_origin_embedder_policy.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-blink.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/public/mojom/notifications/notification.mojom-blink.h"
 #include "third_party/blink/public/mojom/push_messaging/push_messaging.mojom-blink.h"
@@ -146,6 +147,7 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -1166,8 +1168,15 @@ void ServiceWorkerGlobalScope::DidHandlePushEvent(
       TRACE_ID_WITH_SCOPE(kServiceWorkerGlobalScopeTraceScope,
                           TRACE_ID_LOCAL(event_id)),
       TRACE_EVENT_FLAG_FLOW_IN, "status", MojoEnumToString(status));
-  RunEventCallback(&push_event_callbacks_, event_queue_.get(), event_id,
-                   status);
+  if (should_record_network_requests_ ==
+      RecordNetworkRequestsDuringPushEvent::kRecord) {
+    RunEventCallback(&push_event_recording_network_requests_callback_,
+                     event_queue_.get(), event_id, status,
+                     std::make_optional(push_event_network_request_urls_));
+  } else {
+    RunEventCallback(&push_event_callbacks_, event_queue_.get(), event_id,
+                     status);
+  }
 }
 
 void ServiceWorkerGlobalScope::DidHandlePushSubscriptionChangeEvent(
@@ -2141,13 +2150,38 @@ void ServiceWorkerGlobalScope::DispatchPushEvent(
   DCHECK(IsContextThread());
   const int event_id = event_queue_->NextEventId();
   push_event_callbacks_.Set(event_id, std::move(callback));
-
   event_queue_->EnqueueNormal(
       event_id,
       WTF::BindOnce(&ServiceWorkerGlobalScope::StartPushEvent,
                     WrapWeakPersistent(this), std::move(payload)),
       CreateAbortCallback(&push_event_callbacks_),
       base::Seconds(mojom::blink::kPushEventTimeoutSeconds));
+}
+
+void ServiceWorkerGlobalScope::DispatchPushEventRecordingNetworkRequests(
+    const String& payload,
+    DispatchPushEventRecordingNetworkRequestsCallback callback) {
+  DCHECK(IsContextThread());
+  should_record_network_requests_ =
+      RecordNetworkRequestsDuringPushEvent::kRecord;
+  const int event_id = event_queue_->NextEventId();
+  push_event_recording_network_requests_callback_.Set(event_id,
+                                                      std::move(callback));
+  event_queue_->EnqueueNormal(
+      event_id,
+      WTF::BindOnce(&ServiceWorkerGlobalScope::StartPushEvent,
+                    WrapWeakPersistent(this), std::move(payload)),
+      CreateAbortCallback(&push_event_recording_network_requests_callback_,
+                          std::nullopt),
+      base::Seconds(mojom::blink::kPushEventTimeoutSeconds));
+}
+
+void ServiceWorkerGlobalScope::MaybeRecordNetworkRequestUrlForPushEvents(
+    const KURL& url) {
+  if (should_record_network_requests_ ==
+      RecordNetworkRequestsDuringPushEvent::kRecord) {
+    push_event_network_request_urls_.push_back(url);
+  }
 }
 
 void ServiceWorkerGlobalScope::StartPushEvent(String payload, int event_id) {

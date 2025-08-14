@@ -315,6 +315,10 @@ void EventReportValidatorBase::ExpectURLFilteringInterstitialEventWithReferrers(
       });
 }
 
+void EventReportValidatorBase::SetDoneClosure(base::RepeatingClosure closure) {
+  done_closure_ = std::move(closure);
+}
+
 void EventReportValidatorBase::ExpectLoginEvent(
     const std::string& expected_url,
     const bool expected_is_federated,
@@ -492,6 +496,9 @@ void EventReportValidatorBase::ExpectPasswordReuseEvent(
         ValidateField(event, kKeyProfileUserName, expected_profile_username);
         ValidateField(event, kKeyProfileIdentifier,
                       expected_profile_identifier);
+        if (!done_closure_.is_null()) {
+          done_closure_.Run();
+        }
       });
 }
 void EventReportValidatorBase::ExpectPasswordChangedEvent(
@@ -511,7 +518,6 @@ void EventReportValidatorBase::ExpectPasswordChangedEvent(
                 request.events().Get(0).password_changed_event();
             EXPECT_THAT(password_changed_event,
                         EqualsProto(expected_password_changed_event));
-
             if (!done_closure_.is_null()) {
               done_closure_.Run();
             }
@@ -535,7 +541,6 @@ void EventReportValidatorBase::ExpectPasswordReuseEvent(
                 request.events().Get(0).password_reuse_event();
             EXPECT_THAT(password_reuse_event,
                         EqualsProto(expected_password_reuse_event));
-
             if (!done_closure_.is_null()) {
               done_closure_.Run();
             }
@@ -568,44 +573,6 @@ void EventReportValidatorBase::ExpectPassowrdChangedEvent(
         ValidateField(event, kKeyProfileUserName, expected_profile_username);
         ValidateField(event, kKeyProfileIdentifier,
                       expected_profile_identifier);
-      });
-}
-
-void EventReportValidatorBase::ExpectSecurityInterstitialEvent(
-    const std::string& expected_url,
-    const std::string& expected_reason,
-    const std::string& expected_profile_username,
-    const std::string& expected_profile_identifier,
-    const std::string& result,
-    const bool expected_click_through,
-    int expected_net_error_code) {
-  EXPECT_CALL(*client_, UploadSecurityEventReport)
-      .WillOnce([this, expected_url, expected_reason, expected_profile_username,
-                 expected_profile_identifier, result, expected_click_through,
-                 expected_net_error_code](
-                    bool include_device_info, base::Value::Dict report,
-                    base::OnceCallback<void(policy::CloudPolicyClient::Result)>
-                        callback) {
-        // Extract the event list.
-        const base::Value::List* event_list = report.FindList(
-            policy::RealtimeReportingJobConfiguration::kEventListKey);
-        ASSERT_TRUE(event_list);
-
-        // There should only be 1 event per test.
-        ASSERT_EQ(1u, event_list->size());
-        const base::Value::Dict& wrapper = (*event_list)[0].GetDict();
-        const base::Value::Dict* event =
-            wrapper.FindDict(enterprise_connectors::kKeyInterstitialEvent);
-        ASSERT_TRUE(event);
-
-        ValidateField(event, kKeyURL, expected_url);
-        ValidateField(event, kKeyReason, expected_reason);
-        ValidateField(event, kKeyNetErrorCode, expected_net_error_code);
-        ValidateField(event, kKeyClickedThrough, expected_click_through);
-        ValidateField(event, kKeyProfileUserName, expected_profile_username);
-        ValidateField(event, kKeyProfileIdentifier,
-                      expected_profile_identifier);
-        ValidateField(event, kKeyEventResult, result);
         if (!done_closure_.is_null()) {
           done_closure_.Run();
         }
@@ -650,7 +617,7 @@ void EventReportValidatorBase::ExpectSecurityInterstitialEventWithReferrers(
         ValidateField(event, kKeyEventResult, result);
         const base::Value::List* referrers = event->FindList(kReferrers);
         ASSERT_TRUE(referrers);
-        for (const auto & referrer : *referrers) {
+        for (const auto& referrer : *referrers) {
           ValidateReferrer(&referrer.GetDict(), expected_referrers);
         }
         if (!done_closure_.is_null()) {
@@ -664,6 +631,9 @@ void EventReportValidatorBase::ValidateField(
     const std::string& field_key,
     const std::optional<std::string>& expected_value) {
   if (expected_value.has_value()) {
+    ASSERT_TRUE(value->FindString(field_key))
+        << "Mismatch in field " << field_key << "\nNo value was set"
+        << "\nExpected value: " << expected_value.value();
     ASSERT_EQ(*value->FindString(field_key), expected_value.value())
         << "Mismatch in field " << field_key
         << "\nActual value: " << value->FindString(field_key)
@@ -681,6 +651,9 @@ void EventReportValidatorBase::ValidateField(
     const std::optional<std::u16string>& expected_value) {
   const std::string* s = value->FindString(field_key);
   if (expected_value.has_value()) {
+    ASSERT_TRUE(s) << "Mismatch in field " << field_key << "\nNo value was set"
+                   << "\nExpected value: " << expected_value.value();
+
     const std::u16string actual_string_value = base::UTF8ToUTF16(*s);
     ASSERT_EQ(actual_string_value, expected_value.value())
         << "Mismatch in field " << field_key
@@ -698,6 +671,9 @@ void EventReportValidatorBase::ValidateField(
     const std::string& field_key,
     const std::optional<int>& expected_value) {
   if (expected_value.has_value()) {
+    ASSERT_TRUE(value->FindInt(field_key).has_value())
+        << "Mismatch in field " << field_key << "\nNo value was set"
+        << "\nExpected value: " << expected_value.value();
     ASSERT_EQ(value->FindInt(field_key), expected_value)
         << "Mismatch in field " << field_key
         << "\nActual value: " << value->FindInt(field_key).value()
@@ -712,6 +688,9 @@ void EventReportValidatorBase::ValidateField(
 void EventReportValidatorBase::ValidateField(const base::Value::Dict* value,
                                              const std::string& field_key,
                                              int expected_value) {
+  ASSERT_TRUE(value->FindInt(field_key).has_value())
+      << "Mismatch in field " << field_key << "\nNo value was set"
+      << "\nExpected value: " << expected_value;
   ASSERT_EQ(value->FindInt(field_key), expected_value)
       << "Mismatch in field " << field_key
       << "\nActual value: " << value->FindInt(field_key).value()
@@ -721,6 +700,9 @@ void EventReportValidatorBase::ValidateField(const base::Value::Dict* value,
 void EventReportValidatorBase::ValidateField(const base::Value::Dict* value,
                                              const std::string& field_key,
                                              bool expected_value) {
+  ASSERT_TRUE(value->FindBool(field_key).has_value())
+      << "Mismatch in field " << field_key << "\nNo value was set"
+      << "\nExpected value: " << expected_value;
   ASSERT_EQ(value->FindBool(field_key), expected_value)
       << "Mismatch in field " << field_key
       << "\nActual value: " << value->FindBool(field_key).value()

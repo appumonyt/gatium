@@ -6,6 +6,7 @@
 
 #include <cstring>
 
+#include "base/byte_count.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/containers/enum_set.h"
@@ -56,16 +57,6 @@ BASE_FEATURE(kOptimizationHints,
 BASE_FEATURE(kOptimizationTargetPrediction,
              "OptimizationTargetPrediction",
              base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Enables the downloading of models.
-BASE_FEATURE(kOptimizationGuideModelDownloading,
-             "OptimizationGuideModelDownloading",
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#else   // BUILD_WITH_TFLITE_LIB
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // !BUILD_WITH_TFLITE_LIB
-);
 
 // Enables push notification of hints.
 BASE_FEATURE(kPushNotifications,
@@ -128,7 +119,8 @@ BASE_FEATURE(kOptimizationGuideModelExecution,
 // Whether to use the on device model service in optimization guide.
 BASE_FEATURE(kOptimizationGuideOnDeviceModel,
              "OptimizationGuideOnDeviceModel",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -156,11 +148,6 @@ BASE_FEATURE(kTextSafetyClassifier,
 BASE_FEATURE(kTextSafetyScanLanguageDetection,
              "TextSafetyScanLanguageDetection",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-// Whether the on-device model validation checks are enabled.
-BASE_FEATURE(kOnDeviceModelValidation,
-             "OnDeviceModelValidation",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Whether performance class should be fetched each startup or just after a
 // version update.
@@ -190,6 +177,10 @@ BASE_FEATURE(kOnDeviceModelPerformanceParams,
 
 BASE_FEATURE(kAnnotatedPageContentWithActionableElements,
              "AnnotatedPageContentWithActionableElements",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kAnnotatedPageContentWithMediaData,
+             "AnnotatedPageContentWithMediaData",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 const base::FeatureParam<std::string> kPerformanceClassListForOnDeviceModel{
@@ -401,16 +392,6 @@ base::TimeDelta ModelExecutionWatchdogDefaultTimeout() {
       ));
 }
 
-bool IsModelDownloadingEnabled() {
-  return base::FeatureList::IsEnabled(kOptimizationGuideModelDownloading);
-}
-
-bool IsUnrestrictedModelDownloadingEnabled() {
-  return base::GetFieldTrialParamByFeatureAsBool(
-      kOptimizationGuideModelDownloading, "unrestricted_model_downloading",
-      true);
-}
-
 bool ShouldMetadataValidationFetchHostKeyed() {
   DCHECK(base::FeatureList::IsEnabled(kOptimizationGuideMetadataValidation));
   return GetFieldTrialParamByFeatureAsBool(kOptimizationGuideMetadataValidation,
@@ -607,24 +588,24 @@ base::TimeDelta GetOnDeviceModelRetentionTime() {
       base::Days(30));
 }
 
-int GetDiskSpaceRequiredInMbForOnDeviceModelInstall() {
-  return base::GetFieldTrialParamByFeatureAsInt(
+base::ByteCount GetDiskSpaceRequiredForOnDeviceModelInstall() {
+  return base::MiB(base::GetFieldTrialParamByFeatureAsInt(
       kOptimizationGuideOnDeviceModel,
-      "on_device_model_free_space_mb_required_to_install", 20 * 1024);
+      "on_device_model_free_space_mb_required_to_install",
+      base::GiB(20).InMiB()));
 }
 
 bool IsFreeDiskSpaceSufficientForOnDeviceModelInstall(
-    int64_t free_disk_space_bytes) {
-  return GetDiskSpaceRequiredInMbForOnDeviceModelInstall() <=
-         free_disk_space_bytes / (1024 * 1024);
+    base::ByteCount free_disk_space_bytes) {
+  return GetDiskSpaceRequiredForOnDeviceModelInstall() <= free_disk_space_bytes;
 }
 
 bool IsFreeDiskSpaceTooLowForOnDeviceModelInstall(
-    int64_t free_disk_space_bytes) {
-  return base::GetFieldTrialParamByFeatureAsInt(
+    base::ByteCount free_disk_space_bytes) {
+  return base::MiB(base::GetFieldTrialParamByFeatureAsInt(
              kOptimizationGuideOnDeviceModel,
              "on_device_model_free_space_mb_required_to_retain",
-             10 * 1024) >= free_disk_space_bytes / (1024 * 1024);
+             base::GiB(10).InMiB())) >= free_disk_space_bytes;
 }
 
 bool GetOnDeviceModelRetractUnsafeContent() {
@@ -702,44 +683,6 @@ std::vector<uint32_t> GetOnDeviceModelAllowedAdaptationRanks() {
     }
   }
   return ranks;
-}
-
-bool ForceCpuBackendForOnDeviceModel() {
-  static const base::FeatureParam<bool> kForceCpuBackend{
-      &kOptimizationGuideOnDeviceModel, "on_device_model_force_cpu_backend",
-      false};
-  return kForceCpuBackend.Get();
-}
-
-bool IsOnDeviceModelValidationEnabled() {
-  return base::FeatureList::IsEnabled(kOnDeviceModelValidation);
-}
-
-bool ShouldOnDeviceModelBlockOnValidationFailure() {
-  static const base::FeatureParam<bool> kParam{
-      &kOnDeviceModelValidation, "on_device_model_block_on_validation_failure",
-      false};
-  return kParam.Get();
-}
-
-bool ShouldOnDeviceModelClearValidationOnVersionChange() {
-  static const base::FeatureParam<bool> kParam{
-      &kOnDeviceModelValidation,
-      "on_device_model_clear_validation_on_version_change", false};
-  return kParam.Get();
-}
-
-base::TimeDelta GetOnDeviceModelValidationDelay() {
-  static const base::FeatureParam<base::TimeDelta> kParam{
-      &kOnDeviceModelValidation, "on_device_model_validation_delay",
-      base::Seconds(30)};
-  return kParam.Get();
-}
-
-int GetOnDeviceModelValidationAttemptCount() {
-  static const base::FeatureParam<int> kParam{
-      &kOnDeviceModelValidation, "on_device_model_validation_attempt_count", 3};
-  return kParam.Get();
 }
 
 bool ShouldEnableOptimizationGuideIconView() {

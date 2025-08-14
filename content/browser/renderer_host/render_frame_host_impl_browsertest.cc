@@ -32,6 +32,7 @@
 #include "base/test/mock_callback.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/values.h"
 #include "build/build_config.h"
 #include "components/input/timeout_monitor.h"
 #include "components/viz/common/features.h"
@@ -118,7 +119,6 @@
 #include "url/origin.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "third_party/blink/public/mojom/remote_objects/remote_objects.mojom.h"
 #include "ui/android/delegated_frame_host_android.h"
@@ -5992,8 +5992,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
 
   std::string kScript = "Object.keys(testObject).join(' ');";
   auto result = EvalJs(web_contents(), kScript);
-  EXPECT_EQ(base::JoinString(kMainObject.methods, " "),
-            result.value.GetString());
+  EXPECT_EQ(base::JoinString(kMainObject.methods, " "), result);
 }
 
 IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
@@ -6063,8 +6062,8 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
       testObject.readArray(array);
     )",
                                   error_message);
-  auto error = EvalJs(web_contents(), kScript).error;
-  EXPECT_NE(error.find(error_message), std::string::npos);
+  EXPECT_THAT(EvalJs(web_contents(), kScript),
+              EvalJsResult::ErrorIs(testing::HasSubstr(error_message)));
 }
 
 // Based on testReturnedObjectIsGarbageCollected.
@@ -7819,7 +7818,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
         static_cast<WebContentsImpl*>(popup_observer.GetWebContents());
     FrameTreeNode* popup_frame =
         popup->GetPrimaryMainFrame()->frame_tree_node();
-    EXPECT_EQ(nullptr, EvalJs(popup_frame, "window.opener"));
+    EXPECT_EQ(base::Value(), EvalJs(popup_frame, "window.opener"));
 
     // The popup should use a new opaque origin, instead of the subframe's
     // origin.

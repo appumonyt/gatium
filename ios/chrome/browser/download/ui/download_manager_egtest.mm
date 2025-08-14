@@ -35,6 +35,13 @@ using download::WaitForDownloadButton;
 using download::WaitForOpenInButton;
 using download::WaitForOpenPDFButton;
 
+namespace {
+
+// Accessibility ID of the Activity menu.
+NSString* kActivityMenuIdentifier = @"ActivityListView";
+
+}  // namespace
+
 // Helper to test critical user journeys for Download Manager.
 @interface DownloadManagerTestCaseHelper : NSObject
 
@@ -237,11 +244,13 @@ using download::WaitForOpenPDFButton;
       verifyTextVisibleInActivitySheetWithID:l10n_util::GetNSString(
                                                  IDS_IOS_OPEN_IN_DOWNLOADS)];
 
-  // Tests filename label.
-  [[EarlGrey
-      selectElementWithMatcher:grey_allOf(grey_text(@"download-example"),
-                                          grey_sufficientlyVisible(), nil)]
-      assertWithMatcher:grey_notNil()];
+  // Scroll up to find the text if necessary. Verify that the filename label is
+  // visible.
+  [[[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kActivityMenuIdentifier)]
+         usingSearchAction:grey_scrollInDirection(kGREYDirectionUp, 100)
+      onElementWithMatcher:grey_text(@"download-example")]
+      assertWithMatcher:grey_sufficientlyVisible()];
 }
 
 // Tests that "Open in..." works if the download ended while waiting in a
@@ -289,11 +298,14 @@ using download::WaitForOpenPDFButton;
   [ChromeEarlGrey
       verifyTextVisibleInActivitySheetWithID:l10n_util::GetNSString(
                                                  IDS_IOS_OPEN_IN_DOWNLOADS)];
-  // Tests filename label.
-  [[EarlGrey
-      selectElementWithMatcher:grey_allOf(grey_text(@"download-example"),
-                                          grey_sufficientlyVisible(), nil)]
-      assertWithMatcher:grey_notNil()];
+
+  // Scroll up to find the text if necessary. Verify that the filename label is
+  // visible.
+  [[[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(kActivityMenuIdentifier)]
+         usingSearchAction:grey_scrollInDirection(kGREYDirectionUp, 100)
+      onElementWithMatcher:grey_text(@"download-example")]
+      assertWithMatcher:grey_sufficientlyVisible()];
 }
 
 // Tests successful blob download. This also checks that a file can be
@@ -385,7 +397,6 @@ using download::WaitForOpenPDFButton;
 
 - (AppLaunchConfiguration)appConfigurationForTestCase {
   AppLaunchConfiguration configuration;
-  configuration.features_enabled.push_back(kDownloadedPDFOpening);
   // TODO(crbug.com/6602213): Fix the test suite for when Auto-deletion is enabled.
   configuration.features_disabled.push_back(
       kDownloadAutoDeletionFeatureEnabled);

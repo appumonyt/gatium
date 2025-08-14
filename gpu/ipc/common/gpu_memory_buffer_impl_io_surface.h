@@ -18,7 +18,7 @@
 
 namespace gpu {
 
-class GpuMemoryBufferSupport;
+class ClientSharedImage;
 
 // Implementation of GPU memory buffer based on IO surfaces.
 class GPU_IPC_COMMON_EXPORT GpuMemoryBufferImplIOSurface
@@ -33,13 +33,19 @@ class GPU_IPC_COMMON_EXPORT GpuMemoryBufferImplIOSurface
   static constexpr gfx::GpuMemoryBufferType kBufferType =
       gfx::IO_SURFACE_BUFFER;
 
+  static std::unique_ptr<GpuMemoryBufferImplIOSurface>
+  CreateFromHandleForTesting(const gfx::GpuMemoryBufferHandle& handle,
+                             const gfx::Size& size,
+                             gfx::BufferFormat format,
+                             gfx::BufferUsage usage);
+
   static base::OnceClosure AllocateForTesting(
       const gfx::Size& size,
       gfx::BufferFormat format,
       gfx::BufferUsage usage,
       gfx::GpuMemoryBufferHandle* handle);
 
-  // Overridden from gfx::GpuMemoryBuffer:
+  // Overridden from GpuMemoryBufferImpl:
   bool Map() override;
   void* memory(size_t plane) override;
   void Unmap() override;
@@ -48,19 +54,22 @@ class GPU_IPC_COMMON_EXPORT GpuMemoryBufferImplIOSurface
   gfx::GpuMemoryBufferHandle CloneHandle() const override;
 
  private:
-  friend GpuMemoryBufferSupport;
+  friend ClientSharedImage;
 
   static std::unique_ptr<GpuMemoryBufferImplIOSurface> CreateFromHandle(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
       gfx::BufferFormat format,
-      gfx::BufferUsage usage,
-      DestructionCallback callback);
+      bool is_read_only_cpu_usage);
 
-  GpuMemoryBufferImplIOSurface(gfx::GpuMemoryBufferId id,
-                               const gfx::Size& size,
+  static std::unique_ptr<GpuMemoryBufferImplIOSurface> CreateFromHandleImpl(
+      const gfx::GpuMemoryBufferHandle& handle,
+      const gfx::Size& size,
+      gfx::BufferFormat format,
+      int32_t lock_flags);
+
+  GpuMemoryBufferImplIOSurface(const gfx::Size& size,
                                gfx::BufferFormat format,
-                               DestructionCallback callback,
                                gfx::GpuMemoryBufferHandle handle,
                                uint32_t lock_flags);
 

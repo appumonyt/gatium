@@ -9,11 +9,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/types/expected.h"
 #include "base/types/pass_key.h"
+#include "content/browser/indexed_db/indexed_db_external_object_storage.h"
 #include "content/browser/indexed_db/instance/backing_store.h"
 #include "content/browser/indexed_db/instance/sqlite/active_blob_streamer.h"
 #include "content/browser/indexed_db/instance/sqlite/backing_store_impl.h"
@@ -49,12 +51,18 @@ class BackingStoreTransactionImpl;
 // perform the actual database operations.
 class DatabaseConnection {
  public:
-  // Opens the SQL database for the IndexedDB database with `name` at
-  // `file_path`, creating it if it doesn't exist.
+  // Opens a connection to the specified database. When `name` is present, it
+  // will create a new DB if one does not exist. When `name` is null and a DB
+  // does not exist or is not already initialized, returns an error. When `path`
+  // is empty, the database will be opened in-memory.
   static StatusOr<std::unique_ptr<DatabaseConnection>> Open(
-      const std::u16string& name,
-      const base::FilePath& file_path,
+      std::optional<std::u16string_view> name,
+      base::FilePath path,
       BackingStoreImpl& backing_store);
+
+  // Destroys the DatabaseConnection pointed to by `db`, if appropriate, i.e. if
+  // `db` is the last weak pointer.
+  static void Release(base::WeakPtr<DatabaseConnection> db);
 
   DatabaseConnection(const DatabaseConnection&) = delete;
   DatabaseConnection& operator=(const DatabaseConnection&) = delete;
@@ -76,6 +84,9 @@ class DatabaseConnection {
   // corresponding to active blobs, but no object stores, records, etc.
   bool IsZygotic() const;
 
+  // Get the size of the database opened in-memory.
+  uint64_t GetInMemorySize() const;
+
   // Exposed to `BackingStoreDatabaseImpl`.
   std::unique_ptr<BackingStoreTransactionImpl> CreateTransaction(
       base::PassKey<BackingStoreDatabaseImpl>,
@@ -88,12 +99,19 @@ class DatabaseConnection {
   Status CommitTransactionPhaseOne(
       base::PassKey<BackingStoreTransactionImpl>,
       const BackingStoreTransactionImpl& transaction,
-      BlobWriteCallback callback);
+      BlobWriteCallback callback,
+      SerializeFsaCallback serialize_fsa_handle);
   Status CommitTransactionPhaseTwo(
       base::PassKey<BackingStoreTransactionImpl>,
       const BackingStoreTransactionImpl& transaction);
   void RollBackTransaction(base::PassKey<BackingStoreTransactionImpl>,
                            const BackingStoreTransactionImpl& transaction);
+  // It's possible that a BackingStoreTransactionImpl is created, and Begin() is
+  // called, but it's never used. In this case, neither Commit nor Rollback will
+  // be called. This method will be called every time a transaction that was
+  // begun is being destroyed.
+  void EndTransaction(base::PassKey<BackingStoreTransactionImpl>,
+                      const BackingStoreTransactionImpl& transaction);
 
   Status SetDatabaseVersion(base::PassKey<BackingStoreTransactionImpl>,
                             int64_t version);
@@ -104,9 +122,19 @@ class DatabaseConnection {
                            bool auto_increment);
   Status DeleteObjectStore(base::PassKey<BackingStoreTransactionImpl>,
                            int64_t object_store_id);
+  Status RenameObjectStore(base::PassKey<BackingStoreTransactionImpl>,
+                           int64_t object_store_id,
+                           const std::u16string& new_name);
   Status CreateIndex(base::PassKey<BackingStoreTransactionImpl>,
                      int64_t object_store_id,
                      blink::IndexedDBIndexMetadata index);
+  Status DeleteIndex(base::PassKey<BackingStoreTransactionImpl>,
+                     int64_t object_store_id,
+                     int64_t index_id);
+  Status RenameIndex(base::PassKey<BackingStoreTransactionImpl>,
+                     int64_t object_store_id,
+                     int64_t index_id,
+                     const std::u16string& new_name);
 
   StatusOr<int64_t> GetKeyGeneratorCurrentNumber(
       base::PassKey<BackingStoreTransactionImpl>,
@@ -131,7 +159,11 @@ class DatabaseConnection {
       int64_t object_store_id,
       const blink::IndexedDBKey& key,
       IndexedDBValue value);
-  Status DeleteRange(int64_t object_store_id, const blink::IndexedDBKeyRange&);
+  Status DeleteRange(base::PassKey<BackingStoreTransactionImpl>,
+                     int64_t object_store_id,
+                     const blink::IndexedDBKeyRange&);
+  Status ClearObjectStore(base::PassKey<BackingStoreTransactionImpl>,
+                          int64_t object_store_id);
   StatusOr<uint32_t> GetObjectStoreKeyCount(
       base::PassKey<BackingStoreTransactionImpl>,
       int64_t object_store_id,
@@ -170,7 +202,8 @@ class DatabaseConnection {
   // `ActiveBlobStreamer`.
   std::vector<blink::mojom::IDBExternalObjectPtr> CreateAllExternalObjects(
       base::PassKey<BackingStoreTransactionImpl>,
-      const std::vector<IndexedDBExternalObject>& objects);
+      const std::vector<IndexedDBExternalObject>& objects,
+      DeserializeFsaCallback deserialize_fsa_handle);
 
   // Called when the IDB database associated with this connection is deleted.
   // This should drop all data with the exception of active blobs, which may
@@ -195,7 +228,8 @@ class DatabaseConnection {
                                                   int64_t record_row_id);
 
  private:
-  DatabaseConnection(std::unique_ptr<sql::Database> db,
+  DatabaseConnection(base::FilePath path,
+                     std::unique_ptr<sql::Database> db,
                      std::unique_ptr<sql::MetaTable> meta_table,
                      blink::IndexedDBDatabaseMetadata metadata,
                      BackingStoreImpl& backing_store);
@@ -208,9 +242,34 @@ class DatabaseConnection {
   // an error.
   void OnBlobWriteComplete(int64_t blob_row_id, bool success);
 
+  // Invoked when an FSA handle has been serialized. `token` will be empty if
+  // the serialization was not successful.
+  void OnFsaHandleSerialized(int64_t blob_row_id,
+                             const std::vector<uint8_t>& token);
+
+  // Cancels all outstanding external object processing/writing, including blob
+  // writes and FSA handle serialization/writing. This is to be called on error.
+  void CancelBlobWriting();
+
   // Called when a blob that was opened for reading stops being "active", i.e.
   // when `ActiveBlobStreamer` in `active_blobs_` no longer has connections.
   void OnBlobBecameInactive(int64_t blob_number);
+
+  // These methods add or remove rows to the `blob_references` table. The rows
+  // correspond to active blobs, i.e. the `record_row_id` will be null. These
+  // updates are made right away when `active_blobs_` is updated (an element is
+  // added or removed), and also after a transaction is rolled back which may
+  // have caused the loss of a `blob_references` update.
+  void AddActiveBlobReference(int64_t blob_number);
+  void RemoveActiveBlobReference(int64_t blob_number);
+
+  // The connection needs to be held open when there are active blobs or an
+  // active BackingStore::Database referencing it. This will return false if
+  // that's the case.
+  bool CanBeDestroyed() const;
+
+  // The expected path for `db_`, or empty for in-memory DBs.
+  const base::FilePath path_;
 
   std::unique_ptr<sql::Database> db_;
   std::unique_ptr<sql::MetaTable> meta_table_;
@@ -251,6 +310,16 @@ class DatabaseConnection {
   // are done writing successfully, or at least one has failed.
   std::map<int64_t, std::unique_ptr<BlobWriter>> blob_writers_;
 
+  // Tracks the number of currently existing operations that will write blobs
+  // into the database, resulting from a call to WriteNewBlobs(). This will be
+  // the sum of `blob_writers_.size()` and the number of FSA handle
+  // serialization operations that have not yet finished. This is eventually the
+  // same as the number of weak pointers currently vended from
+  // `blob_writers_weak_factory_`, but will be updated *while* an operation
+  // bound to such a weak pointer is executed (whereas the weak pointer itself
+  // will be destroyed only *after* the operation completes).
+  size_t outstanding_external_object_writes_ = 0U;
+
   // This is non-null whenever `blob_writers_` is non-empty.
   BlobWriteCallback blob_write_callback_;
 
@@ -258,6 +327,13 @@ class DatabaseConnection {
   // blob has a corresponding entry in this map. These blobs must keep `this`
   // alive since they're backed by the SQLite database.
   std::map<int64_t, std::unique_ptr<ActiveBlobStreamer>> active_blobs_;
+
+  // Used to track when rolling back a transaction necessitates updating
+  // `blob_references`. Transaction rollback will affect `blob_references`
+  // updates that have been made since the transaction started, but we need that
+  // table to stay in sync with `active_blobs_` regardless of whether the
+  // transaction is ultimately committed or rolled back.
+  bool sync_active_blobs_after_transaction_ = false;
 
   // TODO(crbug.com/419203257): this should invalidate its weak pointers when
   // `db_` is closed.

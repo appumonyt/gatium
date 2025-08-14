@@ -33,6 +33,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
+#include "base/values.h"
 #include "build/build_config.h"
 #include "cc/test/pixel_test_utils.h"
 #include "components/ukm/test_ukm_recorder.h"
@@ -94,7 +95,6 @@
 #include "content/test/render_document_feature.h"
 #include "content/test/task_runner_deferring_throttle.h"
 #include "content/test/test_render_frame_host_factory.h"
-#include "ipc/ipc_security_test_util.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "net/base/features.h"
@@ -1855,7 +1855,10 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
 // Failing to do so causes the browser to become unresponsive.
 // See https://crbug.com/882238
 // TODO(crbug.com/379844650): Disabled on Linux sanitizer bots due to flakiness.
-#if BUILDFLAG(IS_LINUX) && defined(ADDRESS_SANITIZER)
+// TODO(crbug.com/346960510): Disabled on ChromeOS sanitizer bots due to
+// flakiness.
+#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && \
+    defined(ADDRESS_SANITIZER)
 #define MAYBE_IPCFlood_GoToEntryAtOffset DISABLED_IPCFlood_GoToEntryAtOffset
 #else
 #define MAYBE_IPCFlood_GoToEntryAtOffset IPCFlood_GoToEntryAtOffset
@@ -8578,7 +8581,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, FilterURL_JavascriptURLs) {
     // https://html.spec.whatwg.org/multipage/document-sequences.html#creating-a-new-browsing-context
     // TODO(crbug.com/40236679): Also prevent the origin from being
     // inherited.
-    EXPECT_EQ(nullptr, EvalJs(popup_contents, "window.foo"));
+    EXPECT_EQ(base::Value(), EvalJs(popup_contents, "window.foo"));
   }
 }
 
@@ -9837,6 +9840,41 @@ IN_PROC_BROWSER_TEST_F(DeferSpeculativeRFHCreationTest,
   EXPECT_EQ(url_c, results[1].url);
 }
 
+// Verify that navigating from about:blank will defer the creation of the
+// speculative RFH until the network request is sent.
+IN_PROC_BROWSER_TEST_F(DeferSpeculativeRFHCreationTest,
+                       NavigateFromAboutBlankDeferred) {
+  ASSERT_TRUE(NavigateToURL(shell(), GURL("about:blank")));
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+
+  GURL url = embedded_test_server()->GetURL("a.com", "/title1.html");
+  TestNavigationManager nav_manager(web_contents, url);
+  // Navigation from about:blank creates a new render frame host.
+  ASSERT_TRUE(BeginNavigateToURLFromRenderer(web_contents, url));
+  ASSERT_TRUE(nav_manager.WaitForRequestStart());
+  NavigationRequest* navigation_request =
+      NavigationRequest::From(nav_manager.GetNavigationHandle());
+
+  nav_manager.WaitForSpeculativeRenderFrameHostCreation();
+  // The speculative RFH shall be created after sending the request.
+  ASSERT_EQ(navigation_request->state(),
+            NavigationRequest::NavigationState::WILL_START_REQUEST);
+  ASSERT_TRUE(navigation_request->HasLoader());
+  RenderFrameHostImplWrapper speculative_rfh(
+      GetMainFrameSpeculativeRFH(web_contents));
+  ASSERT_TRUE(speculative_rfh);
+  ASSERT_EQ(navigation_request->GetAssociatedRFHType(),
+            NavigationRequest::AssociatedRenderFrameHostType::SPECULATIVE);
+
+  ASSERT_TRUE(nav_manager.WaitForResponse());
+  ASSERT_TRUE(GetMainFrameSpeculativeRFH(web_contents));
+  ASSERT_EQ(navigation_request->GetAssociatedRFHType(),
+            NavigationRequest::AssociatedRenderFrameHostType::SPECULATIVE);
+  ASSERT_TRUE(nav_manager.WaitForNavigationFinished());
+  ASSERT_FALSE(GetMainFrameSpeculativeRFH(web_contents));
+}
+
 class DeferSpeculativeRFHCreationReuseRFHTest : public NavigationBrowserTest {
  public:
   DeferSpeculativeRFHCreationReuseRFHTest() {
@@ -9972,7 +10010,7 @@ IN_PROC_BROWSER_TEST_F(VisualPropertiesSynchronization,
   // Ensure a frame has been produced.
   ASSERT_TRUE(
       EvalJsAfterLifecycleUpdate(web_contents->GetPrimaryMainFrame(), "", "")
-          .error.empty());
+          .is_ok());
 
   // Verify the renderer received the correct size for the viewport.
   EXPECT_GT(EvalJs(web_contents->GetPrimaryMainFrame(), "window.innerWidth;")

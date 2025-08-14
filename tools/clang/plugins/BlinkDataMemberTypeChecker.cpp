@@ -20,15 +20,15 @@ BlinkDataMemberTypeChecker::BlinkDataMemberTypeChecker(
       diagnostic_(instance.getDiagnostics()),
       discouraged_types_({
           {"GURL", "KURL"},
-          {"std::deque", "WTF::Deque"},
-          {"std::map", "WTF::HashMap or WTF::LinkedHashSet"},
+          {"std::deque", "blink::Deque"},
+          {"std::map", "blink::HashMap or blink::LinkedHashSet"},
           {"std::multimap",
-           "WTF::HashMap<K, WTF::Vector<V>> or WTF::HashCountedSet<T>"},
-          {"std::multiset", "WTF::HashCountedSet<T>"},
-          {"std::set", "WTF::HashSet or WTF::LinkedHashSet"},
-          {"std::unordered_set", "WTF::HashSet"},
-          {"std::unordered_map", "WTF::HashMap"},
-          {"std::vector", "WTF::Vector"},
+           "blink::HashMap<K, blink::Vector<V>> or blink::HashCountedSet<T>"},
+          {"std::multiset", "blink::HashCountedSet<T>"},
+          {"std::set", "blink::HashSet or blink::LinkedHashSet"},
+          {"std::unordered_set", "blink::HashSet"},
+          {"std::unordered_map", "blink::HashMap"},
+          {"std::vector", "blink::Vector"},
       }),
       included_filenames_regex_("/third_party/blink/renderer/"),
       excluded_filenames_regex_(
@@ -83,6 +83,7 @@ void BlinkDataMemberTypeChecker::CheckField(const FieldDecl* field) {
       type = array->getElementType().getTypePtr();
       continue;
     }
+#ifndef CLANG_ELABORATED_TYPE_CHANGES
     if (auto* elaborated = dyn_cast<ElaboratedType>(type)) {
       // Find the underlying type of the elaborated type. E.g. for
       // |TypeName v;| where |TypeName| is not a built-in type, v's type is an
@@ -93,6 +94,7 @@ void BlinkDataMemberTypeChecker::CheckField(const FieldDecl* field) {
       type = elaborated->getNamedType().getTypePtr();
       continue;
     }
+#endif
 
     const NamedDecl* decl = nullptr;
     if (auto* type_def = dyn_cast<TypedefType>(type)) {

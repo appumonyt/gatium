@@ -49,10 +49,15 @@
 }
 
 - (void)setActivitySummaryCellText:(NSString*)text {
+  if ([_activitySummaryCellText isEqualToString:text]) {
+    return;
+  }
   _activitySummaryCellText = [text copy];
 
   if (text) {
     [self addOrUpdateActivitySummaryCell];
+    UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification,
+                                    text);
   } else {
     [self removeActivitySummaryCell];
   }
@@ -70,17 +75,15 @@
 
 #pragma mark - Parent's functions
 
-- (LegacyGridTransitionLayout*)transitionLayout {
-  LegacyGridTransitionLayout* transitionLayout = [super transitionLayout];
-  if (IsContainedTabGroupEnabled()) {
-    // When the user is entering the TabGrid from a Tab in a group, the
-    // non-selected tabs should not animate otherwise they will be
-    // displayed outside of the container.
-    transitionLayout = [LegacyGridTransitionLayout
-        layoutWithInactiveItems:@[]
-                     activeItem:transitionLayout.activeItem
-                  selectionItem:transitionLayout.selectionItem];
-  }
+- (LegacyGridTransitionLayout*)legacyTransitionLayout {
+  LegacyGridTransitionLayout* transitionLayout = [super legacyTransitionLayout];
+  // When the user is entering the TabGrid from a Tab in a group, the
+  // non-selected tabs should not animate otherwise they will be
+  // displayed outside of the container.
+  transitionLayout = [LegacyGridTransitionLayout
+      layoutWithInactiveItems:@[]
+                   activeItem:transitionLayout.activeItem
+                selectionItem:transitionLayout.selectionItem];
   return transitionLayout;
 }
 

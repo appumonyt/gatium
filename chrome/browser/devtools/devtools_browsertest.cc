@@ -42,10 +42,12 @@
 #include "chrome/browser/devtools/devtools_window_testing.h"
 #include "chrome/browser/devtools/features.h"
 #include "chrome/browser/devtools/protocol/browser_handler.h"
+#include "chrome/browser/devtools/remote_debugging_server.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/policy/chrome_browser_policy_connector.h"
 #include "chrome/browser/policy/developer_tools_policy_handler.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/preloading/scoped_prewarm_feature_list.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
@@ -388,6 +390,12 @@ class DevToolsTest : public PlatformBrowserTest {
   }
 
   raw_ptr<DevToolsWindow> window_;
+
+ private:
+  // TODO(https://crbug.com/423465927): Explore a better approach to make the
+  // existing tests run with the prewarm feature enabled.
+  test::ScopedPrewarmFeatureList scoped_prewarm_feature_list_{
+      test::ScopedPrewarmFeatureList::PrewarmState::kDisabled};
 };
 
 class SitePerProcessDevToolsTest : public DevToolsTest {
@@ -571,7 +579,7 @@ class DevToolsExtensionTest : public DevToolsTest {
     observer.WaitForExtensionLoaded();
 
     // Wait for any additional extension views to load.
-    extensions::ChromeExtensionTestNotificationObserver(browser())
+    extensions::ChromeExtensionTestNotificationObserver(browser()->profile())
         .WaitForExtensionViewsToLoad();
 
     return GetExtensionByPath(registry->enabled_extensions(), path);
@@ -1723,7 +1731,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsTest, MAYBE_DevtoolsInDevTools) {
 // ToDo(993982): The test is flaky (timeout, crash, and fail) on several builds:
 // Debug, Windows, Mac, MSan, and ASan.
 IN_PROC_BROWSER_TEST_F(DevToolsExtensionTest,
-                       DISABLED_DevToolsExtensionSecurityPolicyGrants) {
+                       DevToolsExtensionSecurityPolicyGrants) {
   auto dir = std::make_unique<extensions::TestExtensionDir>();
 
   dir->WriteManifest(base::Value::Dict()
@@ -2046,9 +2054,6 @@ IN_PROC_BROWSER_TEST_F(DevToolsExtensionTest,
   std::unique_ptr<extensions::OffscreenDocumentHost> offscreen_document =
       std::make_unique<extensions::OffscreenDocumentHost>(
           *extension,
-          extensions::ProcessManager::Get(browser()->profile())
-              ->GetSiteInstanceForURL(offscreen_url)
-              .get(),
           browser()->profile(), offscreen_url);
   {
     extensions::ExtensionHostTestHelper offscreen_waiter(browser()->profile(),
@@ -2698,21 +2703,19 @@ IN_PROC_BROWSER_TEST_F(RemoteDebuggingTest, DiscoveryPage) {
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 class RemoteDebuggingUserDataDirTest
     : public RemoteDebuggingTest,
-      public ::testing::WithParamInterface<
-          std::tuple</*default_user_dir*/ bool, /*enable_the_feature*/ bool>> {
+      public ::testing::WithParamInterface</*default_user_dir*/ bool> {
  public:
   void SetUp() override {
-    scoped_feature_list_.InitWithFeatureState(
-        features::kDevToolsDebuggingRestrictions, IsFeatureEnabled());
+    // Explicitly enable the checking, which is normally only enabled for
+    // GOOGLE_CHROME_BRANDING branded builds.
+    RemoteDebuggingServer::EnableDefaultUserDataDirCheckForTesting();
     chrome::SetUsingDefaultUserDataDirectoryForTesting(
         IsUsingStandardUserDataDir());
     RemoteDebuggingTest::SetUp();
   }
 
  protected:
-  static bool IsUsingStandardUserDataDir() { return std::get<0>(GetParam()); }
-
-  static bool IsFeatureEnabled() { return std::get<1>(GetParam()); }
+  static bool IsUsingStandardUserDataDir() { return GetParam(); }
 
   base::HistogramTester histograms_;
 
@@ -2728,23 +2731,20 @@ IN_PROC_BROWSER_TEST_P(RemoteDebuggingUserDataDirTest, AttemptDebugging) {
           : /*kDebuggingRequestedWithNonDefaultUserDataDir*/ 1,
       1);
 
-  if (IsUsingStandardUserDataDir() && IsFeatureEnabled()) {
+  if (IsUsingStandardUserDataDir()) {
     EXPECT_FALSE(RunExtensionTest("discovery_page"));
   } else {
     EXPECT_TRUE(RunExtensionTest("discovery_page"));
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    ,
-    RemoteDebuggingUserDataDirTest,
-    testing::Combine(testing::Bool(), testing::Bool()),
-    [](const auto& info) {
-      return base::StrCat({std::get<0>(info.param) ? "DefaultUserDataDir"
-                                                   : "NonDefaultUserDataDir",
-                           "AndFeature",
-                           std::get<1>(info.param) ? "Enabled" : "Disabled"});
-    });
+INSTANTIATE_TEST_SUITE_P(,
+                         RemoteDebuggingUserDataDirTest,
+                         testing::Bool(),
+                         [](const auto& info) {
+                           return info.param ? "DefaultUserDataDir"
+                                             : "NonDefaultUserDataDir";
+                         });
 
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
@@ -3382,6 +3382,11 @@ class DevToolsPolicyTest : public InProcessBrowserTest {
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
   }
   testing::NiceMock<policy::MockConfigurationPolicyProvider> provider_;
+ private:
+  // TODO(https://crbug.com/423465927): Explore a better approach to make the
+  // existing tests run with the prewarm feature enabled.
+  test::ScopedPrewarmFeatureList scoped_prewarm_feature_list_{
+      test::ScopedPrewarmFeatureList::PrewarmState::kDisabled};
 };
 
 IN_PROC_BROWSER_TEST_F(DevToolsPolicyTest, OpenBlockedDevTools) {
@@ -3716,9 +3721,9 @@ IN_PROC_BROWSER_TEST_F(DevToolsFetchTest, DevToolsFetchFromHttpDisallowed) {
   OpenDevToolsWindow("about:blank", true);
 
   const auto result = FetchFromDevToolsWindow("http://www.google.com");
-  EXPECT_THAT(result.error,
-              ::testing::StartsWith(
-                  "a JavaScript error: \"TypeError: Failed to fetch\n"));
+  EXPECT_THAT(result,
+              content::EvalJsResult::ErrorIs(::testing::StartsWith(
+                  "a JavaScript error: \"TypeError: Failed to fetch\n")));
 
   CloseDevToolsWindow();
 }
@@ -3729,9 +3734,9 @@ IN_PROC_BROWSER_TEST_F(DevToolsFetchTest, FetchFromDevToolsSchemeIsProhibited) {
   const auto result =
       Fetch(GetInspectedTab(),
             "devtools://devtools/bundled/devtools_compatibility.js");
-  EXPECT_THAT(result.error,
-              ::testing::StartsWith(
-                  "a JavaScript error: \"TypeError: Failed to fetch\n"));
+  EXPECT_THAT(result,
+              content::EvalJsResult::ErrorIs(::testing::StartsWith(
+                  "a JavaScript error: \"TypeError: Failed to fetch\n")));
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsTest, HostBindingsSyncIntegration) {
@@ -3868,12 +3873,12 @@ IN_PROC_BROWSER_TEST_F(DevToolsSyncTest, GetSyncInformation) {
           Host.InspectorFrontendHost.getSyncInformation(resolve);
         });
       })();
-    )"));
-  ASSERT_TRUE(result.value.is_dict());
-  EXPECT_TRUE(*result.value.GetDict().FindBool("isSyncActive"));
-  EXPECT_TRUE(*result.value.GetDict().FindBool("arePreferencesSynced"));
-  EXPECT_EQ(*result.value.GetDict().FindString("accountEmail"),
-            "user1@gmail.com");
+    )"))
+                          .TakeValue()
+                          .TakeDict();
+  EXPECT_TRUE(*result.FindBool("isSyncActive"));
+  EXPECT_TRUE(*result.FindBool("arePreferencesSynced"));
+  EXPECT_EQ(*result.FindString("accountEmail"), "user1@gmail.com");
 
   DevToolsWindowTesting::CloseDevToolsWindowSync(window);
 }
@@ -4111,12 +4116,11 @@ IN_PROC_BROWSER_TEST_F(DevToolsConsoleInsightsTest, NotBeBlockedByFeatureFlag) {
         Host.InspectorFrontendHost.getHostConfig(resolve);
       });
     })();
-  )"));
-  ASSERT_TRUE(result.value.is_dict());
-  auto* configAidaAvailability =
-      result.value.GetDict().FindDict("aidaAvailability");
-  auto* configConsoleInsights =
-      result.value.GetDict().FindDict("devToolsConsoleInsights");
+  )"))
+                          .TakeValue()
+                          .TakeDict();
+  auto* configAidaAvailability = result.FindDict("aidaAvailability");
+  auto* configConsoleInsights = result.FindDict("devToolsConsoleInsights");
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   EXPECT_TRUE(configAidaAvailability->FindBool("enabled").value());
 #else
@@ -4146,10 +4150,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsConsoleInsightsTest,
         Host.InspectorFrontendHost.getHostConfig(resolve);
       });
     })();
-  )"));
-  ASSERT_TRUE(result.value.is_dict());
-  auto* configAidaAvailability =
-      result.value.GetDict().FindDict("aidaAvailability");
+  )"))
+                          .TakeValue()
+                          .TakeDict();
+  auto* configAidaAvailability = result.FindDict("aidaAvailability");
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   EXPECT_TRUE(configAidaAvailability->FindBool("enabled").value());
   EXPECT_FALSE(
@@ -4179,10 +4183,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsConsoleInsightsTest, IsBlockedByGeo) {
         Host.InspectorFrontendHost.getHostConfig(resolve);
       });
     })();
-  )"));
-  ASSERT_TRUE(result.value.is_dict());
-  auto* configAidaAvailability =
-      result.value.GetDict().FindDict("aidaAvailability");
+  )"))
+                          .TakeValue()
+                          .TakeDict();
+  auto* configAidaAvailability = result.FindDict("aidaAvailability");
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   EXPECT_TRUE(configAidaAvailability->FindBool("enabled").value());
   EXPECT_FALSE(
@@ -4210,10 +4214,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsConsoleInsightsTest, IsNotEnabledForMinors) {
         Host.InspectorFrontendHost.getHostConfig(resolve);
       });
     })();
-  )"));
-  ASSERT_TRUE(result.value.is_dict());
-  auto* configAidaAvailability =
-      result.value.GetDict().FindDict("aidaAvailability");
+  )"))
+                          .TakeValue()
+                          .TakeDict();
+  auto* configAidaAvailability = result.FindDict("aidaAvailability");
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   EXPECT_TRUE(configAidaAvailability->FindBool("enabled").value());
   EXPECT_FALSE(
@@ -4259,10 +4263,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsConsoleInsightsTest,
         Host.InspectorFrontendHost.getHostConfig(resolve);
       });
     })();
-  )"));
-  ASSERT_TRUE(result.value.is_dict());
-  auto* configAidaAvailability =
-      result.value.GetDict().FindDict("aidaAvailability");
+  )"))
+                          .TakeValue()
+                          .TakeDict();
+  auto* configAidaAvailability = result.FindDict("aidaAvailability");
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   EXPECT_TRUE(configAidaAvailability->FindBool("enabled").value());
 #else
@@ -4295,10 +4299,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsConsoleInsightsTest,
         Host.InspectorFrontendHost.getHostConfig(resolve);
       });
     })();
-  )"));
-  ASSERT_TRUE(result.value.is_dict());
-  auto* configAidaAvailability =
-      result.value.GetDict().FindDict("aidaAvailability");
+  )"))
+                          .TakeValue()
+                          .TakeDict();
+  auto* configAidaAvailability = result.FindDict("aidaAvailability");
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   EXPECT_TRUE(configAidaAvailability->FindBool("enabled").value());
   EXPECT_FALSE(
@@ -4332,10 +4336,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsConsoleInsightsTest,
         Host.InspectorFrontendHost.getHostConfig(resolve);
       });
     })();
-  )"));
-  ASSERT_TRUE(result.value.is_dict());
-  auto* configAidaAvailability =
-      result.value.GetDict().FindDict("aidaAvailability");
+  )"))
+                          .TakeValue()
+                          .TakeDict();
+  auto* configAidaAvailability = result.FindDict("aidaAvailability");
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   EXPECT_TRUE(configAidaAvailability->FindBool("enabled").value());
   EXPECT_TRUE(configAidaAvailability->FindBool("disallowLogging").value());

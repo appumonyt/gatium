@@ -70,13 +70,12 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
-namespace WTF {
+namespace blink {
 
 template <>
-struct CrossThreadCopier<
-    std::vector<std::unique_ptr<blink::URLLoaderThrottle>>> {
+struct CrossThreadCopier<std::vector<std::unique_ptr<URLLoaderThrottle>>> {
   STATIC_ONLY(CrossThreadCopier);
-  using Type = std::vector<std::unique_ptr<blink::URLLoaderThrottle>>;
+  using Type = std::vector<std::unique_ptr<URLLoaderThrottle>>;
   static Type Copy(Type&& value) { return std::move(value); }
 };
 
@@ -91,14 +90,10 @@ struct CrossThreadCopier<net::NetworkTrafficAnnotationTag>
 };
 
 template <>
-struct CrossThreadCopier<std::vector<blink::WebString>>
-    : public CrossThreadCopierPassThrough<std::vector<blink::WebString>> {
+struct CrossThreadCopier<std::vector<WebString>>
+    : public CrossThreadCopierPassThrough<std::vector<WebString>> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -188,16 +183,16 @@ void ResourceRequestSender::SendSync(
   SyncLoadContext* context_for_redirect = nullptr;
   PostCrossThreadTask(
       *task_runner, FROM_HERE,
-      WTF::CrossThreadBindOnce(
-          &SyncLoadContext::StartAsyncWithWaitableEvent, std::move(request),
-          task_runner, traffic_annotation, loader_options,
-          std::move(pending_factory), std::move(throttles),
-          CrossThreadUnretained(response),
-          CrossThreadUnretained(&context_for_redirect),
-          CrossThreadUnretained(&redirect_or_response_event),
-          CrossThreadUnretained(terminate_sync_load_event), timeout,
-          std::move(download_to_blob_registry), cors_exempt_header_list,
-          std::move(resource_load_info_notifier_wrapper)));
+      CrossThreadBindOnce(&SyncLoadContext::StartAsyncWithWaitableEvent,
+                          std::move(request), task_runner, traffic_annotation,
+                          loader_options, std::move(pending_factory),
+                          std::move(throttles), CrossThreadUnretained(response),
+                          CrossThreadUnretained(&context_for_redirect),
+                          CrossThreadUnretained(&redirect_or_response_event),
+                          CrossThreadUnretained(terminate_sync_load_event),
+                          timeout, std::move(download_to_blob_registry),
+                          cors_exempt_header_list,
+                          std::move(resource_load_info_notifier_wrapper)));
 
   // `redirect_or_response_event` will signal when each redirect completes, and
   // when the final response is complete.
@@ -217,7 +212,7 @@ void ResourceRequestSender::SendSync(
     client->OnReceivedRedirect(
         *response->redirect_info, response->head.Clone(),
         /*follow_redirect_callback=*/
-        WTF::BindOnce(
+        blink::BindOnce(
             [](scoped_refptr<RefCountedOptionalStringVector>
                    removed_headers_out,
                scoped_refptr<RefCountedOptionalHttpRequestHeaders>
@@ -299,8 +294,8 @@ int ResourceRequestSender::SendAsync(
 #endif
   code_cache_fetcher_ = CodeCacheFetcher::TryCreateAndStart(
       *request, code_cache_host, loading_task_runner_,
-      WTF::BindOnce(&ResourceRequestSender::DidReceiveCachedCode,
-                    weak_factory_.GetWeakPtr()));
+      blink::BindOnce(&ResourceRequestSender::DidReceiveCachedCode,
+                      weak_factory_.GetWeakPtr()));
   used_code_cache_fetcher_ = !!code_cache_fetcher_;
 
   // Compute a unique request_id for this renderer process.
@@ -444,8 +439,8 @@ void ResourceRequestSender::FollowPendingRedirect(
 void ResourceRequestSender::OnTransferSizeUpdated(int32_t transfer_size_diff) {
   if (ShouldDeferTask()) {
     pending_tasks_.emplace_back(
-        WTF::BindOnce(&ResourceRequestSender::OnTransferSizeUpdated,
-                      weak_factory_.GetWeakPtr(), transfer_size_diff));
+        blink::BindOnce(&ResourceRequestSender::OnTransferSizeUpdated,
+                        weak_factory_.GetWeakPtr(), transfer_size_diff));
     return;
   }
 
@@ -467,8 +462,8 @@ void ResourceRequestSender::OnTransferSizeUpdated(int32_t transfer_size_diff) {
 void ResourceRequestSender::OnUploadProgress(int64_t position, int64_t size) {
   if (ShouldDeferTask()) {
     pending_tasks_.emplace_back(
-        WTF::BindOnce(&ResourceRequestSender::OnUploadProgress,
-                      weak_factory_.GetWeakPtr(), position, size));
+        blink::BindOnce(&ResourceRequestSender::OnUploadProgress,
+                        weak_factory_.GetWeakPtr(), position, size));
     return;
   }
   if (!request_info_) {
@@ -491,7 +486,7 @@ void ResourceRequestSender::OnReceivedResponse(
 
   if (ShouldDeferTask()) {
     latency_critical_operation_deferred_ = true;
-    pending_tasks_.push_back(WTF::BindOnce(
+    pending_tasks_.push_back(blink::BindOnce(
         &ResourceRequestSender::OnReceivedResponse, weak_factory_.GetWeakPtr(),
         std::move(response_head), std::move(body), std::move(cached_metadata),
         response_ipc_arrival_time));
@@ -537,7 +532,7 @@ void ResourceRequestSender::OnReceivedRedirect(
     base::TimeTicks redirect_ipc_arrival_time) {
   if (ShouldDeferTask()) {
     latency_critical_operation_deferred_ = true;
-    pending_tasks_.emplace_back(WTF::BindOnce(
+    pending_tasks_.emplace_back(blink::BindOnce(
         &ResourceRequestSender::OnReceivedRedirect, weak_factory_.GetWeakPtr(),
         redirect_info, std::move(response_head), redirect_ipc_arrival_time));
     return;
@@ -568,7 +563,7 @@ void ResourceRequestSender::OnReceivedRedirect(
         request_info_->local_response_start - remote_response_start);
   }
 
-  auto callback = WTF::BindOnce(
+  auto callback = blink::BindOnce(
       &ResourceRequestSender::OnFollowRedirectCallback,
       weak_factory_.GetWeakPtr(), redirect_info, response_head.Clone());
   request_info_->client->OnReceivedRedirect(
@@ -606,7 +601,7 @@ void ResourceRequestSender::OnRequestComplete(
     base::TimeTicks complete_ipc_arrival_time) {
   if (ShouldDeferTask()) {
     latency_critical_operation_deferred_ = true;
-    pending_tasks_.emplace_back(WTF::BindOnce(
+    pending_tasks_.emplace_back(blink::BindOnce(
         &ResourceRequestSender::OnRequestComplete, weak_factory_.GetWeakPtr(),
         status, complete_ipc_arrival_time));
     return;
@@ -741,7 +736,7 @@ void ResourceRequestSender::MaybeRunPendingTasks() {
     return;
   }
 
-  WTF::Vector<base::OnceClosure> tasks = std::move(pending_tasks_);
+  Vector<base::OnceClosure> tasks = std::move(pending_tasks_);
   for (auto& task : tasks) {
     std::move(task).Run();
   }

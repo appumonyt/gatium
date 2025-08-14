@@ -8,29 +8,27 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/desktop_browser_window_capabilities_delegate.h"
 
-// static
-const char* DesktopBrowserWindowCapabilities::kDataKey =
-    "DesktopBrowserWindowCapabilities";
+DEFINE_USER_DATA(DesktopBrowserWindowCapabilities);
 
 DesktopBrowserWindowCapabilities::DesktopBrowserWindowCapabilities(
     DesktopBrowserWindowCapabilitiesDelegate* delegate,
     BrowserWindow* browser_window,
-    UnownedUserDataHost& host)
+    ui::UnownedUserDataHost& host)
     : delegate_(delegate),
       browser_window_(browser_window),
-      scoped_data_holder_(host, this) {}
+      scoped_data_holder_(host, *this) {}
 
 DesktopBrowserWindowCapabilities::~DesktopBrowserWindowCapabilities() = default;
 
 DesktopBrowserWindowCapabilities* DesktopBrowserWindowCapabilities::From(
     BrowserWindowInterface* browser_window_interface) {
-  return ScopedUnownedUserData<DesktopBrowserWindowCapabilities>::Get(
+  return ui::ScopedUnownedUserData<DesktopBrowserWindowCapabilities>::Get(
       browser_window_interface->GetUnownedUserDataHost());
 }
 
 const DesktopBrowserWindowCapabilities* DesktopBrowserWindowCapabilities::From(
     const BrowserWindowInterface* browser_window_interface) {
-  return ScopedUnownedUserData<DesktopBrowserWindowCapabilities>::Get(
+  return ui::ScopedUnownedUserData<DesktopBrowserWindowCapabilities>::Get(
       browser_window_interface->GetUnownedUserDataHost());
 }
 

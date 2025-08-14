@@ -4,9 +4,11 @@
 
 #include "chrome/browser/ui/views/page_action/page_action_view.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "base/callback_list.h"
+#include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
 #include "chrome/browser/ui/layout_constants.h"
@@ -25,16 +27,6 @@
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/animation/ink_drop.h"
 #include "ui/views/view_class_properties.h"
-
-namespace {
-
-// Icon images that aren't vector icons use special padding.
-gfx::Insets InsetsForNonVectorIcon() {
-  return gfx::Insets::VH(GetLayoutConstant(LOCATION_BAR_CHILD_INTERIOR_PADDING),
-                         GetLayoutConstant(LOCATION_BAR_CHIP_PADDING));
-}
-
-}  // namespace
 
 namespace page_actions {
 
@@ -69,7 +61,12 @@ PageActionView::PageActionView(actions::ActionItem* action_item,
           &PageActionView::OnLabelVisibilityChanged, base::Unretained(this)));
 }
 
-PageActionView::~PageActionView() = default;
+PageActionView::~PageActionView() {
+  // If this is currently highlighted, destroying the `ScopedAnchorHighlight`
+  // might attempt to trigger an ink drop change even though we're
+  // mid-destruction. Disable the ink drop to prevent this.
+  views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
+}
 
 bool PageActionView::IsChipVisible() const {
   return ShouldShowLabel();
@@ -112,6 +109,12 @@ void PageActionView::OnPageActionModelChanged(
   SetLabel(model.GetText(), model.GetAccessibleName());
   SetTooltipText(model.GetTooltipText());
   UpdateIconImage();
+
+  if (model.GetActionActive() && !highlight_) {
+    highlight_ = AddAnchorHighlight();
+  } else {
+    highlight_.reset();
+  }
 
   const bool was_chip_visible = IsChipVisible();
   if (!model.GetVisible()) {
@@ -165,7 +168,7 @@ void PageActionView::UpdateBorder() {
   gfx::Insets border_insets = icon_insets_;
   if (observation_.IsObserving() &&
       !observation_.GetSource()->GetImage().IsVectorIcon()) {
-    border_insets = InsetsForNonVectorIcon();
+    border_insets = GetInsetsForNonVectorIcon();
   }
   SetBorder(views::CreateEmptyBorder(border_insets));
 }
@@ -183,8 +186,6 @@ bool PageActionView::ShouldUpdateInkDropOnClickCanceled() const {
 }
 
 void PageActionView::NotifyClick(const ui::Event& event) {
-  IconLabelBubbleView::NotifyClick(event);
-
   PageActionTrigger trigger_source;
   if (event.IsMouseEvent()) {
     trigger_source = PageActionTrigger::kMouse;
@@ -194,15 +195,20 @@ void PageActionView::NotifyClick(const ui::Event& event) {
     CHECK(event.IsGestureEvent());
     trigger_source = PageActionTrigger::kGesture;
   }
+
+  // Click is expected to only happen when the page action is visible.
+  // Therefore, the click metric should be recorded before executing the click
+  // callback since that may change the page action visibility.
+  CHECK(click_callback_);
+  click_callback_.Run(trigger_source);
+
+  IconLabelBubbleView::NotifyClick(event);
   action_item_->InvokeAction(
       actions::ActionInvocationContext::Builder()
           .SetProperty(kPageActionTriggerKey,
                        static_cast<std::underlying_type_t<PageActionTrigger>>(
                            trigger_source))
           .Build());
-
-  CHECK(click_callback_);
-  click_callback_.Run(trigger_source);
 }
 
 void PageActionView::AnimationEnded(const gfx::Animation* animation) {
@@ -234,6 +240,23 @@ void PageActionView::UpdateIconImage() {
   }
 }
 
+const gfx::Insets PageActionView::GetInsetsForNonVectorIcon() const {
+  const gfx::Size image_size = observation_.GetSource()->GetImage().Size();
+
+  const int horizontal_padding =
+      (icon_size_ + icon_insets_.width() - image_size.width()) / 2;
+  const int vertical_padding =
+      (icon_size_ + icon_insets_.height() - image_size.height()) / 2;
+
+  // TODO(crbug.com/437929704): Remove the DUMP_WILL_BE_CHECK with CHECK once
+  // sure about codepaths that might lead to negative paddings.
+  DUMP_WILL_BE_CHECK(horizontal_padding >= 0);
+  DUMP_WILL_BE_CHECK(vertical_padding >= 0);
+
+  return gfx::Insets::VH(std::max(vertical_padding, 0),
+                         std::max(horizontal_padding, 0));
+}
+
 void PageActionView::SetModel(PageActionModelInterface* model) {
   observation_.Reset();
   observation_.Observe(model);
@@ -243,7 +266,7 @@ gfx::Size PageActionView::GetMinimumSize() const {
   gfx::Size icon_preferred_size = image_container_view()->GetPreferredSize();
   if (observation_.IsObserving() &&
       !observation_.GetSource()->GetImage().IsVectorIcon()) {
-    auto insets = InsetsForNonVectorIcon();
+    const gfx::Insets insets = GetInsetsForNonVectorIcon();
     icon_preferred_size.Enlarge(insets.width(), insets.height());
   } else {
     icon_preferred_size.Enlarge(icon_insets_.width(), icon_insets_.height());

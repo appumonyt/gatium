@@ -7,7 +7,9 @@
 
 #include "base/functional/callback.h"
 #include "base/types/expected.h"
+#include "components/favicon_base/favicon_usage_data.h"
 #include "components/user_data_importer/common/imported_bookmark_entry.h"
+#include "components/user_data_importer/common/importer_data_types.h"
 
 namespace base {
 class FilePath;
@@ -34,10 +36,19 @@ class BookmarkParser {
 
     // Safari includes Reading List entries in bookmarks.html.
     std::vector<ImportedBookmarkEntry> reading_list;
+
+    // Firefox includes Search Engines entries in bookmarks.html.
+    std::vector<SearchEngineInfo> search_engines;
+
+    // Favicons usage data list.
+    favicon_base::FaviconUsageDataList favicons;
   };
 
   // Failure reason for an unsuccessful invocation of `ParseBookmarks` below.
   enum class BookmarkParsingError {
+    // Failed to read file, e.g. no such file exists.
+    kFailedToReadFile,
+
     // The file was larger than the maximum supported by this manager.
     kTooBig,
 

@@ -5,10 +5,12 @@
 package org.chromium.chrome.browser.tasks.tab_management;
 
 import static org.chromium.build.NullUtil.assumeNonNull;
+import static org.chromium.chrome.browser.tasks.tab_management.UiTypeHelper.messageTypeToUiType;
 
 import android.app.Activity;
 import android.view.ViewGroup;
 
+import androidx.annotation.IntDef;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.Callback;
@@ -31,10 +33,9 @@ import org.chromium.chrome.browser.layouts.LayoutStateProvider;
 import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.multiwindow.MultiWindowModeStateDispatcher;
 import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;
-import org.chromium.chrome.browser.price_tracking.PriceTrackingFeatures;
-import org.chromium.chrome.browser.price_tracking.PriceTrackingUtilities;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.tab.TabId;
 import org.chromium.chrome.browser.tab_group_sync.TabGroupSyncServiceFactory;
 import org.chromium.chrome.browser.tab_ui.OnTabSelectingListener;
 import org.chromium.chrome.browser.tab_ui.TabContentManager;
@@ -42,12 +43,13 @@ import org.chromium.chrome.browser.tab_ui.TabGridIphDialogCoordinator;
 import org.chromium.chrome.browser.tab_ui.TabSwitcher;
 import org.chromium.chrome.browser.tabmodel.TabCreator;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
+import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
-import org.chromium.chrome.browser.tasks.tab_management.MessageService.MessageType;
-import org.chromium.chrome.browser.tasks.tab_management.PriceMessageService.PriceMessageType;
-import org.chromium.chrome.browser.tasks.tab_management.PriceMessageService.PriceWelcomeMessageProvider;
+import org.chromium.chrome.browser.tasks.tab_management.MessageCardProviderMediator.Message;
+import org.chromium.chrome.browser.tasks.tab_management.MessageCardViewProperties.MessageCardScope;
 import org.chromium.chrome.browser.tasks.tab_management.PriceMessageService.PriceWelcomeMessageReviewActionProvider;
 import org.chromium.chrome.browser.tasks.tab_management.TabListCoordinator.TabListMode;
+import org.chromium.chrome.browser.tasks.tab_management.TabProperties.UiType;
 import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeController;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.tab_ui.R;
@@ -57,11 +59,40 @@ import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.modelutil.LayoutViewBuilder;
 import org.chromium.ui.modelutil.PropertyModel;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.util.List;
 
 /** Manages message related glue for the {@link TabSwitcher}. */
 @NullMarked
-public class TabSwitcherMessageManager implements PriceWelcomeMessageController {
+public class TabSwitcherMessageManager {
+    /** Represents the types of messages that can be shown in the tab switcher. */
+    @IntDef({
+        MessageType.IPH,
+        MessageType.PRICE_MESSAGE,
+        MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE,
+        MessageType.ARCHIVED_TABS_MESSAGE,
+        MessageType.ARCHIVED_TABS_IPH_MESSAGE,
+        MessageType.COLLABORATION_ACTIVITY,
+        MessageType.TAB_GROUP_SUGGESTION_MESSAGE,
+        MessageType.ALL
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    @Target({ElementType.TYPE_USE})
+    public @interface MessageType {
+        int FOR_TESTING = 0;
+        int IPH = 1;
+        int PRICE_MESSAGE = 2;
+        int INCOGNITO_REAUTH_PROMO_MESSAGE = 3;
+        int ARCHIVED_TABS_MESSAGE = 4;
+        int ARCHIVED_TABS_IPH_MESSAGE = 5;
+        int COLLABORATION_ACTIVITY = 6;
+        int TAB_GROUP_SUGGESTION_MESSAGE = 7;
+        int ALL = 8;
+    }
+
     /** Used to observe updates to message cards. */
     public interface MessageUpdateObserver {
         /** Invoked when messages are added. */
@@ -75,15 +106,6 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
 
         /** Invoked when messages are restored. */
         default void onRestoreAllAppendedMessage() {}
-
-        /** Invoked when price message is shown. */
-        default void onShowPriceWelcomeMessage() {}
-
-        /** Invoked when price message is removed. */
-        default void onRemovePriceWelcomeMessage() {}
-
-        /** Invoked when price message is restored. */
-        default void onRestorePriceWelcomeMessage() {}
     }
 
     private final MultiWindowModeStateDispatcher.MultiWindowModeObserver mMultiWindowModeObserver =
@@ -104,9 +126,6 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
                     assumeNonNull(tabGroupModelFilter);
                     if (tabGroupModelFilter.getTabModel().getCount() == 1) {
                         removeAllAppendedMessage();
-                    } else if (mPriceMessageService != null
-                            && mPriceMessageService.getBindingTabId() == tab.getId()) {
-                        removePriceWelcomeMessage();
                     }
                 }
 
@@ -117,20 +136,6 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
                     assumeNonNull(tabGroupModelFilter);
                     if (tabGroupModelFilter.getTabModel().getCount() == 1) {
                         restoreAllAppendedMessage();
-                    }
-                    if (mPriceMessageService != null
-                            && mPriceMessageService.getBindingTabId() == tab.getId()) {
-                        restorePriceWelcomeMessage();
-                    }
-                }
-
-                @Override
-                public void tabClosureCommitted(Tab tab) {
-                    // TODO(crbug.com/40160889): Auto update the PriceMessageService instead of
-                    // updating it based on the client caller.
-                    if (mPriceMessageService != null
-                            && mPriceMessageService.getBindingTabId() == tab.getId()) {
-                        mPriceMessageService.invalidateMessage();
                     }
                 }
             };
@@ -146,7 +151,8 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
     private final MultiWindowModeStateDispatcher mMultiWindowModeStateDispatcher;
     private final SnackbarManager mSnackbarManager;
     private final ModalDialogManager mModalDialogManager;
-    private final MessageCardProviderCoordinator mMessageCardProviderCoordinator;
+    private final MessageCardProviderCoordinator<@MessageType Integer>
+            mMessageCardProviderCoordinator;
     private final Callback<@Nullable TabGroupModelFilter> mOnTabGroupModelFilterChanged =
             new ValueChangedCallback<>(this::onTabGroupModelFilterChanged);
     private final ObservableSupplierImpl<@Nullable PriceWelcomeMessageReviewActionProvider>
@@ -166,7 +172,7 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
     private final Supplier<LayoutStateProvider> mLayoutStateProviderSupplier;
 
     private Profile mProfile;
-    private @Nullable PriceMessageService mPriceMessageService;
+    private PriceWelcomeMessageController mPriceWelcomeMessageController;
     private @Nullable IncognitoReauthPromoMessageService mIncognitoReauthPromoMessageService;
     private @Nullable TabGroupSuggestionMessageService mTabGroupSuggestionMessageService;
     private ArchivedTabsMessageService mArchivedTabsMessageService;
@@ -234,14 +240,15 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
                     return assumeNonNull(tabGroupModelFilter.getTabModel().getProfile());
                 };
         mMessageCardProviderCoordinator =
-                new MessageCardProviderCoordinator(activity, profileSupplier, this::dismissHandler);
+                new MessageCardProviderCoordinator<@MessageType Integer>(
+                        activity, profileSupplier, this::dismissHandler);
 
         mTabGridIphDialogCoordinator =
                 new TabGridIphDialogCoordinator(activity, mModalDialogManager);
 
         mMultiWindowModeStateDispatcher.addObserver(mMultiWindowModeObserver);
-        mOnTabGroupModelFilterChanged.onResult(
-                currentTabGroupModelFilterSupplier.addObserver(mOnTabGroupModelFilterChanged));
+        currentTabGroupModelFilterSupplier.addSyncObserverAndCallIfNonNull(
+                mOnTabGroupModelFilterChanged);
         mEdgeToEdgeSupplier = edgeToEdgeSupplier;
         mPaneManagerSupplier = paneManagerSupplier;
         mTabGroupUiActionHandlerSupplier = tabGroupUiActionHandlerSupplier;
@@ -302,19 +309,29 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
      */
     public void registerMessages(TabListCoordinator tabListCoordinator) {
         tabListCoordinator.registerItemType(
-                TabProperties.UiType.MESSAGE,
-                new LayoutViewBuilder(R.layout.tab_grid_message_card_item),
+                UiType.IPH_MESSAGE,
+                new LayoutViewBuilder<>(R.layout.tab_grid_message_card_item),
                 MessageCardViewBinder::bind);
 
         tabListCoordinator.registerItemType(
-                TabProperties.UiType.LARGE_MESSAGE,
-                new LayoutViewBuilder(R.layout.large_message_card_item),
+                UiType.PRICE_MESSAGE,
+                new LayoutViewBuilder<>(R.layout.large_message_card_item),
                 LargeMessageCardViewBinder::bind);
 
         tabListCoordinator.registerItemType(
-                TabProperties.UiType.CUSTOM_MESSAGE,
-                new LayoutViewBuilder(R.layout.custom_message_card_item),
-                CustomMessageCardViewBinder::bind);
+                UiType.INCOGNITO_REAUTH_PROMO_MESSAGE,
+                new LayoutViewBuilder<>(R.layout.large_message_card_item),
+                LargeMessageCardViewBinder::bind);
+
+        tabListCoordinator.registerItemType(
+                UiType.ARCHIVED_TABS_MESSAGE,
+                new LayoutViewBuilder<>(R.layout.archived_tabs_message_card_view),
+                ArchivedTabsCardViewBinder::bind);
+
+        tabListCoordinator.registerItemType(
+                UiType.TAB_GROUP_SUGGESTION_MESSAGE,
+                new LayoutViewBuilder<>(R.layout.tab_grid_message_card_item),
+                MessageCardViewBinder::bind);
     }
 
     /** Post-native initialization. */
@@ -336,7 +353,7 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
                         mBackPressManager,
                         mModalDialogManager,
                         TrackerFactory.getTrackerForProfile(profile),
-                        () -> appendNextMessage(MessageService.MessageType.ARCHIVED_TABS_MESSAGE),
+                        () -> appendNextMessage(MessageType.ARCHIVED_TABS_MESSAGE),
                         mTabListCoordinatorSupplier,
                         mDesktopWindowStateManager,
                         mEdgeToEdgeSupplier,
@@ -358,7 +375,7 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
                     new IncognitoReauthManager(mActivity, profile);
             mIncognitoReauthPromoMessageService =
                     new IncognitoReauthPromoMessageService(
-                            MessageService.MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE,
+                            MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE,
                             profile,
                             mActivity,
                             ChromeSharedPreferences.getInstance(),
@@ -367,18 +384,43 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
                             mLifecycleDispatcher);
             mMessageCardProviderCoordinator.subscribeMessageService(
                     mIncognitoReauthPromoMessageService);
-
-            if (ChromeFeatureList.sTabSwitcherGroupSuggestionsAndroid.isEnabled()) {
-                mTabGroupSuggestionMessageService =
-                        new TabGroupSuggestionMessageService(
-                                mActivity,
-                                mCurrentTabGroupModelFilterSupplier,
-                                this::addTabGroupSuggestionMessage);
-                mMessageCardProviderCoordinator.subscribeMessageService(
-                        mTabGroupSuggestionMessageService);
-            }
         }
-        setUpPriceTracking();
+        if (ChromeFeatureList.sTabSwitcherGroupSuggestionsAndroid.isEnabled()) {
+            mTabGroupSuggestionMessageService =
+                    new TabGroupSuggestionMessageService(
+                            mActivity,
+                            mCurrentTabGroupModelFilterSupplier,
+                            this::addTabGroupSuggestionMessage,
+                            this::translateStartMergeAnimation);
+            mMessageCardProviderCoordinator.subscribeMessageService(
+                    mTabGroupSuggestionMessageService);
+        }
+        mPriceWelcomeMessageController =
+                PriceWelcomeMessageController.build(
+                        this,
+                        mCurrentTabGroupModelFilterSupplier,
+                        mMessageCardProviderCoordinator,
+                        mPriceWelcomeMessageReviewActionProviderSupplier,
+                        mProfile,
+                        mTabListCoordinatorSupplier);
+    }
+
+    /**
+     * Triggers an animation where a set of tabs merge into a single target tab.
+     *
+     * @param targetTabId The ID of the tab that other tabs will merge into.
+     * @param tabIdsToMerge The IDs for all tabs that will be merged into the target tab.
+     * @param onAnimationEnd Executed after the merge animation has finished.
+     */
+    private void translateStartMergeAnimation(
+            @TabId int targetTabId, List<@TabId Integer> tabIdsToMerge, Runnable onAnimationEnd) {
+        if (!mTabListCoordinatorSupplier.hasValue()) return;
+
+        TabListCoordinator tabListCoordinator = assumeNonNull(mTabListCoordinatorSupplier.get());
+        int targetTabIndex = tabListCoordinator.getTabIndexFromTabId(targetTabId);
+        List<Integer> tabIndexesToMerge =
+                tabListCoordinator.getCardIndexesFromTabIds(tabIdsToMerge);
+        tabListCoordinator.triggerMergeAnimation(targetTabIndex, tabIndexesToMerge, onAnimationEnd);
     }
 
     /**
@@ -401,11 +443,7 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         // TabListCoordinator#resetWithListOfTabs to ensure that the TabList gets observer
         // calls before the TabSwitcherMessageManager.
         removeTabGroupModelFilterObservers(mCurrentTabGroupModelFilterSupplier.get());
-        // Invalidate price welcome message for every reset so that the stale message won't be
-        // restored by mistake (e.g. from tabClosureUndone in TabSwitcherMediator).
-        if (mPriceMessageService != null) {
-            mPriceMessageService.invalidateMessage();
-        }
+        mPriceWelcomeMessageController.invalidate();
     }
 
     /** Called after resetting the list of tabs. */
@@ -423,6 +461,7 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         mMultiWindowModeStateDispatcher.removeObserver(mMultiWindowModeObserver);
         removeTabGroupModelFilterObservers(mCurrentTabGroupModelFilterSupplier.get());
         mCurrentTabGroupModelFilterSupplier.removeObserver(mOnTabGroupModelFilterChanged);
+        mPriceWelcomeMessageController.destroy();
 
         mMessageCardProviderCoordinator.destroy();
         mTabGridIphDialogCoordinator.destroy();
@@ -438,79 +477,28 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         }
     }
 
-    @Override
-    public void showPriceWelcomeMessage(PriceMessageService.PriceTabData priceTabData) {
-        @Nullable
-        PriceWelcomeMessageReviewActionProvider actionProvider =
-                mPriceWelcomeMessageReviewActionProviderSupplier.get();
-        if (actionProvider == null) return;
-
-        if (mPriceMessageService == null
-                || !PriceTrackingUtilities.isPriceWelcomeMessageCardEnabled(mProfile)
-                || mMessageCardProviderCoordinator.isMessageShown(
-                        MessageService.MessageType.PRICE_MESSAGE, PriceMessageType.PRICE_WELCOME)) {
-            return;
-        }
-        if (mPriceMessageService.preparePriceMessage(
-                PriceMessageType.PRICE_WELCOME, priceTabData)) {
-            appendNextMessage(MessageService.MessageType.PRICE_MESSAGE);
-            // To make the message card in view when user enters tab switcher, we should scroll to
-            // current tab with 0 offset. See {@link
-            // TabSwitcherMediator#setInitialScrollIndexOffset} for more details.
-            TabGroupModelFilter filter = mCurrentTabGroupModelFilterSupplier.get();
-            assumeNonNull(filter);
-            actionProvider.scrollToTab(filter.getCurrentRepresentativeTabIndex());
-        }
-        for (MessageUpdateObserver observer : mObservers) {
-            observer.onShowPriceWelcomeMessage();
-        }
-    }
-
-    @Override
-    public void removePriceWelcomeMessage() {
-        TabListCoordinator tabListCoordinator = mTabListCoordinatorSupplier.get();
-        if (tabListCoordinator != null) {
-            tabListCoordinator.removeSpecialListItem(
-                    TabProperties.UiType.LARGE_MESSAGE, MessageService.MessageType.PRICE_MESSAGE);
-        }
-
-        for (MessageUpdateObserver observer : mObservers) {
-            observer.onRemovePriceWelcomeMessage();
-        }
-    }
-
-    @Override
-    public void restorePriceWelcomeMessage() {
-        appendNextMessage(MessageService.MessageType.PRICE_MESSAGE);
-        for (MessageUpdateObserver observer : mObservers) {
-            observer.onRestorePriceWelcomeMessage();
-        }
-    }
-
     public @Nullable TabGroupSuggestionMessageService getTabGroupSuggestionMessageService() {
         return mTabGroupSuggestionMessageService;
     }
 
-    private void appendNextMessage(@MessageService.MessageType int messageType) {
+    public void appendNextMessage(@MessageType int messageType) {
         assert mMessageCardProviderCoordinator != null;
         TabListCoordinator tabListCoordinator = mTabListCoordinatorSupplier.get();
         if (tabListCoordinator == null) return;
 
-        MessageCardProviderMediator.Message nextMessage =
+        Message nextMessage =
                 mMessageCardProviderCoordinator.getNextMessageItemForType(messageType);
         if (nextMessage == null || !shouldAppendMessage(nextMessage)) return;
-        if (messageType == MessageService.MessageType.PRICE_MESSAGE) {
-            tabListCoordinator.addSpecialListItem(
+        switch (messageType) {
+            case MessageType.PRICE_MESSAGE -> tabListCoordinator.addSpecialListItem(
                     tabListCoordinator.getPriceWelcomeMessageInsertionIndex(),
-                    TabProperties.UiType.LARGE_MESSAGE,
+                    UiType.PRICE_MESSAGE,
                     nextMessage.model);
-        } else if (messageType == MessageService.MessageType.ARCHIVED_TABS_MESSAGE) {
-            tabListCoordinator.addSpecialListItem(
-                    0, TabProperties.UiType.CUSTOM_MESSAGE, nextMessage.model);
-        } else {
-            tabListCoordinator.addSpecialListItem(
+            case MessageType.ARCHIVED_TABS_MESSAGE -> tabListCoordinator.addSpecialListItem(
+                    0, UiType.ARCHIVED_TABS_MESSAGE, nextMessage.model);
+            default -> tabListCoordinator.addSpecialListItem(
                     tabListCoordinator.getTabListModelSize(),
-                    TabProperties.UiType.MESSAGE,
+                    messageTypeToUiType(messageType),
                     nextMessage.model);
         }
         for (MessageUpdateObserver observer : mObservers) {
@@ -525,30 +513,27 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         assert tabListCoordinator != null;
 
         sAppendedMessagesForTesting = false;
-        List<MessageCardProviderMediator.Message> messages =
+        List<Message<@MessageType Integer>> messages =
                 mMessageCardProviderCoordinator.getMessageItems();
         for (int i = 0; i < messages.size(); i++) {
             if (!shouldAppendMessage(messages.get(i))) continue;
-            if (messages.get(i).type == MessageService.MessageType.PRICE_MESSAGE) {
-                tabListCoordinator.addSpecialListItem(
-                        index, TabProperties.UiType.LARGE_MESSAGE, messages.get(i).model);
-            } else if (messages.get(i).type
-                    == MessageService.MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE) {
-                if (!mayAddIncognitoReauthPromoCard(messages.get(i).model)) {
-                    // Skip incrementing index if the message was not added.
-                    continue;
+            @MessageType int messageType = messages.get(i).type;
+            switch (messageType) {
+                case MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE -> {
+                    if (!mayAddIncognitoReauthPromoCard(messages.get(i).model)) {
+                        // Skip incrementing index if the message was not added.
+                        continue;
+                    }
                 }
-            } else if (messages.get(i).type == MessageService.MessageType.ARCHIVED_TABS_MESSAGE) {
-                // Always add the archived tabs message to the start.
-                tabListCoordinator.addSpecialListItem(
-                        0, TabProperties.UiType.CUSTOM_MESSAGE, messages.get(i).model);
-            } else {
-                tabListCoordinator.addSpecialListItem(
-                        index, TabProperties.UiType.MESSAGE, messages.get(i).model);
+                    // Always add the archived tabs message to the start.
+                case MessageType.ARCHIVED_TABS_MESSAGE -> tabListCoordinator.addSpecialListItem(
+                        0, UiType.ARCHIVED_TABS_MESSAGE, messages.get(i).model);
+                default -> tabListCoordinator.addSpecialListItem(
+                        index, messageTypeToUiType(messageType), messages.get(i).model);
             }
             index++;
         }
-        if (messages.size() > 0) sAppendedMessagesForTesting = true;
+        if (!messages.isEmpty()) sAppendedMessagesForTesting = true;
         for (MessageUpdateObserver observer : mObservers) {
             observer.onAppendedMessage();
         }
@@ -561,7 +546,7 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         if (mIncognitoReauthPromoMessageService.isIncognitoReauthPromoMessageEnabled(mProfile)) {
             tabListCoordinator.addSpecialListItem(
                     tabListCoordinator.getTabListModelSize(),
-                    TabProperties.UiType.LARGE_MESSAGE,
+                    UiType.INCOGNITO_REAUTH_PROMO_MESSAGE,
                     model);
             mIncognitoReauthPromoMessageService.increasePromoShowCountAndMayDisableIfCountExceeds();
             return true;
@@ -569,30 +554,25 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         return false;
     }
 
-    private boolean shouldAppendMessage(MessageCardProviderMediator.Message message) {
+    private boolean shouldAppendMessage(Message<@MessageType Integer> message) {
         TabListCoordinator tabListCoordinator = mTabListCoordinatorSupplier.get();
         assert tabListCoordinator != null;
         if (tabListCoordinator.specialItemExists(message.type)) return false;
         PropertyModel messageModel = message.model;
 
-        Integer messageCardVisibilityControlValue =
+        @MessageCardScope
+        int scope =
                 messageModel.get(
                         MessageCardViewProperties
                                 .MESSAGE_CARD_VISIBILITY_CONTROL_IN_REGULAR_AND_INCOGNITO_MODE);
 
-        @MessageCardViewProperties.MessageCardScope
-        int scope =
-                (messageCardVisibilityControlValue != null)
-                        ? messageCardVisibilityControlValue
-                        : MessageCardViewProperties.MessageCardScope.REGULAR;
-
-        if (scope == MessageCardViewProperties.MessageCardScope.BOTH) return true;
+        if (scope == MessageCardScope.BOTH) return true;
 
         TabGroupModelFilter filter = mCurrentTabGroupModelFilterSupplier.get();
         assumeNonNull(filter);
         return filter.getTabModel().isIncognito()
-                ? scope == MessageCardViewProperties.MessageCardScope.INCOGNITO
-                : scope == MessageCardViewProperties.MessageCardScope.REGULAR;
+                ? scope == MessageCardScope.INCOGNITO
+                : scope == MessageCardScope.REGULAR;
     }
 
     /**
@@ -603,14 +583,14 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         TabListCoordinator tabListCoordinator = mTabListCoordinatorSupplier.get();
         if (tabListCoordinator == null) return;
 
+        tabListCoordinator.removeSpecialListItem(UiType.IPH_MESSAGE, MessageType.IPH);
+        tabListCoordinator.removeSpecialListItem(UiType.PRICE_MESSAGE, MessageType.PRICE_MESSAGE);
         tabListCoordinator.removeSpecialListItem(
-                TabProperties.UiType.MESSAGE, MessageService.MessageType.ALL);
+                UiType.INCOGNITO_REAUTH_PROMO_MESSAGE, MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE);
         tabListCoordinator.removeSpecialListItem(
-                TabProperties.UiType.LARGE_MESSAGE,
-                MessageService.MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE);
+                UiType.ARCHIVED_TABS_MESSAGE, MessageType.ARCHIVED_TABS_MESSAGE);
         tabListCoordinator.removeSpecialListItem(
-                TabProperties.UiType.CUSTOM_MESSAGE,
-                MessageService.MessageType.ARCHIVED_TABS_MESSAGE);
+                UiType.TAB_GROUP_SUGGESTION_MESSAGE, MessageType.TAB_GROUP_SUGGESTION_MESSAGE);
 
         sAppendedMessagesForTesting = false;
         for (MessageUpdateObserver observer : mObservers) {
@@ -631,50 +611,26 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
                 != null;
 
         sAppendedMessagesForTesting = false;
-        List<MessageCardProviderMediator.Message> messages =
+        List<Message<@MessageType Integer>> messages =
                 mMessageCardProviderCoordinator.getMessageItems();
         for (int i = 0; i < messages.size(); i++) {
             if (!shouldAppendMessage(messages.get(i))) continue;
             // The restore of PRICE_MESSAGE is handled in the restorePriceWelcomeMessage() below.
-            if (messages.get(i).type == MessageService.MessageType.PRICE_MESSAGE) {
-                continue;
-            } else if (messages.get(i).type
-                    == MessageService.MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE) {
-                tabListCoordinator.addSpecialListItem(
+            PropertyModel model = messages.get(i).model;
+            @MessageType int msgType = messages.get(i).type;
+            switch (msgType) {
+                case MessageType.PRICE_MESSAGE, MessageType.TAB_GROUP_SUGGESTION_MESSAGE -> {}
+                case MessageType.ARCHIVED_TABS_MESSAGE -> tabListCoordinator.addSpecialListItem(
+                        0, UiType.ARCHIVED_TABS_MESSAGE, model);
+                default -> tabListCoordinator.addSpecialListItem(
                         tabListCoordinator.getTabListModelSize(),
-                        TabProperties.UiType.LARGE_MESSAGE,
-                        messages.get(i).model);
-            } else if (messages.get(i).type == MessageService.MessageType.ARCHIVED_TABS_MESSAGE) {
-                tabListCoordinator.addSpecialListItem(
-                        0, TabProperties.UiType.CUSTOM_MESSAGE, messages.get(i).model);
-            } else {
-                tabListCoordinator.addSpecialListItem(
-                        tabListCoordinator.getTabListModelSize(),
-                        TabProperties.UiType.MESSAGE,
-                        messages.get(i).model);
+                        messageTypeToUiType(msgType),
+                        model);
             }
         }
-        sAppendedMessagesForTesting = messages.size() > 0;
+        sAppendedMessagesForTesting = !messages.isEmpty();
         for (MessageUpdateObserver observer : mObservers) {
             observer.onRestoreAllAppendedMessage();
-        }
-    }
-
-    private void setUpPriceTracking() {
-        assert mProfile != null;
-        if (PriceTrackingFeatures.isPriceAnnotationsEnabled(mProfile)) {
-            if (mPriceMessageService == null) {
-                Supplier<PriceWelcomeMessageProvider> priceWelcomeMessageProviderSupplier =
-                        (Supplier<PriceWelcomeMessageProvider>)
-                                ((Supplier<? extends PriceWelcomeMessageProvider>)
-                                        mTabListCoordinatorSupplier);
-                mPriceMessageService =
-                        new PriceMessageService(
-                                mProfile,
-                                priceWelcomeMessageProviderSupplier,
-                                mPriceWelcomeMessageReviewActionProviderSupplier);
-            }
-            mMessageCardProviderCoordinator.subscribeMessageService(mPriceMessageService);
         }
     }
 
@@ -686,15 +642,10 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         TabListCoordinator tabListCoordinator = mTabListCoordinatorSupplier.get();
         if (tabListCoordinator == null) return;
 
-        if (messageType == MessageService.MessageType.PRICE_MESSAGE
-                || messageType == MessageService.MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE) {
-            tabListCoordinator.removeSpecialListItem(
-                    TabProperties.UiType.LARGE_MESSAGE, messageType);
-        } else if (messageType == MessageService.MessageType.ARCHIVED_TABS_MESSAGE) {
-            tabListCoordinator.removeSpecialListItem(
-                    TabProperties.UiType.CUSTOM_MESSAGE, messageType);
-        } else {
-            tabListCoordinator.removeSpecialListItem(TabProperties.UiType.MESSAGE, messageType);
+        tabListCoordinator.removeSpecialListItem(messageTypeToUiType(messageType), messageType);
+        if (messageType != MessageType.PRICE_MESSAGE
+                && messageType != MessageType.INCOGNITO_REAUTH_PROMO_MESSAGE
+                && messageType != MessageType.ARCHIVED_TABS_MESSAGE) {
             appendNextMessage(messageType);
         }
         for (MessageUpdateObserver observer : mObservers) {
@@ -736,13 +687,28 @@ public class TabSwitcherMessageManager implements PriceWelcomeMessageController 
         return mProfile != null;
     }
 
-    void setPriceMessageServiceForTesting(PriceMessageService priceMessageService) {
-        assert mPriceMessageService == null
-                : "setPriceMessageServiceForTesting() must be before initWithNative().";
-        mPriceMessageService = priceMessageService;
+    private void addTabGroupSuggestionMessage(@TabId int tabId) {
+        @MessageType int messageType = MessageType.TAB_GROUP_SUGGESTION_MESSAGE;
+
+        assert mMessageCardProviderCoordinator != null;
+        TabListCoordinator tabListCoordinator = mTabListCoordinatorSupplier.get();
+        if (tabListCoordinator == null) return;
+
+        Message nextMessage =
+                mMessageCardProviderCoordinator.getNextMessageItemForType(messageType);
+        if (nextMessage == null || !shouldAppendMessage(nextMessage)) return;
+
+        int index = tabListCoordinator.getIndexFromTabId(tabId);
+        if (index == TabModel.INVALID_TAB_INDEX) return;
+
+        tabListCoordinator.addSpecialListItem(
+                index + 1, UiType.TAB_GROUP_SUGGESTION_MESSAGE, nextMessage.model);
+        for (MessageUpdateObserver observer : mObservers) {
+            observer.onAppendedMessage();
+        }
     }
 
-    private void addTabGroupSuggestionMessage() {
-        appendNextMessage(MessageType.TAB_GROUP_SUGGESTION_MESSAGE);
+    public PriceWelcomeMessageController getPriceWelcomeMessageController() {
+        return mPriceWelcomeMessageController;
     }
 }

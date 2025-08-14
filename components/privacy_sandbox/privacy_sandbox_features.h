@@ -161,13 +161,17 @@ BASE_DECLARE_FEATURE(kIpProtectionUx);
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 BASE_DECLARE_FEATURE(kActUserBypassUx);
 
+// Enables TRACKING_PROTECTION content setting changes in 3pc User Bypass UI.
+COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
+BASE_DECLARE_FEATURE(kTrackingProtectionContentSettingIn3pcUx);
+
 // Enables TRACKING_PROTECTION content settings to control 3pcb.
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 BASE_DECLARE_FEATURE(kTrackingProtectionContentSettingFor3pcb);
 
-// Enables showing new RWS UI.
+// Enables showing RWS UI.
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-BASE_DECLARE_FEATURE(kPrivacySandboxRelatedWebsiteSetsUi);
+BASE_DECLARE_FEATURE(kRelatedWebsiteSetsUi);
 
 // Privacy UX features end
 

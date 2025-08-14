@@ -19,7 +19,6 @@ BASE_DECLARE_FEATURE(kOmniboxRemoveSuggestionsFromClipboard);
 // Features that affect the "twiddle" step of AutocompleteController, e.g.,
 // deduping or `SortAndCull()`.
 BASE_DECLARE_FEATURE(kGroupingFrameworkForNonZPS);
-BASE_DECLARE_FEATURE(kOmniboxDemoteByType);
 
 // Features below this line should be sorted alphabetically by their comments.
 
@@ -59,7 +58,6 @@ BASE_DECLARE_FEATURE(kDocumentProviderPrimaryAccountRequirement);
 BASE_DECLARE_FEATURE(kDocumentProviderEnterpriseEligibility);
 BASE_DECLARE_FEATURE(kDocumentProviderEnterpriseEligibilityWhenUnknown);
 BASE_DECLARE_FEATURE(kDocumentProviderNoSyncRequirement);
-BASE_DECLARE_FEATURE(kDomainSuggestions);
 
 // Suggestions UI - these affect the UI or function of the suggestions popup.
 BASE_DECLARE_FEATURE(kShowPopupOnMouseReleased);
@@ -70,6 +68,8 @@ BASE_DECLARE_FEATURE(kWebUIOmniboxPopup);
 // Omnibox UI - these affect the UI or function of the location bar (not the
 // popup).
 BASE_DECLARE_FEATURE(kOmniboxAssistantVoiceSearch);
+BASE_DECLARE_FEATURE(kOmniboxMultimodalInput);
+BASE_DECLARE_FEATURE(kAiModeOmniboxEntryPoint);
 
 // Navigation experiments.
 BASE_DECLARE_FEATURE(kDefaultTypedNavigationsToHttps);
@@ -105,6 +105,7 @@ BASE_DECLARE_FEATURE(kCategoricalSuggestions);
 BASE_DECLARE_FEATURE(kOmniboxTouchDownTriggerForPrefetch);
 
 // Site search/Keyword mode related features.
+BASE_DECLARE_FEATURE(kOmniboxSiteSearch);
 BASE_DECLARE_FEATURE(kStarterPackExpansion);
 BASE_DECLARE_FEATURE(kStarterPackIPH);
 
@@ -117,6 +118,9 @@ BASE_DECLARE_FEATURE(kUseFusedLocationProvider);
 
 BASE_DECLARE_FEATURE(kOmniboxMobileParityUpdate);
 BASE_DECLARE_FEATURE(kOmniboxMobileParityUpdateV2);
+#if BUILDFLAG(IS_IOS)
+BASE_DECLARE_FEATURE(kOmniboxMobileParityUpdateV3);
+#endif  // BUILDFLAG(IS_IOS)
 
 // Omnibox suggestions tuning
 BASE_DECLARE_FEATURE(kNumNtpZpsRecentSearches);
@@ -127,15 +131,6 @@ BASE_DECLARE_FEATURE(kNumWebZpsMostVisitedUrls);
 BASE_DECLARE_FEATURE(kNumSrpZpsRecentSearches);
 BASE_DECLARE_FEATURE(kNumSrpZpsRelatedSearches);
 
-#if BUILDFLAG(IS_ANDROID)
-BASE_DECLARE_FEATURE(kDiagnostics);
-BASE_DECLARE_FEATURE(kRetainOmniboxOnFocus);
-BASE_DECLARE_FEATURE(kJumpStartOmnibox);
-BASE_DECLARE_FEATURE(kSuppressIntermediateACUpdatesOnLowEndDevices);
-// Delay focusTab to prioritize navigation (https://crbug.com/374852568).
-BASE_DECLARE_FEATURE(kPostDelayedTaskFocusTab);
-BASE_DECLARE_FEATURE(kAndroidHubSearchTabGroups);
-#endif  // BUILDFLAG(IS_ANDROID)
 
 // `ShortcutsProvider` features.
 BASE_DECLARE_FEATURE(kOmniboxShortcutsAndroid);
@@ -152,6 +147,22 @@ BASE_DECLARE_FEATURE(kPreconnectNonSearchOmniboxSuggestions);
 // Only restore focus when invisible.
 BASE_DECLARE_FEATURE(kOmniboxRestoreInvisibleFocusOnly);
 
+// Adds an aim shortcut shortcut in the typed state.
+BASE_DECLARE_FEATURE(kOmniboxAimShortcutTypedState);
+
+// When enabled, unblocks omnibox height on small form factor devices, allowing
+// users to type in multiline / longer text.
+BASE_DECLARE_FEATURE(kMultilineEditField);
+
+#if BUILDFLAG(IS_ANDROID)
+BASE_DECLARE_FEATURE(kDiagnostics);
+BASE_DECLARE_FEATURE(kJumpStartOmnibox);
+BASE_DECLARE_FEATURE(kSuppressIntermediateACUpdatesOnLowEndDevices);
+// Delay focusTab to prioritize navigation (https://crbug.com/374852568).
+BASE_DECLARE_FEATURE(kPostDelayedTaskFocusTab);
+BASE_DECLARE_FEATURE(kAndroidHubSearchTabGroups);
+#endif  // BUILDFLAG(IS_ANDROID)
+// Note: no new flags beyond this point.
 }  // namespace omnibox
 
 #endif  // COMPONENTS_OMNIBOX_COMMON_OMNIBOX_FEATURES_H_

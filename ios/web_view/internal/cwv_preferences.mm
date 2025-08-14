@@ -11,6 +11,7 @@
 #import "components/translate/core/browser/translate_pref_names.h"
 #import "components/translate/core/browser/translate_prefs.h"
 #import "ios/web_view/internal/autofill/cwv_autofill_prefs.h"
+#import "ios/web_view/internal/autofill/cwv_password_affiliation.h"
 #import "ios/web_view/internal/cwv_preferences_internal.h"
 
 @implementation CWVPreferences {
@@ -64,6 +65,14 @@
   return ios_web_view::IsAutofillAddressSyncEnabled(_prefService);
 }
 
+- (void)setPasswordAffiliationEnabled:(BOOL)enabled {
+  ios_web_view::SetPasswordAffiliationEnabled(_prefService, enabled);
+}
+
+- (BOOL)isPasswordAffiliationEnabled {
+  return ios_web_view::IsPasswordAffiliationEnabled(_prefService);
+}
+
 - (void)setPasswordAutofillEnabled:(BOOL)enabled {
   _prefService->SetBoolean(password_manager::prefs::kCredentialsEnableService,
                            enabled);
@@ -94,6 +103,14 @@
 
 - (BOOL)isSafeBrowsingEnabled {
   return safe_browsing::IsSafeBrowsingEnabled(*_prefService);
+}
+
+- (void)setAutofillVCNUsageEnabled:(BOOL)enabled {
+  ios_web_view::SetAutofillVCNUsageEnabled(_prefService, enabled);
+}
+
+- (BOOL)isAutofillVCNUsageEnabled {
+  return ios_web_view::IsAutofillVCNUsageEnabled(_prefService);
 }
 
 - (void)commitPendingWrite:(void (^)(void))completionHandler {

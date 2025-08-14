@@ -85,8 +85,9 @@ public class PartnerHomepageUnitTest {
     public void testProviderNotFromSystemPackage() throws InterruptedException {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    mHomepageManager.setPrefHomepageEnabled(true);
-                    mHomepageManager.setHomepagePreferences(false, true, TEST_CUSTOM_HOMEPAGE_GURL);
+                    mHomepageManager.setJavaPrefHomepageEnabled(true);
+                    mHomepageManager.setJavaHomepageSelection(
+                            false, true, TEST_CUSTOM_HOMEPAGE_GURL);
                 });
 
         // Note that unlike other tests in this file, we test if Chrome ignores a customizations
@@ -120,8 +121,9 @@ public class PartnerHomepageUnitTest {
     public void testNoProvider() throws InterruptedException {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    mHomepageManager.setPrefHomepageEnabled(true);
-                    mHomepageManager.setHomepagePreferences(false, true, TEST_CUSTOM_HOMEPAGE_GURL);
+                    mHomepageManager.setJavaPrefHomepageEnabled(true);
+                    mHomepageManager.setJavaHomepageSelection(
+                            false, true, TEST_CUSTOM_HOMEPAGE_GURL);
                 });
 
         CustomizationProviderDelegateUpstreamImpl.setProviderAuthorityForTesting(
@@ -151,8 +153,9 @@ public class PartnerHomepageUnitTest {
     public void testHomepageDisabled() throws InterruptedException {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    mHomepageManager.setPrefHomepageEnabled(false);
-                    mHomepageManager.setHomepagePreferences(false, true, TEST_CUSTOM_HOMEPAGE_GURL);
+                    mHomepageManager.setJavaPrefHomepageEnabled(false);
+                    mHomepageManager.setJavaHomepageSelection(
+                            false, true, TEST_CUSTOM_HOMEPAGE_GURL);
                 });
 
         CustomizationProviderDelegateUpstreamImpl.setProviderAuthorityForTesting(
@@ -186,8 +189,8 @@ public class PartnerHomepageUnitTest {
     public void testCustomHomepage() throws InterruptedException {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    mHomepageManager.setPrefHomepageEnabled(true);
-                    mHomepageManager.setHomepagePreferences(
+                    mHomepageManager.setJavaPrefHomepageEnabled(true);
+                    mHomepageManager.setJavaHomepageSelection(
                             false, false, TEST_CUSTOM_HOMEPAGE_GURL);
                 });
 
@@ -223,8 +226,9 @@ public class PartnerHomepageUnitTest {
     public void testHomepageProviderTimeout() throws InterruptedException {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    mHomepageManager.setPrefHomepageEnabled(true);
-                    mHomepageManager.setHomepagePreferences(false, true, TEST_CUSTOM_HOMEPAGE_GURL);
+                    mHomepageManager.setJavaPrefHomepageEnabled(true);
+                    mHomepageManager.setJavaHomepageSelection(
+                            false, true, TEST_CUSTOM_HOMEPAGE_GURL);
                 });
 
         CustomizationProviderDelegateUpstreamImpl.setProviderAuthorityForTesting(
@@ -267,8 +271,9 @@ public class PartnerHomepageUnitTest {
     public void testHomepageProviderDelayed() throws InterruptedException {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    mHomepageManager.setPrefHomepageEnabled(true);
-                    mHomepageManager.setHomepagePreferences(false, true, TEST_CUSTOM_HOMEPAGE_GURL);
+                    mHomepageManager.setJavaPrefHomepageEnabled(true);
+                    mHomepageManager.setJavaHomepageSelection(
+                            false, true, TEST_CUSTOM_HOMEPAGE_GURL);
                 });
 
         CustomizationProviderDelegateUpstreamImpl.setProviderAuthorityForTesting(
@@ -315,8 +320,9 @@ public class PartnerHomepageUnitTest {
     public void testReadHomepageProvider() throws InterruptedException {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    mHomepageManager.setPrefHomepageEnabled(true);
-                    mHomepageManager.setHomepagePreferences(false, true, TEST_CUSTOM_HOMEPAGE_GURL);
+                    mHomepageManager.setJavaPrefHomepageEnabled(true);
+                    mHomepageManager.setJavaHomepageSelection(
+                            false, true, TEST_CUSTOM_HOMEPAGE_GURL);
                 });
 
         CustomizationProviderDelegateUpstreamImpl.setProviderAuthorityForTesting(

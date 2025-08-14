@@ -32,6 +32,7 @@
 #include "build/build_config.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "components/input/render_widget_host_input_event_router.h"
+#include "content/browser/fenced_frame/fenced_frame_viewport_observer.h"
 #include "content/browser/media/audio_stream_monitor.h"
 #include "content/browser/media/forwarding_audio_stream_factory.h"
 #include "content/browser/preloading/prefetch/prefetch_handle_impl.h"
@@ -56,7 +57,6 @@
 #include "content/public/browser/fullscreen_types.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/media_stream_request.h"
-#include "content/public/browser/mhtml_generation_result.h"
 #include "content/public/browser/preloading.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_capability_type.h"
@@ -89,6 +89,7 @@
 #include "ui/accessibility/ax_mode.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/platform/inspect/ax_event_recorder.h"
+#include "ui/base/clipboard/clipboard_metadata.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-forward.h"
 #include "ui/base/ime/mojom/virtual_keyboard_types.mojom.h"
 #include "ui/base/mojom/window_show_state.mojom-forward.h"
@@ -370,10 +371,14 @@ class CONTENT_EXPORT WebContentsImpl
   // A notification is then propagated to observers.
   void DidCapturedSurfaceControl();
 
+#if BUILDFLAG(IS_ANDROID)
   // Let long press on links select the link text instead of triggering
   // the context menu.
-#if BUILDFLAG(IS_ANDROID)
   void SetLongPressLinkSelectText(bool enabled);
+
+  // Allow drag-drop of files such as an image to load and replace contents.
+  void SetCanAcceptLoadDrops(bool enabled);
+  bool GetCanAcceptLoadDropsForTesting();
 #endif
 
   // WebContents ------------------------------------------------------
@@ -411,8 +416,6 @@ class CONTENT_EXPORT WebContentsImpl
   WebUI* GetWebUI() override;
   void SetUserAgentOverride(const blink::UserAgentOverride& ua_override,
                             bool override_in_new_tabs) override;
-  void SetRendererInitiatedUserAgentOverrideOption(
-      NavigationController::UserAgentOverrideOption option) override;
   const blink::UserAgentOverride& GetUserAgentOverride() override;
   bool ShouldOverrideUserAgentForRendererInitiatedNavigation() override;
   void SetAlwaysSendSubresourceNotifications() override;
@@ -441,7 +444,7 @@ class CONTENT_EXPORT WebContentsImpl
   uint64_t GetUploadSize() override;
   uint64_t GetUploadPosition() override;
   const std::string& GetEncoding() override;
-  void Discard() override;
+  void Discard(base::OnceClosure on_discarded_cb) override;
   bool WasDiscarded() override;
   void SetWasDiscarded(bool was_discarded) override;
   [[nodiscard]] base::ScopedClosureRunner IncrementCapturerCount(
@@ -545,9 +548,6 @@ class CONTENT_EXPORT WebContentsImpl
                             bool is_subresource) override;
   void GenerateMHTML(const MHTMLGenerationParams& params,
                      base::OnceCallback<void(int64_t)> callback) override;
-  void GenerateMHTMLWithResult(
-      const MHTMLGenerationParams& params,
-      MHTMLGenerationResult::GenerateMHTMLCallback callback) override;
   const std::string& GetContentsMimeType() override;
   blink::RendererPreferences* GetMutableRendererPrefs() override;
   void Close() override;
@@ -627,8 +627,10 @@ class CONTENT_EXPORT WebContentsImpl
   void RequestFindMatchRects(int current_version) override;
   service_manager::InterfaceProvider* GetJavaInterfaces() override;
   ChildProcessImportance GetPrimaryMainFrameImportanceForTesting() override;
-  void SetPrimaryMainFrameImportance(
-      ChildProcessImportance importance) override;
+  ChildProcessImportance GetPrimaryPageSubframeImportanceForTesting() override;
+  void SetPrimaryPageImportance(
+      ChildProcessImportance main_frame_importance,
+      ChildProcessImportance subframe_importance) override;
 #endif
   bool HasRecentInteraction() override;
   [[nodiscard]] ScopedIgnoreInputEvents IgnoreInputEvents(
@@ -869,7 +871,7 @@ class CONTENT_EXPORT WebContentsImpl
   void IsClipboardPasteAllowedByPolicy(
       const ClipboardEndpoint& source,
       const ClipboardEndpoint& destination,
-      const ClipboardMetadata& metadata,
+      const ui::ClipboardMetadata& metadata,
       ClipboardPasteData clipboard_paste_data,
       IsClipboardPasteAllowedCallback callback) override;
   void OnTextCopiedToClipboard(RenderFrameHostImpl* render_frame_host,
@@ -1010,7 +1012,8 @@ class CONTENT_EXPORT WebContentsImpl
       PreloadingAttempt* preloading_attempt,
       base::RepeatingCallback<bool(const GURL&,
                                    const std::optional<UrlMatchType>&)>,
-      base::RepeatingCallback<void(NavigationHandle&)>) override;
+      base::RepeatingCallback<void(NavigationHandle&)>,
+      bool allow_reuse) override;
   void CancelAllPrerendering() override;
   bool IsAllowedToStartPrerendering() override;
   void BackNavigationLikely(PreloadingPredictor predictor,
@@ -1151,8 +1154,7 @@ class CONTENT_EXPORT WebContentsImpl
   void RendererResponsive(RenderWidgetHostImpl* render_widget_host) override;
   void RequestToLockPointer(RenderWidgetHostImpl* render_widget_host,
                             bool user_gesture,
-                            bool last_unlocked_by_target,
-                            bool privileged) override;
+                            bool last_unlocked_by_target) override;
   bool IsWaitingForPointerLockPrompt(
       RenderWidgetHostImpl* render_widget_host) override;
   bool RequestKeyboardLock(RenderWidgetHostImpl* render_widget_host,
@@ -1463,9 +1465,6 @@ class CONTENT_EXPORT WebContentsImpl
   // Called by WebContentsAndroid to send the Display Cutout safe area to
   // DisplayCutoutHostImpl.
   void SetDisplayCutoutSafeArea(gfx::Insets insets);
-  // Called by WebContentsAndroid to send the context menu insets over to
-  // the RenderWidgetHostView, and on to the Page.
-  void SetContextMenuInsets(gfx::Rect);
   // Called by WebContentsAndroid to instruct the web contents to "show
   // interest" in the referenced element.
   void ShowInterestInElement(int nodeID);
@@ -2200,6 +2199,11 @@ class CONTENT_EXPORT WebContentsImpl
   void RecursivelyConstructAXTree(ui::AXNode* node,
                                   std::vector<ui::AXNodeData>& nodes);
 
+#if BUILDFLAG(IS_ANDROID)
+  // Apply the cached primary subframe importance to the primary frame tree.
+  void ApplyPrimaryPageSubframeImportance();
+#endif
+
   // Data for core operation ---------------------------------------------------
 
   // Delegate for notifying our owner about stuff. Not owned by us.
@@ -2254,6 +2258,11 @@ class CONTENT_EXPORT WebContentsImpl
 
 #if BUILDFLAG(IS_ANDROID)
   std::unique_ptr<WebContentsAndroid> web_contents_android_;
+  // Caches the importance of subframes in the primary frame tree.
+  // WebContentsImpl::RenderFrameCreated() sets the importance to a new
+  // RenderWidgetHost for new subframes.
+  ChildProcessImportance primary_subframe_importance_ =
+      ChildProcessImportance::NORMAL;
 #endif
 
   // Manages the embedder state for browser plugins, if this WebContents is an
@@ -2432,7 +2441,8 @@ class CONTENT_EXPORT WebContentsImpl
   // no fullscreen widget.
   int fullscreen_widget_process_id_;
 
-  // Routing id of the shown fullscreen widget or MSG_ROUTING_NONE otherwise.
+  // Routing id of the shown fullscreen widget or IPC::mojom::kRoutingIdNone
+  // otherwise.
   int fullscreen_widget_routing_id_;
 
   // At the time the fullscreen widget was being shut down, did it have focus?
@@ -2575,12 +2585,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Whether we should override user agent in new tabs.
   bool should_override_user_agent_in_new_tabs_ = false;
-
-  // Used to determine the value of is-user-agent-overriden for renderer
-  // initiated navigations.
-  NavigationController::UserAgentOverrideOption
-      renderer_initiated_user_agent_override_option_ =
-          NavigationController::UA_OVERRIDE_INHERIT;
 
   // Gets notified about changes in viewport fit events.
   std::unique_ptr<SafeAreaInsetsHost> safe_area_insets_host_;
@@ -2744,6 +2748,11 @@ class CONTENT_EXPORT WebContentsImpl
   // no popin can open a popin.
   // See https://explainers-by-googlers.github.io/partitioned-popins/
   base::WeakPtr<WebContents> opened_partitioned_popin_;
+
+  // Tracks the number of same-site fenced frames in the viewport per top-level
+  // page load and stores it in the primary main frame's PageUserData. Metrics
+  // are logged via UMA every time the PageUserData is destroyed.
+  std::unique_ptr<FencedFrameViewportObserver> fenced_frame_viewport_observer_;
 
 #if BUILDFLAG(IS_ANDROID)
   bool supports_forward_transition_animation_ = true;

@@ -935,18 +935,12 @@ IN_PROC_BROWSER_TEST_F(SaveCardBubbleViewsFullFormBrowserTest,
 class SaveCardBubbleViewsFullFormBrowserTestSettings
     : public SaveCardBubbleViewsFullFormBrowserTest {
  public:
-  SaveCardBubbleViewsFullFormBrowserTestSettings() = default;
-
-  void SetUpOnMainThread() override {
-    SaveCardBubbleViewsFullFormBrowserTest::SetUpOnMainThread();
+  SaveCardBubbleViewsFullFormBrowserTestSettings() {
 #if BUILDFLAG(IS_CHROMEOS)
     // OpenSettingsFromManageCardsPrompt() tries to retrieve the PhoneHubManager
     // keyed service, whose factory implementation relies on ChromeOS having a
-    // single profile, and consequently a single service instance. Creating a
-    // service for both browser()->profile() and GetProfile(0) hits a CHECK,
-    // so prevent this by disabling the feature.
-    GetProfile(0)->GetPrefs()->SetBoolean(
-        ash::multidevice_setup::kPhoneHubAllowedPrefName, false);
+    // single profile, and consequently a single service instance.
+    SetUsePrimaryUserProfile(true);
 #endif
   }
 
@@ -2001,7 +1995,15 @@ IN_PROC_BROWSER_TEST_F(SaveCardBubbleViewsFullFormBrowserTest,
       "Autofill.StrikeDatabase.CreditCardSaveNotOfferedDueToMaxStrikes",
       AutofillMetrics::SaveTypeMetric::LOCAL, 1);
 
-  // UMA should have recorded bubble rejection.
+  // UMA should have recorded platform-agnostic and desktop-specific bubble
+  // rejection metric.
+  histogram_tester.ExpectUniqueSample(
+      "Autofill.SaveCreditCardPromptOffer.Local",
+      autofill_metrics::SaveCardPromptOffer::kNotShownMaxStrikesReached, 1);
+  histogram_tester.ExpectUniqueSample(
+      "Autofill.SaveCreditCardPromptOffer.Desktop.Local",
+      autofill_metrics::SaveCardPromptOffer::kNotShownMaxStrikesReached, 1);
+
   histogram_tester.ExpectUniqueSample(
       "Autofill.SaveCreditCardPromptOffer.Local.FirstShow",
       autofill_metrics::SaveCardPromptOffer::kNotShownMaxStrikesReached, 1);
@@ -2073,7 +2075,15 @@ IN_PROC_BROWSER_TEST_P(
       "Autofill.StrikeDatabase.CreditCardSaveNotOfferedDueToMaxStrikes",
       AutofillMetrics::SaveTypeMetric::SERVER, 1);
 
-  // UMA should have recorded bubble rejection.
+  // UMA should have recorded platform-agnostic and desktop-specific bubble
+  // rejection metric.
+  histogram_tester.ExpectUniqueSample(
+      "Autofill.SaveCreditCardPromptOffer.Server",
+      autofill_metrics::SaveCardPromptOffer::kNotShownMaxStrikesReached, 1);
+  histogram_tester.ExpectUniqueSample(
+      "Autofill.SaveCreditCardPromptOffer.Desktop.Server",
+      autofill_metrics::SaveCardPromptOffer::kNotShownMaxStrikesReached, 1);
+
   histogram_tester.ExpectUniqueSample(
       "Autofill.SaveCreditCardPromptOffer.Upload.FirstShow",
       autofill_metrics::SaveCardPromptOffer::kNotShownMaxStrikesReached, 1);

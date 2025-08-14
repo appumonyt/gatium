@@ -14,13 +14,14 @@
 #include "base/strings/to_string.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
+#include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/feature_engagement/public/feature_constants.h"
-#include "components/plus_addresses/features.h"
+#include "components/plus_addresses/core/common/features.h"
+#include "components/plus_addresses/core/common/plus_address_prefs.h"
 #include "components/plus_addresses/grit/plus_addresses_strings.h"
 #include "components/plus_addresses/mock_plus_address_http_client.h"
 #include "components/plus_addresses/plus_address_hats_utils.h"
-#include "components/plus_addresses/plus_address_prefs.h"
 #include "components/plus_addresses/plus_address_test_utils.h"
 #include "components/plus_addresses/plus_address_types.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -52,7 +53,7 @@ FakePlusAddressService::GetSuggestionsFromPlusAddresses(
     bool is_off_the_record,
     const autofill::FormData& focused_form,
     const autofill::FormFieldData& focused_field,
-    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroup>&
+    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroupSet>&
         form_field_type_groups,
     const autofill::PasswordFormClassification& focused_form_classification,
     autofill::AutofillSuggestionTriggerSource trigger_source) {
@@ -85,7 +86,7 @@ FakePlusAddressService::GetSuggestionsFromPlusAddresses(
 
 autofill::Suggestion FakePlusAddressService::GetManagePlusAddressSuggestion()
     const {
-  return Suggestion();
+  return Suggestion(autofill::SuggestionType::kManagePlusAddress);
 }
 
 void FakePlusAddressService::RecordAutofillSuggestionEvent(
@@ -164,9 +165,10 @@ bool FakePlusAddressService::IsPlusAddress(
 
 bool FakePlusAddressService::IsFieldEligibleForPlusAddress(
     const autofill::AutofillField& field) const {
-  autofill::FillingProduct filling_product =
-      autofill::GetFillingProductFromFieldTypeGroup(field.Type().group());
-  if (filling_product == autofill::FillingProduct::kAddress) {
+  auto filling_products = autofill::DenseSet<autofill::FillingProduct>(
+      field.Type().GetGroups(), &autofill::GetFillingProductFromFieldTypeGroup);
+
+  if (filling_products.contains(autofill::FillingProduct::kAddress)) {
     return true;
   }
 

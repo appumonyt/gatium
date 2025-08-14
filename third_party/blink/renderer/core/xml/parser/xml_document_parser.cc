@@ -1095,7 +1095,7 @@ void XMLDocumentParser::StartElementNs(
       q_name,
       parsing_fragment_ ? CreateElementFlags::ByFragmentParser(document_)
                         : CreateElementFlags::ByParser(document_),
-      is);
+      is, /*registry*/ nullptr);
   // Check IsStopped() because custom element constructors may synchronously
   // trigger removal of the document and cancellation of this parser.
   if (IsStopped()) {
@@ -1274,6 +1274,7 @@ void XMLDocumentParser::GetProcessingInstruction(const String& target,
   CheckIfBlockingStyleSheetAdded();
 
   saw_xsl_transform_ = !saw_first_element_ && pi->IsXSL();
+  CHECK(!saw_xsl_transform_ || RuntimeEnabledFeatures::XSLTEnabled());
   if (saw_xsl_transform_ &&
       !DocumentXSLT::HasTransformSourceDocument(*GetDocument())) {
     // This behavior is very tricky. We call stopParsing() here because we

@@ -31,10 +31,6 @@ base::TimeDelta ComputeAdpfTarget(const BeginFrameArgs& args) {
   return base::Milliseconds(12);
 }
 
-bool DrawImmediatelyWhenInteractive() {
-  return features::ShouldDrawImmediatelyWhenInteractive();
-}
-
 bool AdpfCanUseSetThreads() {
 #if BUILDFLAG(IS_ANDROID)
   return android_get_device_api_level() >= __ANDROID_API_U__ &&
@@ -391,12 +387,21 @@ int DisplayScheduler::MaxPendingSwaps() const {
   return std::clamp(deadline_max_pending_swaps, 1, param_max_pending_swaps);
 }
 
-void DisplayScheduler::SetNeedsOneBeginFrame(bool needs_draw) {
+void DisplayScheduler::SetNeedsOneBeginFrame(const BeginFrameArgs& args,
+                                             bool needs_draw) {
   // If we are not currently observing BeginFrames because needs_draw_ is false,
   // we will stop observing again after one BeginFrame in AttemptDrawAndSwap().
   StartObservingBeginFrames();
   if (needs_draw)
     needs_draw_ = true;
+  if (base::FeatureList::IsEnabled(features::kNoLateBeginFrames) &&
+      args.IsValid() &&
+      (!begin_frame_observer_->LastUsedBeginFrameArgs().IsValid() ||
+       args.frame_id.sequence_number >
+           begin_frame_observer_->LastUsedBeginFrameArgs()
+               .frame_id.sequence_number)) {
+    OnBeginFrame(args);
+  }
 }
 
 void DisplayScheduler::MaybeStartObservingBeginFrames() {
@@ -486,8 +491,7 @@ DisplayScheduler::DesiredBeginFrameDeadlineMode() const {
   // Only wait if we actually have pending surfaces and we're not forcing draw
   // due to an ongoing interaction.
   bool wait_for_pending_surfaces =
-      has_pending_surfaces_ && !(DrawImmediatelyWhenInteractive() &&
-                                 damage_tracker_->HasDamageDueToInteraction());
+      has_pending_surfaces_ && !(damage_tracker_->HasDamageDueToInteraction());
 
   bool all_surfaces_ready =
       !wait_for_pending_surfaces && damage_tracker_->IsRootSurfaceValid() &&

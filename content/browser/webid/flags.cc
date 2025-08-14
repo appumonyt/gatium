@@ -14,11 +14,6 @@
 
 namespace content {
 
-bool IsFedCmMultipleIdentityProvidersEnabled() {
-  return base::FeatureList::IsEnabled(
-      features::kFedCmMultipleIdentityProviders);
-}
-
 bool IsFedCmMetricsEndpointEnabled() {
   return base::FeatureList::IsEnabled(features::kFedCmMetricsEndpoint);
 }
@@ -47,10 +42,6 @@ bool IsWebIdentityDigitalCredentialsCreationEnabled() {
 
 bool IsFedCmSameSiteLaxEnabled() {
   return base::FeatureList::IsEnabled(features::kFedCmSameSiteLax);
-}
-
-bool IsFedCmShowFilteredAccountsEnabled() {
-  return base::FeatureList::IsEnabled(features::kFedCmShowFilteredAccounts);
 }
 
 bool IsFedCmLightweightModeEnabled() {

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #import "ios/chrome/browser/infobars/ui_bundled/modals/autofill_address_profile/legacy_infobar_edit_address_profile_table_view_controller.h"
 
 #import <memory>
@@ -15,6 +20,7 @@
 #import "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #import "components/autofill/core/common/autofill_features.h"
 #import "components/strings/grit/components_strings.h"
+#import "ios/chrome/browser/autofill/ui_bundled/address_editor/autofill_constants.h"
 #import "ios/chrome/browser/autofill/ui_bundled/address_editor/autofill_profile_edit_handler.h"
 #import "ios/chrome/browser/autofill/ui_bundled/address_editor/autofill_profile_edit_mediator.h"
 #import "ios/chrome/browser/autofill/ui_bundled/address_editor/autofill_profile_edit_table_view_controller.h"
@@ -71,8 +77,7 @@ class LegacyInfobarEditAddressProfileTableViewControllerTest
             initWithDelegate:autofill_profile_edit_mediator_
                    userEmail:base::SysUTF16ToNSString(kTestSyncingEmail)
                   controller:viewController
-                settingsView:NO
-            addManualAddress:NO];
+              addressContext:SaveAddressContext::kInfobarSaveUpdateAddress];
     viewController.handler = autofill_profile_edit_table_view_controller_;
     autofill_profile_edit_mediator_.consumer =
         autofill_profile_edit_table_view_controller_;

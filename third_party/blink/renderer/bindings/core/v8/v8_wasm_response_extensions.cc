@@ -139,7 +139,7 @@ class WasmCodeCachingCallback {
 
     DCHECK(execution_context_task_runner_.get());
     execution_context_task_runner_->PostTask(
-        FROM_HERE, ConvertToBaseOnceCallback(WTF::CrossThreadBindOnce(
+        FROM_HERE, ConvertToBaseOnceCallback(CrossThreadBindOnce(
                        &SendCachedData, response_url_, response_time_,
                        cache_storage_cache_name_, execution_context_,
                        std::move(serialized_data))));
@@ -455,8 +455,8 @@ void PropagateExceptionToWasmStreaming(
     v8::Local<v8::Value> exception,
     std::shared_ptr<v8::WasmStreaming>& streaming) {
   ApplyContextToException(script_state, exception,
-                          ExceptionContext(v8::ExceptionContext::kOperation,
-                                           "WebAssembly", "compile"));
+                          v8::ExceptionContext::kOperation, "WebAssembly",
+                          "compile");
   streaming->Abort(exception);
   streaming.reset();
 }

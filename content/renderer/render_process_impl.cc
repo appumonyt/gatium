@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "content/renderer/render_process_impl.h"
 
 #include "build/build_config.h"
@@ -81,15 +76,6 @@ GetThreadPoolInitParams() {
   size_t desired_num_threads =
       std::max(kMaxNumThreadsInForegroundPoolLowerBound,
                content::GetMinForegroundThreadsInRendererThreadPool());
-  if (base::FeatureList::IsEnabled(base::kThreadPoolCap2)) {
-    // Cap the threadpool to an initial fixed size.
-    // Note: The size can still grow beyond the value set here
-    // when tasks are blocked for a certain period of time.
-    const int max_allowed_workers_per_pool =
-        base::kThreadPoolCapRestrictedCount.Get();
-    desired_num_threads = std::min(
-        desired_num_threads, static_cast<size_t>(max_allowed_workers_per_pool));
-  }
   return std::make_unique<base::ThreadPoolInstance::InitParams>(
       desired_num_threads);
 }
@@ -167,6 +153,10 @@ RenderProcessImpl::RenderProcessImpl()
     SetV8FlagIfOverridden(features::kEnableExperimentalWebAssemblyJSPI,
                           "--experimental-wasm-jspi",
                           "--no-experimental-wasm-jspi");
+
+    SetV8FlagIfOverridden(
+        features::kEnableExperimentalWebAssemblySharedEverything,
+        "--experimental-wasm-shared", "--no-experimental-wasm-shared");
 
     SetV8FlagIfOverridden(features::kWebAssemblyLazyCompilation,
                           "--wasm-lazy-compilation",

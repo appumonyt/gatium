@@ -4,6 +4,8 @@
 
 #include "media/gpu/windows/d3d12_video_encode_av1_delegate.h"
 
+#include <bit>
+
 #include "base/containers/fixed_flat_map.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
@@ -42,6 +44,7 @@ constexpr auto kVideoCodecProfileToD3D12Profile =
           D3D12_VIDEO_ENCODER_AV1_PROFILE_PROFESSIONAL}});
 
 AV1BitstreamBuilder::SequenceHeader FillAV1BuilderSequenceHeader(
+    uint8_t num_temporal_layers,
     D3D12_VIDEO_ENCODER_AV1_PROFILE profile,
     const D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC& input_size,
     const D3D12_VIDEO_ENCODER_AV1_LEVEL_TIER_CONSTRAINTS& tier_level,
@@ -49,9 +52,11 @@ AV1BitstreamBuilder::SequenceHeader FillAV1BuilderSequenceHeader(
   AV1BitstreamBuilder::SequenceHeader sequence_header{};
 
   sequence_header.profile = profile;
-  sequence_header.level[0] = tier_level.Level;
-  sequence_header.tier[0] = tier_level.Tier;
-  sequence_header.operating_points_cnt_minus_1 = 0;
+  sequence_header.operating_points_cnt_minus_1 = num_temporal_layers - 1;
+  for (uint8_t i = 0; i <= sequence_header.operating_points_cnt_minus_1; i++) {
+    sequence_header.level[i] = tier_level.Level;
+    sequence_header.tier[i] = tier_level.Tier;
+  }
   sequence_header.frame_width_bits_minus_1 = 15;
   sequence_header.frame_height_bits_minus_1 = 15;
   sequence_header.width = input_size.Width;
@@ -80,7 +85,7 @@ AV1BitstreamBuilder::SequenceHeader FillAV1BuilderSequenceHeader(
 AV1BitstreamBuilder::FrameHeader FillAV1BuilderFrameHeader(
     const D3D12VideoEncodeAV1Delegate::PictureControlFlags& picture_ctrl,
     const D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_CODEC_DATA& pic_params,
-    const D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAGS& enabled_features) {
+    const AV1BitstreamBuilder::SequenceHeader& sequence_header) {
   AV1BitstreamBuilder::FrameHeader frame_header{};
   frame_header.frame_type =
       pic_params.FrameType == D3D12_VIDEO_ENCODER_AV1_FRAME_TYPE_KEY_FRAME
@@ -125,13 +130,67 @@ AV1BitstreamBuilder::FrameHeader FillAV1BuilderFrameHeader(
 
   frame_header.tx_mode = pic_params.TxMode;
   frame_header.reduced_tx_set = false;
-  frame_header.segmentation_enabled =
-      !!(enabled_features &
-         (D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_AUTO_SEGMENTATION |
-          D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_CUSTOM_SEGMENTATION));
+  frame_header.segmentation_enabled = picture_ctrl.enable_auto_segmentation;
   frame_header.allow_screen_content_tools =
       picture_ctrl.allow_screen_content_tools;
   frame_header.allow_intrabc = picture_ctrl.allow_intrabc;
+
+  // When loop restoration is enabled, updates frame header with loop
+  // restoration parameters submitted to driver.
+  if (sequence_header.enable_restoration) {
+    const auto& restoration_config = pic_params.FrameRestorationConfig;
+    uint8_t lr_unit_shift = 0;
+    uint8_t lr_uv_shift = 0;
+
+    frame_header.restoration_type[0] =
+        static_cast<libgav1::LoopRestorationType>(
+            restoration_config.FrameRestorationType[0]);
+    frame_header.restoration_type[1] =
+        static_cast<libgav1::LoopRestorationType>(
+            restoration_config.FrameRestorationType[1]);
+    frame_header.restoration_type[2] =
+        static_cast<libgav1::LoopRestorationType>(
+            restoration_config.FrameRestorationType[2]);
+    // Calculate the lr_unit_shift that shall be used. 64 * 2^lr_unit_shift
+    // is the size of the loop restoration tile size in pixels.
+    auto restoration_y_tile_size =
+        restoration_config.LoopRestorationPixelSize[0];
+    auto restoration_u_tile_size =
+        restoration_config.LoopRestorationPixelSize[1];
+    auto resotration_v_tile_size =
+        restoration_config.LoopRestorationPixelSize[2];
+    auto restoration_size_max = std::max({
+        restoration_y_tile_size,
+        restoration_u_tile_size,
+        resotration_v_tile_size,
+    });
+    switch (restoration_size_max) {
+      case D3D12_VIDEO_ENCODER_AV1_RESTORATION_TILESIZE_256x256:
+        lr_unit_shift = 2;
+        break;
+      case D3D12_VIDEO_ENCODER_AV1_RESTORATION_TILESIZE_128x128:
+        lr_unit_shift = 1;
+        break;
+      case D3D12_VIDEO_ENCODER_AV1_RESTORATION_TILESIZE_64x64:
+      case D3D12_VIDEO_ENCODER_AV1_RESTORATION_TILESIZE_DISABLED:
+        lr_unit_shift = 0;
+        break;
+      default:
+        NOTREACHED();
+    }
+    // Check if either restoration_u_tile_size or resotration_v_tile_size is
+    // equal to resotration_y_tile_size, if so, lr_uv_shift is 0; otherwise,
+    // lr_uv_shift should be 1.
+    if (restoration_u_tile_size == restoration_y_tile_size ||
+        resotration_v_tile_size == restoration_y_tile_size) {
+      lr_uv_shift = 0;
+    } else {
+      lr_uv_shift = 1;
+    }
+
+    frame_header.lr_unit_shift = lr_unit_shift;
+    frame_header.lr_uv_shift = lr_uv_shift;
+  }
 
   return frame_header;
 }
@@ -330,7 +389,7 @@ EncoderStatus::Or<D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAGS> GetEnabledAV1Features(
   if (is_screen) {
     auto scc_tools = D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_PALETTE_ENCODING |
                      D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_INTRA_BLOCK_COPY;
-    if (supported_features & scc_tools) {
+    if ((supported_features & scc_tools) == scc_tools) {
       enabled_features |= scc_tools;
     }
   }
@@ -348,6 +407,8 @@ D3D12VideoEncodeAV1Delegate::PictureControlFlags GetAV1PictureControl(
       is_keyframe ? enabled_features &
                         D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_INTRA_BLOCK_COPY
                   : false;
+  picture_ctrl.enable_auto_segmentation =
+      enabled_features & D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_AUTO_SEGMENTATION;
   return picture_ctrl;
 }
 
@@ -417,6 +478,16 @@ size_t D3D12VideoEncodeAV1Delegate::GetMaxNumOfRefFrames() const {
   return max_num_ref_frames_;
 }
 
+size_t D3D12VideoEncodeAV1Delegate::GetMaxNumOfManualRefBuffers() const {
+  // We should have initialized.
+  CHECK_GT(max_num_ref_frames_, 0u);
+  return max_num_ref_frames_;
+}
+
+bool D3D12VideoEncodeAV1Delegate::ReportsAverageQp() const {
+  return true;
+}
+
 EncoderStatus D3D12VideoEncodeAV1Delegate::InitializeVideoEncoder(
     const VideoEncodeAccelerator::Config& config) {
   DVLOG(3) << base::StringPrintf("%s: config = %s", __func__,
@@ -424,14 +495,15 @@ EncoderStatus D3D12VideoEncodeAV1Delegate::InitializeVideoEncoder(
   CHECK_EQ(VideoCodecProfileToVideoCodec(config.output_profile),
            VideoCodec::kAV1);
   CHECK(!config.HasSpatialLayer());
-  CHECK(!config.HasTemporalLayer());
-  CHECK_EQ(max_num_ref_frames_, 1ull)
-      << "Currently D3D12VideoEncodeAV1Delegate only support 1 reference "
-         "frame.";
 
-  if (config.bitrate.mode() != Bitrate::Mode::kConstant) {
+  // For L1T3, we need two reference frames (for T0 and T1 frames).
+  // For L1T1  and L1T2, one reference frame is sufficient.
+  max_num_ref_frames_ = GetNumTemporalLayers() == 3 ? 2 : 1;
+
+  if (config.bitrate.mode() != Bitrate::Mode::kConstant &&
+      config.bitrate.mode() != Bitrate::Mode::kVariable) {
     return {EncoderStatus::Codes::kEncoderUnsupportedConfig,
-            "D3D12VideoEncoder only support CBR mode."};
+            "D3D12VideoEncoder only support CBR/VBR mode."};
   }
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC codec{
@@ -488,7 +560,9 @@ EncoderStatus D3D12VideoEncodeAV1Delegate::InitializeVideoEncoder(
   bitrate_allocation_ = AllocateBitrateForDefaultEncoding(config);
   software_brc_ = aom::AV1RateControlRTC::Create(
       ConvertToRateControlConfig(is_screen_, bitrate_allocation_, input_size_,
-                                 config.framerate, 1 /*num_temporal_layers_*/));
+                                 config.framerate, GetNumTemporalLayers()));
+  rate_control_ = D3D12VideoEncoderRateControl::CreateCqp(
+      26 /*i_frame_qp*/, 30 /*p_frame_qp*/, 30 /*b_frame_qp*/);
 
   CHECK(config.gop_length.has_value());
   gop_sequence_ = {.IntraDistance = 0,
@@ -497,9 +571,6 @@ EncoderStatus D3D12VideoEncodeAV1Delegate::InitializeVideoEncoder(
   D3D12_VIDEO_ENCODER_AV1_LEVEL_TIER_CONSTRAINTS tier_level;
   D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOLUTION_SUPPORT_LIMITS
   resolution_limits[1];
-  cqp_pramas_ = {.ConstantQP_FullIntracodedFrame = 26,
-                 .ConstantQP_InterPredictedFrame_PrevRefOnly = 30,
-                 .ConstantQP_InterPredictedFrame_BiDirectionalRef = 30};
   D3D12_FEATURE_DATA_VIDEO_ENCODER_SUPPORT1 support{
       .Codec = D3D12_VIDEO_ENCODER_CODEC_AV1,
       .InputFormat = input_format_,
@@ -507,10 +578,7 @@ EncoderStatus D3D12VideoEncodeAV1Delegate::InitializeVideoEncoder(
                              .pAV1Config = &codec_config},
       .CodecGopSequence = {.DataSize = sizeof(gop_sequence_),
                            .pAV1SequenceStructure = &gop_sequence_},
-      .RateControl = {.Mode = D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
-                      .ConfigParams = {.DataSize = sizeof(cqp_pramas_),
-                                       .pConfiguration_CQP = &cqp_pramas_},
-                      .TargetFrameRate = {framerate_, 1}},
+      .RateControl = rate_control_.GetD3D12VideoEncoderRateControl(),
       .IntraRefresh = D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
       .SubregionFrameEncoding =
           D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
@@ -561,13 +629,21 @@ EncoderStatus D3D12VideoEncodeAV1Delegate::InitializeVideoEncoder(
             " Failed to initialize D3D12VideoEncoderWrapper."};
   }
 
-  if (!dpb_.InitializeTextureArray(device_.Get(), config.input_visible_size,
-                                   input_format_, max_num_ref_frames_)) {
+  bool use_texture_array =
+      support.SupportFlags &
+      D3D12_VIDEO_ENCODER_SUPPORT_FLAG_RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS;
+  if (!dpb_.InitializeTextureResources(device_.Get(), config.input_visible_size,
+                                       input_format_, max_num_ref_frames_,
+                                       use_texture_array)) {
     return {EncoderStatus::Codes::kEncoderInitializationError,
             "Failed to initialize DPB."};
   }
-  sequence_header_ = FillAV1BuilderSequenceHeader(
-      profile, input_size_, tier_level, enabled_features_);
+  if (svc_layers_) {
+    metadata_.svc_generic.emplace();
+  }
+  sequence_header_ =
+      FillAV1BuilderSequenceHeader(GetNumTemporalLayers(), profile, input_size_,
+                                   tier_level, enabled_features_);
   picture_id_ = -1;
 
   return EncoderStatus::Codes::kOk;
@@ -581,17 +657,21 @@ bool D3D12VideoEncodeAV1Delegate::UpdateRateControl(const Bitrate& bitrate,
                                                     uint32_t framerate) {
   DVLOG(3) << base::StringPrintf("%s: bitrate = %s, framerate = %d.", __func__,
                                  bitrate.ToString(), framerate);
-  if (bitrate.mode() != Bitrate::Mode::kConstant) {
+  if (bitrate.mode() != Bitrate::Mode::kConstant &&
+      bitrate.mode() != Bitrate::Mode::kVariable) {
     LOG(ERROR) << "D3D12VideoEncoder only support AV1 "
-                  "Constant bitrate mode ";
+                  "Constant/Variable bitrate mode ";
     return false;
   }
+
+  // Chromium uses the same target/peak bitrate for VBR, so we treat it as CBR
+  // for the purpose of rate control.
   VideoBitrateAllocation bitrate_allocation(Bitrate::Mode::kConstant);
   bitrate_allocation.SetBitrate(0, 0, bitrate.target_bps());
   if (bitrate_allocation != bitrate_allocation_ || framerate != framerate_) {
     software_brc_->UpdateRateControl(
         ConvertToRateControlConfig(is_screen_, bitrate_allocation, input_size_,
-                                   framerate, 1 /*num_temporal_layers_*/));
+                                   framerate, GetNumTemporalLayers()));
 
     bitrate_allocation_ = bitrate_allocation;
     framerate_ = framerate;
@@ -625,8 +705,7 @@ void D3D12VideoEncodeAV1Delegate::FillPictureControlParams(
     picture_params_.Flags |=
         D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_ALLOW_INTRA_BLOCK_COPY;
   }
-  if (enabled_features_ &
-      D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_AUTO_SEGMENTATION) {
+  if (picture_ctrl_.enable_auto_segmentation) {
     picture_params_.Flags |=
         D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_ENABLE_FRAME_SEGMENTATION_AUTO;
   }
@@ -732,21 +811,45 @@ void D3D12VideoEncodeAV1Delegate::FillPictureControlParams(
          picture_params_.ReferenceFramesReconPictureDescriptors) {
       descriptor.ReconstructedPictureResourceIndex = 0XFF;
     }
+    picture_params_.PrimaryRefFrame = kPrimaryRefNone;
   }
-  picture_params_.PrimaryRefFrame = request_keyframe ? kPrimaryRefNone : 0;
 
-  // Since we only use the last frame as the reference, these should
-  // always be 0.
-  std::ranges::fill(picture_params_.ReferenceIndices, 0);
+  if (svc_layers_) {
+    CHECK(metadata_.svc_generic.has_value());
+    // If keyframe is requested, then reset |svc_layers_|.
+    if (request_keyframe) {
+      svc_layers_->Reset();
+    }
+    SVCLayers::PictureParam svc_layer_params{};
+    svc_layers_->GetPictureParamAndMetadata(svc_layer_params,
+                                            &metadata_.svc_generic.value());
+    picture_params_.RefreshFrameFlags = svc_layer_params.refresh_frame_flags;
+    if (!request_keyframe) {
+      CHECK_EQ(svc_layer_params.reference_frame_indices.size(), 1ull);
+      std::ranges::fill(picture_params_.ReferenceIndices,
+                        svc_layer_params.reference_frame_indices[0]);
+      picture_params_.PrimaryRefFrame =
+          svc_layer_params.reference_frame_indices[0];
+    }
+  } else {
+    // TODO(https://crbug.com/40275246): Support manual reference control
+    // indicated in 'EncodeOptions'.
 
-  // Refresh frame flags for last frame.
-  picture_params_.RefreshFrameFlags =
-      request_keyframe ? 0xFF : 1 << (libgav1::kReferenceFrameLast - 1);
+    // If there is no outside reference control, we use the last frame as the
+    // reference frame for inter frames.
+    picture_params_.PrimaryRefFrame = request_keyframe ? kPrimaryRefNone : 0;
+    std::ranges::fill(picture_params_.ReferenceIndices, 0);
+
+    // Refresh frame flags for last frame.
+    picture_params_.RefreshFrameFlags =
+        request_keyframe ? 0xFF : 1 << (libgav1::kReferenceFrameLast - 1);
+  }
 
   aom::AV1FrameParamsRTC frame_params{
       .frame_type = request_keyframe ? aom::kKeyFrame : aom::kInterFrame,
       .spatial_layer_id = 0,
-      .temporal_layer_id = 0};
+      .temporal_layer_id =
+          metadata_.svc_generic ? metadata_.svc_generic->temporal_idx : 0};
   software_brc_->ComputeQP(frame_params);
   int computed_qp = software_brc_->GetQP();
   picture_params_.Quantization.BaseQIndex = computed_qp;
@@ -780,14 +883,12 @@ EncoderStatus::Or<BitstreamBufferMetadata>
 D3D12VideoEncodeAV1Delegate::EncodeImpl(
     ID3D12Resource* input_frame,
     UINT input_frame_subresource,
-    const VideoEncoder::EncodeOptions& options) {
+    const VideoEncoder::EncodeOptions& options,
+    const gfx::ColorSpace& input_color_space) {
   input_arguments_.SequenceControlDesc.Flags =
       D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_NONE;
-  input_arguments_.SequenceControlDesc.RateControl = {
-      .Mode = D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
-      .ConfigParams = {.DataSize = sizeof(cqp_pramas_),
-                       .pConfiguration_CQP = &cqp_pramas_},
-      .TargetFrameRate = {framerate_, 1}};
+  input_arguments_.SequenceControlDesc.RateControl =
+      rate_control_.GetD3D12VideoEncoderRateControl();
   input_arguments_.SequenceControlDesc.PictureTargetResolution = input_size_;
   input_arguments_.SequenceControlDesc.SelectedLayoutMode =
       D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME;
@@ -797,21 +898,24 @@ D3D12VideoEncodeAV1Delegate::EncodeImpl(
   // Fill picture_params_ for next encoded frame.
   FillPictureControlParams(options);
 
-  bool is_keyframe =
-      picture_params_.FrameType == D3D12_VIDEO_ENCODER_AV1_FRAME_TYPE_KEY_FRAME;
+  bool used_as_ref = picture_params_.RefreshFrameFlags != 0;
   input_arguments_.PictureControlDesc.Flags =
-      D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE;
+      used_as_ref
+          ? D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE
+          : D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_NONE;
   auto reconstructed_buffer = dpb_.GetCurrentFrame();
   D3D12_VIDEO_ENCODE_REFERENCE_FRAMES reference_frames{};
-  if (!is_keyframe) {
+  if (!IsKeyFrame()) {
     reference_frames = dpb_.ToD3D12VideoEncodeReferenceFrames();
   }
   input_arguments_.PictureControlDesc.ReferenceFrames = reference_frames;
   input_arguments_.pInputFrame = input_frame;
   input_arguments_.InputFrameSubresource = input_frame_subresource;
   D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE reconstructed_picture = {
-      .pReconstructedPicture = reconstructed_buffer.resource_,
-      .ReconstructedPictureSubresource = reconstructed_buffer.subresource_,
+      .pReconstructedPicture =
+          used_as_ref ? reconstructed_buffer.resource_ : nullptr,
+      .ReconstructedPictureSubresource =
+          used_as_ref ? reconstructed_buffer.subresource_ : 0,
   };
 
   if (EncoderStatus result = video_encoder_wrapper_->Encode(
@@ -820,28 +924,49 @@ D3D12VideoEncodeAV1Delegate::EncodeImpl(
     return result;
   }
 
-  BitstreamBufferMetadata metadata;
-  metadata.key_frame = is_keyframe;
-  metadata.qp = picture_params_.Quantization.BaseQIndex;
-  return metadata;
+  // For now we only update sequence header for Rec.601 and Rec.709 on key
+  // frames.
+  if (IsKeyFrame()) {
+    sequence_header_.color_range =
+        input_color_space.GetRangeID() == gfx::ColorSpace::RangeID::FULL
+            ? kLibgav1ColorRangeFull
+            : kLibgav1ColorRangeStudio;
+    if (IsRec601(input_color_space)) {
+      sequence_header_.color_primaries = kLibgav1ColorPrimaryBt601;
+      sequence_header_.transfer_characteristics =
+          kLibgav1TransferCharacteristicsBt601;
+      sequence_header_.matrix_coefficients = kLibgav1MatrixCoefficientsBt601;
+      sequence_header_.color_description_present_flag = true;
+    } else if (IsRec709(input_color_space)) {
+      sequence_header_.color_primaries = kLibgav1ColorPrimaryBt709;
+      sequence_header_.transfer_characteristics =
+          kLibgav1TransferCharacteristicsBt709;
+      sequence_header_.matrix_coefficients = kLibgav1MatrixCoefficientsBt709;
+      sequence_header_.color_description_present_flag = true;
+    }
+  }
+
+  metadata_.key_frame = IsKeyFrame();
+  metadata_.qp = picture_params_.Quantization.BaseQIndex;
+  return metadata_;
 }
 
-EncoderStatus::Or<size_t> D3D12VideoEncodeAV1Delegate::ReadbackBitstream(
-    base::span<uint8_t> bitstream_buffer) {
-  CHECK(software_brc_);
-
-  auto metadata_or_error = video_encoder_wrapper_->GetEncoderOutputMetadata();
-  if (!metadata_or_error.has_value()) {
-    return std::move(metadata_or_error).error();
+EncoderStatus::Or<size_t>
+D3D12VideoEncodeAV1Delegate::GetEncodedBitstreamWrittenBytesCount(
+    const ScopedD3D12ResourceMap& metadata) {
+  if (metadata.data().size() <
+      sizeof(D3D12_VIDEO_ENCODER_OUTPUT_METADATA) +
+          sizeof(D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA) +
+          sizeof(
+              D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA_TILES) +
+          sizeof(D3D12_VIDEO_ENCODER_AV1_POST_ENCODE_VALUES)) {
+    return EncoderStatus::Codes::kEncoderHardwareDriverError;
   }
-  ScopedD3D12ResourceMap metadata = std::move(metadata_or_error).value();
+
   size_t compressed_size =
       reinterpret_cast<const D3D12_VIDEO_ENCODER_OUTPUT_METADATA*>(
           metadata.data().data())
           ->EncodedBitstreamWrittenBytesCount;
-  DVLOG(4) << base::StringPrintf("%s: compressed_size = %lu", __func__,
-                                 compressed_size);
-
   auto subregions =
       reinterpret_cast<const D3D12_VIDEO_ENCODER_OUTPUT_METADATA*>(
           metadata.data().data())
@@ -854,9 +979,112 @@ EncoderStatus::Or<size_t> D3D12VideoEncodeAV1Delegate::ReadbackBitstream(
             "D3D12VideoEncodeAV1Delegate: unexpected number of subregions."};
   }
 
+  size_t suregion_size =
+      reinterpret_cast<const D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA*>(
+          metadata.data()
+              .subspan(sizeof(D3D12_VIDEO_ENCODER_OUTPUT_METADATA))
+              .data())
+          ->bSize;
+  // Some Intel drivers may return incorrect EncodedBitstreamWrittenBytesCount,
+  // so use subregion size as the authoritative one when they differ.
+  if (suregion_size != 0 && suregion_size != compressed_size) {
+    compressed_size = suregion_size;
+  }
+  return compressed_size;
+}
+
+void D3D12VideoEncodeAV1Delegate::RefreshDPBAndDescriptors() {
+  if (svc_layers_) {
+    svc_layers_->PostEncode(picture_params_.RefreshFrameFlags);
+  }
+
+  if (picture_params_.RefreshFrameFlags == 0) {
+    return;
+  }
+
+  uint8_t refreshed_dpb_idx =
+      std::countr_zero((picture_params_.RefreshFrameFlags));
+  CHECK_LT(refreshed_dpb_idx, max_num_ref_frames_);
+  dpb_.ReplaceWithCurrentFrame(refreshed_dpb_idx);
+
+  // Follow the RefreshFrameFlags to update the descriptors array.
+  D3D12_VIDEO_ENCODER_AV1_REFERENCE_PICTURE_DESCRIPTOR a_descriptor = {
+      .ReconstructedPictureResourceIndex = static_cast<UINT>(refreshed_dpb_idx),
+      .TemporalLayerIndexPlus1 = picture_params_.TemporalLayerIndexPlus1,
+      .SpatialLayerIndexPlus1 = picture_params_.SpatialLayerIndexPlus1,
+      .FrameType = picture_params_.FrameType,
+      .OrderHint = picture_params_.OrderHint,
+      .PictureIndex = picture_params_.PictureIndex};
+  base::span descriptors =
+      picture_params_.ReferenceFramesReconPictureDescriptors;
+  for (size_t i = 0; i < std::size(descriptors); i++) {
+    if (picture_params_.RefreshFrameFlags & (1 << i)) {
+      descriptors[i] = a_descriptor;
+    }
+  }
+}
+
+size_t D3D12VideoEncodeAV1Delegate::PackAV1BitstreamHeader(
+    const AV1BitstreamBuilder::FrameHeader& frame_header,
+    size_t compressed_size,
+    base::span<uint8_t> bitstream_buffer) {
+  AV1BitstreamBuilder pack_header;
+  uint8_t temporal_idx =
+      metadata_.svc_generic ? metadata_.svc_generic->temporal_idx : 0;
+  bool has_extension = GetNumTemporalLayers() > 1;
+  // See section 5.6 of the AV1 specification.
+  pack_header.WriteOBUHeader(
+      /*type=*/libgav1::kObuTemporalDelimiter,
+      /*has_size=*/true, has_extension && !IsKeyFrame(), temporal_idx);
+  pack_header.WriteValueInLeb128(0);
+  if (IsKeyFrame()) {
+    // Pack sequence header OBU, see section 5.5 of the AV1 specification.
+    pack_header.WriteOBUHeader(/*type=*/libgav1::kObuSequenceHeader,
+                               /*has_size=*/true);
+    AV1BitstreamBuilder seq_obu =
+        AV1BitstreamBuilder::BuildSequenceHeaderOBU(sequence_header_);
+    CHECK_EQ(seq_obu.OutstandingBits() % 8, 0ull);
+    pack_header.WriteValueInLeb128(seq_obu.OutstandingBits() / 8);
+    pack_header.AppendBitstreamBuffer(std::move(seq_obu));
+  }
+  // Pack Frame OBU, see section 5.9 of the AV1 specification.
+  pack_header.WriteOBUHeader(/*type=*/libgav1::kObuFrame, /*has_size=*/true,
+                             has_extension, temporal_idx);
+  AV1BitstreamBuilder frame_obu =
+      AV1BitstreamBuilder::BuildFrameHeaderOBU(sequence_header_, frame_header);
+  CHECK_EQ(frame_obu.OutstandingBits() % 8, 0ull);
+  pack_header.WriteValueInLeb128(frame_obu.OutstandingBits() / 8 +
+                                 compressed_size);
+  pack_header.AppendBitstreamBuffer(std::move(frame_obu));
+
+  std::vector<uint8_t> packed_frame_header = std::move(pack_header).Flush();
+  size_t packed_header_size = packed_frame_header.size();
+  bitstream_buffer.first(packed_header_size)
+      .copy_from(base::span(packed_frame_header));
+
+  return packed_header_size;
+}
+
+EncoderStatus::Or<size_t> D3D12VideoEncodeAV1Delegate::ReadbackBitstream(
+    base::span<uint8_t> bitstream_buffer) {
+  CHECK(software_brc_);
+
+  auto metadata_or_error = video_encoder_wrapper_->GetEncoderOutputMetadata();
+  if (!metadata_or_error.has_value()) {
+    return std::move(metadata_or_error).error();
+  }
+  ScopedD3D12ResourceMap metadata = std::move(metadata_or_error).value();
+  auto compressed_size_or_size = GetEncodedBitstreamWrittenBytesCount(metadata);
+  if (!compressed_size_or_size.has_value()) {
+    return std::move(compressed_size_or_size).error();
+  }
+  size_t compressed_size = std::move(compressed_size_or_size).value();
+  DVLOG(4) << base::StringPrintf("%s: compressed_size = %lu", __func__,
+                                 compressed_size);
+
   size_t post_encode_values_offset =
       sizeof(D3D12_VIDEO_ENCODER_OUTPUT_METADATA) +
-      subregions * sizeof(D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA) +
+      1 /*subregions*/ * sizeof(D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA) +
       sizeof(
           D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA_TILES);
 
@@ -877,51 +1105,18 @@ EncoderStatus::Or<size_t> D3D12VideoEncodeAV1Delegate::ReadbackBitstream(
   DVLOG(4) << PrintPostEncodeValues(post_encode_values);
 
   auto frame_header = FillAV1BuilderFrameHeader(picture_ctrl_, picture_params_,
-                                                enabled_features_);
+                                                sequence_header_);
   if (!UpdateFrameHeaderPostEncode(config_support_limit_.PostEncodeValuesFlags,
                                    post_encode_values, frame_header)) {
     return {EncoderStatus::Codes::kEncoderHardwareDriverError,
             "D3D12VideoEncodeAV1Delegate: invalid post encode values."};
   }
 
-  if (sequence_header_.enable_restoration) {
-    UpdateFrameHeaderLoopRestoration(picture_params_.FrameRestorationConfig,
-                                     frame_header);
-  }
-
   D3D12_RANGE written_range{};
   metadata.Commit(&written_range);
 
-  AV1BitstreamBuilder pack_header;
-  // See section 5.6 of the AV1 specification.
-  pack_header.WriteOBUHeader(/*type=*/libgav1::kObuTemporalDelimiter,
-                             /*has_size=*/true);
-  pack_header.WriteValueInLeb128(0);
-  if (picture_params_.FrameType ==
-      D3D12_VIDEO_ENCODER_AV1_FRAME_TYPE_KEY_FRAME) {
-    // Pack sequence header OBU, see section 5.5 of the AV1 specification.
-    pack_header.WriteOBUHeader(/*type=*/libgav1::kObuSequenceHeader,
-                               /*has_size=*/true);
-    AV1BitstreamBuilder seq_obu =
-        AV1BitstreamBuilder::BuildSequenceHeaderOBU(sequence_header_);
-    CHECK_EQ(seq_obu.OutstandingBits() % 8, 0ull);
-    pack_header.WriteValueInLeb128(seq_obu.OutstandingBits() / 8);
-    pack_header.AppendBitstreamBuffer(std::move(seq_obu));
-  }
-
-  // Pack Frame OBU, see section 5.9 of the AV1 specification.
-  pack_header.WriteOBUHeader(/*type=*/libgav1::kObuFrame, /*has_size=*/true);
-  AV1BitstreamBuilder frame_obu =
-      AV1BitstreamBuilder::BuildFrameHeaderOBU(sequence_header_, frame_header);
-  CHECK_EQ(frame_obu.OutstandingBits() % 8, 0ull);
-  pack_header.WriteValueInLeb128(frame_obu.OutstandingBits() / 8 +
-                                 compressed_size);
-  pack_header.AppendBitstreamBuffer(std::move(frame_obu));
-
-  std::vector<uint8_t> packed_frame_header = std::move(pack_header).Flush();
-  size_t packed_header_size = packed_frame_header.size();
-  bitstream_buffer.first(packed_header_size)
-      .copy_from(base::span(packed_frame_header));
+  size_t packed_header_size =
+      PackAV1BitstreamHeader(frame_header, compressed_size, bitstream_buffer);
   auto size_or_error = D3D12VideoEncodeDelegate::ReadbackBitstream(
       bitstream_buffer.subspan(packed_header_size));
   if (!size_or_error.has_value()) {
@@ -931,24 +1126,7 @@ EncoderStatus::Or<size_t> D3D12VideoEncodeAV1Delegate::ReadbackBitstream(
   // Notify SW BRC about recent encoded frame size.
   software_brc_->PostEncodeUpdate(packed_header_size + compressed_size);
 
-  // Refresh DPB slot 0 with current reconstructed picture.
-  dpb_.ReplaceWithCurrentFrame(0);
-
-  // Follow RefreshFrameFlags to refresh the descriptors array.
-  D3D12_VIDEO_ENCODER_AV1_REFERENCE_PICTURE_DESCRIPTOR a_descriptor = {
-      .ReconstructedPictureResourceIndex = 0,
-      .TemporalLayerIndexPlus1 = picture_params_.TemporalLayerIndexPlus1,
-      .SpatialLayerIndexPlus1 = picture_params_.SpatialLayerIndexPlus1,
-      .FrameType = picture_params_.FrameType,
-      .OrderHint = picture_params_.OrderHint,
-      .PictureIndex = picture_params_.PictureIndex};
-  base::span descriptors =
-      picture_params_.ReferenceFramesReconPictureDescriptors;
-  for (size_t i = 0; i < std::size(descriptors); ++i) {
-    if (picture_params_.RefreshFrameFlags & (1 << i)) {
-      descriptors[i] = a_descriptor;
-    }
-  }
+  RefreshDPBAndDescriptors();
 
   return packed_header_size + compressed_size;
 }
@@ -1130,58 +1308,6 @@ bool D3D12VideoEncodeAV1Delegate::UpdateFrameHeaderPostEncode(
   }
 
   return true;
-}
-
-void D3D12VideoEncodeAV1Delegate::UpdateFrameHeaderLoopRestoration(
-    const D3D12_VIDEO_ENCODER_AV1_RESTORATION_CONFIG& restoration_config,
-    AV1BitstreamBuilder::FrameHeader& frame_header) {
-  uint8_t lr_unit_shift = 0;
-  uint8_t lr_uv_shift = 0;
-
-  frame_header.restoration_type[0] = static_cast<libgav1::LoopRestorationType>(
-      restoration_config.FrameRestorationType[0]);
-  frame_header.restoration_type[1] = static_cast<libgav1::LoopRestorationType>(
-      restoration_config.FrameRestorationType[1]);
-  frame_header.restoration_type[2] = static_cast<libgav1::LoopRestorationType>(
-      restoration_config.FrameRestorationType[2]);
-  // Calculate the lr_unit_shift that shall be used. 64 * 2^lr_unit_shift
-  // is the size of the loop restoration tile size in pixels.
-  auto restoration_y_tile_size = restoration_config.LoopRestorationPixelSize[0];
-  auto restoration_u_tile_size = restoration_config.LoopRestorationPixelSize[1];
-  auto resotration_v_tile_size = restoration_config.LoopRestorationPixelSize[2];
-
-  auto restoration_size_max = std::max({
-      restoration_y_tile_size,
-      restoration_u_tile_size,
-      resotration_v_tile_size,
-  });
-  switch (restoration_size_max) {
-    case D3D12_VIDEO_ENCODER_AV1_RESTORATION_TILESIZE_256x256:
-      lr_unit_shift = 2;
-      break;
-    case D3D12_VIDEO_ENCODER_AV1_RESTORATION_TILESIZE_128x128:
-      lr_unit_shift = 1;
-      break;
-    case D3D12_VIDEO_ENCODER_AV1_RESTORATION_TILESIZE_64x64:
-    case D3D12_VIDEO_ENCODER_AV1_RESTORATION_TILESIZE_DISABLED:
-      lr_unit_shift = 0;
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  // Check if either restoration_u_tile_size or resotration_v_tile_size is equal
-  // to resotration_y_tile_size, if so, lr_uv_shift is 0; otherwise, lr_uv_shift
-  // should be 1.
-  if (restoration_u_tile_size == restoration_y_tile_size ||
-      resotration_v_tile_size == restoration_y_tile_size) {
-    lr_uv_shift = 0;
-  } else {
-    lr_uv_shift = 1;
-  }
-
-  frame_header.lr_unit_shift = lr_unit_shift;
-  frame_header.lr_uv_shift = lr_uv_shift;
 }
 
 }  // namespace media

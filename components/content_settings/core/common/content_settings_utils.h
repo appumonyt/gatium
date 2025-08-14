@@ -6,6 +6,7 @@
 #define COMPONENTS_CONTENT_SETTINGS_CORE_COMMON_CONTENT_SETTINGS_UTILS_H_
 
 #include <memory>
+#include <optional>
 
 #include "components/content_settings/core/common/content_settings.h"
 
@@ -18,18 +19,14 @@ namespace content_settings {
 // Converts |value| to |ContentSetting|.
 ContentSetting ValueToContentSetting(const base::Value& value);
 
-// Returns a base::Value representation of |setting| if |setting| is
-// a valid content setting. Otherwise, returns an empty value.
-base::Value ContentSettingToValue(ContentSetting setting);
-
-// Converts a |value| to a |PermissionSetting| based on |content_type|.
-std::optional<PermissionSetting> ValueToPermissionSetting(
-    ContentSettingsType content_type,
+// Converts |value| to |ContentSetting| if value represents a valid content
+// setting.
+std::optional<ContentSetting> ParseContentSettingValue(
     const base::Value& value);
 
 // Returns a base::Value representation of |setting| if |setting| is
 // a valid content setting. Otherwise, returns an empty value.
-base::Value PermissionSettingToValue(const PermissionSetting& setting);
+base::Value ContentSettingToValue(ContentSetting setting);
 
 // Adaptor for converting from the new way of base::Value to the old one.
 // Like base::Value::ToUniquePtrValue but converts NONE-type values to nullptr.

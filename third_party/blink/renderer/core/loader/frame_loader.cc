@@ -549,6 +549,12 @@ bool FrameLoader::AllowRequestForThisFrame(const FrameLoadRequest& request) {
             .empty()) {
       return false;
     }
+    // `CheckAndGetJavascriptUrl` function above contains Trusted Types check,
+    // which might trigger JS callback that can remove the frame altogether.
+    // Therefore, check if the frame is still attached here.
+    if (!frame_->IsAttached()) {
+      return false;
+    }
 
     if (frame_->Owner() && ((frame_->Owner()->GetFramePolicy().sandbox_flags &
                              network::mojom::blink::WebSandboxFlags::kOrigin) !=
@@ -721,6 +727,28 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
       request.GetNavigationPolicy() == kNavigationPolicyCurrentTab &&
       ShouldPerformFragmentNavigation(
           request.Form(), resource_request.HttpMethod(), frame_load_type, url);
+
+  if (RuntimeEnabledFeatures::
+          TreatMhtmlInitialDocumentLoadsAsCrossDocumentEnabled()) {
+    if (auto* parent = DynamicTo<LocalFrame>(frame_->Tree().Parent())) {
+      // Within MHTML archives, treat the initial about:blank#fragment
+      // navigation as cross-document. Although it appears to be a same-document
+      // fragment navigation, it actually commits a new document with a new
+      // opaque origin.
+      //
+      // TODO(crbug.com/423663315): Consider refining this logic to only treat
+      // the initial about:blank#fragment navigation in MHTML as cross-document
+      // if the MHTML archive actually overrides the about:blank resource. If it
+      // doesn't, the navigation may be better treated as same-document,
+      // matching non-MHTML behavior.
+      if (parent->Loader().GetDocumentLoader()->HasBeenLoadedAsWebArchive()) {
+        if (url.HasFragmentIdentifier() &&
+            frame_->GetDocument()->IsInitialEmptyDocument()) {
+          same_document_navigation = false;
+        }
+      }
+    }
+  }
 
   // Perform same document navigation.
   if (same_document_navigation) {

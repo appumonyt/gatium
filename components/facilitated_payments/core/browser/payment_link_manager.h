@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/memory/raw_ref.h"
@@ -16,6 +17,7 @@
 #include "base/timer/timer.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/facilitated_payments/core/browser/facilitated_payments_api_client.h"
+#include "components/facilitated_payments/core/browser/facilitated_payments_app_info_list.h"
 #include "components/facilitated_payments/core/browser/network_api/facilitated_payments_initiate_payment_request_details.h"
 #include "components/facilitated_payments/core/browser/strike_databases/payment_link_suggestion_strike_database.h"
 #include "components/facilitated_payments/core/utils/facilitated_payments_ui_utils.h"
@@ -72,6 +74,9 @@ class PaymentLinkManager {
   // Determines and populates the list of supported eWallets for a payment link.
   void RetrieveSupportedEwallets(const GURL& payment_link_url);
 
+  // Performs various specific pre-checks for the A2A flow.
+  bool CanTriggerAppPaymentFlow(const GURL& page_url);
+
   // Lazily initializes an API client and returns a pointer to it. Returns a
   // pointer to the existing API client, if one is already initialized. The
   // PaymentLinkManager owns this API client. This method can return
@@ -81,6 +86,10 @@ class PaymentLinkManager {
 
   // Called when user selects the eWallet account to pay with.
   void OnEwalletAccountSelected(int64_t selected_instrument_id);
+
+  // Called when user selects a payment app to pay with.
+  void OnPaymentAppSelected(std::string_view package_name,
+                            std::string_view activity_name);
 
   // Invoked when risk data is fetched. The call to fetch the risk data was
   // made at `start_time`. `risk_data` is the fetched risk data.
@@ -118,11 +127,13 @@ class PaymentLinkManager {
   // Updates the `ui_state_` value and triggers dismissal.
   void DismissPrompt();
 
-  // Updates the `ui_state_` value and triggers showing the eWallet payment
-  // prompt.
-  void ShowEwalletPaymentPrompt(
+  // Updates the `ui_state_` value and triggers showing the payment options.
+  void ShowPaymentLinkPrompt(
       base::span<const autofill::Ewallet> ewallet_suggestions,
-      base::OnceCallback<void(int64_t)> on_ewallet_account_selected);
+      std::unique_ptr<FacilitatedPaymentsAppInfoList> app_suggestions,
+      base::OnceCallback<void(int64_t)> on_ewallet_account_selected,
+      base::OnceCallback<void(std::string_view, std::string_view)>
+          on_payment_app_selected);
 
   // Updates the `ui_state_` value and triggers showing the progress screen.
   void ShowProgressScreen();
@@ -142,7 +153,7 @@ class PaymentLinkManager {
   PaymentLinkSuggestionStrikeDatabase* GetOrCreateStrikeDatabase();
 
   // A list of eWallets that support the payment link provided in
-  // TriggerEwalletPushPayment().
+  // TriggerPaymentLinkPushPayment().
   //
   // This vector is populated in RetrieveSupportedEwallets() by filtering the
   // available eWallets based on their support for the given payment link.

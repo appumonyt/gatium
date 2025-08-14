@@ -187,11 +187,6 @@ AccountSelectionBubbleView::AccountSelectionBubbleView(
       rp_context_(rp_context) {
   SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
   set_fixed_width(kBubbleWidth);
-  // If `idp_title` is std::nullopt, we are going to show multi-IDP UI. DCHECK
-  // that we do not get to this when the flag is disabled.
-  DCHECK(
-      idp_title.has_value() ||
-      base::FeatureList::IsEnabled(features::kFedCmMultipleIdentityProviders));
   set_margins(gfx::Insets::VH(kTopBottomPadding + kVerticalSpacing, 0));
 
   SetShowTitle(false);
@@ -696,7 +691,7 @@ void AccountSelectionBubbleView::AddAccounts(
     // We notify the user that the account has been used in the past based on
     // the IdP's knowledge, e.g. `approved_clients` (or the browser knowledge if
     // that one is not present).
-    std::optional<std::u16string> last_used_string =
+    std::optional<std::u16string> used_string =
         account->idp_claimed_login_state.value_or(
             account->browser_trusted_login_state) ==
                 Account::LoginState::kSignIn
@@ -706,7 +701,7 @@ void AccountSelectionBubbleView::AddAccounts(
     accounts_content->AddChildView(
         CreateAccountRow(account, /*clickable_position=*/out_position++,
                          /*should_include_idp=*/true, /*is_modal_dialog=*/false,
-                         /*additional_vertical_padding=*/0, last_used_string));
+                         /*additional_vertical_padding=*/0, used_string));
   }
 }
 

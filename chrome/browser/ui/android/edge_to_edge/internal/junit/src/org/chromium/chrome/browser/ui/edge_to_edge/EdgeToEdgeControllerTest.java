@@ -94,11 +94,7 @@ import org.chromium.ui.insets.InsetObserver.WindowInsetsConsumer.InsetConsumerSo
         sdk = VERSION_CODES.R,
         manifest = Config.NONE,
         shadows = EdgeToEdgeControllerTest.ShadowEdgeToEdgeControllerFactory.class)
-@EnableFeatures({
-    ChromeFeatureList.EDGE_TO_EDGE_BOTTOM_CHIN,
-    ChromeFeatureList.EDGE_TO_EDGE_WEB_OPT_IN,
-    ChromeFeatureList.DRAW_KEY_NATIVE_EDGE_TO_EDGE
-})
+@EnableFeatures({ChromeFeatureList.EDGE_TO_EDGE_BOTTOM_CHIN})
 @Features.DisableFeatures({ChromeFeatureList.EDGE_TO_EDGE_EVERYWHERE})
 public class EdgeToEdgeControllerTest {
 
@@ -462,7 +458,6 @@ public class EdgeToEdgeControllerTest {
     }
 
     @Test
-    @EnableFeatures(ChromeFeatureList.DYNAMIC_SAFE_AREA_INSETS)
     public void onObservingDifferentTab_changeToWebEnabled() {
         EdgeToEdgeUtils.setAlwaysDrawWebEdgeToEdgeForTesting(true);
         when(mTab.isNativePage()).thenReturn(false);
@@ -475,7 +470,6 @@ public class EdgeToEdgeControllerTest {
     }
 
     @Test
-    @EnableFeatures(ChromeFeatureList.DYNAMIC_SAFE_AREA_INSETS)
     public void onObservingDifferentTab_changeToWebEnabled_SetsDecor() {
         EdgeToEdgeUtils.setAlwaysDrawWebEdgeToEdgeForTesting(true);
         when(mTab.isNativePage()).thenReturn(false);
@@ -488,7 +482,6 @@ public class EdgeToEdgeControllerTest {
     }
 
     @Test
-    @EnableFeatures(ChromeFeatureList.DYNAMIC_SAFE_AREA_INSETS)
     public void onObservingDifferentTab_viewportFitChanged() {
         // Start with web always-enabled.
         EdgeToEdgeUtils.setAlwaysDrawWebEdgeToEdgeForTesting(true);
@@ -567,16 +560,6 @@ public class EdgeToEdgeControllerTest {
         assertToEdgeExpectations();
     }
 
-    @Test
-    @EnableFeatures(
-            ChromeFeatureList.DRAW_KEY_NATIVE_EDGE_TO_EDGE + ":disable_cct_media_viewer_e2e/true")
-    public void onObservingDifferentTab_embeddedMediaExperience_DisableByParam() {
-        when(mTab.shouldEnableEmbeddedMediaExperience()).thenReturn(true);
-        mTabProvider.set(mTab);
-        verifyInteractions(mTab);
-        assertToNormalExpectations();
-    }
-
     /** Test that we update WebContentsObservers when a Tab changes WebContents. */
     @Test
     public void onTabSwitched_onWebContentsSwapped() {
@@ -628,40 +611,6 @@ public class EdgeToEdgeControllerTest {
         WebContentsObserver secondObserver = mEdgeToEdgeControllerImpl.getWebContentsObserver();
         assertNotNull(secondObserver);
         assertNotEquals(firstObserver, secondObserver);
-    }
-
-    @Test
-    @DisableFeatures(ChromeFeatureList.DYNAMIC_SAFE_AREA_INSETS)
-    public void bottomInsetForSafeArea_noTab() {
-        mEdgeToEdgeControllerImpl.drawToEdge(true, /* changedWindowState= */ false);
-        assertToEdgeExpectations();
-        assertBottomInsetForSafeArea(0);
-    }
-
-    @Test
-    @DisableFeatures(ChromeFeatureList.DYNAMIC_SAFE_AREA_INSETS)
-    public void bottomInsetForSafeArea_noBrowserControlsOnOptInPages() {
-        doReturn(false).when(mTab).isNativePage();
-        mTabProvider.set(mTab);
-        verifyInteractions(mTab);
-        mEdgeToEdgeControllerImpl.drawToEdge(true, /* changedWindowState= */ false);
-
-        assertToEdgeExpectations();
-        mEdgeToEdgeControllerImpl.onBottomControlsHeightChanged(0, 0);
-        assertBottomInsetForSafeArea(SYSTEM_INSETS.bottom);
-    }
-
-    @Test
-    @DisableFeatures(ChromeFeatureList.DYNAMIC_SAFE_AREA_INSETS)
-    public void bottomInsetForSafeArea_hasBrowserControlsOnOptInPages() {
-        doReturn(false).when(mTab).isNativePage();
-        mTabProvider.set(mTab);
-        verifyInteractions(mTab);
-        mEdgeToEdgeControllerImpl.drawToEdge(true, /* changedWindowState= */ false);
-        assertToEdgeExpectations();
-
-        mEdgeToEdgeControllerImpl.onBottomControlsHeightChanged(1, 0);
-        assertBottomInsetForSafeArea(0);
     }
 
     @Test
@@ -790,11 +739,24 @@ public class EdgeToEdgeControllerTest {
 
     @Test
     @Config(qualifiers = "xlarge")
-    public void disabledWhenNotPhone() {
+    @DisableFeatures(ChromeFeatureList.EDGE_TO_EDGE_TABLET)
+    public void disabledWhenNotPhoneAndTabletFeatureDisabled() {
         // Even these always-draw flags do not override the device abilities.
         EdgeToEdgeUtils.setAlwaysDrawWebEdgeToEdgeForTesting(true);
         // Even the always-draw flags do not override the device abilities.
         assertFalse(
+                EdgeToEdgeUtils.isEdgeToEdgeBottomChinEnabled(
+                        Robolectric.buildActivity(AppCompatActivity.class).setup().get()));
+    }
+
+    @Test
+    @Config(qualifiers = "xlarge")
+    @EnableFeatures(ChromeFeatureList.EDGE_TO_EDGE_TABLET)
+    public void enabledOnTabletWhenFeatureEnabled() {
+        // Even these always-draw flags do not override the device abilities.
+        EdgeToEdgeUtils.setAlwaysDrawWebEdgeToEdgeForTesting(true);
+        // Even the always-draw flags do not override the device abilities.
+        assertTrue(
                 EdgeToEdgeUtils.isEdgeToEdgeBottomChinEnabled(
                         Robolectric.buildActivity(AppCompatActivity.class).setup().get()));
     }
@@ -991,7 +953,6 @@ public class EdgeToEdgeControllerTest {
     }
 
     @Test
-    @EnableFeatures(ChromeFeatureList.EDGE_TO_EDGE_SAFE_AREA_CONSTRAINT)
     public void safeAreaConstraint() {
         when(mLayoutManager.getActiveLayoutType()).thenReturn(LayoutType.BROWSING);
         when(mTab.isNativePage()).thenReturn(false);
@@ -1012,24 +973,6 @@ public class EdgeToEdgeControllerTest {
                 "Safe area constraint should be removed by observer.",
                 mEdgeToEdgeControllerImpl.getHasSafeAreaConstraintForTesting());
         verify(mChangeObserver).onSafeAreaConstraintChanged(false);
-    }
-
-    @Test
-    @DisableFeatures(ChromeFeatureList.EDGE_TO_EDGE_SAFE_AREA_CONSTRAINT)
-    public void safeAreaConstraint_disabled() {
-        when(mLayoutManager.getActiveLayoutType()).thenReturn(LayoutType.BROWSING);
-        when(mTab.isNativePage()).thenReturn(false);
-        mTabProvider.set(mTab);
-        verifyInteractions(mTab);
-        assertFalse(
-                "Safe area constraint should default to false.",
-                mEdgeToEdgeControllerImpl.getHasSafeAreaConstraintForTesting());
-
-        mEdgeToEdgeControllerImpl.getWebContentsObserver().safeAreaConstraintChanged(true);
-        assertFalse(
-                "Safe area constraint disabled.",
-                mEdgeToEdgeControllerImpl.getHasSafeAreaConstraintForTesting());
-        verify(mChangeObserver, times(0)).onSafeAreaConstraintChanged(true);
     }
 
     @Test
@@ -1340,7 +1283,7 @@ public class EdgeToEdgeControllerTest {
                 HistogramWatcher.newBuilder()
                         .expectIntRecord(
                                 "Android.EdgeToEdge.BackupNavbarInsets.EdgeToEdgeController",
-                                EdgeToEdgeUtils.BackupNavbarInsetsSource.TAPPABLE_ELEMENT)
+                                EdgeToEdgeManager.BackupNavbarInsetsSource.TAPPABLE_ELEMENT)
                         .build()) {
             when(mInsetObserver.getLastRawWindowInsets())
                     .thenReturn(SYSTEM_BARS_WITH_TAPPABLE_MISSING_NAVBAR);
@@ -1399,7 +1342,7 @@ public class EdgeToEdgeControllerTest {
                 HistogramWatcher.newBuilder()
                         .expectIntRecord(
                                 "Android.EdgeToEdge.BackupNavbarInsets.EdgeToEdgeController",
-                                EdgeToEdgeUtils.BackupNavbarInsetsSource.FILTERED_WEAKER_SIGNALS)
+                                EdgeToEdgeManager.BackupNavbarInsetsSource.FILTERED_WEAKER_SIGNALS)
                         .build()) {
             when(mInsetObserver.getLastRawWindowInsets())
                     .thenReturn(GESTURE_NAV_INSETS_MISSING_NAVBAR);
@@ -1439,7 +1382,8 @@ public class EdgeToEdgeControllerTest {
                 HistogramWatcher.newBuilder()
                         .expectIntRecord(
                                 "Android.EdgeToEdge.BackupNavbarInsets.EdgeToEdgeController",
-                                EdgeToEdgeUtils.BackupNavbarInsetsSource.MANDATORY_SYSTEM_GESTURES)
+                                EdgeToEdgeManager.BackupNavbarInsetsSource
+                                        .MANDATORY_SYSTEM_GESTURES)
                         .build()) {
             when(mInsetObserver.getLastRawWindowInsets())
                     .thenReturn(GESTURE_NAV_INSETS_MISSING_NAVBAR);
@@ -1478,7 +1422,7 @@ public class EdgeToEdgeControllerTest {
                 HistogramWatcher.newBuilder()
                         .expectIntRecord(
                                 "Android.EdgeToEdge.BackupNavbarInsets.EdgeToEdgeController",
-                                EdgeToEdgeUtils.BackupNavbarInsetsSource.NO_APPLICABLE_BACKUP)
+                                EdgeToEdgeManager.BackupNavbarInsetsSource.NO_APPLICABLE_BACKUP)
                         .build()) {
             when(mInsetObserver.getLastRawWindowInsets())
                     .thenReturn(GESTURE_NAV_INSETS_MISSING_ALL_BOTTOM_INSETS);
@@ -1542,6 +1486,44 @@ public class EdgeToEdgeControllerTest {
         assertNotNull(webContentsObserver);
         webContentsObserver.firstContentfulPaintInPrimaryMainFrame(null);
         verify(mEdgeToEdgeDebuggingInfo).uploadReport();
+    }
+
+    @Test
+    public void pushSafeAreaInsetUpdate_notDrawingToEdge() {
+        mEdgeToEdgeControllerImpl.setIsDrawingToEdgeForTesting(false);
+        doReturn(false).when(mFullscreenManager).getPersistentFullscreenMode();
+        mEdgeToEdgeControllerImpl.onBottomControlsHeightChanged(0, 0);
+        assertBottomInsetForSafeArea(0);
+    }
+
+    @Test
+    public void pushSafeAreaInsetUpdate_drawingToEdgeInFullscreen() {
+        mEdgeToEdgeControllerImpl.setIsDrawingToEdgeForTesting(true);
+        doReturn(true).when(mFullscreenManager).getPersistentFullscreenMode();
+        mEdgeToEdgeControllerImpl.setSystemInsetsForTesting(SYSTEM_INSETS);
+        mEdgeToEdgeControllerImpl.onBottomControlsHeightChanged(0, 0);
+        assertBottomInsetForSafeArea(0);
+    }
+
+    @Test
+    public void pushSafeAreaInsetUpdate_drawingToEdgeNoPadding() {
+        mEdgeToEdgeControllerImpl.setIsDrawingToEdgeForTesting(true);
+        doReturn(false).when(mFullscreenManager).getPersistentFullscreenMode();
+        mEdgeToEdgeControllerImpl.setSystemInsetsForTesting(SYSTEM_INSETS);
+        mEdgeToEdgeControllerImpl.onBottomControlsHeightChanged(0, 0);
+        assertBottomInsetForSafeArea(BOTTOM_INSET);
+    }
+
+    @Test
+    public void pushSafeAreaInsetUpdate_drawingToEdgeWithKeyboardPadding() {
+        mEdgeToEdgeControllerImpl.setIsDrawingToEdgeForTesting(true);
+        doReturn(false).when(mFullscreenManager).getPersistentFullscreenMode();
+        mEdgeToEdgeControllerImpl.setSystemInsetsForTesting(SYSTEM_INSETS);
+        mEdgeToEdgeControllerImpl.setKeyboardInsetsForTesting(IME_INSETS_KEYBOARD);
+
+        mEdgeToEdgeControllerImpl.onBottomControlsHeightChanged(0, 0);
+
+        assertBottomInsetForSafeArea(0);
     }
 
     void assertToEdgeExpectations() {

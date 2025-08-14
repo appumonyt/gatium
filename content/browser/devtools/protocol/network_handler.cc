@@ -47,6 +47,7 @@
 #include "content/browser/loader/url_loader_factory_utils.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/navigation_request.h"
+#include "content/browser/renderer_host/render_frame_host_csp_context.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/url_loader_factory_params_helper.h"
@@ -70,7 +71,9 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
+#include "ipc/constants.mojom.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "net/base/features.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -1205,7 +1208,8 @@ NetworkHandler::NetworkHandler(
     const base::UnguessableToken& devtools_token,
     DevToolsIOContext* io_context,
     base::RepeatingClosure update_loader_factories_callback,
-    DevToolsAgentHostClient* client)
+    DevToolsAgentHostClient* client,
+    base::OnceClosure cleanup_after_modifications_callback)
     : DevToolsDomainHandler(Network::Metainfo::domainName),
       host_id_(host_id),
       devtools_token_(devtools_token),
@@ -1221,7 +1225,9 @@ NetworkHandler::NetworkHandler(
       bypass_service_worker_(false),
       cache_disabled_(false),
       update_loader_factories_callback_(
-          std::move(update_loader_factories_callback)) {
+          std::move(update_loader_factories_callback)),
+      cleanup_after_modifications_callback_(
+          std::move(cleanup_after_modifications_callback)) {
   DCHECK(io_context_);
   static bool have_configured_service_worker_context = false;
   if (have_configured_service_worker_context)
@@ -1229,7 +1235,11 @@ NetworkHandler::NetworkHandler(
   have_configured_service_worker_context = true;
 }
 
-NetworkHandler::~NetworkHandler() = default;
+NetworkHandler::~NetworkHandler() {
+  if (did_modifications_ && cleanup_after_modifications_callback_) {
+    std::move(cleanup_after_modifications_callback_).Run();
+  }
+}
 
 // static
 std::unique_ptr<Array<Network::Cookie>> NetworkHandler::BuildCookieArray(
@@ -2159,6 +2169,10 @@ std::unique_ptr<Network::Response> BuildResponse(
     status_text = "OK";
   }
 
+  const bool was_cached =
+      !info.load_timing.request_start_time.is_null() &&
+      info.response_time < info.load_timing.request_start_time;
+
   std::string url_fragment;
   auto response =
       Network::Response::Create()
@@ -2173,9 +2187,7 @@ std::unique_ptr<Network::Response> BuildResponse(
           .SetSecurityState(securityState(url, info.cert_status))
           .SetEncodedDataLength(info.encoded_data_length)
           .SetTiming(GetTiming(info.load_timing))
-          .SetFromDiskCache(!info.load_timing.request_start_time.is_null() &&
-                            info.response_time <
-                                info.load_timing.request_start_time)
+          .SetFromDiskCache(was_cached)
           .Build();
   response->SetFromServiceWorker(info.was_fetched_via_service_worker);
   if (info.was_fetched_via_service_worker) {
@@ -2225,6 +2237,13 @@ std::unique_ptr<Network::Response> BuildResponse(
   response->SetRemotePort(info.remote_endpoint.port());
   if (info.ssl_info.has_value())
     response->SetSecurityDetails(BuildSecurityDetails(*info.ssl_info));
+
+  // Sets `is_ip_protection_used` within the response. This is currently set
+  // only if kIpPrivacyEnableIppInDevTools is enabled.
+  // TODO(crbug.com/432716000): Remove this guard once IPP is fully launched.
+  if (net::features::kIpPrivacyEnableIppInDevTools.Get()) {
+    response->SetIsIpProtectionUsed(info.is_for_ip_protection && !was_cached);
+  }
 
   return response;
 }
@@ -3064,6 +3083,7 @@ void NetworkHandler::ContinueInterceptedRequest(
   if (!url_loader_interceptor_)
     return;
 
+  did_modifications_ = true;
   url_loader_interceptor_->ContinueInterceptedRequest(
       interception_id, std::move(modifications), std::move(callback));
 }
@@ -3203,13 +3223,26 @@ void NetworkHandler::ApplyOverrides(
     net::HttpRequestHeaders* headers,
     bool* skip_service_worker,
     bool* disable_cache,
-    std::optional<std::vector<net::SourceStreamType>>* accepted_stream_types) {
-  for (auto& entry : extra_headers_)
+    std::optional<std::vector<net::SourceStreamType>>* accepted_stream_types,
+    GURL* referrer_override) {
+  for (auto& entry : extra_headers_) {
+    if (referrer_override &&
+        base::EqualsCaseInsensitiveASCII(entry.first,
+                                         net::HttpRequestHeaders::kReferer)) {
+      GURL referrer_override_(entry.second);
+      if (referrer_override_.is_valid()) {
+        // If extra header `Referer` is set and is a valid URL, use it as the
+        // referrer.
+        *referrer_override = referrer_override_;
+      }
+    }
     headers->SetHeader(entry.first, entry.second);
+  }
   *skip_service_worker |= bypass_service_worker_;
   *disable_cache |= cache_disabled_;
-  if (!accepted_stream_types_)
+  if (!accepted_stream_types_) {
     return;
+  }
   if (!*accepted_stream_types)
     *accepted_stream_types = std::vector<net::SourceStreamType>();
   (*accepted_stream_types)
@@ -3612,6 +3645,19 @@ void NetworkHandler::LoadNetworkResource(
       return;
     }
 
+    RenderFrameHostCSPContext csp_context(frame);
+
+    network::CSPCheckResult result = csp_context.IsAllowedByCsp(
+        frame->policy_container_host()->policies().content_security_policies,
+        network::mojom::CSPDirectiveName::ConnectSrc, gurl, gurl,
+        /*has_followed_redirect=*/false, /*source_location=*/nullptr,
+        network::CSPContext::CHECK_ENFORCED_CSP,
+        /*is_form_submission=*/false);
+    if (!result.IsAllowed()) {
+      callback->sendFailure(Response::ServerError("CSP violation"));
+      return;
+    }
+
     auto params = URLLoaderFactoryParamsHelper::CreateForFrame(
         frame, frame->GetLastCommittedOrigin(),
         frame->GetIsolationInfoForSubresources(),
@@ -3643,10 +3689,11 @@ void NetworkHandler::LoadNetworkResource(
       DevToolsAgentHostImpl::GetForId(host_id_);
   if (host) {
     // TODO(sigurds): Support dedicated workers.
+    // TODO(mkwst): Check CSP for non-frame targets.
     auto info = host->CreateNetworkFactoryParamsForDevTools();
     auto factory = CreateNetworkFactoryForDevTools(
-        gurl.scheme(), host->GetProcessHost(), MSG_ROUTING_NONE, info.origin,
-        std::move(info.factory_params));
+        gurl.scheme(), host->GetProcessHost(), IPC::mojom::kRoutingIdNone,
+        info.origin, std::move(info.factory_params));
     if (factory.is_valid()) {
       url_loader_factory.Bind(std::move(factory));
       auto loader = DevToolsNetworkResourceLoader::Create(
@@ -3829,8 +3876,8 @@ String NetworkHandler::BuildIpAddressSpace(
   switch (space) {
     case network::mojom::IPAddressSpace::kLoopback:
       return protocol::Network::IPAddressSpaceEnum::Loopback;
-    case network::mojom::IPAddressSpace::kPrivate:
-      return protocol::Network::IPAddressSpaceEnum::Private;
+    case network::mojom::IPAddressSpace::kLocal:
+      return protocol::Network::IPAddressSpaceEnum::Local;
     case network::mojom::IPAddressSpace::kPublic:
       return protocol::Network::IPAddressSpaceEnum::Public;
     case network::mojom::IPAddressSpace::kUnknown:

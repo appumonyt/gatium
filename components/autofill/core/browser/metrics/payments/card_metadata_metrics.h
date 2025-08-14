@@ -40,6 +40,9 @@ constexpr std::string_view kProductNameAndArtImageNotShownSuffix =
     "MetadataNotShown";
 
 // Enum for different types of form events. Used for metrics logging.
+//
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
 enum class CardMetadataLoggingEvent {
   // Suggestions were shown.
   kShown = 0,
@@ -57,56 +60,80 @@ enum class CardMetadataLoggingEvent {
 // LINT.IfChange(CardBenefitFormEvent)
 
 // All server cards with card benefit available Form Events are logged once per
-// page load. These values are persisted to logs. Entries should not be
-// renumbered and numeric values should never be reused.
+// page load.
+//
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
 enum class CardBenefitFormEvent {
-  // TODO(crbug.com/417228483): "0" is reserved for
-  // `kSuggestionWithBenefitShown`.
+  // Suggestions containing cards with a benefit available were shown.
+  kSuggestionWithBenefitShown = 0,
 
   // Suggestions containing cards with a benefit available were shown when the
   // user had two or more server cards.
   kSuggestionWithBenefitShownWithMultipleServerCards = 1,
 
-  // TODO(crbug.com/417228483): "2" is reserved for
-  // `kSuggestionWithBenefitSelected`.
+  // A suggestion of a masked server card with a benefit available was selected.
+  kSuggestionWithBenefitSelected = 2,
 
-  // TODO(crbug.com/417228483): "3" is reserved for
-  // `kSuggestionWithoutBenefitSelected`.
+  // `kSuggestionWithoutBenefitSelected` was planned to be an enum with the
+  // value "3". This enum will not be implemented anymore since there is no
+  // possible single card use case for it. This form event enum would be logged
+  // when a masked server card without a benefit available was selected, and at
+  // least one masked server card with a benefit available was present in the
+  // suggestions. `kSuggestionWithoutBenefitSelectedWithMultipleServerCards` is
+  // already being logged for this.
 
   // A suggestion of a masked server card with a benefit available was selected
   // when the user had two or more server cards.
   kSuggestionWithBenefitSelectedWithMultipleServerCards = 4,
 
-  // TODO(crbug.com/417323667): "5" is reserved for
-  // `kSuggestionWithoutBenefitSelectedWithMultipleServerCards`.
+  // A suggestion of a masked server card without a benefit available was
+  // selected when the user had two or more server cards, and at least one had a
+  // benefit available.
+  kSuggestionWithoutBenefitSelectedWithMultipleServerCards = 5,
 
-  // TODO(crbug.com/417323667): "6" is reserved for
-  // `kSuggestionWithBenefitFilled`.
+  // A suggestion of a masked server card with a benefit available was filled.
+  kSuggestionWithBenefitFilled = 6,
 
-  // TODO(crbug.com/417323667): "7" is reserved for
-  // `kSuggestionWithoutBenefitFilled`.
+  // `kSuggestionWithoutBenefitFilled` was planned to be an enum with the
+  // value "7". This enum will not be implemented anymore since there is no
+  // possible single card use case for it. This form event enum would be logged
+  // when a masked server card without a benefit available was filled, and at
+  // least one masked server card with a benefit available was present in the
+  // suggestions. `kSuggestionWithoutBenefitFilledWithMultipleServerCards` is
+  // already being logged for this.
 
   // A suggestion of a masked server card with a benefit available was filled
   // when the user had two or more server cards.
   kSuggestionWithBenefitFilledWithMultipleServerCards = 8,
 
-  // TODO(crbug.com/417323667): "9" is reserved for
-  // `kSuggestionWithoutBenefitFilledWithMultipleServerCards`.
+  // A suggestion of a masked server card without a benefit available was
+  // filled when the user had two or more server cards, and at least one had a
+  // benefit available.
+  kSuggestionWithoutBenefitFilledWithMultipleServerCards = 9,
 
-  // TODO(crbug.com/417323667): "10" is reserved for
-  // `kSuggestionWithBenefitSubmitted`.
+  // A suggestion of a masked server card with a benefit available was
+  // submitted.
+  kSuggestionWithBenefitSubmitted = 10,
 
-  // TODO(crbug.com/417323667): "11" is reserved for
-  // `kSuggestionWithoutBenefitSubmitted`.
+  // `kSuggestionWithoutBenefitSubmitted` was planned to be an enum with the
+  // value "11". This enum will not be implemented anymore since there is no
+  // possible single card use case for it. This form event enum would be logged
+  // when a masked server card without a benefit available was submitted, and at
+  // least one masked server card with a benefit available was present in the
+  // suggestions. `kSuggestionWithoutBenefitSubmittedWithMultipleServerCards` is
+  // already being logged for this.
 
   // A suggestion of a masked server card with a benefit available was submitted
   // when the user had two or more server cards.
   kSuggestionWithBenefitSubmittedWithMultipleServerCards = 12,
 
-  // TODO(crbug.com/417323667): "13" is reserved for
-  // `kSuggestionWithoutBenefitSubmittedWithMultipleServerCards`.
+  // A suggestion of a masked server card without a benefit available was
+  // submitted when the user had two or more server cards, and at least one had
+  // a benefit available.
+  kSuggestionWithoutBenefitSubmittedWithMultipleServerCards = 13,
 
-  kMaxValue = kSuggestionWithBenefitSubmittedWithMultipleServerCards
+  kMaxValue = kSuggestionWithoutBenefitSubmittedWithMultipleServerCards
 };
 
 // LINT.ThenChange(/tools/metrics/histograms/metadata/autofill/enums.xml:CardBenefitFormEvent)
@@ -201,9 +228,8 @@ void LogCardWithMetadataFormEventMetric(
 
 // Log the suggestion event for card benefits on a credit card level and benefit
 // or issuer level. Metrics are only logged once per page load.
-void LogCardWithBenefitFormEventMetric(
-    CardMetadataLoggingEvent event,
-    const CardMetadataLoggingContext& context);
+void LogCardBenefitFormEventMetrics(CardMetadataLoggingEvent event,
+                                    const CardMetadataLoggingContext& context);
 
 // Log the latency between suggestions being shown and a suggestion was
 // selected, in milliseconds, and it is broken down by metadata availability

@@ -4,12 +4,16 @@
 
 #include "chrome/browser/ui/views/frame/picture_in_picture_browser_frame_view.h"
 
+#include <algorithm>
+#include <memory>
+
 #include "base/metrics/histogram_functions.h"
 #include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/ui/browser_content_setting_bubble_model_delegate.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model_states.h"
 #include "chrome/browser/ui/layout_constants.h"
@@ -18,6 +22,7 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/overlay/overlay_window_image_button.h"
+#include "chrome/browser/ui/views/page_info/page_info_bubble_specification.h"
 #include "chrome/browser/ui/views/page_info/page_info_bubble_view.h"
 #include "chrome/browser/ui/views/picture_in_picture/picture_in_picture_bounds_change_animation.h"
 #include "chrome/browser/ui/views/picture_in_picture/picture_in_picture_tucker.h"
@@ -336,6 +341,12 @@ void PictureInPictureBrowserFrameView::ChildDialogObserverHelper::
 
 void PictureInPictureBrowserFrameView::ChildDialogObserverHelper::
     MaybeResizeForChildDialog(views::Widget* child_dialog) {
+  // If the pip window in the process of closing ignore any resizes that could
+  // occur as child dialogs are destroyed during teardown.
+  if (pip_widget_->IsClosed()) {
+    return;
+  }
+
   if (resizing_state_ == ResizingState::kResizeForChildInProgress) {
     // If we're in the middle of a resize to match the child, ignore any
     // resizes that the child might do as a result.
@@ -396,6 +407,12 @@ void PictureInPictureBrowserFrameView::ChildDialogObserverHelper::
 
 void PictureInPictureBrowserFrameView::ChildDialogObserverHelper::
     MaybeRevertSizeAfterChildDialogCloses() {
+  // If the pip window in the process of closing ignore any resizes that could
+  // occur as child dialogs are destroyed during teardown.
+  if (pip_widget_->IsClosed()) {
+    return;
+  }
+
   // If we still have another visible child dialog, continue to maintain the
   // size.
   if (child_dialog_observations_.GetSourcesCount() >
@@ -544,13 +561,11 @@ PictureInPictureBrowserFrameView::PictureInPictureBrowserFrameView(
     auto image_view = std::make_unique<ContentSettingImageView>(
         std::move(model), this, this, browser_view->browser(), font_list);
 
-    // The ContentSettingImageView loses 4px of margin that we don't want to
-    // lose in the document picture-in-picture toolbar. Meanwhile, it should
-    // have vertical margins set to keep the hover-over highlight circular.
-    // Otherwise, the highlight will occupy the full height of the top control.
+    // The ContentSettingImageView should have vertical margins set to keep the
+    // hover-over highlight circular. Otherwise, the highlight will occupy the
+    // full height of the top control.
     image_view->SetProperty(views::kMarginsKey,
-                            gfx::Insets::TLBR(KIconViewVerticalMargin, 0,
-                                              KIconViewVerticalMargin, 4));
+                            gfx::Insets::VH(KIconViewVerticalMargin, 0));
     // Adjust internal padding on each side to 4px to ensure a min size of
     // 24x24, consistent with other icon views. The default paddings are
     // narrower.
@@ -625,6 +640,14 @@ PictureInPictureBrowserFrameView::PictureInPictureBrowserFrameView(
               top_bar_container_view_, views::BubbleBorder::TOP_CENTER)) {
     auto_pip_setting_overlay_ =
         AddChildView(std::move(auto_pip_setting_overlay));
+  }
+
+  // Clear the picture-in-picture window cached bounds, whenever the
+  // `auto_pip_setting_overlay_` is visible.
+  if (base::FeatureList::IsEnabled(
+          media::kClearPipCachedBoundsWhenPermissionPromptVisible) &&
+      IsOverlayViewVisible()) {
+    PictureInPictureWindowManager::GetInstance()->ClearCachedBounds();
   }
 }
 
@@ -1036,13 +1059,15 @@ bool PictureInPictureBrowserFrameView::ShowPageInfoDialog() {
     return false;
   }
 
-  views::BubbleDialogDelegateView* bubble =
-      PageInfoBubbleView::CreatePageInfoBubble(
-          location_icon_view_, gfx::Rect(), GetWidget()->GetNativeWindow(),
-          contents, contents->GetLastCommittedURL(),
-          /*initialized_callback=*/base::DoNothing(),
-          /*closing_callback=*/base::DoNothing(),
-          /*allow_extended_site_info=*/false);
+  std::unique_ptr<PageInfoBubbleSpecification> specification =
+      PageInfoBubbleSpecification::Builder(
+          location_icon_view_, GetWidget()->GetNativeWindow(), contents,
+          contents->GetLastCommittedURL())
+          .HideExtendedSiteInfo()
+          .Build();
+
+  views::BubbleDialogDelegateView* const bubble =
+      PageInfoBubbleView::CreatePageInfoBubble(std::move(specification));
   bubble->SetHighlightedButton(location_icon_view_);
   bubble->GetWidget()->Show();
 
@@ -1117,7 +1142,7 @@ ContentSettingBubbleModelDelegate*
 PictureInPictureBrowserFrameView::GetContentSettingBubbleModelDelegate() {
   // Use the opener browser delegate to open any new tab.
   Browser* browser = chrome::FindBrowserWithTab(GetWebContents());
-  return browser->content_setting_bubble_model_delegate();
+  return browser->GetFeatures().content_setting_bubble_model_delegate();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

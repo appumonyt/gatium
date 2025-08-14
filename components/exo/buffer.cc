@@ -73,9 +73,9 @@ const gfx::BufferUsage kDefaultBufferUsage = gfx::BufferUsage::GPU_READ;
 const gpu::SharedImageUsageSet kDefaultMappableSIUsage =
     gpu::SHARED_IMAGE_USAGE_DISPLAY_READ;
 
-// Killswitch for disabling RG88 format support over exo.
-BASE_FEATURE(kExoDisableRG88Format,
-             "kExoDisableRG88Format",
+// Killswitch for fixing SyncToken issue.
+BASE_FEATURE(kExoAlwaysUseSyncTokenFromTexture,
+             "ExoAlwaysUseSyncTokenFromTexture",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Gets the color type of |format| for creating bitmap. If it returns
@@ -107,11 +107,6 @@ viz::SharedImageFormat GetSharedImageFormat(gfx::BufferFormat buffer_format) {
       UMA_HISTOGRAM_BOOLEAN("Graphics.Exo.Buffer.Used_BRG_565", true);
     }
       return viz::SinglePlaneFormat::kBGR_565;
-    case gfx::BufferFormat::RG_88:
-      if (base::FeatureList::IsEnabled(kExoDisableRG88Format)) {
-        NOTREACHED();
-      }
-      return viz::SinglePlaneFormat::kRG_88;
     case gfx::BufferFormat::RGBX_8888:
       return viz::SinglePlaneFormat::kRGBX_8888;
     case gfx::BufferFormat::BGRX_8888:
@@ -131,6 +126,7 @@ viz::SharedImageFormat GetSharedImageFormat(gfx::BufferFormat buffer_format) {
       break;
     case gfx::BufferFormat::R_16:
     case gfx::BufferFormat::RG_1616:
+    case gfx::BufferFormat::RG_88:
     case gfx::BufferFormat::RGBA_4444:
     case gfx::BufferFormat::YUVA_420_TRIPLANAR:
       NOTREACHED();
@@ -216,9 +212,6 @@ class Buffer::Texture : public viz::ContextLostObserver {
   // Returns the ClientSharedImage for this texture.
   gpu::ClientSharedImage* shared_image() const { return shared_image_.get(); }
 
-  // Returns the mailbox for this texture.
-  gpu::Mailbox mailbox() const { return shared_image_->mailbox(); }
-
   // Returns sync token to wait before read.
   gpu::SyncToken sync_token() { return sync_token_; }
 
@@ -274,8 +267,7 @@ Buffer::Texture::Texture(
                               color_space, usage, gpu::kExoTextureLabelPrefix},
                              gpu::kNullSurfaceHandle);
   CHECK(shared_image_);
-  DCHECK(!shared_image_->mailbox().IsZero());
-  sync_token_ = sii->GenUnverifiedSyncToken();
+  sync_token_ = shared_image_->creation_sync_token();
 
   // Provides a notification when |context_provider_| is lost.
   context_provider_->AddObserver(this);
@@ -316,10 +308,8 @@ Buffer::Texture::Texture(
       {format, size_, color_space, usage, gpu::kExoTextureLabelPrefix},
       gpu_memory_buffer_handle_->Clone());
   CHECK(shared_image_);
-  DCHECK(!shared_image_->mailbox().IsZero());
-  gpu::raster::RasterInterface* ri = context_provider_->RasterInterface();
-  sync_token_ = sii->GenUnverifiedSyncToken();
-  ri->GenQueriesEXT(1, &query_id_);
+  sync_token_ = shared_image_->creation_sync_token();
+  context_provider_->RasterInterface()->GenQueriesEXT(1, &query_id_);
 
   // Provides a notification when |context_provider_| is lost.
   context_provider_->AddObserver(this);
@@ -445,8 +435,8 @@ void Buffer::Texture::DestroyResources() {
       ri->DeleteQueriesEXT(1, &query_id_);
       query_id_ = 0;
     }
-    gpu::SharedImageInterface* sii = context_provider_->SharedImageInterface();
-    sii->DestroySharedImage(gpu::SyncToken(), std::move(shared_image_));
+
+    shared_image_->UpdateDestructionSyncToken(sync_token_);
   }
 }
 
@@ -584,15 +574,19 @@ std::unique_ptr<Buffer> Buffer::CreateBufferFromGMBHandle(
 // static
 std::unique_ptr<Buffer> Buffer::CreateBuffer(
     gfx::Size buffer_size,
-    gfx::BufferFormat buffer_format,
+    viz::SharedImageFormat format,
     gfx::BufferUsage buffer_usage,
     std::string_view debug_label,
     gpu::SurfaceHandle surface_handle,
     base::WaitableEvent* shutdown_event,
     bool is_overlay_candidate) {
+  // If format is true multiplanar format, we prefer external sampler on
+  // ChromeOS.
+  if (format.is_multi_plane()) {
+    format.SetPrefersExternalSampler();
+  }
   scoped_refptr<gpu::ClientSharedImage> shared_image;
   auto* sii = GetSharedImageInterface();
-  auto format = GetSharedImageFormat(buffer_format);
   if (sii) {
     // Note that we are creating this mappable shared image only to get a
     // GMBHandle from it and use below to create ::Buffer.
@@ -674,25 +668,16 @@ std::optional<viz::TransferableResource> Buffer::ProduceTransferableResource(
         next_commit_id_, std::move(per_commit_explicit_release_callback));
   }
 
-  viz::TransferableResource resource;
-  resource.set_sync_token(prev_sync_token);
-  resource.synchronization_type = prev_synchronization_type;
-  resource.id = resource_manager->AllocateResourceId();
-  resource.format = viz::SinglePlaneFormat::kRGBA_8888;
-  resource.size = GetSize();
-
-  resource.resource_source =
-      viz::TransferableResource::ResourceSource::kExoBuffer;
-
   // Create a new image texture for |gpu_memory_buffer_handle_| if one doesn't
   // already exist. The contents of this buffer are copied to |texture| using a
   // call to CopyTexImage.
+  gpu::SyncToken sync_token = prev_sync_token;
   if (!contents_texture_) {
     contents_texture_ = std::make_unique<Texture>(
         context_provider, &gpu_memory_buffer_handle_, format_, size_,
         color_space, query_type_, wait_for_release_delay_,
         is_overlay_candidate_);
-    resource.set_sync_token(contents_texture_->sync_token());
+    sync_token = contents_texture_->sync_token();
   }
   Texture* contents_texture = contents_texture_.get();
 
@@ -736,18 +721,25 @@ std::optional<viz::TransferableResource> Buffer::ProduceTransferableResource(
     // We can sync on the existing sync token if present. Examples of where this
     // can happen is video, where there is no fence provided, or in
     // raster/composite when the fence already signaled at this stage.
-
     if (acquire_fence && !acquire_fence->GetGpuFenceHandle().is_null()) {
       contents_texture->UpdateSharedImage(std::move(acquire_fence));
-      resource.set_sync_token(contents_texture->sync_token());
+      sync_token = contents_texture->sync_token();
     }
-    uint32_t texture_target =
-        contents_texture->shared_image()->GetTextureTarget();
-    resource.set_mailbox(contents_texture->mailbox());
-    resource.set_texture_target(texture_target);
-    resource.is_overlay_candidate = is_overlay_candidate_;
-    resource.format = format_;
 
+    // TODO(crbug.com/369003507): Remove this post safe roll out and clean up
+    // `prev_sync_token` which will be not needed anymore.
+    if (base::FeatureList::IsEnabled(kExoAlwaysUseSyncTokenFromTexture)) {
+      sync_token = contents_texture->sync_token();
+    }
+
+    auto resource = viz::TransferableResource::Make(
+        contents_texture_->shared_image(),
+        viz::TransferableResource::ResourceSource::kExoBuffer, sync_token,
+        {
+            .is_overlay_candidate = is_overlay_candidate_,
+        });
+
+    resource.synchronization_type = prev_synchronization_type;
     if (context_provider->ContextCapabilities().chromium_gpu_fence &&
         request_release_fence) {
       resource.synchronization_type =
@@ -756,6 +748,7 @@ std::optional<viz::TransferableResource> Buffer::ProduceTransferableResource(
 
     // The contents texture will be released when no longer used by the
     // compositor.
+    resource.id = resource_manager->AllocateResourceId();
     resource_manager->SetResourceReleaseCallback(
         resource.id,
         base::BindOnce(&Buffer::Texture::ReleaseSharedImage,
@@ -771,7 +764,6 @@ std::optional<viz::TransferableResource> Buffer::ProduceTransferableResource(
   if (!texture_) {
     texture_ =
         std::make_unique<Texture>(context_provider, GetSize(), color_space);
-    resource.set_sync_token(texture_->sync_token());
   }
   Texture* texture = texture_.get();
 
@@ -784,13 +776,17 @@ std::optional<viz::TransferableResource> Buffer::ProduceTransferableResource(
                      std::move(contents_texture_),
                      release_contents_callback_.callback(), next_commit_id_,
                      /*release_fence=*/gfx::GpuFenceHandle()));
-  resource.set_mailbox(texture->mailbox());
-  resource.set_sync_token(texture_->sync_token());
-  resource.set_texture_target(GL_TEXTURE_2D);
-  resource.is_overlay_candidate = false;
+
+  auto resource = viz::TransferableResource::Make(
+      texture->shared_image(),
+      viz::TransferableResource::ResourceSource::kExoBuffer,
+      texture_->sync_token());
+
+  resource.synchronization_type = prev_synchronization_type;
 
   // The mailbox texture will be released when no longer used by the
   // compositor.
+  resource.id = resource_manager->AllocateResourceId();
   resource_manager->SetResourceReleaseCallback(
       resource.id,
       base::BindOnce(&Buffer::Texture::Release, base::Unretained(texture),

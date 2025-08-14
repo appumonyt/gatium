@@ -279,9 +279,16 @@ id<GREYMatcher> snackbarMessageMatcher(FakeSystemIdentity* identity) {
   [self assertAccountMenuIsNotShown];
 }
 
-// TODO(crbug.com/376334069): Re-enable once flakiness is fixed.
 // Tests that the account menu is not dismissed if the app was backgrounded.
-- (void)DISABLED_testAccountMenuStaysIfAppBackgrounded {
+// TODO(crbug.com/436894248): Test is flaky on simulator. Reenable the test.
+#if TARGET_OS_SIMULATOR
+#define MAYBE_testAccountMenuStaysIfAppBackgrounded \
+  FLAKY_testAccountMenuStaysIfAppBackgrounded
+#else
+#define MAYBE_testAccountMenuStaysIfAppBackgrounded \
+  testAccountMenuStaysIfAppBackgrounded
+#endif
+- (void)MAYBE_testAccountMenuStaysIfAppBackgrounded {
   [SigninEarlGrey signinWithFakeIdentity:kPrimaryIdentity];
   // Select the identity disc particle.
   [self selectIdentityDiscAndVerify];
@@ -468,7 +475,13 @@ id<GREYMatcher> snackbarMessageMatcher(FakeSystemIdentity* identity) {
         performAction:grey_tap()];
   }
 
-  [self assertSnackbarShownAndDismissItWithIdentity:kPrimaryIdentity];
+  if ([ChromeEarlGrey isIPadIdiom]) {
+    // The snackbar shows in test executed locally and during actual usage, but
+    // is not always detected on CQ causing flakyness.
+    // TODO(crbug.com/433726717): Remove the `if` around the assertion when
+    // snack-bar stop being flaky on egtest on iphone.
+    [self assertSnackbarShownAndDismissItWithIdentity:kPrimaryIdentity];
+  }
   [SigninEarlGrey verifySignedInWithFakeIdentity:kPrimaryIdentity];
   [self assertAccountMenuIsNotShown];
 }
@@ -476,7 +489,13 @@ id<GREYMatcher> snackbarMessageMatcher(FakeSystemIdentity* identity) {
 // Tests that tapping on a managed account button causes the primary account
 // to be changed and the account menu view to be closed after showing managed
 // account sign-in dialog.
-- (void)testSwitchToManagedAccount {
+// TODO(crbug.com/436843668): Renable this test. It is flaky on iphone-device.
+#if TARGET_OS_SIMULATOR
+#define MAYBE_testSwitchToManagedAccount testSwitchToManagedAccount
+#else
+#define MAYBE_testSwitchToManagedAccount FLAKY_testSwitchToManagedAccount
+#endif
+- (void)MAYBE_testSwitchToManagedAccount {
   [SigninEarlGrey signinWithFakeIdentity:kPrimaryIdentity];
   [SigninEarlGrey addFakeIdentity:kManagedIdentity1];
   [self selectIdentityDisc];
@@ -503,12 +522,23 @@ id<GREYMatcher> snackbarMessageMatcher(FakeSystemIdentity* identity) {
         performAction:grey_tap()];
   }
 
-  [self assertSnackbarShownAndDismissItWithIdentity:kManagedIdentity1];
+  if ([ChromeEarlGrey isIPadIdiom]) {
+    // The snackbar shows in test executed locally and during actual usage, but
+    // is not always detected on CQ causing flakyness.
+    // TODO(crbug.com/433726717): Remove the `if` around the assertion when
+    // snack-bar stop being flaky on egtest on iphone.
+    [self assertSnackbarShownAndDismissItWithIdentity:kManagedIdentity1];
+  }
   [SigninEarlGrey verifySignedInWithFakeIdentity:kManagedIdentity1];
   [self assertAccountMenuIsNotShown];
 }
 
 - (void)testSwitchFromManagedAccountToManagedAccount {
+  // TODO(crbug.com/433726717): Test disabled on iPhones.
+  if (![ChromeEarlGrey isIPadIdiom]) {
+    EARL_GREY_TEST_DISABLED(@"Fails on iPhones.");
+  }
+
   [SigninEarlGrey
       signinWithFakeManagedIdentityInPersonalProfile:kManagedIdentity1];
   [ChromeEarlGreyUI waitForAppToIdle];
@@ -556,6 +586,11 @@ id<GREYMatcher> snackbarMessageMatcher(FakeSystemIdentity* identity) {
 // Verifies identity confirmation snackbar shows on startup with multiple
 // identities on device after 1 day.
 - (void)testMultipleIdentities_IdentityConfirmationToast {
+  // TODO(crbug.com/433726717): Test disabled on iPhones.
+  if (![ChromeEarlGrey isIPadIdiom]) {
+    EARL_GREY_TEST_DISABLED(@"Fails on iPhones.");
+  }
+
   [self prepareStartSurface];
   // Add multiple identities and sign in with one of them.
   [SigninEarlGrey signinWithFakeIdentity:kPrimaryIdentity];
@@ -615,6 +650,11 @@ id<GREYMatcher> snackbarMessageMatcher(FakeSystemIdentity* identity) {
 // Verifies identity confirmation snackbar shows on startup with multiple
 // identities on device with frequency limitations.
 - (void)testFrequencyLimitation_IdentityConfirmationToast {
+  // TODO(crbug.com/433726717): Test disabled on iPhones.
+  if (![ChromeEarlGrey isIPadIdiom]) {
+    EARL_GREY_TEST_DISABLED(@"Fails on iPhones.");
+  }
+
   [self prepareStartSurface];
   // Add multiple identities and sign in with one of them.
   [SigninEarlGrey signinWithFakeIdentity:kPrimaryIdentity];

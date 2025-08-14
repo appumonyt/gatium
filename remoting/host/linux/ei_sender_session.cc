@@ -154,6 +154,10 @@ EiSenderSession::~EiSenderSession() {
   ProcessEvents(true);
 }
 
+base::WeakPtr<EiSenderSession> EiSenderSession::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
+
 void EiSenderSession::InjectKeyEvent(std::uint32_t usb_keycode, bool is_press) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -424,8 +428,7 @@ void EiSenderSession::OnDeviceAdded(EiDevicePtr device) {
 
 void EiSenderSession::OnDeviceRemoved(EiDevicePtr device) {
   if (ei_device_has_capability(device.get(), EI_DEVICE_CAP_KEYBOARD)) {
-    std::erase_if(relative_pointers_,
-                  [&device](auto& item) { return item == device; });
+    std::erase_if(keyboards_, [&device](auto& item) { return item == device; });
   }
   if (ei_device_has_capability(device.get(), EI_DEVICE_CAP_POINTER)) {
     std::erase_if(relative_pointers_,
@@ -495,6 +498,8 @@ void EiSenderSession::ProcessEvents(bool shutting_down) {
         break;
       case EI_EVENT_KEYBOARD_MODIFIERS:
         // TODO(rkjnsn): Track changes to the group for the layout monitor.
+        break;
+      case EI_EVENT_SYNC:
         break;
       default:
         std::string message = base::StringPrintf(

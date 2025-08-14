@@ -56,6 +56,7 @@ import org.chromium.chrome.browser.renderer_host.ChromeNavigationUiData;
 import org.chromium.chrome.browser.search_engines.TemplateUrlServiceFactory;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabLaunchType;
+import org.chromium.chrome.browser.tabmodel.MultiTabMetadata;
 import org.chromium.chrome.browser.tabmodel.TabGroupMetadata;
 import org.chromium.chrome.browser.webapps.WebappActivity;
 import org.chromium.components.bookmarks.BookmarkId;
@@ -274,6 +275,12 @@ public class IntentHandler {
      */
     public static final String EXTRA_TAB_GROUP_METADATA =
             "org.chromium.chrome.browser.tab_group_metadata";
+    /**
+     * A Bundle containing a list of tab IDs and URLs to reparent as a multi-tab selection. See
+     * TabGroupMetadata.KEY_TAB_IDS and TabGroupMetadata.KEY_TAB_URLS.
+     */
+    public static final String EXTRA_MULTI_TAB_REPARENTING_METADATA =
+            "org.chromium.chrome.browser.multi_tab_reparenting_metadata";
 
     /** Used to measure the duration of the tab group drag drop reparenting process. */
     public static final String EXTRA_REPARENT_START_TIME =
@@ -306,7 +313,10 @@ public class IntentHandler {
     private static final String YOUTUBE_LINK_PREFIX_HTTPS = "https://www.youtube.com/redirect?";
     private static final String YOUTUBE_LINK_PREFIX_HTTP = "http://www.youtube.com/redirect?";
     private static final String BRING_TAB_TO_FRONT_EXTRA = "BRING_TAB_TO_FRONT";
+    private static final String BRING_TAB_GROUP_TO_FRONT_EXTRA = "BRING_TAB_GROUP_TO_FRONT";
     public static final String BRING_TAB_TO_FRONT_SOURCE_EXTRA = "BRING_TAB_TO_FRONT_SOURCE";
+    public static final String BRING_TAB_GROUP_TO_FRONT_SOURCE_EXTRA =
+            "BRING_TAB_GROUP_TO_FRONT_SOURCE";
     public static final String DAYDREAM_CATEGORY = "com.google.intent.category.DAYDREAM";
     public static final String SHARE_INTENT_HISTOGRAM = "Android.Intent.ShareIntentUrlCount";
 
@@ -409,6 +419,10 @@ public class IntentHandler {
     public static final String EXTRA_OPEN_NEW_INCOGNITO_TAB =
             "com.google.android.apps.chrome.EXTRA_OPEN_NEW_INCOGNITO_TAB";
 
+    /** Intent extra to open an incognito window. */
+    public static final String EXTRA_OPEN_NEW_INCOGNITO_WINDOW =
+            "com.google.android.apps.chrome.EXTRA_OPEN_NEW_INCOGNITO_WINDOW";
+
     /** Scheme used by web pages to start up Chrome without an explicit Intent. */
     public static final String GOOGLECHROME_SCHEME = "googlechrome";
 
@@ -421,7 +435,8 @@ public class IntentHandler {
         TabOpenType.CLOBBER_CURRENT_TAB,
         TabOpenType.BRING_TAB_TO_FRONT,
         TabOpenType.OPEN_NEW_INCOGNITO_TAB,
-        TabOpenType.REUSE_TAB_MATCHING_ID_ELSE_NEW_TAB
+        TabOpenType.REUSE_TAB_MATCHING_ID_ELSE_NEW_TAB,
+        TabOpenType.BRING_TAB_GROUP_TO_FRONT,
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface TabOpenType {
@@ -441,6 +456,8 @@ public class IntentHandler {
         // the intent url is a result of a redirect, so that a tab pointing at the original URL can
         // be reused.
         int REUSE_TAB_MATCHING_ID_ELSE_NEW_TAB = 6;
+        // Bring a tab group to the foreground and open the tab group dialog on suggestion click.
+        int BRING_TAB_GROUP_TO_FRONT = 7;
 
         String REUSE_TAB_MATCHING_ID_STRING = "REUSE_TAB_MATCHING_ID";
         String REUSE_TAB_ORIGINAL_URL_STRING = "REUSE_TAB_ORIGINAL_URL";
@@ -921,6 +938,31 @@ public class IntentHandler {
         // Throwable and then fail closed (safe). This is ugly, but resolves top crashers in the
         // wild.
         try {
+            // If the intent contains a list of tabs to reparent, it's a valid intent from Chrome.
+            @Nullable MultiTabMetadata multiTabMetadata = getMultiTabMetadata(intent);
+            if (multiTabMetadata != null) {
+                // Exit early if the incognito intent is not allowed.
+                if (IntentUtils.safeGetBooleanExtra(intent, EXTRA_OPEN_NEW_INCOGNITO_TAB, false)
+                        && !isAllowedIncognitoIntent(
+                                wasIntentSenderChrome(intent), isCustomTab, intent)) {
+                    return true;
+                }
+                ArrayList<Integer> tabIds = multiTabMetadata.tabIds;
+                ArrayList<String> urls = multiTabMetadata.urls;
+
+                if (urls == null || tabIds == null || urls.size() != tabIds.size()) {
+                    assert false : "Urls and tabIds size are mismatched or empty.";
+                    return true;
+                }
+
+                for (int i = urls.size() - 1; i >= 0; i--) {
+                    if (shouldIgnoreIntentUrl(intent, context, urls.get(i), isCustomTab)) {
+                        urls.remove(i);
+                        tabIds.remove(i);
+                    }
+                }
+                return urls.isEmpty();
+            }
             // Ignore all invalid URLs, regardless of what the intent was.
             @Nullable TabGroupMetadata tabGroupMetadata = IntentHandler.getTabGroupMetadata(intent);
             if (tabGroupMetadata != null) {
@@ -1126,6 +1168,9 @@ public class IntentHandler {
         }
         if (getBringTabToFrontId(intent) != Tab.INVALID_TAB_ID) {
             return TabOpenType.BRING_TAB_TO_FRONT;
+        }
+        if (getBringTabGroupToFrontId(intent) != null) {
+            return TabOpenType.BRING_TAB_GROUP_TO_FRONT;
         }
 
         String appId = IntentUtils.safeGetStringExtra(intent, Browser.EXTRA_APPLICATION_ID);
@@ -1452,6 +1497,16 @@ public class IntentHandler {
     }
 
     /**
+     * Sets the The {@link MultiTabMetadata} for multi tab drag drop to transfer tab data between
+     * windows.
+     *
+     * @param intent The Intent to be set.
+     */
+    public static void setMultiTabMetadata(Intent intent, MultiTabMetadata multiTabMetadata) {
+        intent.putExtra(EXTRA_MULTI_TAB_REPARENTING_METADATA, multiTabMetadata.toBundle());
+    }
+
+    /**
      * @param intent An Intent to be checked.
      * @return The {@link TabGroupMetadata} for tab group drag drop to transfer tab group data
      *     between windows.
@@ -1459,6 +1514,17 @@ public class IntentHandler {
     public static @Nullable TabGroupMetadata getTabGroupMetadata(Intent intent) {
         Bundle bundle = IntentUtils.safeGetBundleExtra(intent, EXTRA_TAB_GROUP_METADATA);
         return TabGroupMetadata.maybeCreateFromBundle(bundle);
+    }
+
+    /**
+     * @param intent An Intent to be checked.
+     * @return The {@link MultiTabMetadata} for multi tab drag drop to transfer tab data between
+     *     windows.
+     */
+    public static @Nullable MultiTabMetadata getMultiTabMetadata(Intent intent) {
+        Bundle bundle =
+                IntentUtils.safeGetBundleExtra(intent, EXTRA_MULTI_TAB_REPARENTING_METADATA);
+        return MultiTabMetadata.maybeCreateFromBundle(bundle);
     }
 
     /**
@@ -1483,14 +1549,35 @@ public class IntentHandler {
     }
 
     /**
+     * Creates an Intent that will launch a new ChromeTabbedActivity window on the new tab page. The
+     * Intent will be trusted and therefore able to launch Incognito windows.
+     *
+     * @param context A {@link Context} to access class and package information.
+     * @param incognito Whether incognito or regular window should be opened.
+     * @return The {@link Intent} to launch.
+     */
+    public static Intent createTrustedOpenNewWindowIntent(Context context, boolean incognito) {
+        Intent newIntent = new Intent();
+        newIntent.setClass(context, ChromeLauncherActivity.class);
+        newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        newIntent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+        newIntent.putExtra(IntentHandler.EXTRA_PREFER_NEW, true);
+        newIntent.putExtra(IntentHandler.EXTRA_OPEN_NEW_INCOGNITO_WINDOW, incognito);
+        IntentUtils.addTrustedIntentExtras(newIntent);
+
+        return newIntent;
+    }
+
+    /**
      * Creates an Intent that tells Chrome to bring an Activity for a particular Tab back to the
      * foreground.
+     *
      * @param tabId The id of the Tab to bring to the foreground.
      * @param bringToFrontSource The source of the bring to front Intent, used for gathering
-     *         metrics.
+     *     metrics.
      * @return Created Intent or null if this operation isn't possible.
      */
-    public static @Nullable Intent createTrustedBringTabToFrontIntent(
+    public static Intent createTrustedBringTabToFrontIntent(
             int tabId, @BringToFrontSource int bringToFrontSource) {
         Context context = ContextUtils.getApplicationContext();
         Intent intent = new Intent(context, ChromeLauncherActivity.class);
@@ -1501,9 +1588,34 @@ public class IntentHandler {
         return intent;
     }
 
+    /**
+     * Creates an Intent that tells Chrome to bring an Activity for a particular Tab back to the
+     * foreground.
+     *
+     * @param tabGroupId The tab group id of the Tab Group to bring to the foreground.
+     * @param bringToFrontSource The source of the bring to front Intent, used for gathering
+     *     metrics.
+     * @return Created Intent or null if this operation isn't possible.
+     */
+    public static Intent createTrustedBringTabGroupToFrontIntent(
+            String tabGroupId, @BringToFrontSource int bringToFrontSource) {
+        Context context = ContextUtils.getApplicationContext();
+        Intent intent = new Intent(context, ChromeLauncherActivity.class);
+        intent.putExtra(Browser.EXTRA_APPLICATION_ID, context.getPackageName());
+        intent.putExtra(BRING_TAB_GROUP_TO_FRONT_EXTRA, tabGroupId);
+        intent.putExtra(BRING_TAB_GROUP_TO_FRONT_SOURCE_EXTRA, bringToFrontSource);
+        IntentUtils.addTrustedIntentExtras(intent);
+        return intent;
+    }
+
     public static int getBringTabToFrontId(Intent intent) {
         if (!wasIntentSenderChrome(intent)) return Tab.INVALID_TAB_ID;
         return IntentUtils.safeGetIntExtra(intent, BRING_TAB_TO_FRONT_EXTRA, Tab.INVALID_TAB_ID);
+    }
+
+    public static @Nullable String getBringTabGroupToFrontId(Intent intent) {
+        if (!wasIntentSenderChrome(intent)) return null;
+        return IntentUtils.safeGetStringExtra(intent, BRING_TAB_GROUP_TO_FRONT_EXTRA);
     }
 
     /** Sets the Tab Id extra for a given intent. Will only be usable by trusted Chrome intents. */
@@ -1554,10 +1666,21 @@ public class IntentHandler {
     public static void bringTabToFront(Tab tab) {
         Intent newIntent =
                 createTrustedBringTabToFrontIntent(tab.getId(), BringToFrontSource.SEARCH_ACTIVITY);
-        if (newIntent != null) {
-            newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            IntentUtils.safeStartActivity(ContextUtils.getApplicationContext(), newIntent);
-        }
+        newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        IntentUtils.safeStartActivity(ContextUtils.getApplicationContext(), newIntent);
+    }
+
+    /**
+     * Bring the browser to foreground and switch to the tab group.
+     *
+     * @param tabGroupId Tab group id of the tab group to switch to.
+     */
+    public static void bringTabGroupToFront(String tabGroupId) {
+        Intent newIntent =
+                createTrustedBringTabGroupToFrontIntent(
+                        tabGroupId, BringToFrontSource.SEARCH_ACTIVITY);
+        newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        IntentUtils.safeStartActivity(ContextUtils.getApplicationContext(), newIntent);
     }
 
     /** Create a LoadUrlParams for handling a VIEW intent. */

@@ -6,21 +6,30 @@
 #define COMPONENTS_OPTIMIZATION_GUIDE_CORE_MODEL_EXECUTION_ON_DEVICE_MODEL_COMPONENT_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 
-#include "base/containers/flat_set.h"
+#include "base/byte_count.h"
+#include "base/containers/enum_set.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/raw_ref.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/safe_ref.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
+#include "base/scoped_observation.h"
 #include "base/sequence_checker.h"
 #include "base/types/pass_key.h"
 #include "base/values.h"
 #include "base/version.h"
+#include "components/optimization_guide/core/model_execution/performance_class.h"
+#include "components/optimization_guide/core/model_execution/usage_tracker.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/proto/on_device_base_model_metadata.pb.h"
+#include "components/prefs/pref_change_registrar.h"
 
 class PrefService;
 
@@ -36,6 +45,7 @@ inline constexpr std::string_view kOnDeviceModelCrxId =
 class OnDeviceModelComponentState;
 
 enum class ModelBasedCapabilityKey;
+class UsageTracker;
 
 // Status of the on-device model.
 //
@@ -73,15 +83,18 @@ enum class OnDeviceModelStatus {
 
 std::ostream& operator<<(std::ostream& out, OnDeviceModelStatus status);
 
-// Wraps the specification needed to determine compatibility of the
-// on-device base model with any feature specific code.
+// Identifies a specific on-device base model and the performance hint that
+// it will be used with.
 struct OnDeviceBaseModelSpec {
-  OnDeviceBaseModelSpec();
+  using PerformanceHints =
+      base::EnumSet<proto::OnDeviceModelPerformanceHint,
+                    proto::OnDeviceModelPerformanceHint_MIN,
+                    proto::OnDeviceModelPerformanceHint_MAX>;
+
   OnDeviceBaseModelSpec(
       const std::string& model_name,
       const std::string& model_version,
-      const base::flat_set<proto::OnDeviceModelPerformanceHint>&
-          supported_performance_hints);
+      proto::OnDeviceModelPerformanceHint selected_performance_hint);
   ~OnDeviceBaseModelSpec();
   OnDeviceBaseModelSpec(const OnDeviceBaseModelSpec&);
 
@@ -91,17 +104,14 @@ struct OnDeviceBaseModelSpec {
   std::string model_name;
   // The version of the base model currently available on-device.
   std::string model_version;
-  // The supported performance hints for this device and base model.
-  base::flat_set<proto::OnDeviceModelPerformanceHint>
-      supported_performance_hints;
+  // The selected performance hint for this device and base model.
+  proto::OnDeviceModelPerformanceHint selected_performance_hint;
 };
 
 // Manages the state of the on-device component.
-// This object needs to have lifetime equal to the browser process. This is
-// achieved by holding a scoped_refptr on KeyedServices which need it, and on
-// the installer (which is owned by ComponentUpdaterService).
-class OnDeviceModelComponentStateManager
-    : public base::RefCounted<OnDeviceModelComponentStateManager> {
+// This object needs to have lifetime equal to the browser process, and outside
+// of tests is created by a static NoDestructor initializer.
+class OnDeviceModelComponentStateManager final : public UsageTracker::Observer {
  public:
   class Delegate {
    public:
@@ -114,20 +124,20 @@ class OnDeviceModelComponentStateManager
     // and calls `callback`.
     virtual void GetFreeDiskSpace(
         const base::FilePath& path,
-        base::OnceCallback<void(int64_t)> callback) = 0;
+        base::OnceCallback<void(std::optional<base::ByteCount>)> callback) = 0;
 
     // Registers the component installer. Calls
     // `OnDeviceModelComponentStateManager::SetReady` when the component is
     // ready to use.
     virtual void RegisterInstaller(
-        scoped_refptr<OnDeviceModelComponentStateManager> state_manager,
+        base::WeakPtr<OnDeviceModelComponentStateManager> state_manager,
         bool is_already_installing) = 0;
 
     // Uninstall the component. Calls
     // `OnDeviceModelComponentStateManager::UninstallComplete()` when uninstall
     // completes.
     virtual void Uninstall(
-        scoped_refptr<OnDeviceModelComponentStateManager> state_manager) = 0;
+        base::WeakPtr<OnDeviceModelComponentStateManager> state_manager) = 0;
   };
 
   class Observer : public base::CheckedObserver {
@@ -135,12 +145,6 @@ class OnDeviceModelComponentStateManager
     // Called whenever the on-device component state changes. `state` is null if
     // the component is not available.
     virtual void StateChanged(const OnDeviceModelComponentState* state) = 0;
-
-    // Called when on-device eligible `feature` was used for the first time.
-    // This is called when at startup the feature was not used, and then gets
-    // used for the first time.
-    virtual void OnDeviceEligibleFeatureFirstUsed(
-        ModelBasedCapabilityKey feature) {}
   };
 
   struct RegistrationCriteria {
@@ -177,15 +181,17 @@ class OnDeviceModelComponentStateManager
 
     bool should_uninstall() const {
       return (is_already_installing &&
-              (running_out_of_disk_space || out_of_retention));
+              (running_out_of_disk_space || out_of_retention ||
+               !enabled_by_enterprise_policy));
     }
   };
 
-  // Creates the instance if one does not already exist. Returns an existing
-  // instance otherwise.
-  static scoped_refptr<OnDeviceModelComponentStateManager> CreateOrGet(
+  OnDeviceModelComponentStateManager(
       PrefService* local_state,
+      base::SafeRef<PerformanceClassifier> performance_classifier,
+      UsageTracker& usage_tracker,
       std::unique_ptr<Delegate> delegate);
+  ~OnDeviceModelComponentStateManager() override;
 
   // Returns whether the component installation is valid.
   static bool VerifyInstallation(const base::FilePath& install_dir,
@@ -195,16 +201,8 @@ class OnDeviceModelComponentStateManager
   // necessary.
   void OnStartup();
 
-  // Should be called whenever an on-device eligible feature was used.
-  void OnDeviceEligibleFeatureUsed(ModelBasedCapabilityKey feature);
-
   // Should be called whenever the device performance class changes.
-  void DevicePerformanceClassChanged(
-      base::OnceClosure complete,
-      OnDeviceModelPerformanceClass performance_class);
-
-  // Whether the performance class needs to be fetched.
-  bool NeedsPerformanceClassUpdate();
+  void OnPerformanceClassAvailable();
 
   // Returns the current state. Null if the component is not available.
   const OnDeviceModelComponentState* GetState();
@@ -234,7 +232,7 @@ class OnDeviceModelComponentStateManager
 
   // Exposed internal state for chrome://on-device-internals
   struct DebugState {
-    int64_t disk_space_available_;
+    base::ByteCount disk_space_available_;
     raw_ptr<const RegistrationCriteria> criteria_;
     OnDeviceModelStatus status_;
     bool has_override_;
@@ -246,30 +244,19 @@ class OnDeviceModelComponentStateManager
     return GetDebugState();
   }
 
-  // Returns true if this is determined to be a low tier device.
-  bool IsLowTierDevice() const;
-
-  // Returns true if the device supports image input.
-  bool SupportsImageInput() const;
-  // Returns true if the device supports audio input.
-  bool SupportsAudioInput() const;
-
-  // Returns the performance hint for this device based on the supported
-  // performance hints in the manifest.
-  std::optional<proto::OnDeviceModelPerformanceHint>
-  GetSupportedPerformanceHintForDeviceFromManifest(
-      const base::Value::List* manifest_performance_hints) const;
+  PerformanceClassifier& performance_classifier() {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    return *performance_classifier_;
+  }
 
   base::WeakPtr<OnDeviceModelComponentStateManager> GetWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
   }
-
-  // Testing functionality:
-  static OnDeviceModelComponentStateManager* GetInstanceForTesting();
+  base::SafeRef<OnDeviceModelComponentStateManager> GetSafeRef() {
+    return weak_ptr_factory_.GetSafeRef();
+  }
 
  private:
-  friend class base::RefCounted<OnDeviceModelComponentStateManager>;
-
   enum class OnDeviceRegistrationDecision {
     // The component should be installed.
     kInstall,
@@ -279,35 +266,33 @@ class OnDeviceModelComponentStateManager
     kDoNotInstall,
   };
 
-  OnDeviceModelComponentStateManager(PrefService* local_state,
-                                     std::unique_ptr<Delegate> delegate);
-  ~OnDeviceModelComponentStateManager();
-
   RegistrationCriteria ComputeRegistrationCriteria(
-      int64_t disk_space_free_bytes);
+      base::ByteCount disk_space_free_bytes);
 
   DebugState GetDebugState();
 
   // Installs the component installer if it needs installed.
-  void BeginUpdateRegistration(base::OnceClosure complete);
+  void BeginUpdateRegistration();
   // Continuation of `UpdateRegistration()` after async work.
-  void CompleteUpdateRegistration(int64_t disk_space_free_bytes);
+  void CompleteUpdateRegistration(
+      std::optional<base::ByteCount> disk_space_free);
+
+  // UsageTracker::Observer:
+  void OnDeviceEligibleFeatureUsed(ModelBasedCapabilityKey feature) override;
+
+  void OnGenAILocalFoundationalModelEnterprisePolicyChanged();
 
   void NotifyStateChanged();
 
-  // Notifies the observers of the `feature` used for the first time.
-  void NotifyOnDeviceEligibleFeatureFirstUsed(ModelBasedCapabilityKey feature);
-
-  // Reads the base model spec from the component manifest and potentially
-  // filters values to make it compatible with this device.
-  const std::optional<OnDeviceBaseModelSpec> ProcessBaseModelSpecFromManifest(
-      const base::Value::Dict& manifest);
-
   raw_ptr<PrefService> local_state_ GUARDED_BY_CONTEXT(sequence_checker_);
+  base::SafeRef<PerformanceClassifier> performance_classifier_
+      GUARDED_BY_CONTEXT(sequence_checker_);
   std::unique_ptr<Delegate> delegate_ GUARDED_BY_CONTEXT(sequence_checker_);
   base::ObserverList<Observer> observers_ GUARDED_BY_CONTEXT(sequence_checker_);
   bool component_installer_registered_ GUARDED_BY_CONTEXT(sequence_checker_) =
       false;
+  PrefChangeRegistrar pref_change_registrar_
+      GUARDED_BY_CONTEXT(sequence_checker_);
 
   bool is_model_allowed_ GUARDED_BY_CONTEXT(sequence_checker_) = false;
   std::unique_ptr<OnDeviceModelComponentState> state_
@@ -316,9 +301,13 @@ class OnDeviceModelComponentStateManager
   std::unique_ptr<RegistrationCriteria> registration_criteria_
       GUARDED_BY_CONTEXT(sequence_checker_);
   // Most recently queried disk space available for model install.
-  int64_t disk_space_available_ GUARDED_BY_CONTEXT(sequence_checker_) = 0;
+  base::ByteCount disk_space_available_ GUARDED_BY_CONTEXT(sequence_checker_);
 
   SEQUENCE_CHECKER(sequence_checker_);
+  base::raw_ref<UsageTracker> usage_tracker_
+      GUARDED_BY_CONTEXT(sequence_checker_);
+  base::ScopedObservation<UsageTracker, UsageTracker::Observer>
+      usage_tracker_observation_{this};
 
   base::WeakPtrFactory<OnDeviceModelComponentStateManager> weak_ptr_factory_{
       this};
@@ -327,6 +316,10 @@ class OnDeviceModelComponentStateManager
 // State of the on-device model component.
 class OnDeviceModelComponentState {
  public:
+  OnDeviceModelComponentState(base::FilePath install_dir,
+                              base::Version component_version,
+                              OnDeviceBaseModelSpec model_spec);
+  OnDeviceModelComponentState(const OnDeviceModelComponentState&);
   ~OnDeviceModelComponentState();
 
   const base::FilePath& GetInstallDirectory() const { return install_dir_; }
@@ -338,7 +331,6 @@ class OnDeviceModelComponentState {
  private:
   friend class OnDeviceModelAdaptationLoaderTest;
 
-  OnDeviceModelComponentState();
   friend class OnDeviceModelComponentStateManager;
 
   base::FilePath install_dir_;

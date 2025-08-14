@@ -12,15 +12,18 @@
 #include "base/logging.h"
 #include "base/types/expected.h"
 #include "base/values.h"
-#include "chrome/browser/ash/crosapi/crosapi_ash.h"
-#include "chrome/browser/ash/crosapi/crosapi_manager.h"
-#include "chrome/browser/ash/crosapi/login_ash.h"
+#include "chrome/browser/ash/login/existing_user_controller.h"
+#include "chrome/browser/ash/login/signin_specifics.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/extensions/login_screen/login/errors.h"
 #include "chrome/browser/chromeos/extensions/login_screen/login/login_api_lock_handler.h"
+#include "chrome/browser/chromeos/extensions/login_screen/login/shared_session_handler.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/ash/login/login_display_host.h"
 #include "chrome/common/extensions/api/login.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/ash/components/login/auth/public/cryptohome_key_constants.h"
 #include "chromeos/ash/components/login/auth/public/key.h"
 #include "chromeos/ash/components/login/auth/public/user_context.h"
 #include "components/prefs/pref_service.h"
@@ -28,15 +31,13 @@
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
+#include "extensions/browser/event_router.h"
 #include "google_apis/gaia/gaia_id.h"
 #include "ui/base/user_activity/user_activity_detector.h"
 
 namespace extensions {
 
 namespace {
-crosapi::LoginAsh* GetLoginApi() {
-  return crosapi::CrosapiManager::Get()->crosapi_ash()->login_ash();
-}
 
 base::expected<void, std::string> LockSession(
     std::optional<user_manager::UserType> user_type) {
@@ -101,6 +102,47 @@ void UnlockSession(
       }).Then(std::move(callback)));
 }
 
+base::OnceCallback<void(const std::optional<std::string>&)>
+AdaptOptionalErrorCallback(
+    base::OnceCallback<void(base::expected<void, std::string>)> callback) {
+  return base::BindOnce([](const std::optional<std::string>& result)
+                            -> base::expected<void, std::string> {
+           if (result.has_value()) {
+             return base::unexpected(result.value());
+           }
+           return base::ok();
+         })
+      .Then(std::move(callback));
+}
+
+base::expected<void, std::string> CanLaunchSession() {
+  if (session_manager::SessionManager::Get()->session_state() !=
+      session_manager::SessionState::LOGIN_PRIMARY) {
+    return base::unexpected(
+        extensions::login_api_errors::kAlreadyActiveSession);
+  }
+
+  auto* existing_user_controller =
+      ash::ExistingUserController::current_controller();
+  if (existing_user_controller->IsSigninInProgress()) {
+    return base::unexpected(
+        extensions::login_api_errors::kAnotherLoginAttemptInProgress);
+  }
+
+  return base::ok();
+}
+
+user_manager::User* FindPublicAccountUser() {
+  for (user_manager::User* user :
+       user_manager::UserManager::Get()->GetPersistedUsers()) {
+    CHECK(user);
+    if (user->GetType() == user_manager::UserType::kPublicAccount) {
+      return user;
+    }
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 namespace internal {
@@ -113,20 +155,11 @@ void LoginAsyncFunctionBase::OnResult(
                              : Error(std::move(result.error())));
 }
 
-}  // namespace internal
-
-ExtensionFunctionWithOptionalErrorResult::
-    ~ExtensionFunctionWithOptionalErrorResult() = default;
-
-void ExtensionFunctionWithOptionalErrorResult::OnResult(
-    const std::optional<std::string>& error) {
-  if (error) {
-    Respond(Error(*error));
-    return;
-  }
-
-  return Respond(NoArguments());
+ExtensionFunction::ResponseAction LoginAsyncFunctionBase::MaybeResponded() {
+  return did_respond() ? AlreadyResponded() : RespondLater();
 }
+
+}  // namespace internal
 
 LoginLaunchManagedGuestSessionFunction::
     LoginLaunchManagedGuestSessionFunction() = default;
@@ -139,15 +172,30 @@ LoginLaunchManagedGuestSessionFunction::Run() {
       api::login::LaunchManagedGuestSession::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(parameters);
 
-  auto callback =
-      base::BindOnce(&LoginLaunchManagedGuestSessionFunction::OnResult, this);
+  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
 
-  std::optional<std::string> password;
-  if (parameters->password) {
-    password = std::move(*parameters->password);
+  if (auto can_launch = CanLaunchSession(); !can_launch.has_value()) {
+    return RespondNow(Error(std::move(can_launch.error())));
   }
-  GetLoginApi()->LaunchManagedGuestSession(password, std::move(callback));
-  return did_respond() ? AlreadyResponded() : RespondLater();
+
+  const user_manager::User* user = FindPublicAccountUser();
+  if (!user) {
+    return RespondNow(
+        Error(extensions::login_api_errors::kNoManagedGuestSessionAccounts));
+  }
+
+  ash::UserContext context(user_manager::UserType::kPublicAccount,
+                           user->GetAccountId());
+  if (parameters->password) {
+    context.SetKey(ash::Key(*parameters->password));
+    context.SetSamlPassword(ash::SamlPassword{*parameters->password});
+    context.SetCanLockManagedGuestSession(true);
+  }
+
+  auto* existing_user_controller =
+      ash::ExistingUserController::current_controller();
+  existing_user_controller->Login(context, ash::SigninSpecifics());
+  return RespondNow(NoArguments());
 }
 
 LoginExitCurrentSessionFunction::LoginExitCurrentSessionFunction() = default;
@@ -211,7 +259,7 @@ LoginUnlockManagedGuestSessionFunction::Run() {
   UnlockSession(
       parameters->password, user_manager::UserType::kPublicAccount,
       base::BindOnce(&LoginUnlockManagedGuestSessionFunction::OnResult, this));
-  return did_respond() ? AlreadyResponded() : RespondLater();
+  return MaybeResponded();
 }
 
 LoginLockCurrentSessionFunction::LoginLockCurrentSessionFunction() = default;
@@ -235,7 +283,7 @@ ExtensionFunction::ResponseAction LoginUnlockCurrentSessionFunction::Run() {
   UnlockSession(
       parameters->password, std::nullopt,
       base::BindOnce(&LoginUnlockCurrentSessionFunction::OnResult, this));
-  return did_respond() ? AlreadyResponded() : RespondLater();
+  return MaybeResponded();
 }
 
 LoginLaunchSamlUserSessionFunction::LoginLaunchSamlUserSessionFunction() =
@@ -247,14 +295,26 @@ ExtensionFunction::ResponseAction LoginLaunchSamlUserSessionFunction::Run() {
   auto parameters = api::login::LaunchSamlUserSession::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(parameters);
 
-  auto callback =
-      base::BindOnce(&LoginLaunchSamlUserSessionFunction::OnResult, this);
+  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
+  if (auto can_launch = CanLaunchSession(); !can_launch.has_value()) {
+    return RespondNow(Error(std::move(can_launch.error())));
+  }
 
-  GetLoginApi()->LaunchSamlUserSession(
-      parameters->properties.email, GaiaId(parameters->properties.gaia_id),
-      parameters->properties.password, parameters->properties.oauth_code,
-      std::move(callback));
-  return RespondLater();
+  ash::UserContext context(
+      user_manager::UserType::kRegular,
+      AccountId::FromUserEmailGaiaId(parameters->properties.email,
+                                     GaiaId(parameters->properties.gaia_id)));
+  ash::Key key(parameters->properties.password);
+  key.SetLabel(ash::kCryptohomeGaiaKeyLabel);
+  context.SetKey(key);
+  context.SetSamlPassword(ash::SamlPassword{parameters->properties.password});
+  context.SetPasswordKey(ash::Key(parameters->properties.password));
+  context.SetAuthFlow(ash::UserContext::AUTH_FLOW_GAIA_WITH_SAML);
+  context.SetIsUsingSamlPrincipalsApi(false);
+  context.SetAuthCode(parameters->properties.oauth_code);
+
+  ash::LoginDisplayHost::default_host()->CompleteLogin(context);
+  return RespondNow(NoArguments());
 }
 
 LoginLaunchSharedManagedGuestSessionFunction::
@@ -268,12 +328,13 @@ LoginLaunchSharedManagedGuestSessionFunction::Run() {
       api::login::LaunchSharedManagedGuestSession::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(parameters);
 
-  auto callback = base::BindOnce(
-      &LoginLaunchSharedManagedGuestSessionFunction::OnResult, this);
+  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
 
-  GetLoginApi()->LaunchSharedManagedGuestSession(parameters->password,
-                                                 std::move(callback));
-  return did_respond() ? AlreadyResponded() : RespondLater();
+  std::optional<std::string> result =
+      chromeos::SharedSessionHandler::Get()->LaunchSharedManagedGuestSession(
+          parameters->password);
+  return RespondNow(!result.has_value() ? NoArguments()
+                                        : Error(std::move(result.value())));
 }
 
 LoginEnterSharedSessionFunction::LoginEnterSharedSessionFunction() = default;
@@ -283,11 +344,13 @@ ExtensionFunction::ResponseAction LoginEnterSharedSessionFunction::Run() {
   auto parameters = api::login::EnterSharedSession::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(parameters);
 
-  auto callback =
-      base::BindOnce(&LoginEnterSharedSessionFunction::OnResult, this);
+  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
 
-  GetLoginApi()->EnterSharedSession(parameters->password, std::move(callback));
-  return did_respond() ? AlreadyResponded() : RespondLater();
+  chromeos::SharedSessionHandler::Get()->EnterSharedSession(
+      parameters->password,
+      AdaptOptionalErrorCallback(
+          base::BindOnce(&LoginEnterSharedSessionFunction::OnResult, this)));
+  return MaybeResponded();
 }
 
 LoginUnlockSharedSessionFunction::LoginUnlockSharedSessionFunction() = default;
@@ -297,22 +360,32 @@ ExtensionFunction::ResponseAction LoginUnlockSharedSessionFunction::Run() {
   auto parameters = api::login::EnterSharedSession::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(parameters);
 
-  auto callback =
-      base::BindOnce(&LoginUnlockSharedSessionFunction::OnResult, this);
+  ui::UserActivityDetector::Get()->HandleExternalUserActivity();
 
-  GetLoginApi()->UnlockSharedSession(parameters->password, std::move(callback));
-  return did_respond() ? AlreadyResponded() : RespondLater();
+  const auto* user_manager = user_manager::UserManager::Get();
+  const user_manager::User* active_user = user_manager->GetActiveUser();
+  if (!active_user ||
+      active_user->GetType() != user_manager::UserType::kPublicAccount ||
+      !active_user->CanLock()) {
+    return RespondNow(
+        Error(extensions::login_api_errors::kNoUnlockableSession));
+  }
+
+  chromeos::SharedSessionHandler::Get()->UnlockSharedSession(
+      parameters->password,
+      AdaptOptionalErrorCallback(
+          base::BindOnce(&LoginUnlockSharedSessionFunction::OnResult, this)));
+  return MaybeResponded();
 }
 
 LoginEndSharedSessionFunction::LoginEndSharedSessionFunction() = default;
 LoginEndSharedSessionFunction::~LoginEndSharedSessionFunction() = default;
 
 ExtensionFunction::ResponseAction LoginEndSharedSessionFunction::Run() {
-  auto callback =
-      base::BindOnce(&LoginEndSharedSessionFunction::OnResult, this);
-
-  GetLoginApi()->EndSharedSession(std::move(callback));
-  return did_respond() ? AlreadyResponded() : RespondLater();
+  chromeos::SharedSessionHandler::Get()->EndSharedSession(
+      AdaptOptionalErrorCallback(
+          base::BindOnce(&LoginEndSharedSessionFunction::OnResult, this)));
+  return MaybeResponded();
 }
 
 LoginSetDataForNextLoginAttemptFunction::
@@ -339,7 +412,13 @@ LoginRequestExternalLogoutFunction::~LoginRequestExternalLogoutFunction() =
     default;
 
 ExtensionFunction::ResponseAction LoginRequestExternalLogoutFunction::Run() {
-  GetLoginApi()->NotifyOnRequestExternalLogout();
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  for (Profile* profile : profile_manager->GetLoadedProfiles()) {
+    EventRouter::Get(profile)->BroadcastEvent(
+        std::make_unique<Event>(events::LOGIN_ON_REQUEST_EXTERNAL_LOGOUT,
+                                api::login::OnRequestExternalLogout::kEventName,
+                                api::login::OnRequestExternalLogout::Create()));
+  }
   return RespondNow(NoArguments());
 }
 
@@ -349,7 +428,13 @@ LoginNotifyExternalLogoutDoneFunction::
     ~LoginNotifyExternalLogoutDoneFunction() = default;
 
 ExtensionFunction::ResponseAction LoginNotifyExternalLogoutDoneFunction::Run() {
-  GetLoginApi()->NotifyOnExternalLogoutDone();
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  for (Profile* profile : profile_manager->GetLoadedProfiles()) {
+    EventRouter::Get(profile)->BroadcastEvent(
+        std::make_unique<Event>(events::LOGIN_ON_EXTERNAL_LOGOUT_DONE,
+                                api::login::OnExternalLogoutDone::kEventName,
+                                api::login::OnExternalLogoutDone::Create()));
+  }
   return RespondNow(NoArguments());
 }
 

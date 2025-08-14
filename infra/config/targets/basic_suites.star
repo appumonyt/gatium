@@ -9,7 +9,7 @@
 # suite is no longer needed in //testing/buildbot, targets.bundle (which does
 # not yet exist) can be used for grouping tests in a more flexible manner.
 
-load("//lib/targets.star", "targets")
+load("@chromium-luci//targets.star", "targets")
 
 # TODO(gbeaty) - Make the resultdb information for tests using the same binaries
 # consistent and move the information onto the binaries
@@ -26,7 +26,7 @@ targets.legacy_basic_suite(
 targets.legacy_basic_suite(
     name = "blink_unittests_suite",
     tests = {
-        "blink_unit_tests": targets.legacy_test_config(),
+        "blink_unittests": targets.legacy_test_config(),
     },
 )
 
@@ -428,6 +428,11 @@ targets.legacy_basic_suite(
         "blink_common_unittests": targets.legacy_test_config(),
         "blink_heap_unittests": targets.legacy_test_config(),
         "blink_platform_unittests": targets.legacy_test_config(),
+        "blink_unittests": targets.legacy_test_config(
+            android_swarming = targets.swarming(
+                shards = 6,
+            ),
+        ),
         "boringssl_crypto_tests": targets.legacy_test_config(),
         "boringssl_ssl_tests": targets.legacy_test_config(),
         "capture_unittests": targets.legacy_test_config(
@@ -496,11 +501,6 @@ targets.legacy_basic_suite(
         "ui_base_unittests": targets.legacy_test_config(),
         "ui_touch_selection_unittests": targets.legacy_test_config(),
         "url_unittests": targets.legacy_test_config(),
-        "webkit_unit_tests": targets.legacy_test_config(
-            android_swarming = targets.swarming(
-                shards = 6,
-            ),
-        ),
         "wtf_unittests": targets.legacy_test_config(),
         "zlib_unittests": targets.legacy_test_config(),
     },
@@ -1423,11 +1423,6 @@ targets.legacy_basic_suite(
                 "--use-xvfb",
             ],
         ),
-        "optimization_guide_browser_tests": targets.legacy_test_config(
-            linux_args = [
-                "--use-xvfb",
-            ],
-        ),
         "optimization_guide_unittests": targets.legacy_test_config(
             linux_args = [
                 "--use-xvfb",
@@ -1453,6 +1448,24 @@ targets.legacy_basic_suite(
             ],
             linux_args = [
                 "--no-xvfb",
+            ],
+        ),
+    },
+)
+
+# TODO: crbug.com/433525769 - When builders using this suite are all migrated to
+# starlark, this should be combined with optimization_guide_gpu_gtests.
+targets.legacy_basic_suite(
+    name = "optimization_guide_gpu_isolated_scripts",
+    tests = {
+        "blink_wpt_tests": targets.legacy_test_config(
+            args = [
+                # Ensure that the platform-specific backends are disabled so
+                # that TFLite is used.
+                "--additional-driver-flag=--disable-features=WebNNCoreML,WebNNDirectML,WebNNOnnxRuntime",
+                "--ignore-default-expectations",
+                "--additional-expectations=../../third_party/blink/web_tests/OptimizationGuideExpectations",
+                "--test-launcher-filter-file=../../third_party/blink/web_tests/TestLists/optimization_guide.filter",
             ],
         ),
     },

@@ -458,12 +458,6 @@ bool HTMLDialogElement::IsKeyboardFocusableSlow(
   if (!IsFocusable(update_behavior)) {
     return false;
   }
-  // Interest invoker targets with partial interest aren't keyboard focusable.
-  if (IsInPartialInterestPopover()) {
-    CHECK(RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled(
-        GetDocument().GetExecutionContext()));
-    return false;
-  }
   // This handles cases such as <dialog tabindex=0>, <dialog contenteditable>,
   // etc.
   return Element::SupportsFocus(update_behavior) !=
@@ -731,9 +725,11 @@ void HTMLDialogElement::Trace(Visitor* visitor) const {
 void HTMLDialogElement::AttributeChanged(
     const AttributeModificationParams& params) {
   HTMLElement::AttributeChanged(params);
-  if (params.name == html_names::kClosedbyAttr && IsOpenAndActive() &&
-      params.old_value != params.new_value) {
-    SetCloseWatcherEnabledState();
+  if (params.name == html_names::kClosedbyAttr) {
+    UseCounter::CountWebDXFeature(GetDocument(), WebDXFeature::kDialogClosedby);
+    if (IsOpenAndActive() && params.old_value != params.new_value) {
+      SetCloseWatcherEnabledState();
+    }
   }
   if (params.name == html_names::kOpenAttr &&
       params.old_value != params.new_value) {

@@ -33,13 +33,10 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.ui.native_page.NativePage;
 import org.chromium.components.browser_ui.display_cutout.DisplayCutoutController;
 import org.chromium.components.browser_ui.display_cutout.DisplayCutoutController.SafeAreaInsetsTracker;
-import org.chromium.components.browser_ui.edge_to_edge.EdgeToEdgeManager.BackupNavbarInsetsCallSite;
 import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.display.DisplayUtil;
-import org.chromium.ui.insets.InsetObserver;
-import org.chromium.ui.insets.WindowInsetsUtils;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -59,12 +56,8 @@ public class EdgeToEdgeUtils {
     private static final String ELIGIBLE_HISTOGRAM = "Android.EdgeToEdge.Eligible";
     private static final String INELIGIBLE_REASON_HISTOGRAM =
             "Android.EdgeToEdge.IneligibilityReason";
-    private static final String PARAM_SAFE_AREA_CONSTRAINT_SCROLLABLE_WHEN_STACKING =
-            "scrollable_when_stacking";
     private static final String MISSING_NAVBAR_INSETS_HISTOGRAM =
             "Android.EdgeToEdge.MissingNavbarInsets2";
-    private static final String BACKUP_NAVBAR_INSETS_HISTOGRAM_BASE =
-            "Android.EdgeToEdge.BackupNavbarInsets.";
 
     /** The reason of why the current session is not eligible for edge to edge. */
     @IntDef({
@@ -106,27 +99,6 @@ public class EdgeToEdgeUtils {
         int NUM_ENTRIES = 5;
     }
 
-    /** The source of insets used as a backup for missing navbar insets. */
-    // These values are persisted to logs. Entries should not be renumbered and
-    // numeric values should never be reused.
-    @IntDef({
-        BackupNavbarInsetsSource.NO_APPLICABLE_BACKUP,
-        BackupNavbarInsetsSource.TAPPABLE_ELEMENT,
-        BackupNavbarInsetsSource.MANDATORY_SYSTEM_GESTURES,
-        BackupNavbarInsetsSource.FILTERED_EXPLICITLY_DISABLED,
-        BackupNavbarInsetsSource.FILTERED_WEAKER_SIGNALS,
-        BackupNavbarInsetsSource.NUM_ENTRIES
-    })
-    public @interface BackupNavbarInsetsSource {
-        int NO_APPLICABLE_BACKUP = 0;
-        int TAPPABLE_ELEMENT = 1;
-        int MANDATORY_SYSTEM_GESTURES = 2;
-        int FILTERED_EXPLICITLY_DISABLED = 3;
-        int FILTERED_WEAKER_SIGNALS = 4;
-
-        int NUM_ENTRIES = 5;
-    }
-
     /**
      * Whether the draw edge to edge infrastructure is on. When this is enabled, Chrome will start
      * drawing edge to edge on start up.
@@ -152,7 +124,7 @@ public class EdgeToEdgeUtils {
     }
 
     /** Whether it is allowed to use other insets as a backup for missing navigation bar insets. */
-    static boolean isUseBackupNavbarInsetsEnabled() {
+    public static boolean isUseBackupNavbarInsetsEnabled() {
         return ChromeFeatureList.sEdgeToEdgeUseBackupNavbarInsets.isEnabled();
     }
 
@@ -191,15 +163,14 @@ public class EdgeToEdgeUtils {
      * This is a sensitive check for whether all insets indicate or imply that the device is in
      * gesture navigation mode, and not tappable (3-button) navigation mode.
      *
-     * @param insetObserver The InsetObserver in the current activity, used to retrieve the last
-     *     seen root view window insets.
+     * @param insets The window insets to check for signals indicating gesture navigation.
      * @return Whether all insets indicate the device is in gesture navigation mode.
      */
-    public static boolean doAllInsetsIndicateGestureNavigation(InsetObserver insetObserver) {
-        WindowInsetsCompat rootInsets = insetObserver.getLastRawWindowInsets();
-        return rootInsets != null
-                && isInGestureNavigationMode(rootInsets)
-                && !hasTappableBarIgnoringTop(() -> rootInsets);
+    public static boolean doAllInsetsIndicateGestureNavigation(
+            @Nullable WindowInsetsCompat insets) {
+        return insets != null
+                && isInGestureNavigationMode(insets)
+                && !hasTappableBarIgnoringTop(() -> insets);
     }
 
     /** Whether the edge-to-edge feature is enabled on tablet. */
@@ -236,14 +207,6 @@ public class EdgeToEdgeUtils {
         return DisplayUtil.getCurrentSmallestScreenWidth(context) < widthThreshold;
     }
 
-    /**
-     * Whether drawing the website that has `viewport-fit=cover` fully edge to edge, removing the
-     * bottom chin.
-     */
-    public static boolean isEdgeToEdgeWebOptInEnabled() {
-        return isBottomChinFeatureEnabled() && ChromeFeatureList.sEdgeToEdgeWebOptIn.isEnabled();
-    }
-
     /** Whether edge-to-edge should be enabled everywhere. */
     @OptIn(markerClass = BuildCompat.PrereleaseSdkCheck.class)
     public static boolean isEdgeToEdgeEverywhereEnabled() {
@@ -274,8 +237,7 @@ public class EdgeToEdgeUtils {
 
     /** Whether key native pages should draw to edge. */
     public static boolean isDrawKeyNativePageToEdgeEnabled() {
-        return isBottomChinFeatureEnabled()
-                && ChromeFeatureList.sDrawKeyNativeEdgeToEdge.isEnabled();
+        return isBottomChinFeatureEnabled();
     }
 
     /**
@@ -283,17 +245,7 @@ public class EdgeToEdgeUtils {
      * isEdgeToEdgeBottomChinEnabled}.
      */
     public static boolean isSafeAreaConstraintEnabled() {
-        return isBottomChinFeatureEnabled()
-                && ChromeFeatureList.sEdgeToEdgeSafeAreaConstraint.isEnabled();
-    }
-
-    /** Whether the bottom chin should ignore the constraint when stacking with other layers. */
-    public static boolean isConstraintBottomChinScrollableWhenStacking() {
-        return isSafeAreaConstraintEnabled()
-                && ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
-                        ChromeFeatureList.EDGE_TO_EDGE_SAFE_AREA_CONSTRAINT,
-                        PARAM_SAFE_AREA_CONSTRAINT_SCROLLABLE_WHEN_STACKING,
-                        true);
+        return isBottomChinFeatureEnabled();
     }
 
     /**
@@ -365,9 +317,7 @@ public class EdgeToEdgeUtils {
             boolean isPageOptedIntoEdgeToEdge, @LayoutType int layoutType, int bottomInset) {
         return isPageOptedIntoEdgeToEdge
                 || (isBottomChinFeatureEnabled() && isBottomChinAllowed(layoutType, bottomInset))
-                || (isDrawKeyNativePageToEdgeEnabled()
-                        && layoutType == LayoutType.TAB_SWITCHER
-                        && !ChromeFeatureList.sDrawKeyNativeEdgeToEdgeDisableHubE2e.getValue());
+                || (layoutType == LayoutType.TAB_SWITCHER);
     }
 
     /**
@@ -402,7 +352,7 @@ public class EdgeToEdgeUtils {
         if (sAlwaysDrawWebEdgeToEdgeForTesting) {
             return true;
         }
-        return isEdgeToEdgeWebOptInEnabled() && getWasViewportFitCover(tab);
+        return getWasViewportFitCover(tab);
     }
 
     /**
@@ -419,9 +369,6 @@ public class EdgeToEdgeUtils {
         }
         if (tab.shouldEnableEmbeddedMediaExperience()) {
             return isDrawKeyNativePageToEdgeEnabled();
-        }
-        if (!isEdgeToEdgeWebOptInEnabled()) {
-            return false;
         }
         return value == ViewportFit.COVER || value == ViewportFit.COVER_FORCED_BY_USER_AGENT;
     }
@@ -521,83 +468,6 @@ public class EdgeToEdgeUtils {
                 || tappableElementInsets.right > 0;
     }
 
-    /** Records the backup navbar insets histogram for the given callsite. */
-    private static void recordBackupNavbarInsetsHistogram(
-            @BackupNavbarInsetsCallSite String callSite, @BackupNavbarInsetsSource int source) {
-        RecordHistogram.recordEnumeratedHistogram(
-                BACKUP_NAVBAR_INSETS_HISTOGRAM_BASE + callSite,
-                source,
-                BackupNavbarInsetsSource.NUM_ENTRIES);
-    }
-
-    /**
-     * Returns backup insets for the navigation bars, if possible. These backup insets will be
-     * informed by other insets, such as the tappableElements insets or the system gestures insets.
-     * This will return null if no backup insets are appropriate given the current window insets.
-     *
-     * @param hasSeenNonZeroNavigationBarInsets Whether a non-zero navigation bar has been seen.
-     * @param windowInsets The window insets containing the most recent insets from the window.
-     * @param callSite The caller requesting backup insets, used for metrics.
-     */
-    public static @Nullable Insets getBackupNavbarInsets(
-            boolean hasSeenNonZeroNavigationBarInsets,
-            WindowInsetsCompat windowInsets,
-            @BackupNavbarInsetsCallSite String callSite) {
-        if (!isUseBackupNavbarInsetsEnabled()) return null;
-        if (!EdgeToEdgeFieldTrialImpl.getBackupNavbarInsetsOverrides()
-                .isEnabledForManufacturerVersion()) {
-            recordBackupNavbarInsetsHistogram(
-                    callSite, BackupNavbarInsetsSource.FILTERED_EXPLICITLY_DISABLED);
-            return null;
-        }
-
-        // Check clearer signals, like the tappable element, first.
-
-        Insets tappableInsets = windowInsets.getInsets(WindowInsetsCompat.Type.tappableElement());
-        // A single non-zero tappable inset is most likely the navigation bar, even if the
-        // navigation bar insets are missing for some reason. Tappable elements are strong
-        // signals for the presence of tappable system bars, and are used to distinguish between
-        // gesture and tappable navigation, and thus should be a reliable signal for detecting a
-        // navigation bar, even if the navigation bar inset is missing for some reason.
-        // The top inset should be ignored, as that would correspond to the status bar.
-        if (WindowInsetsUtils.hasOneNonZeroInsetExcludingTop(tappableInsets)
-                && ChromeFeatureList.sEdgeToEdgeUseBackupNavbarInsetsUseTappable.getValue()) {
-            recordBackupNavbarInsetsHistogram(callSite, BackupNavbarInsetsSource.TAPPABLE_ELEMENT);
-            return Insets.of(tappableInsets.left, 0, tappableInsets.right, tappableInsets.bottom);
-        }
-
-        // Restrict less clear signals, like the system gestures, if non-zero navigation bar insets
-        // have previously been seen during the session for this Activity / window.
-        if (hasSeenNonZeroNavigationBarInsets) {
-            recordBackupNavbarInsetsHistogram(
-                    callSite, BackupNavbarInsetsSource.FILTERED_WEAKER_SIGNALS);
-            return null;
-        }
-
-        Insets mandatorySystemGesturesInsets =
-                windowInsets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures());
-        // A single non-zero mandatory system gestures inset likely indicates the navigation bar.
-        // This is not as clear a signal as the tappable element, though, since mandatory system
-        // gestures represent the area of a window where system gestures have priority and may
-        // consume touch input, but they aren't intended to be used by the app for padding. Thus,
-        // these mandatory system gestures only imply the presence of a navigation bar, they don't
-        // definitively indicate it. Note, however, that the mandatory system gestures are not
-        // always consistent with the system bar insets - the gesture insets may exceed the
-        // typical navigation bar insets, leading to somewhat different UX.
-        if (WindowInsetsUtils.hasOneNonZeroInsetExcludingTop(mandatorySystemGesturesInsets)
-                && ChromeFeatureList.sEdgeToEdgeUseBackupNavbarInsetsUseGestures.getValue()) {
-            recordBackupNavbarInsetsHistogram(
-                    callSite, BackupNavbarInsetsSource.MANDATORY_SYSTEM_GESTURES);
-            return Insets.of(
-                    mandatorySystemGesturesInsets.left,
-                    0,
-                    mandatorySystemGesturesInsets.right,
-                    mandatorySystemGesturesInsets.bottom);
-        }
-        recordBackupNavbarInsetsHistogram(callSite, BackupNavbarInsetsSource.NO_APPLICABLE_BACKUP);
-        return null;
-    }
-
     /**
      * Returns whether the given Tab has a web page that was already rendered with
      * viewport-fit=cover.
@@ -612,11 +482,6 @@ public class EdgeToEdgeUtils {
     public static void setAlwaysDrawWebEdgeToEdgeForTesting(boolean drawWebEdgeToEdge) {
         sAlwaysDrawWebEdgeToEdgeForTesting = drawWebEdgeToEdge;
         ResettersForTesting.register(() -> sAlwaysDrawWebEdgeToEdgeForTesting = false);
-    }
-
-    /** Whether push safe-area-insets-bottom to pages that's not using viewport-fit=cover. */
-    public static boolean pushSafeAreaInsetsForNonOptInPages() {
-        return ChromeFeatureList.sDynamicSafeAreaInsets.isEnabled();
     }
 
     public static void setObservedTappableNavigationBarForTesting(boolean observed) {

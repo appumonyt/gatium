@@ -71,10 +71,6 @@
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
-namespace WTF {
-class TextPosition;
-}  // namespace WTF
-
 namespace blink {
 
 class AnchorEvaluator;
@@ -87,7 +83,6 @@ class CSSPropertyValueSet;
 class CSSStyleSheet;
 class CSSValue;
 class Document;
-class DocumentStyleSheetCollection;
 class ElementRuleCollector;
 class Font;
 class FontSelector;
@@ -97,7 +92,6 @@ class MediaQuerySet;
 class Node;
 class ReferenceFilterOperation;
 class RuleFeatureSet;
-class ShadowTreeStyleSheetCollection;
 class DocumentStyleEnvironmentVariables;
 class CascadeLayerMap;
 class SpaceSplitString;
@@ -112,7 +106,7 @@ class StyleSheet;
 class StyleSheetContents;
 class StyleInitialData;
 class TextTrack;
-class TreeScopeStyleSheetCollection;
+class StyleSheetCollection;
 class ViewportStyleResolver;
 class SelectorFilter;
 struct LogicalSize;
@@ -297,30 +291,13 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
     return global_rule_set_->DocumentRulesSelectorsRuleSet();
   }
 
-  // Helper class for making sure RuleSets that are ensured when collecting
-  // sheets for a TreeScope are not shared between two equal sheets which
-  // contain @layer rules since anonymous layers need to be unique.
-  class RuleSetScope {
-    STACK_ALLOCATED();
+  RuleSet* RuleSetForSheet(CSSStyleSheet&, const MixinMap& mixins) const;
 
-   public:
-    RuleSetScope() = default;
-
-    // Ensure a RuleSet for the passed in css_sheet
-    RuleSet* RuleSetForSheet(StyleEngine& engine, CSSStyleSheet* css_sheet);
-
-   private:
-    // Keep track of ensured RuleSets with @layer rules to detect
-    // StyleSheetContents sharing.
-    HeapHashSet<Member<const RuleSet>> layer_rule_sets_;
-  };
-
-  RuleSet* RuleSetForSheet(CSSStyleSheet&);
   // See StyleSheetContents::CreateUnconnectedRuleSet.
   //
   // Note that this can return nullptr when the associated media query
   // does not match.
-  RuleSet* CreateUnconnectedRuleSet(CSSStyleSheet&);
+  RuleSet* CreateUnconnectedRuleSet(CSSStyleSheet&, const MixinMap& mixins);
 
   // A functional @media query is evaluated as a part of some function
   // during value resolution. This is different from regular media queries,
@@ -493,7 +470,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   CSSStyleSheet* CreateSheet(Element&,
                              const String& text,
-                             WTF::TextPosition start_position,
+                             TextPosition start_position,
                              PendingSheetType type,
                              RenderBlockingBehavior render_blocking_behavior);
 
@@ -808,8 +785,8 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
            dirty_tree_scopes_.size() || user_style_dirty_;
   }
 
-  TreeScopeStyleSheetCollection& EnsureStyleSheetCollectionFor(TreeScope&);
-  TreeScopeStyleSheetCollection* StyleSheetCollectionFor(TreeScope&);
+  StyleSheetCollection& EnsureStyleSheetCollectionFor(TreeScope&);
+  StyleSheetCollection* StyleSheetCollectionFor(TreeScope&);
   bool ShouldUpdateDocumentStyleSheetCollection() const;
   bool ShouldUpdateShadowTreeStyleSheetCollection() const;
 
@@ -840,22 +817,23 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   CSSStyleSheet* ParseSheet(Element&,
                             const String& text,
-                            WTF::TextPosition start_position,
+                            TextPosition start_position,
                             RenderBlockingBehavior render_blocking_behavior);
 
-  const DocumentStyleSheetCollection& GetDocumentStyleSheetCollection() const {
+  const StyleSheetCollection& GetDocumentStyleSheetCollection() const {
     DCHECK(document_style_sheet_collection_);
     return *document_style_sheet_collection_;
   }
 
-  DocumentStyleSheetCollection& GetDocumentStyleSheetCollection() {
+  StyleSheetCollection& GetDocumentStyleSheetCollection() {
     DCHECK(document_style_sheet_collection_);
     return *document_style_sheet_collection_;
   }
 
-  void UpdateActiveStyleSheetsInShadow(
+  void PrepareUpdateActiveStyleSheetsInShadow(
       TreeScope*,
-      UnorderedTreeScopeSet& tree_scopes_removed);
+      UnorderedTreeScopeSet& tree_scopes_removed,
+      const MediaQueryEvaluator& medium);
 
   bool ShouldSkipInvalidationFor(const Element&) const;
   bool IsSubtreeAndSiblingsStyleDirty(const Element&) const;
@@ -884,7 +862,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
       global_rule_set_->Update(GetDocument());
     }
   }
-  const MediaQueryEvaluator& EnsureMediaQueryEvaluator();
+  const MediaQueryEvaluator& EnsureMediaQueryEvaluator() const;
   void UpdateStyleSheetList(TreeScope&);
 
   // Returns true if any @font-face rules are added or removed.
@@ -979,6 +957,8 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   // See EvaluateFunctionalMediaQuery
   void InvalidateFunctionalMediaDependentStylesIfNeeded();
 
+  MixinMap EffectiveMixinsForTreeScope(TreeScope& tree_scope);
+
   Member<Document> document_;
 
   // Tree of style containment scopes. Is in charge of the document's quotes.
@@ -1001,13 +981,12 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   // Stylesheets inserted by DevTools.
   HeapVector<Member<CSSStyleSheet>> inspector_style_sheet_list_;
 
-  Member<DocumentStyleSheetCollection> document_style_sheet_collection_;
+  Member<StyleSheetCollection> document_style_sheet_collection_;
 
   Member<StyleRuleUsageTracker> tracker_;
 
   using StyleSheetCollectionMap =
-      HeapHashMap<WeakMember<TreeScope>,
-                  Member<ShadowTreeStyleSheetCollection>>;
+      HeapHashMap<WeakMember<TreeScope>, Member<StyleSheetCollection>>;
   StyleSheetCollectionMap style_sheet_collection_map_;
 
   bool document_scope_dirty_{true};
@@ -1089,7 +1068,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   Member<StyleResolver> resolver_;
   Member<ViewportStyleResolver> viewport_resolver_;
-  Member<MediaQueryEvaluator> media_query_evaluator_;
+  mutable Member<MediaQueryEvaluator> media_query_evaluator_;
   Member<CSSGlobalRuleSet> global_rule_set_;
 
   PendingInvalidations pending_invalidations_;

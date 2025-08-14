@@ -48,13 +48,13 @@ import org.chromium.chrome.browser.tab_ui.TabContentManagerThumbnailProvider;
 import org.chromium.chrome.browser.tabmodel.TabGroupColorUtils;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tasks.tab_management.ColorPickerCoordinator.ColorPickerLayoutType;
-import org.chromium.chrome.browser.tasks.tab_management.MessageService.MessageType;
 import org.chromium.chrome.browser.tasks.tab_management.TabGridDialogMediator.AnimationSourceViewProvider;
 import org.chromium.chrome.browser.tasks.tab_management.TabListCoordinator.TabListMode;
 import org.chromium.chrome.browser.tasks.tab_management.TabListEditorCoordinator.CreationMode;
 import org.chromium.chrome.browser.tasks.tab_management.TabListEditorCoordinator.TabListEditorController;
 import org.chromium.chrome.browser.tasks.tab_management.TabListMediator.GridCardOnClickListenerProvider;
 import org.chromium.chrome.browser.tasks.tab_management.TabProperties.UiType;
+import org.chromium.chrome.browser.tasks.tab_management.TabSwitcherMessageManager.MessageType;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiMetricsHelper.TabGroupColorChangeActionType;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.undo_tab_close_snackbar.UndoBarThrottle;
@@ -254,11 +254,12 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
                             /* emptySubheadingStringResId= */ Resources.ID_NULL,
                             /* onTabGroupCreation= */ null,
                             /* allowDragAndDrop= */ true,
-                            /* tabSwitcherDragHandler= */ null);
+                            /* tabSwitcherDragHandler= */ null,
+                            /* undoBarExplicitTrigger= */ null);
             mTabListCoordinator.setOnLongPressTabItemEventListener(mMediator);
             mTabListCoordinator.registerItemType(
-                    UiType.MESSAGE,
-                    new LayoutViewBuilder(R.layout.tab_grid_message_card_item),
+                    UiType.COLLABORATION_ACTIVITY_MESSAGE,
+                    new LayoutViewBuilder<>(R.layout.tab_grid_message_card_item),
                     MessageCardViewBinder::bind);
 
             mTabListOnScrollListener
@@ -364,7 +365,9 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
                             // Parent container handles desktop window state.
                             /* desktopWindowStateManager= */ null,
                             /* edgeToEdgeSupplier= */ null,
-                            CreationMode.DIALOG);
+                            CreationMode.DIALOG,
+                            /* undoBarExplicitTrigger= */ null,
+                            /* componentName= */ null);
         }
 
         return mTabListEditorCoordinator.getController();
@@ -585,12 +588,14 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
 
     @Override
     public void addMessageCardItem(int position, PropertyModel messageCardModel) {
-        mTabListCoordinator.addSpecialListItem(position, UiType.MESSAGE, messageCardModel);
+        mTabListCoordinator.addSpecialListItem(
+                position, UiType.COLLABORATION_ACTIVITY_MESSAGE, messageCardModel);
     }
 
     @Override
     public void removeMessageCardItem(@MessageType int messageType) {
-        mTabListCoordinator.removeSpecialListItem(UiType.MESSAGE, messageType);
+        mTabListCoordinator.removeSpecialListItem(
+                UiType.COLLABORATION_ACTIVITY_MESSAGE, messageType);
     }
 
     @Override

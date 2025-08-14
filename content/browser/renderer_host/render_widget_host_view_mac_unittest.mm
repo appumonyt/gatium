@@ -195,6 +195,9 @@ using SpellCheckerCompletionHandlerType = void (
   return _lastAssignedSequenceNumber;
 }
 
+- (void)dismissCorrectionIndicatorForView:(NSView*)view {
+}
+
 @end
 
 namespace content {
@@ -538,7 +541,6 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     host_->InitializePaintHolding(false);
 
     base::RunLoop().RunUntilIdle();
-    process_host_->sink().ClearMessages();
   }
 
   void TearDown() override {
@@ -645,8 +647,6 @@ TEST_F(RenderWidgetHostViewMacTest, FilterNonPrintableCharacter) {
 
   // Simulate ctrl+delete, will produce a private use character but shouldn't
   // fire keypress event
-  process_host_->sink().ClearMessages();
-  EXPECT_EQ(0U, process_host_->sink().message_count());
   [rwhv_mac_->GetInProcessNSView()
       keyEvent:cocoa_test_event_utils::KeyEventWithKeyCode(
                    0x2E, 0xF728, NSEventTypeKeyDown,
@@ -972,8 +972,6 @@ TEST_F(RenderWidgetHostViewMacTest, LostFocusAndGotFocusOnSetActive) {
 }
 
 TEST_F(RenderWidgetHostViewMacTest, LastWheelEventLatencyInfoExists) {
-  process_host_->sink().ClearMessages();
-
   // Send an initial wheel event for scrolling by 3 lines.
   // Verifies that ui::INPUT_EVENT_LATENCY_UI_COMPONENT is added
   // properly in scrollWheel function.
@@ -1636,8 +1634,6 @@ class InputMethodMacTest : public RenderWidgetHostViewMacTest {
     view->TextInputStateChanged(state);
   }
 
-  IPC::TestSink& tab_sink() { return process()->sink(); }
-  IPC::TestSink& child_sink() { return child_process_host_->sink(); }
   TextInputManager* text_input_manager() {
     return delegate_.GetTextInputManager();
   }

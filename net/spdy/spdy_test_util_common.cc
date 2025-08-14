@@ -20,6 +20,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "build/build_config.h"
+#include "net/base/hash_value.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/http_user_agent_settings.h"
 #include "net/base/proxy_delegate.h"
@@ -354,7 +355,6 @@ SpdySessionDependencies::SpdyCreateSessionWithSocketFactory(
 HttpNetworkSessionParams SpdySessionDependencies::CreateSessionParams(
     SpdySessionDependencies* session_deps) {
   HttpNetworkSessionParams params;
-  params.host_mapping_rules = session_deps->host_mapping_rules;
   params.enable_spdy_ping_based_connection_checking = session_deps->enable_ping;
   params.enable_user_alternate_protocol_ports =
       session_deps->enable_user_alternate_protocol_ports;
@@ -432,7 +432,7 @@ CreateSpdyTestURLRequestContextBuilder(
 
 bool HasSpdySession(SpdySessionPool* pool, const SpdySessionKey& key) {
   return static_cast<bool>(pool->FindAvailableSession(
-      key, /* enable_ip_based_pooling = */ true,
+      key, /* enable_ip_based_pooling_for_h2 = */ true,
       /* is_websocket = */ false, NetLogWithSource()));
 }
 
@@ -442,9 +442,9 @@ base::WeakPtr<SpdySession> CreateSpdySessionHelper(
     HttpNetworkSession* http_session,
     const SpdySessionKey& key,
     const NetLogWithSource& net_log,
-    bool enable_ip_based_pooling) {
+    bool enable_ip_based_pooling_for_h2) {
   EXPECT_FALSE(http_session->spdy_session_pool()->FindAvailableSession(
-      key, enable_ip_based_pooling,
+      key, enable_ip_based_pooling_for_h2,
       /*is_websocket=*/false, NetLogWithSource()));
 
   auto connection = std::make_unique<ClientSocketHandle>();
@@ -492,7 +492,7 @@ base::WeakPtr<SpdySession> CreateSpdySession(HttpNetworkSession* http_session,
                                              const SpdySessionKey& key,
                                              const NetLogWithSource& net_log) {
   return CreateSpdySessionHelper(http_session, key, net_log,
-                                 /* enable_ip_based_pooling = */ true);
+                                 /* enable_ip_based_pooling_for_h2 = */ true);
 }
 
 base::WeakPtr<SpdySession> CreateSpdySessionWithIpBasedPoolingDisabled(
@@ -500,7 +500,7 @@ base::WeakPtr<SpdySession> CreateSpdySessionWithIpBasedPoolingDisabled(
     const SpdySessionKey& key,
     const NetLogWithSource& net_log) {
   return CreateSpdySessionHelper(http_session, key, net_log,
-                                 /* enable_ip_based_pooling = */ false);
+                                 /* enable_ip_based_pooling_for_h2 = */ false);
 }
 
 namespace {
@@ -994,9 +994,9 @@ quiche::HttpHeaderBlock SpdyTestUtil::ConstructHeaderBlock(
 }
 
 namespace test {
-HashValue GetTestHashValue(uint8_t label) {
-  HashValue hash_value(HASH_VALUE_SHA256);
-  std::ranges::fill(hash_value.span(), label);
+SHA256HashValue GetTestHashValue(uint8_t label) {
+  SHA256HashValue hash_value;
+  std::ranges::fill(hash_value, label);
   return hash_value;
 }
 

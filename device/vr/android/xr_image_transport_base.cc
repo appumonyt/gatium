@@ -105,7 +105,8 @@ bool XrImageTransportBase::ResizeSharedBuffer(WebXrPresentationState* webxr,
   // Remove reference to previous image (if any).
   buffer->local_eglimage.reset();
 
-  static constexpr gfx::BufferFormat format = gfx::BufferFormat::RGBA_8888;
+  static constexpr viz::SharedImageFormat format =
+      viz::SinglePlaneFormat::kRGBA_8888;
   static constexpr gfx::BufferUsage usage = gfx::BufferUsage::SCANOUT;
 
   // The SharedImages created here will eventually be transferred to other
@@ -128,9 +129,6 @@ bool XrImageTransportBase::ResizeSharedBuffer(WebXrPresentationState* webxr,
   // Create a GMB Handle from AHardwareBuffer handle.
   gfx::GpuMemoryBufferHandle gmb_handle;
   gmb_handle.type = gfx::ANDROID_HARDWARE_BUFFER;
-  // GpuMemoryBufferId is not used in this case and hence hardcoding it to 1
-  // here.
-  gmb_handle.id = gfx::GpuMemoryBufferId(1);
   gmb_handle.android_hardware_buffer = buffer->scoped_ahb_handle.Clone();
 
   buffer->shared_image = mailbox_bridge_->CreateSharedImage(

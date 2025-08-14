@@ -58,6 +58,7 @@ EnumTraits<viz::mojom::CopyOutputResultFormat, viz::CopyOutputResult::Format>::
   switch (format) {
     case viz::CopyOutputResult::Format::RGBA:
       return viz::mojom::CopyOutputResultFormat::RGBA;
+    case viz::CopyOutputResult::Format::RGBAF16:
     case viz::CopyOutputResult::Format::I420_PLANES:
     case viz::CopyOutputResult::Format::NV12:
       break;  // Not intended for transport across service boundaries.
@@ -86,8 +87,8 @@ EnumTraits<viz::mojom::CopyOutputResultDestination,
   switch (destination) {
     case viz::CopyOutputResult::Destination::kSystemMemory:
       return viz::mojom::CopyOutputResultDestination::kSystemMemory;
-    case viz::CopyOutputResult::Destination::kNativeTextures:
-      return viz::mojom::CopyOutputResultDestination::kNativeTextures;
+    case viz::CopyOutputResult::Destination::kSharedImage:
+      return viz::mojom::CopyOutputResultDestination::kSharedImage;
   }
 }
 
@@ -100,8 +101,8 @@ bool EnumTraits<viz::mojom::CopyOutputResultDestination,
     case viz::mojom::CopyOutputResultDestination::kSystemMemory:
       *out = viz::CopyOutputResult::Destination::kSystemMemory;
       return true;
-    case viz::mojom::CopyOutputResultDestination::kNativeTextures:
-      *out = viz::CopyOutputResult::Destination::kNativeTextures;
+    case viz::mojom::CopyOutputResultDestination::kSharedImage:
+      *out = viz::CopyOutputResult::Destination::kSharedImage;
       return true;
   }
   return false;
@@ -154,7 +155,7 @@ StructTraits<viz::mojom::CopyOutputResultDataView,
              std::unique_ptr<viz::CopyOutputResult>>::
     mailbox(const std::unique_ptr<viz::CopyOutputResult>& result) {
   if (result->destination() !=
-          viz::CopyOutputResult::Destination::kNativeTextures ||
+          viz::CopyOutputResult::Destination::kSharedImage ||
       result->IsEmpty()) {
     return nullptr;
   }
@@ -170,7 +171,7 @@ StructTraits<viz::mojom::CopyOutputResultDataView,
              std::unique_ptr<viz::CopyOutputResult>>::
     color_space(const std::unique_ptr<viz::CopyOutputResult>& result) {
   if (result->destination() !=
-          viz::CopyOutputResult::Destination::kNativeTextures ||
+          viz::CopyOutputResult::Destination::kSharedImage ||
       result->IsEmpty()) {
     return nullptr;
   }
@@ -183,7 +184,7 @@ StructTraits<viz::mojom::CopyOutputResultDataView,
              std::unique_ptr<viz::CopyOutputResult>>::
     releaser(const std::unique_ptr<viz::CopyOutputResult>& result) {
   if (result->destination() !=
-      viz::CopyOutputResult::Destination::kNativeTextures) {
+      viz::CopyOutputResult::Destination::kSharedImage) {
     return mojo::NullRemote();
   }
 
@@ -191,7 +192,7 @@ StructTraits<viz::mojom::CopyOutputResultDataView,
   // at most one release callback set in the |result|:
   DCHECK_EQ(result->format(), viz::CopyOutputResult::Format::RGBA);
   viz::CopyOutputResult::ReleaseCallbacks release_callbacks =
-      result->TakeTextureOwnership();
+      result->TakeSharedImageOwnership();
   // Callbacks can be empty (in case the result is empty), or have exactly 1
   // element (because a result with RGBA format can carry 1 texture).
   DCHECK(release_callbacks.empty() || release_callbacks.size() == 1);
@@ -252,7 +253,7 @@ bool StructTraits<viz::mojom::CopyOutputResultDataView,
           return true;
         }
 
-        case viz::CopyOutputResult::Destination::kNativeTextures: {
+        case viz::CopyOutputResult::Destination::kSharedImage: {
           std::optional<gpu::Mailbox> mailbox;
           if (!data.ReadMailbox(&mailbox) || !mailbox)
             return false;
@@ -279,13 +280,14 @@ bool StructTraits<viz::mojom::CopyOutputResultDataView,
           release_callbacks.emplace_back(
               base::BindOnce(&Release, std::move(releaser)));
 
-          *out_p = std::make_unique<viz::CopyOutputTextureResult>(
+          *out_p = std::make_unique<viz::CopyOutputSharedImageResult>(
               viz::CopyOutputResult::Format::RGBA, rect, *mailbox, *color_space,
               "ReadStructTraits", std::move(release_callbacks));
           return true;
         }
       }
 
+    case viz::CopyOutputResult::Format::RGBAF16:
     case viz::CopyOutputResult::Format::I420_PLANES:
     case viz::CopyOutputResult::Format::NV12:
       break;  // Not intended for transport across service boundaries.

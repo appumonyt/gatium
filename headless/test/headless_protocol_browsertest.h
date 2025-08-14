@@ -32,17 +32,29 @@ class HeadlessProtocolBrowserTest : public HeadlessDevTooledBrowserTest {
   // JavaScript test body.
   virtual base::Value::Dict GetPageUrlExtraParams();
 
+  // Returns relative test data directory.
+  base::FilePath GetTestDataDir();
+
+  // Returns absolute script file path.
+  base::FilePath GetScriptPath();
+
+  // Returns absolute expectations file path.
+  base::FilePath GetTestExpectationFilePath();
+
+  bool IsSharedTestScript();
+
   void SetUp() override;
   void SetUpCommandLine(base::CommandLine* command_line) override;
 
  private:
-  // HeadlessWebContentsObserver implementation.
+  void StartEmbeddedTestServer();
+
+  // HeadlessDevTooledBrowserTest:
   void RunDevTooledTest() override;
 
   void OnceSetUp(base::Value::Dict params);
   void OnLoadEventFired(const base::Value::Dict& params);
   void OnEvaluateResult(base::Value::Dict params);
-  void OnConsoleAPICalled(const base::Value::Dict& params);
 
   void ProcessTestResult(const std::string& test_result);
   void FinishTest();

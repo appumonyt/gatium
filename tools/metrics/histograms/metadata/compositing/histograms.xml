@@ -98,7 +98,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Browser.LayersUpdateTime" units="microseconds"
-    expires_after="2025-11-16">
+    expires_after="2026-01-18">
   <owner>pdr@chromium.org</owner>
   <owner>animations-dev@chromium.org</owner>
   <improvement direction="LOWER_IS_BETTER"/>
@@ -115,7 +115,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.BufferQueue.TimeUntilBuffersRecreatedMs"
-    units="ms" expires_after="2025-11-02">
+    units="ms" expires_after="2026-01-04">
   <owner>petermcneeley@chromium.org</owner>
   <owner>kylechar@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
@@ -220,7 +220,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.DirectRenderer.PartialSwap.RootDamage" units="%"
-    expires_after="2025-10-26">
+    expires_after="2025-12-28">
   <owner>vasilyt@chromium.org</owner>
   <owner>petermcneeley@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
@@ -378,7 +378,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Display.Draw.Occlusion.Calculation.Time"
-    units="microseconds" expires_after="2025-11-16">
+    units="microseconds" expires_after="2026-01-18">
   <owner>yiyix@chromium.org</owner>
   <owner>chromeos-gfx@chromium.org</owner>
   <summary>
@@ -393,7 +393,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Display.Draw.Quads" units="quads"
-    expires_after="2025-10-26">
+    expires_after="2025-12-28">
   <owner>vmiura@chromium.org</owner>
   <owner>jonross@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
@@ -406,7 +406,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Display.DrawToSwapUs" units="microseconds"
-    expires_after="2025-11-16">
+    expires_after="2026-01-18">
   <owner>jonross@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -469,7 +469,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Display.OverlayProcessorOzone.MaxPlanesSupported"
-    units="units" expires_after="2025-11-09">
+    units="units" expires_after="2026-01-11">
   <owner>harthuang@google.com</owner>
   <owner>fangzhoug@chromium.org</owner>
   <owner>petermcneeley@chromium.org</owner>
@@ -496,7 +496,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Compositing.Display.OverlayProcessorUsingStrategy.FramesScalingRequiredOverlays"
-    enum="Boolean" expires_after="2025-11-16">
+    enum="Boolean" expires_after="2026-01-18">
   <owner>zoraiznaeem@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -554,7 +554,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Compositing.Display.OverlayProcessorUsingStrategy.ShouldAttemptMultipleOverlays"
-    enum="AttemptingMultipleOverlays" expires_after="2025-11-09">
+    enum="AttemptingMultipleOverlays" expires_after="2026-01-11">
   <owner>harthuang@google.com</owner>
   <owner>fangzhoug@chromium.org</owner>
   <owner>petermcneeley@chromium.org</owner>
@@ -580,7 +580,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Compositing.Display.OverlayProcessorUsingStrategy.WorkingScaleFactorForRequiredOverlays"
-    units="scale_factor" expires_after="2025-11-16">
+    units="scale_factor" expires_after="2026-01-18">
   <owner>zoraiznaeem@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -602,8 +602,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Display.VizCodePath.{VizCodePathName}"
-    enum="Boolean" expires_after="2025-08-01">
-  <owner>harthuang@google.com</owner>
+    enum="Boolean" expires_after="2026-06-09">
   <owner>fangzhoug@chromium.org</owner>
   <owner>petermcneeley@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
@@ -630,7 +629,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Display.VizScheduledDrawToDependencyResolvedUs"
-    units="microseconds" expires_after="2025-11-02">
+    units="microseconds" expires_after="2026-01-04">
   <owner>vasilyt@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -645,7 +644,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Display.VizScheduledDrawToGpuStartedDrawUs"
-    units="microseconds" expires_after="2025-11-02">
+    units="microseconds" expires_after="2026-01-04">
   <owner>vasilyt@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -658,20 +657,8 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
-<histogram name="Compositing.FrameRateDecider.ToggleFrameRateCase"
-    enum="ToggleFrameRateCase" expires_after="2025-10-26">
-  <owner>jonross@chromium.org</owner>
-  <owner>chrome-gpu-metric-alerts@chromium.org</owner>
-  <summary>
-    The count of cases to decide whether we should toggle framerate or not in
-    FrameRateDecider. This is logged at 1/1000 probability of frames with
-    video(s) on screen. This aims to determine how frequently Chormium is
-    rendering single video with perfect cadence to the supported frame rates.
-  </summary>
-</histogram>
-
 <histogram name="Compositing.Renderer.CALayerResult" enum="CALayerResult"
-    expires_after="2025-11-16">
+    expires_after="2026-01-18">
   <owner>ccameron@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -682,7 +669,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.Renderer.LayersUpdateTime" units="microseconds"
-    expires_after="2025-11-02">
+    expires_after="2026-01-04">
   <owner>pdr@chromium.org</owner>
   <owner>paint-dev@chromium.org</owner>
   <improvement direction="LOWER_IS_BETTER"/>
@@ -744,6 +731,16 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="Compositing.Scheduler.DeadlineMode"
+    enum="BeginImplFrameDeadlineMode" expires_after="2026-01-25">
+  <owner>lizeb@chromium.org</owner>
+  <owner>jonross@chromium.org</owner>
+  <summary>
+    Report the scheduler deadline mode when it changes, which may be multiple
+    times (but at least once per frame). This histogram is subsampled.
+  </summary>
+</histogram>
+
 <histogram name="Compositing.SurfaceAggregator.AggregateUs"
     units="microseconds" expires_after="2025-10-05">
   <owner>kylechar@chromium.org</owner>
@@ -761,9 +758,10 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.SurfaceAggregator.CopyUs" units="microseconds"
-    expires_after="2025-08-03">
+    expires_after="2026-08-03">
   <owner>kylechar@chromium.org</owner>
   <owner>jonross@chromium.org</owner>
+  <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
     Time spent copying quads during surface aggregation. This is a subset of the
     time recorded for Compositing.SurfaceAggregator.AggregateUs and is logged
@@ -801,9 +799,10 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.SurfaceAggregator.PrewalkUs" units="microseconds"
-    expires_after="2025-08-03">
+    expires_after="2026-08-03">
   <owner>kylechar@chromium.org</owner>
   <owner>jonross@chromium.org</owner>
+  <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
     Time spent doing prewalk during surface aggregation. This is a subset of the
     time recorded for Compositing.SurfaceAggregator.AggregateUs and is logged
@@ -879,7 +878,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Compositing.{Process}.CompositorFrame.Quads" units="quads"
-    expires_after="2025-10-26">
+    expires_after="2025-12-28">
   <owner>vmiura@chromium.org</owner>
   <owner>jonross@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
@@ -895,7 +894,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="CompositorLatency.IpcThread.{LatencyType}"
-    units="microseconds" expires_after="2025-10-26">
+    units="microseconds" expires_after="2025-12-28">
   <owner>jonross@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -1060,7 +1059,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Graphics.Smoothness.CheckerboardingNeedRecord4.AllSequences"
-    units="%" expires_after="2025-12-07">
+    units="%" expires_after="2026-02-09">
   <owner>wangxianzhu@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -1108,7 +1107,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Graphics.Smoothness.Checkerboarding{Version}.{Sequence}"
-    units="%" expires_after="2025-12-07">
+    units="%" expires_after="2026-02-09">
   <owner>jonross@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <summary>
@@ -1156,7 +1155,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Graphics.Smoothness.Jank3.AllSequences" units="%"
-    expires_after="2025-10-26">
+    expires_after="2025-12-28">
   <owner>jonross@chromium.org</owner>
   <owner>mjzhang@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
@@ -1180,7 +1179,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Graphics.Smoothness.Jank3.{Sequence}" units="%"
-    expires_after="2025-10-26">
+    expires_after="2025-12-28">
   <owner>jonross@chromium.org</owner>
   <owner>mjzhang@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
@@ -1203,7 +1202,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Graphics.Smoothness.Jank3.{Thread}{Sequence}" units="%"
-    expires_after="2025-10-26">
+    expires_after="2025-12-28">
   <owner>jonross@chromium.org</owner>
   <owner>mjzhang@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
@@ -1277,7 +1276,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Graphics.Smoothness.PercentDroppedFrames3.{Sequence}"
-    units="%" expires_after="2025-12-07">
+    units="%" expires_after="2026-02-09">
   <owner>jonross@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <improvement direction="LOWER_IS_BETTER"/>
@@ -1331,7 +1330,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Graphics.Smoothness.PercentDroppedFrames3.{Thread}{Sequence}"
-    units="%" expires_after="2025-12-07">
+    units="%" expires_after="2026-02-09">
   <owner>jonross@chromium.org</owner>
   <owner>chrome-gpu-metric-alerts@chromium.org</owner>
   <improvement direction="LOWER_IS_BETTER"/>

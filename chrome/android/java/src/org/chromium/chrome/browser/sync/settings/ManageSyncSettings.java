@@ -42,7 +42,6 @@ import org.chromium.base.task.TaskTraits;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.password_manager.GmsUpdateLauncher;
-import org.chromium.chrome.browser.password_manager.account_storage_toggle.AccountStorageToggleFragmentArgs;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.regional_capabilities.RegionalCapabilitiesServiceFactory;
 import org.chromium.chrome.browser.settings.ChromeBaseSettingsFragment;
@@ -58,14 +57,13 @@ import org.chromium.chrome.browser.sync.settings.SyncSettingsUtils.SyncError;
 import org.chromium.chrome.browser.sync.ui.PassphraseCreationDialogFragment;
 import org.chromium.chrome.browser.sync.ui.PassphraseDialogFragment;
 import org.chromium.chrome.browser.sync.ui.PassphraseTypeDialogFragment;
-import org.chromium.chrome.browser.ui.extensions.ExtensionsBuildflags;
+import org.chromium.chrome.browser.ui.extensions.ExtensionUi;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.ui.signin.GoogleActivityController;
 import org.chromium.chrome.browser.ui.signin.SignOutCoordinator;
 import org.chromium.chrome.browser.ui.signin.SigninUtils;
 import org.chromium.chrome.browser.ui.signin.SignoutButtonPreference;
 import org.chromium.chrome.browser.ui.signin.history_sync.HistorySyncHelper;
-import org.chromium.chrome.browser.ui.theme.ChromeSemanticColorUtils;
 import org.chromium.components.browser_ui.settings.ChromeBaseCheckBoxPreference;
 import org.chromium.components.browser_ui.settings.ChromeBasePreference;
 import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
@@ -462,11 +460,12 @@ public class ManageSyncSettings extends ChromeBaseSettingsFragment
     private void setupCentralAccountCardPreference(Profile profile) {
         CentralAccountCardPreference centralAccountCardPreference =
                 (CentralAccountCardPreference) findPreference(PREF_CENTRAL_ACCOUNT_CARD_PREFERENCE);
+        IdentityManager identityManager =
+                IdentityServicesProvider.get().getIdentityManager(profile);
         centralAccountCardPreference.initialize(
-                IdentityServicesProvider.get()
-                        .getIdentityManager(profile)
-                        .getPrimaryAccountInfo(ConsentLevel.SIGNIN),
-                ProfileDataCache.createWithDefaultImageSizeAndNoBadge(getContext()));
+                identityManager.getPrimaryAccountInfo(ConsentLevel.SIGNIN),
+                ProfileDataCache.createWithDefaultImageSizeAndNoBadge(
+                        getContext(), identityManager));
     }
 
     private void setupIdentityErrorCardPreference(Profile profile) {
@@ -512,11 +511,6 @@ public class ManageSyncSettings extends ChromeBaseSettingsFragment
         ChromeSwitchPreference passwordsToggle =
                 (ChromeSwitchPreference) findPreference(PREF_ACCOUNT_SECTION_PASSWORDS_TOGGLE);
         mSyncTypeSwitchPreferencesMap.put(UserSelectableType.PASSWORDS, passwordsToggle);
-        if (getArguments() != null
-                && getArguments().getBoolean(AccountStorageToggleFragmentArgs.HIGHLIGHT)) {
-            passwordsToggle.setBackgroundColor(
-                    ChromeSemanticColorUtils.getIphHighlightColor(getContext()));
-        }
         ChromeSwitchPreference paymentsToggle =
                 (ChromeSwitchPreference) findPreference(PREF_ACCOUNT_SECTION_PAYMENTS_TOGGLE);
         if (ChromeFeatureList.isEnabled(ChromeFeatureList.AUTOFILL_ENABLE_LOYALTY_CARDS_FILLING)) {
@@ -1269,8 +1263,6 @@ public class ManageSyncSettings extends ChromeBaseSettingsFragment
 
     /** Returns whether the extensions sync item should be shown. */
     private boolean shouldShowExtensionsItem() {
-        return ExtensionsBuildflags.ENABLE_DESKTOP_ANDROID_EXTENSIONS
-                && !ChromeFeatureList.isEnabled(
-                        ChromeFeatureList.BLOCK_INSTALLING_EXTENSIONS_ON_DESKTOP_ANDROID);
+        return ExtensionUi.isEnabled(getProfile());
     }
 }

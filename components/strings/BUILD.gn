@@ -4,9 +4,9 @@
 
 import("//build/config/features.gni")
 import("//build/config/locales.gni")
+import("//content/public/common/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//pdf/features.gni")
-import("//ppapi/buildflags/buildflags.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//services/screen_ai/buildflags/features.gni")
 import("//tools/grit/grit_rule.gni")
@@ -21,7 +21,6 @@ group("strings") {
     ":components_locale_settings",
     ":components_strings",
     ":privacy_sandbox_strings",
-    ":search_engine_descriptions_strings",
   ]
 }
 
@@ -32,6 +31,7 @@ grit_strings("components_strings") {
     "enable_cardboard=$enable_cardboard",
     "enable_pdf=$enable_pdf",
     "enable_pdf_ink2=$enable_pdf_ink2",
+    "enable_pdf_save_to_drive=$enable_pdf_save_to_drive",
     "enable_plugins=$enable_plugins",
     "enable_print_preview=$enable_print_preview",
     "enable_screen_ai_service=$enable_screen_ai_service",
@@ -63,11 +63,6 @@ grit_strings("components_locale_settings") {
   if (is_android) {
     create_android_resources = true
   }
-}
-
-grit_strings("search_engine_descriptions_strings") {
-  source = "../search_engine_descriptions_strings.grd"
-  outputs = [ "grit/search_engine_descriptions_strings.h" ]
 }
 
 if (is_android) {

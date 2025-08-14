@@ -40,6 +40,7 @@
 #include "ui/ozone/platform/drm/gpu/gbm_surfaceless.h"
 #include "ui/ozone/platform/drm/gpu/proxy_helpers.h"
 #include "ui/ozone/platform/drm/gpu/screen_manager.h"
+#include "ui/ozone/public/native_pixmap_usage_utils.h"
 #include "ui/ozone/public/surface_ozone_canvas.h"
 
 #if BUILDFLAG(ENABLE_VULKAN)
@@ -245,18 +246,6 @@ std::vector<gfx::BufferFormat> EnumerateSupportedBufferFormatsForTexturing() {
   return supported_buffer_formats;
 }
 
-void OnNativePixmapCreated(GbmSurfaceFactory::NativePixmapCallback callback,
-                           base::WeakPtr<GbmSurfaceFactory> weak_ptr,
-                           std::unique_ptr<GbmBuffer> buffer,
-                           scoped_refptr<DrmFramebuffer> framebuffer) {
-  if (!weak_ptr || !buffer) {
-    std::move(callback).Run(nullptr);
-  } else {
-    std::move(callback).Run(base::MakeRefCounted<GbmPixmap>(
-        weak_ptr.get(), std::move(buffer), std::move(framebuffer)));
-  }
-}
-
 }  // namespace
 
 GbmSurfaceFactory::GbmSurfaceFactory(DrmThreadProxy* drm_thread_proxy)
@@ -326,9 +315,11 @@ scoped_refptr<gfx::NativePixmap> GbmSurfaceFactory::CreateNativePixmapForVulkan(
   std::unique_ptr<GbmBuffer> buffer;
   scoped_refptr<DrmFramebuffer> framebuffer;
 
-  drm_thread_proxy_->CreateBuffer(widget, size, /*framebuffer_size=*/size,
-                                  format, usage, GbmPixmap::kFlagNoModifiers,
-                                  &buffer, &framebuffer);
+  NativePixmapUsageSet native_pixmap_usage =
+      BufferUsageToNativePixmapUsage(usage);
+  drm_thread_proxy_->CreateBuffer(
+      widget, size, /*framebuffer_size=*/size, format, native_pixmap_usage,
+      GbmPixmap::kFlagNoModifiers, &buffer, &framebuffer);
   if (!buffer)
     return nullptr;
 
@@ -403,28 +394,17 @@ scoped_refptr<gfx::NativePixmap> GbmSurfaceFactory::CreateNativePixmap(
       !gfx::Rect(size).Contains(gfx::Rect(*framebuffer_size))) {
     return nullptr;
   }
+  NativePixmapUsageSet native_pixmap_usage =
+      BufferUsageToNativePixmapUsage(usage);
   std::unique_ptr<GbmBuffer> buffer;
   scoped_refptr<DrmFramebuffer> framebuffer;
   drm_thread_proxy_->CreateBuffer(
-      widget, size, framebuffer_size ? *framebuffer_size : size, format, usage,
-      0 /* flags */, &buffer, &framebuffer);
+      widget, size, framebuffer_size ? *framebuffer_size : size, format,
+      native_pixmap_usage, /*flags=*/0, &buffer, &framebuffer);
   if (!buffer)
     return nullptr;
   return base::MakeRefCounted<GbmPixmap>(this, std::move(buffer),
                                          std::move(framebuffer));
-}
-
-void GbmSurfaceFactory::CreateNativePixmapAsync(
-    gfx::AcceleratedWidget widget,
-    gpu::VulkanDeviceQueue* device_queue,
-    gfx::Size size,
-    gfx::BufferFormat format,
-    gfx::BufferUsage usage,
-    NativePixmapCallback callback) {
-  drm_thread_proxy_->CreateBufferAsync(
-      widget, size, format, usage, 0 /* flags */,
-      base::BindOnce(OnNativePixmapCreated, std::move(callback),
-                     weak_factory_.GetWeakPtr()));
 }
 
 scoped_refptr<gfx::NativePixmap>

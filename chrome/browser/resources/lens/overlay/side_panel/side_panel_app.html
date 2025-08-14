@@ -28,6 +28,16 @@
     background-color: #1F1F1F;
   }
 
+  :host([enable-aim-searchbox]) .results-pane {
+    /*
+     * If AIM searchbox is enabled, make the results pane the full height of
+     * the side panel.
+     */
+    height: 100%;
+    inset-block-start: 0;
+    position: absolute;
+  }
+
   /* Set z-index to hide results to prevent ghost frames when reshowing. */
   :host([is-loading-results]) #results {
     z-index: 0;
@@ -70,6 +80,11 @@
     /* Colors for searchbox ghost loader */
     --color-searchbox-ghost-loader-loading-bar-1: #F1F3F4;
     --color-searchbox-ghost-loader-loading-bar-2: #ECEDEF;
+  }
+
+  /* Hide the old searchbox when the AIM searchbox is enabled. */
+  :host([enable-aim-searchbox]) #searchboxContainer {
+    display: none;
   }
 
   :host([dark-mode]) #searchboxContainer {
@@ -167,6 +182,38 @@
     z-index: 2; /* Ensure that the progress bar is above the ghost loader. */
   }
 
+  #composeboxContainer {
+    /* Temporary CSS to make the composebox visible. */
+    --ntp-composebox-background-color: #F0F2F5;
+    display: none;
+    inset-block-end: 0;
+    position: absolute;
+    width: 100%;
+    z-index: 2;
+  }
+
+  #composeboxContainer::before {
+    content: '';
+    background: linear-gradient(180deg, transparent 1%, white 52px);
+    inset: -66px 0 0;
+    pointer-events: none;
+    position: absolute;
+    width: 100%;
+  }
+
+  /* Show the composebox when enabled. */
+  :host([enable-aim-searchbox]) #composeboxContainer {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #composebox {
+    position: relative;
+    width: calc(100% - 32px); /* 16px on each side */
+    margin-bottom: 30px;
+  }
+
   :host(:not([show-upload-progress])) #uploadProgressBarContainer,
   :host([is-error-page-visible]) #uploadProgressBarContainer {
     visibility: hidden;
@@ -260,7 +307,8 @@
     class="results-pane"></side-panel-ghost-loader>
 
 <iframe name="results" id="results" class="results-pane"
-    allow="cross-origin-isolated; display-capture; geolocation; microphone;"
+    allow="cross-origin-isolated; display-capture; geolocation; microphone;
+           clipboard-read; clipboard-write;"
     frameBorder="0">
 </iframe>
 <feedback-toast id="feedbackToast"></feedback-toast>
@@ -271,3 +319,8 @@
     $i18n{dismiss}
   </cr-button>
 </cr-toast>
+
+<div id="composeboxContainer">
+  <ntp-composebox id="composebox" is-collapsible hide-file-inputs>
+  </ntp-composebox>
+</div>

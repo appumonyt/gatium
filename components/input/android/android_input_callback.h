@@ -8,8 +8,7 @@
 #include "base/android/scoped_input_event.h"
 #include "base/component_export.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/raw_ref.h"
-#include "components/input/input_manager_operation_tracker.h"
+#include "base/observer_list.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 
 struct AInputEvent;
@@ -24,9 +23,15 @@ class AndroidInputCallbackClient {
 
 class COMPONENT_EXPORT(INPUT) AndroidInputCallback {
  public:
+  class Observer : public base::CheckedObserver {
+   public:
+    virtual void OnMotionEvent(
+        const base::android::ScopedInputEvent& input_event) = 0;
+  };
+
   AndroidInputCallback(const viz::FrameSinkId& root_frame_sink_id,
-                       AndroidInputCallbackClient* client,
-                       InputManagerOperationTracker& operation_tracker);
+                       AndroidInputCallbackClient* client);
+  ~AndroidInputCallback();
 
   static bool OnMotionEventThunk(void* context, AInputEvent* input_event);
 
@@ -40,10 +45,13 @@ class COMPONENT_EXPORT(INPUT) AndroidInputCallback {
     root_frame_sink_id_ = frame_sink_id;
   }
 
+  void AddObserver(Observer* obs);
+  void RemoveObserver(Observer* obs);
+
  private:
   viz::FrameSinkId root_frame_sink_id_;
   raw_ptr<AndroidInputCallbackClient> client_;
-  const raw_ref<InputManagerOperationTracker> operation_tracker_;
+  base::ObserverList<Observer> observers_;
 };
 
 }  // namespace input

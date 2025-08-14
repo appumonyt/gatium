@@ -22,6 +22,7 @@
 #include "base/trace_event/trace_event.h"
 #include "cc/paint/paint_record.h"
 #include "cc/paint/paint_recorder.h"
+#include "components/paint_preview/common/mojom/paint_preview_types.mojom.h"
 #include "components/paint_preview/common/paint_preview_tracker.h"
 #include "components/paint_preview/common/serialized_recording.h"
 #include "components/paint_preview/renderer/paint_preview_recorder_utils.h"
@@ -265,15 +266,34 @@ void PaintPreviewRecorderImpl::CapturePaintPreviewInternal(
 
   auto offset = frame->GetScrollOffset();
   auto document_size = frame->DocumentSize();
-  // If the special values of -1 are used for the initial position center about
-  // the scroll offset.
-  if (bounds.x() == -1) {
-    bounds.set_x(
-        GetBoundOrigin(document_size.width(), bounds.width(), offset.x()));
+
+  switch (params->clip_x_coord_override) {
+    case mojom::ClipCoordOverride::kNone:
+      break;
+    case mojom::ClipCoordOverride::kCenterOnScrollOffset:
+      bounds.set_x(
+          GetBoundOrigin(document_size.width(), bounds.width(), offset.x()));
+      break;
+    case mojom::ClipCoordOverride::kScrollOffset:
+      // Note: we don't have to go out of our way to clamp to within the
+      // document, since the browser's normal handling of the scroll offset
+      // takes care of that.
+      bounds.set_x(offset.x());
+      break;
   }
-  if (bounds.y() == -1) {
-    bounds.set_y(
-        GetBoundOrigin(document_size.height(), bounds.height(), offset.y()));
+  switch (params->clip_y_coord_override) {
+    case mojom::ClipCoordOverride::kNone:
+      break;
+    case mojom::ClipCoordOverride::kCenterOnScrollOffset:
+      bounds.set_y(
+          GetBoundOrigin(document_size.height(), bounds.height(), offset.y()));
+      break;
+    case mojom::ClipCoordOverride::kScrollOffset:
+      // Note: we don't have to go out of our way to clamp to within the
+      // document, since the browser's normal handling of the scroll offset
+      // takes care of that.
+      bounds.set_y(offset.y());
+      break;
   }
 
   gfx::Rect document_rect = gfx::Rect(document_size);
@@ -395,6 +415,11 @@ void PaintPreviewRecorderImpl::CapturePaintPreviewInternal(
   auto* image_ctx = tracker->GetImageSerializationContext();
   image_ctx->max_decoded_image_size_bytes =
       params->max_decoded_image_size_bytes;
+
+  // The canvas holds a raw_ptr to the tracker, and when the tracker is moved to
+  // FinishRecordingOnUIThread, it's possible that it'll be released before
+  // returning, leading to a dangling pointer in the canvas.
+  canvas->SetPaintPreviewTracker(nullptr);
 
   FinishRecordingOnUIThread(recorder.finishRecordingAsPicture(), bounds,
                             std::move(tracker), params->persistence,

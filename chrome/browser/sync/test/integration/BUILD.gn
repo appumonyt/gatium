@@ -17,9 +17,11 @@ source_set("sync_integration_tests_impl") {
   configs += [ "//build/config:precompiled_headers" ]
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   deps = [
+    "//chrome/browser/password_manager/factories",
     "//chrome/browser/plus_addresses",
     "//chrome/browser/prefs",
     "//chrome/browser/reading_list",
+    "//chrome/browser/signin",
     "//chrome/browser/sync",
     "//chrome/browser/sync",
     "//chrome/browser/ui:browser_navigator_params_headers",
@@ -63,10 +65,10 @@ source_set("sync_integration_tests_impl") {
     "single_client_sync_invalidations_test.cc",
     "sync_exponential_backoff_test.cc",
 
-    # TODO(crbug.com/393119606): After enough of the implementation is ready
+    # TODO(crbug.com/397767033): After enough of the implementation is ready
     # (CL #N), add integration tests. Careful, sync_integration_tests runs in CQ
     # but android_sync_integration_tests do not.
-    # TODO(crbug.com/397767033): After enough of the implementation is ready
+    # TODO(crbug.com/433556051): After enough of the implementation is ready
     # (CL #N), add integration tests. Careful, sync_integration_tests runs in CQ
     # but android_sync_integration_tests do not.
   ]
@@ -215,6 +217,8 @@ source_set("sync_integration_tests_impl") {
       "//chrome/browser/search_engines",
       "//chrome/browser/themes",
       "//chrome/browser/ui:ui_features",
+      "//chrome/browser/ui/tabs/saved_tab_groups",
+      "//chrome/browser/ui/web_applications",
       "//chrome/browser/web_applications:features",
       "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/common",
@@ -297,6 +301,7 @@ source_set("sync_integration_tests_impl") {
         "//chrome/browser/ash/printing",
         "//chrome/browser/ash/sync",
         "//chrome/browser/ash/system_web_apps/test_support",
+        "//chrome/browser/ui/ash/multi_user",
         "//chromeos/ash/components/browser_context_helper",
         "//chromeos/ash/components/dbus/shill",
         "//chromeos/ash/components/sync_wifi",
@@ -328,6 +333,10 @@ source_set("sync_integration_tests_impl") {
       "//third_party/pywebsocket3/src/mod_pywebsocket/",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (is_android) {

@@ -122,8 +122,7 @@ class PaymentsNetworkInterface : public PaymentsNetworkInterfaceBase {
       GetCardUploadDetailsCallback callback,
       const int billable_service_number,
       const int64_t billing_customer_number,
-      UploadCardSource upload_card_source =
-          UploadCardSource::UNKNOWN_UPLOAD_CARD_SOURCE);
+      UploadCardSource upload_card_source = UploadCardSource::kUnknown);
 
   // The user has indicated that they would like to upload a card with the given
   // cvc. This request will fail server-side if a successful call to
@@ -224,6 +223,29 @@ class PaymentsNetworkInterface : public PaymentsNetworkInterfaceBase {
       GetBnplPaymentInstrumentForFetchingUrlRequestDetails request_details,
       base::OnceCallback<void(PaymentsAutofillClient::PaymentsRpcResult,
                               const BnplFetchUrlResponseDetails&)> callback);
+
+  // Determine if the user meets the conditions to initiate ToS acceptance flow
+  // for a linked BNPL partner, such as Klarna. The `request_details` contains
+  // all necessary information to build a
+  // `GetDetailsForUpdateBnplPaymentInstrumentRequest`. The callback function is
+  // triggered when the server responds. This function receives the result of
+  // the response. Both the context token and legal message are always returned
+  // in the callback upon a successful response.
+  virtual void GetDetailsForUpdateBnplPaymentInstrument(
+      const GetDetailsForUpdateBnplPaymentInstrumentRequestDetails&
+          request_details,
+      base::OnceCallback<void(PaymentsAutofillClient::PaymentsRpcResult result,
+                              std::string context_token,
+                              LegalMessageLines legal_message)> callback);
+
+  // The user has indicated that they would like to update a BNPL payment
+  // instrument. `request_details` contains all necessary information to build a
+  // `UpdateBnplPaymentInstrumentRequest`. `callback` is the callback function
+  // that is triggered when a response is received from the server.
+  virtual void UpdateBnplPaymentInstrument(
+      const UpdateBnplPaymentInstrumentRequestDetails& request_details,
+      base::OnceCallback<void(PaymentsAutofillClient::PaymentsRpcResult result)>
+          callback);
 
  private:
   friend class PaymentsNetworkInterfaceTest;

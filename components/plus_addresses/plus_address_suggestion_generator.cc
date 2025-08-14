@@ -19,7 +19,7 @@
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "components/feature_engagement/public/feature_constants.h"
-#include "components/plus_addresses/features.h"
+#include "components/plus_addresses/core/common/features.h"
 #include "components/plus_addresses/grit/plus_addresses_strings.h"
 #include "components/plus_addresses/plus_address_allocator.h"
 #include "components/plus_addresses/plus_address_service.h"
@@ -58,7 +58,7 @@ bool IsPasswordFieldVisible(
 // whether we offer plus address creation depends on the form type.
 bool ShouldOfferPlusAddressCreationOnForm(
     const autofill::FormData& focused_form,
-    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroup>&
+    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroupSet>&
         form_field_type_groups,
     const PasswordFormClassification& form_classification,
     autofill::FieldGlobalId focused_field_id) {
@@ -102,7 +102,7 @@ bool ShouldOfferPlusAddressCreationOnForm(
           }
           auto it = form_field_type_groups.find(field.global_id());
           return it != form_field_type_groups.end() &&
-                 kUnexpectedFieldTypeGroupsInLoginForm.contains(it->second);
+                 it->second.contains_any(kUnexpectedFieldTypeGroupsInLoginForm);
         });
   };
 
@@ -177,7 +177,7 @@ PlusAddressSuggestionGenerator::GetSuggestions(
     bool is_creation_enabled,
     const autofill::FormData& focused_form,
     const autofill::FormFieldData& focused_field,
-    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroup>&
+    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroupSet>&
         form_field_type_groups,
     const autofill::PasswordFormClassification& focused_form_classification,
     autofill::AutofillSuggestionTriggerSource trigger_source) {

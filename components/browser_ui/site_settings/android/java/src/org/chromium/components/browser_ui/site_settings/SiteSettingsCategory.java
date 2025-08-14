@@ -79,6 +79,8 @@ public class SiteSettingsCategory {
         Type.JAVASCRIPT_OPTIMIZER,
         Type.SERIAL_PORT,
         Type.LOCAL_NETWORK_ACCESS,
+        Type.WINDOW_MANAGEMENT,
+        Type.AUTO_PICTURE_IN_PICTURE,
         Type.NUM_ENTRIES
     })
     @Retention(RetentionPolicy.SOURCE)
@@ -121,9 +123,11 @@ public class SiteSettingsCategory {
         int JAVASCRIPT_OPTIMIZER = 33;
         int SERIAL_PORT = 34;
         int LOCAL_NETWORK_ACCESS = 35;
+        int WINDOW_MANAGEMENT = 36;
+        int AUTO_PICTURE_IN_PICTURE = 37;
 
         /** Number of handled categories used for calculating array sizes. */
-        int NUM_ENTRIES = 36;
+        int NUM_ENTRIES = 38;
     }
 
     private final BrowserContextHandle mBrowserContextHandle;
@@ -213,6 +217,8 @@ public class SiteSettingsCategory {
                 return ContentSettingsType.AR;
             case Type.AUTO_DARK_WEB_CONTENT:
                 return ContentSettingsType.AUTO_DARK_WEB_CONTENT;
+            case Type.AUTO_PICTURE_IN_PICTURE:
+                return ContentSettingsType.AUTO_PICTURE_IN_PICTURE;
             case Type.AUTOMATIC_DOWNLOADS:
                 return ContentSettingsType.AUTOMATIC_DOWNLOADS;
             case Type.BACKGROUND_SYNC:
@@ -268,6 +274,8 @@ public class SiteSettingsCategory {
                 return ContentSettingsType.USB_GUARD;
             case Type.VIRTUAL_REALITY:
                 return ContentSettingsType.VR;
+            case Type.WINDOW_MANAGEMENT:
+                return ContentSettingsType.WINDOW_MANAGEMENT;
             case Type.ALL_SITES:
             case Type.USE_STORAGE:
             case Type.ZOOM:
@@ -307,6 +315,8 @@ public class SiteSettingsCategory {
                 return "augmented_reality";
             case Type.AUTO_DARK_WEB_CONTENT:
                 return "auto_dark_web_content";
+            case Type.AUTO_PICTURE_IN_PICTURE:
+                return "auto_picture_in_picture";
             case Type.ALL_SITES:
                 return "all_sites";
             case Type.AUTOMATIC_DOWNLOADS:
@@ -369,6 +379,8 @@ public class SiteSettingsCategory {
                 return "third_party_cookies";
             case Type.TRACKING_PROTECTION:
                 return "tracking_protection";
+            case Type.WINDOW_MANAGEMENT:
+                return "window_management";
             case Type.ZOOM:
                 return "zoom";
             default:
@@ -564,6 +576,14 @@ public class SiteSettingsCategory {
     /** Returns whether to disable the category toggle. */
     protected boolean shouldDisableToggle() {
         return false;
+    }
+
+    /**
+     * Returns resource id for message about why adding exceptions is blocked. 0 should be returned
+     * if no message should be shown.
+     */
+    protected int getBlockAddingExceptionsReasonResourceId() {
+        return 0;
     }
 
     /**

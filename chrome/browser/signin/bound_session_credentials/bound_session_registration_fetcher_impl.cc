@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/browser/signin/bound_session_credentials/bound_session_registration_fetcher_impl.h"
 
 #include <string_view>
@@ -28,6 +23,7 @@
 #include "components/unexportable_keys/unexportable_key_service.h"
 #include "components/variations/net/variations_http_headers.h"
 #include "google_apis/gaia/gaia_urls.h"
+#include "google_apis/gaia/register_bound_session_payload.h"
 #include "net/base/schemeful_site.h"
 #include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -37,23 +33,9 @@
 #include "services/network/public/mojom/url_response_head.mojom.h"
 
 namespace {
-constexpr char kSessionIdentifier[] = "session_identifier";
-constexpr char kCredentials[] = "credentials";
-constexpr char kRefreshUrl[] = "refresh_url";
+
 const char kXSSIPrefix[] = ")]}'";
 
-bound_session_credentials::Credential CreateCookieCredential(
-    const std::string& name,
-    const std::string& domain,
-    const std::string& path) {
-  bound_session_credentials::Credential credential;
-  bound_session_credentials::CookieCredential* cookie_credential =
-      credential.mutable_cookie_credential();
-  cookie_credential->set_name(name);
-  cookie_credential->set_domain(domain);
-  cookie_credential->set_path(path);
-  return credential;
-}
 }  // namespace
 
 BoundSessionRegistrationFetcherImpl::BoundSessionRegistrationFetcherImpl(
@@ -79,9 +61,10 @@ void BoundSessionRegistrationFetcherImpl::Start(
   CHECK(!registration_token_helper_);
   registration_duration_.emplace();  // Starts the timer.
   callback_ = std::move(callback);
-  registration_token_helper_ = std::make_unique<RegistrationTokenHelper>(
-      key_service_.get(),
-      base::ToVector(registration_params_.supported_algos()));
+  registration_token_helper_ =
+      std::make_unique<BindingKeyRegistrationTokenHelper>(
+          key_service_.get(),
+          base::ToVector(registration_params_.supported_algos()));
   // base::Unretained() is safe since `this` owns
   // `registration_token_helper_`.
   registration_token_helper_->GenerateForSessionBinding(
@@ -129,26 +112,10 @@ void BoundSessionRegistrationFetcherImpl::OnURLLoaderComplete(
     return;
   }
 
-  RegistrationErrorOr<bound_session_credentials::BoundSessionParams>
-      params_or_error = ParseJsonResponse(url_loader_->GetFinalURL(),
-                                          std::move(response_body));
-  if (!params_or_error.has_value()) {
-    RunCallbackAndRecordMetrics(params_or_error);
-    return;
-  }
-
-  bound_session_credentials::BoundSessionParams params =
-      std::move(params_or_error).value();
-  params.set_site(
-      net::SchemefulSite(registration_params_.registration_endpoint())
-          .GetURL()
-          .spec());
-  params.set_wrapped_key(wrapped_key_str_);
-  *params.mutable_creation_time() =
-      bound_session_credentials::TimeToTimestamp(base::Time::Now());
-  params.set_is_wsbeta(registration_params_.is_wsbeta());
-
-  if (!bound_session_credentials::AreParamsValid(params)) {
+  RegistrationErrorOr<bound_session_credentials::BoundSessionParams> params =
+      ParseJsonResponse(std::move(response_body));
+  if (params.has_value() &&
+      !bound_session_credentials::AreParamsValid(*params)) {
     RunCallbackAndRecordMetrics(
         base::unexpected(RegistrationError::kInvalidSessionParams));
     return;
@@ -160,7 +127,7 @@ void BoundSessionRegistrationFetcherImpl::OnURLLoaderComplete(
 
 void BoundSessionRegistrationFetcherImpl::OnRegistrationTokenCreated(
     base::ElapsedTimer generate_registration_token_timer,
-    std::optional<RegistrationTokenHelper::Result> result) {
+    std::optional<BindingKeyRegistrationTokenHelper::Result> result) {
   TRACE_EVENT("browser",
               "BoundSessionRegistrationFetcherImpl::OnRegistrationTokenCreated",
               perfetto::Flow::FromPointer(this), "success", result.has_value());
@@ -276,7 +243,6 @@ void BoundSessionRegistrationFetcherImpl::RunCallbackAndRecordMetrics(
 BoundSessionRegistrationFetcherImpl::RegistrationErrorOr<
     bound_session_credentials::BoundSessionParams>
 BoundSessionRegistrationFetcherImpl::ParseJsonResponse(
-    const GURL& request_url,
     std::unique_ptr<std::string> response_body) {
   // JSON responses normally should start with XSSI-protection prefix which
   // should be removed prior to parsing.
@@ -291,66 +257,24 @@ BoundSessionRegistrationFetcherImpl::ParseJsonResponse(
     return base::unexpected(RegistrationError::kParseJsonFailed);
   }
 
-  std::string* session_id = maybe_root->FindString(kSessionIdentifier);
-  base::Value::List* credentials_list = maybe_root->FindList(kCredentials);
-  std::string* refresh_url = maybe_root->FindString(kRefreshUrl);
-  if (!session_id || !credentials_list || !refresh_url) {
-    // Incorrect registration params.
-    return base::unexpected(RegistrationError::kRequiredFieldMissing);
-  }
-
-  bound_session_credentials::BoundSessionParams params;
-  params.set_session_id(*session_id);
-
-  RegistrationErrorOr<std::vector<bound_session_credentials::Credential>>
-      credentials_or_error = ParseCredentials(*credentials_list);
-  if (!credentials_or_error.has_value()) {
-    return base::unexpected(credentials_or_error.error());
-  }
-
-  for (auto& credential : credentials_or_error.value()) {
-    *params.add_credentials() = std::move(credential);
-  }
-
-  // The refresh URL must be a correct, same-site URL.
-  GURL refresh_endpoint =
-      bound_session_credentials::ResolveEndpointPath(request_url, *refresh_url);
-  if (!refresh_endpoint.is_valid()) {
-    return base::unexpected(RegistrationError::kInvalidSessionParams);
-  }
-  params.set_refresh_url(refresh_endpoint.spec());
-
-  return params;
-}
-
-BoundSessionRegistrationFetcherImpl::RegistrationErrorOr<
-    std::vector<bound_session_credentials::Credential>>
-BoundSessionRegistrationFetcherImpl::ParseCredentials(
-    const base::Value::List& credentials_list) {
-  std::vector<bound_session_credentials::Credential> cookie_credentials;
-  for (const auto& credential : credentials_list) {
-    const base::Value::Dict* credential_dict = credential.GetIfDict();
-    if (!credential_dict) {
-      // The parser ignores unknown dictionary entries and so we can do the same
-      // for unknown list entries.
-      continue;
+  const base::expected<RegisterBoundSessionPayload,
+                       RegisterBoundSessionPayload::ParserError>
+      payload = RegisterBoundSessionPayload::ParseFromJson(*maybe_root);
+  if (!payload.has_value()) {
+    switch (payload.error()) {
+      case RegisterBoundSessionPayload::ParserError::kRequiredFieldMissing:
+        return base::unexpected(RegistrationError::kRequiredFieldMissing);
+      case RegisterBoundSessionPayload::ParserError::
+          kRequiredCredentialFieldMissing:
+        return base::unexpected(
+            RegistrationError::kRequiredCredentialFieldMissing);
     }
-    const std::string* name = credential_dict->FindString("name");
-    const base::Value::Dict* scope = credential_dict->FindDict("scope");
-    if (!name || !scope) {
-      // Invalid credential.
-      return base::unexpected(
-          RegistrationError::kRequiredCredentialFieldMissing);
-    }
-    const std::string* domain = scope->FindString("domain");
-    const std::string* path = scope->FindString("path");
-    if (!domain || !path) {
-      // Invalid credential.
-      return base::unexpected(
-          RegistrationError::kRequiredCredentialFieldMissing);
-    }
-    cookie_credentials.emplace_back(
-        CreateCookieCredential(*name, *domain, *path));
   }
-  return cookie_credentials;
+
+  return bound_session_credentials::
+      CreateBoundSessionsParamsFromRegistrationPayload(
+          *payload, url_loader_->GetFinalURL(),
+          net::SchemefulSite(registration_params_.registration_endpoint())
+              .GetURL(),
+          wrapped_key_str_, registration_params_.is_wsbeta());
 }

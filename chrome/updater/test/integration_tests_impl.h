@@ -14,6 +14,8 @@
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/functional/function_ref.h"
+#include "base/process/launch.h"
 #include "base/process/process_iterator.h"
 #include "base/values.h"
 #include "base/version.h"
@@ -36,7 +38,6 @@ class GURL;
 namespace base {
 class CommandLine;
 class TimeDelta;
-class Value;
 }  // namespace base
 
 namespace updater {
@@ -276,9 +277,19 @@ void DeleteUpdaterDirectory(UpdaterScope scope);
 void DeleteActiveUpdaterExecutable(UpdaterScope scope);
 
 // Runs the command and waits for it to exit or time out.
-void Run(UpdaterScope scope,
-         base::CommandLine command_line,
-         int* exit_code = nullptr);
+void Run(
+    UpdaterScope scope,
+    base::CommandLine command_line,
+    int* exit_code = nullptr,
+    base::FunctionRef<base::Process(const base::CommandLine&)> launch_process =
+        [](const base::CommandLine& command_line) {
+          return base::LaunchProcess(command_line, {});
+        });
+
+// Similar to `Run`, but runs the command de-elevated on Windows.
+void RunDeElevated(UpdaterScope scope,
+                   base::CommandLine command_line,
+                   int* exit_code);
 
 // Runs the command (via sudo if `elevate` is true) and waits for it to exit,
 // then asserts that it returned the expected exit code (if provided) and
@@ -549,16 +560,6 @@ void DMCleanup(UpdaterScope scope);
 // Installs the enterprise companion app from the test's data deps, always at
 // the system scope.
 void InstallEnterpriseCompanionApp();
-
-// Manually uninstalls the enterprise companion app installed via
-// `InstallBrokenEnterpriseCompanionApp`. This should be done before the updater
-// uninstalls, as the broken companion app is unable to uninstall itself which
-// will cause the updater's uninstaller to return an error.
-void UninstallBrokenEnterpriseCompanionApp();
-
-// Installs a stub enterprise companion app which will fail to launch, always at
-// the system scope.
-void InstallBrokenEnterpriseCompanionApp();
 
 // Installs the constants overrides for the enterprise companion app, always at
 // the system scope.

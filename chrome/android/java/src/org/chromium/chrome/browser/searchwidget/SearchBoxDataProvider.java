@@ -9,9 +9,10 @@ import android.content.Context;
 import androidx.annotation.ColorInt;
 import androidx.annotation.ColorRes;
 
-import org.chromium.base.library_loader.LibraryLoader;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
+import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider.ControlsPosition;
 import org.chromium.chrome.browser.omnibox.LocationBarDataProvider;
 import org.chromium.chrome.browser.omnibox.NewTabPageDelegate;
 import org.chromium.chrome.browser.omnibox.UrlBarData;
@@ -23,6 +24,7 @@ import org.chromium.url.GURL;
 
 @NullMarked
 class SearchBoxDataProvider implements LocationBarDataProvider {
+    private final Supplier<@ControlsPosition Integer> mToolbarPosition = () -> ControlsPosition.TOP;
     private /* PageClassification */ int mPageClassification;
     private @ColorInt int mPrimaryColor;
     private @Nullable GURL mGurl;
@@ -105,7 +107,6 @@ class SearchBoxDataProvider implements LocationBarDataProvider {
     @Override
     public GURL getCurrentGurl() {
         if (GURL.isEmptyOrInvalid(mGurl)) {
-            assert LibraryLoader.getInstance().isInitialized();
             mGurl = SearchActivityPreferencesManager.getCurrent().searchEngineUrl;
         }
 
@@ -152,5 +153,10 @@ class SearchBoxDataProvider implements LocationBarDataProvider {
 
     void setIsIncognitoForTesting(boolean isIncognito) {
         mIsIncognito = isIncognito;
+    }
+
+    @Override
+    public Supplier<@ControlsPosition Integer> getToolbarPositionSupplier() {
+        return mToolbarPosition;
     }
 }

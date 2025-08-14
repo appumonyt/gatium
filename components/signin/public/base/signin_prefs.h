@@ -14,6 +14,10 @@
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
 
+namespace base {
+class Time;
+}
+
 class GaiaId;
 class PrefService;
 class PrefRegistrySimple;
@@ -116,9 +120,14 @@ class SigninPrefs {
   void SetBookmarksExplicitBrowserSignin(const GaiaId& gaia_id, bool enabled);
   bool GetBookmarksExplicitBrowserSignin(const GaiaId& gaia_id) const;
 
+  // History Sync experiment promo on the avatar button.
+  void IncrementHistorySyncPromoIdentityPillShownCount(const GaiaId& gaia_id);
+  int GetHistorySyncPromoIdentityPillShownCount(const GaiaId& gaia_id) const;
+  void IncrementHistorySyncPromoIdentityPillUsedCount(const GaiaId& gaia_id);
+  int GetHistorySyncPromoIdentityPillUsedCount(const GaiaId& gaia_id) const;
+  // Sync promo on the avatar button.
   void IncrementSyncPromoIdentityPillShownCount(const GaiaId& gaia_id);
   int GetSyncPromoIdentityPillShownCount(const GaiaId& gaia_id) const;
-
   void IncrementSyncPromoIdentityPillUsedCount(const GaiaId& gaia_id);
   int GetSyncPromoIdentityPillUsedCount(const GaiaId& gaia_id) const;
 

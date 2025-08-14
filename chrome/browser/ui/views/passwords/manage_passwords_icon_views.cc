@@ -13,6 +13,7 @@
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/browser/ui/ui_features.h"
+#include "chrome/browser/ui/user_education/browser_user_education_interface.h"
 #include "chrome/browser/ui/views/passwords/manage_passwords_page_action_controller.h"
 #include "chrome/browser/ui/views/passwords/password_bubble_view_base.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
@@ -93,7 +94,6 @@ void ManagePasswordsIconViews::UpdateUiForState() {
 
   // Hides the page action icon if the associated toolbar icon is pinned.
   if (state_ == password_manager::ui::INACTIVE_STATE ||
-      state_ == password_manager::ui::PASSWORD_CHANGE_STATE ||
       delegate()->ShouldHidePageActionIcon(this)) {
     SetVisible(false);
     return;
@@ -122,7 +122,7 @@ void ManagePasswordsIconViews::UpdateImpl() {
 
 void ManagePasswordsIconViews::OnExecuting(
     PageActionIconView::ExecuteSource source) {
-  browser()->window()->NotifyFeaturePromoFeatureUsed(
+  BrowserUserEducationInterface::From(browser())->NotifyFeaturePromoFeatureUsed(
       feature_engagement::kIPHPasswordsSaveRecoveryPromoFeature,
       FeaturePromoFeatureUsedAction::kClosePromoIfPresent);
 }

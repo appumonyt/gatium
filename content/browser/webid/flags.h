@@ -11,9 +11,6 @@
 
 namespace content {
 
-// Whether multiple identity providers are enabled.
-bool IsFedCmMultipleIdentityProvidersEnabled();
-
 // Whether metrics endpoint is enabled.
 bool IsFedCmMetricsEndpointEnabled();
 
@@ -34,9 +31,6 @@ bool IsWebIdentityDigitalCredentialsCreationEnabled();
 
 // Whether sending of SameSite=Lax cookies is enabled.
 bool IsFedCmSameSiteLaxEnabled();
-
-// Whether showing filtered accounts is enabled.
-bool IsFedCmShowFilteredAccountsEnabled();
 
 // Whether lightweight FedCM credentials are enabled.
 bool IsFedCmLightweightModeEnabled();

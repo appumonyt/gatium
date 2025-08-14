@@ -11,12 +11,13 @@
 #include "base/scoped_observation.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
+#include "chrome/browser/enterprise/util/managed_browser_utils.h"
 #include "chrome/browser/plus_addresses/plus_address_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/sync/test/integration/status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_service_impl_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "components/plus_addresses/features.h"
+#include "components/plus_addresses/core/common/features.h"
 #include "components/plus_addresses/plus_address_service.h"
 #include "components/plus_addresses/plus_address_test_utils.h"
 #include "components/plus_addresses/plus_address_types.h"
@@ -98,7 +99,16 @@ class SingleClientPlusAddressSyncTest
   bool SetupSync(SyncTestAccount account = SyncTestAccount::kDefaultAccount) {
     const bool should_run_in_transport_mode = GetParam();
     if (should_run_in_transport_mode) {
-      return SetupClients() && GetClient(0)->SignInPrimaryAccount(account) &&
+      if (!SetupClients()) {
+        return false;
+      }
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+      auto enable_disclaimer_on_primary_account_change_resetter =
+          enterprise_util::DisableAutomaticManagementDisclaimerUntilReset(
+              GetProfile(0));
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+      return GetClient(0)->SignInPrimaryAccount(account) &&
              GetClient(0)->AwaitSyncTransportActive();
     }
     return SyncTest::SetupSync(account);

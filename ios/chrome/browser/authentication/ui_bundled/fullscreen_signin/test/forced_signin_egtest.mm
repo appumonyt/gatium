@@ -212,6 +212,11 @@ void CompleteSigninFlow() {
   [[EarlGrey selectElementWithMatcher:chrome_test_util::
                                           WebSigninPrimaryButtonMatcher()]
       performAction:grey_tap()];
+  //  Dismiss signin in confirmation snackbar.
+  [SigninEarlGreyUI
+      maybeDismissIdentityConfirmationSnackbarOnSignin:[FakeSystemIdentity
+                                                           fakeIdentity1]];
+  // History sync opt-in screen.
   [[EarlGrey selectElementWithMatcher:chrome_test_util::
                                           PromoScreenPrimaryButtonMatcher()]
       performAction:grey_tap()];
@@ -816,10 +821,6 @@ void CompleteSigninFlow() {
   if (![ChromeEarlGrey areMultipleWindowsSupported]) {
     EARL_GREY_TEST_DISABLED(@"Multiple windows can't be opened.");
   }
-  if (@available(iOS 19.0, *)) {
-    // TODO(crbug.com/427699033): Re-enable test on iOS 26.
-    EARL_GREY_TEST_DISABLED(@"Test disabled on iOS 26.");
-  }
 
   // Add account.
   FakeSystemIdentity* fakeIdentity1 = [FakeSystemIdentity fakeIdentity1];
@@ -853,6 +854,7 @@ void CompleteSigninFlow() {
   }
   if (@available(iOS 19.0, *)) {
     // TODO(crbug.com/427699033): Re-enable test on iOS 26.
+    // Fails to background app from [self backgroundApplication]
     EARL_GREY_TEST_DISABLED(@"Test disabled on iOS 26.");
   }
 

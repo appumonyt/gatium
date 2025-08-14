@@ -560,6 +560,11 @@ _CROSSBENCH_PIXEL9 = frozenset([
     ]),
 ])
 
+_CROSSBENCH_ANDROID_AL_BRYA = frozenset([
+    _speedometer3_crossbench(arguments=['--fileserver', '--debug']),
+    _motionmark1_3_crossbench(arguments=['--fileserver', '--debug']),
+])
+
 _CROSSBENCH_ANDROID_AL = frozenset([
     _speedometer3_crossbench(arguments=['--fileserver', '--debug']),
 ])
@@ -581,6 +586,7 @@ _CROSSBENCH_WEBVIEW = frozenset([
             '"Android.WebView.Startup.CreationTime.Stage1.FactoryInit":["mean"],'
             '"PageLoad.PaintTiming.NavigationToFirstContentfulPaint":["mean"]}}',
             '--repetitions=50',
+            '--cool-down-threshold=moderate',
             '--stories=cnn',
         ]
     ),
@@ -595,6 +601,9 @@ _CROSSBENCH_WEBVIEW = frozenset([
             '--probe-config=../../clank/android_webview/tools/crossbench_config/'
             'agsa_probe_config.hjson',
             '--repetitions=50',
+            '--cool-down-threshold=moderate',
+            '--http-request-timeout=15s',
+            '--action-runner=android',
         ]
     ),
 ])
@@ -765,7 +774,6 @@ _WIN_ARM64_EXECUTABLE_CONFIGS = frozenset([
     _components_perftests(125),
     _views_perftests(),
 ])
-_WIN_11_LOW_END_BENCHMARK_CONFIGS = _WIN_ARM64_BENCHMARK_CONFIGS
 _ANDROID_GO_BENCHMARK_CONFIGS = PerfSuite([
     _GetBenchmarkConfig('system_health.memory_mobile'),
     _GetBenchmarkConfig('system_health.common_mobile'),
@@ -823,6 +831,10 @@ _ANDROID_PIXEL_TANGOR_BENCHMARK_CONFIGS = PerfSuite(
         _GetBenchmarkConfig('speedometer3-minorms')
     ])
 # Android Desktop (AL)
+_ANDROID_AL_BRYA_BENCHMARK_CONFIGS = PerfSuite([
+    _GetBenchmarkConfig('jetstream2'),
+    _GetBenchmarkConfig('speedometer2'),
+])
 _ANDROID_AL_BENCHMARK_CONFIGS = PerfSuite([
     _GetBenchmarkConfig('rendering.mobile'),
 ])
@@ -917,9 +929,8 @@ WIN_10_LOW_END = PerfPlatform(
     'SSD, 4GB RAM.',
     _WIN_10_LOW_END_BENCHMARK_CONFIGS,
     # TODO(crbug.com/278947510): Increase the count when m.2 disks stop failing.
-    45,
-    'win',
-    crossbench=_CROSSBENCH_BENCHMARKS_ALL)
+    25,
+    'win')
 WIN_10_LOW_END_PGO = PerfPlatform(
     'win-10_laptop_low_end-perf-pgo',
     'Low end windows 10 HP laptops. HD Graphics 5500, x86-64-i3-5005U, '
@@ -959,13 +970,6 @@ WIN_10_AMD_LAPTOP_PGO = PerfPlatform('win-10_amd_laptop-perf-pgo',
                                      3,
                                      'win',
                                      pinpoint_only=True)
-WIN_11_LOW_END = PerfPlatform('win-11_laptop_low_end-perf',
-                              'Low end windows 11 laptops.'
-                              'SSD, 4GB RAM.',
-                              _WIN_11_LOW_END_BENCHMARK_CONFIGS,
-                              2,
-                              'win',
-                              crossbench=_CROSSBENCH_BENCHMARKS_ALL)
 WIN_11 = PerfPlatform('win-11-perf',
                       'Windows Dell PowerEdge R350',
                       _WIN_11_BENCHMARK_CONFIGS,
@@ -995,7 +999,7 @@ ANDROID_BRYA = PerfPlatform(
     name='android-brya-kano-i5-8gb-perf',
     description='Brya SKU kano_12th_Gen_IntelR_CoreTM_i5_1235U_8GB',
     num_shards=7,
-    benchmark_configs=_ANDROID_AL_BENCHMARK_CONFIGS,
+    benchmark_configs=_ANDROID_AL_BRYA_BENCHMARK_CONFIGS,
     platform_os='android',
     executables=None,
     crossbench=_CROSSBENCH_ANDROID_AL)
@@ -1069,7 +1073,7 @@ ANDROID_PIXEL_FOLD = PerfPlatform(
     'android-pixel-fold-perf',
     'Android U',
     _ANDROID_PIXEL_FOLD_BENCHMARK_CONFIGS,
-    15,
+    10,
     'android',
     executables=_ANDROID_DEFAULT_EXECUTABLE_CONFIGS)
 ANDROID_PIXEL_TANGOR = PerfPlatform(
@@ -1108,6 +1112,22 @@ ANDROID_PIXEL9_PRO_XL = PerfPlatform(
     'android',
     executables=_ANDROID_DEFAULT_EXECUTABLE_CONFIGS,
     crossbench=_CROSSBENCH_PIXEL9)
+ANDROID_PIXEL25_ULTRA = PerfPlatform(
+    'android-pixel25-ultra-perf',
+    'Android B',
+    _ANDROID_PIXEL9_BENCHMARK_CONFIGS,
+    4,
+    'android',
+    executables=_ANDROID_DEFAULT_EXECUTABLE_CONFIGS,
+    crossbench=_CROSSBENCH_PIXEL9)
+ANDROID_PIXEL25_ULTRA_XL = PerfPlatform(
+    'android-pixel25-ultra-xl-perf',
+    'Android B',
+    _ANDROID_PIXEL9_BENCHMARK_CONFIGS,
+    3,
+    'android',
+    executables=_ANDROID_DEFAULT_EXECUTABLE_CONFIGS,
+    crossbench=_CROSSBENCH_PIXEL9)
 # Cros
 FUCHSIA_PERF_NELSON = PerfPlatform('fuchsia-perf-nsn',
                                    '',
@@ -1115,8 +1135,22 @@ FUCHSIA_PERF_NELSON = PerfPlatform('fuchsia-perf-nsn',
                                    1,
                                    'fuchsia',
                                    is_fyi=True)
+FUCHSIA_PERF_NELSON_PGO = PerfPlatform(
+    'fuchsia-perf-nsn-pgo',
+    '',
+    _FUCHSIA_PERF_SMARTDISPLAY_BENCHMARK_CONFIGS,
+    1,
+    'fuchsia',
+    is_fyi=True)
 FUCHSIA_PERF_SHERLOCK = PerfPlatform(
     'fuchsia-perf-shk',
+    '',
+    _FUCHSIA_PERF_SMARTDISPLAY_BENCHMARK_CONFIGS,
+    1,
+    'fuchsia',
+    is_fyi=True)
+FUCHSIA_PERF_SHERLOCK_PGO = PerfPlatform(
+    'fuchsia-perf-shk-pgo',
     '',
     _FUCHSIA_PERF_SMARTDISPLAY_BENCHMARK_CONFIGS,
     1,

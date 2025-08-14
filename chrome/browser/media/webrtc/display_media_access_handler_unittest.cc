@@ -14,6 +14,7 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/mock_callback.h"
+#include "base/test/with_feature_override.h"
 #include "base/types/expected.h"
 #include "build/build_config.h"
 #include "chrome/browser/media/webrtc/fake_desktop_media_picker_factory.h"
@@ -26,6 +27,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/navigation_simulator.h"
+#include "media/audio/audio_features.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom-shared.h"
@@ -43,6 +45,13 @@
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "services/data_decoder/public/cpp/test_support/in_process_data_decoder.h"
 #endif  // !BUILDFLAG(IS_ANDROID)
+
+#if BUILDFLAG(IS_WIN)
+#include "base/process/process.h"
+#include "base/test/bind.h"
+#include "base/win/message_window.h"
+#include "media/audio/application_loopback_device_helper.h"
+#endif  // BUILDFLAG(IS_WIN)
 
 class DisplayMediaAccessHandlerTest : public ChromeRenderViewHostTestHarness {
  public:
@@ -838,6 +847,68 @@ TEST_F(DisplayMediaAccessHandlerTest,
   EXPECT_EQ(blink::mojom::MediaStreamRequestResult::OK, results[2]);
 }
 
+TEST_F(DisplayMediaAccessHandlerTest, ScreenWithAudioDefaultsToSystemAudio) {
+  blink::mojom::MediaStreamRequestResult result;
+  blink::mojom::StreamDevices devices;
+
+  ProcessRequest(
+      content::DesktopMediaID(content::DesktopMediaID::TYPE_SCREEN, 1,
+                              /*audio_share=*/true),
+      &result, devices, /*request_audio=*/true);
+
+// TODO(crbug.com/40802122): Fix screen-capture tests on macOS.
+#if BUILDFLAG(IS_MAC)
+  // On macOS, screen capture requires system permissions that are disabled by
+  // default.
+  EXPECT_EQ(blink::mojom::MediaStreamRequestResult::PERMISSION_DENIED_BY_SYSTEM,
+            result);
+  return;
+#endif
+
+  EXPECT_EQ(blink::mojom::MediaStreamRequestResult::OK, result);
+  EXPECT_EQ(2u, blink::CountDevices(devices));
+
+  EXPECT_EQ(blink::mojom::MediaStreamType::DISPLAY_VIDEO_CAPTURE,
+            devices.video_device->type);
+  EXPECT_TRUE(devices.video_device->display_media_info);
+
+  EXPECT_EQ(blink::mojom::MediaStreamType::DISPLAY_AUDIO_CAPTURE,
+            devices.audio_device.value().type);
+  EXPECT_EQ("loopback", devices.audio_device->id);
+  EXPECT_EQ("System Audio", devices.audio_device->name);
+}
+
+TEST_F(DisplayMediaAccessHandlerTest, WindowWithAudioDefaultsToSystemAudio) {
+  blink::mojom::MediaStreamRequestResult result;
+  blink::mojom::StreamDevices devices;
+
+  ProcessRequest(
+      content::DesktopMediaID(content::DesktopMediaID::TYPE_WINDOW, 1234,
+                              /*audio_share=*/true),
+      &result, devices, /*request_audio=*/true);
+
+// TODO(crbug.com/40802122): Fix screen-capture tests on macOS.
+#if BUILDFLAG(IS_MAC)
+  // On macOS, screen capture requires system permissions that are disabled by
+  // default.
+  EXPECT_EQ(blink::mojom::MediaStreamRequestResult::PERMISSION_DENIED_BY_SYSTEM,
+            result);
+  return;
+#endif
+
+  EXPECT_EQ(blink::mojom::MediaStreamRequestResult::OK, result);
+  EXPECT_EQ(2u, blink::CountDevices(devices));
+
+  EXPECT_EQ(blink::mojom::MediaStreamType::DISPLAY_VIDEO_CAPTURE,
+            devices.video_device->type);
+  EXPECT_TRUE(devices.video_device->display_media_info);
+
+  EXPECT_EQ(blink::mojom::MediaStreamType::DISPLAY_AUDIO_CAPTURE,
+            devices.audio_device.value().type);
+  EXPECT_EQ("loopback", devices.audio_device->id);
+  EXPECT_EQ("System Audio", devices.audio_device->name);
+}
+
 class DisplayMediaAccessHandlerTestWithSelfBrowserSurface
     : public DisplayMediaAccessHandlerTest,
       public testing::WithParamInterface<bool> {
@@ -904,3 +975,87 @@ TEST_P(DisplayMediaAccessHandlerTestWithMonitorTypeSurfaces,
       &wait_loop, &result, devices);
   wait_loop.Run();
 }
+
+#if BUILDFLAG(IS_WIN)
+class DisplayMediaAccessHandlerWindowAudioCaptureWinTest
+    : public base::test::WithFeatureOverride,
+      public DisplayMediaAccessHandlerTest {
+ public:
+  DisplayMediaAccessHandlerWindowAudioCaptureWinTest()
+      : base::test::WithFeatureOverride(features::kApplicationAudioCaptureWin) {
+  }
+};
+
+TEST_P(DisplayMediaAccessHandlerWindowAudioCaptureWinTest, ValidWindowId) {
+  blink::mojom::MediaStreamRequestResult result;
+  blink::mojom::StreamDevices devices;
+
+  // Create a fake window to simulate a valid window ID. Fortunately, we don't
+  // need to actually show the window, just to have a valid HWND.
+  base::win::MessageWindow window;
+  EXPECT_TRUE(window.Create(
+      base::BindLambdaForTesting([&](UINT message, WPARAM wparam, LPARAM lparam,
+                                     LRESULT* result) { return true; })));
+  ProcessRequest(
+      content::DesktopMediaID(content::DesktopMediaID::TYPE_WINDOW,
+                              reinterpret_cast<intptr_t>(window.hwnd()),
+                              true /* audio_share */),
+      &result, devices, true /* request_audio */);
+
+  EXPECT_EQ(blink::mojom::MediaStreamRequestResult::OK, result);
+  EXPECT_EQ(2u, blink::CountDevices(devices));
+
+  EXPECT_EQ(blink::mojom::MediaStreamType::DISPLAY_VIDEO_CAPTURE,
+            devices.video_device.value().type);
+  EXPECT_TRUE(devices.video_device.value().display_media_info);
+
+  EXPECT_EQ(blink::mojom::MediaStreamType::DISPLAY_AUDIO_CAPTURE,
+            devices.audio_device.value().type);
+
+  if (IsParamFeatureEnabled()) {
+    EXPECT_TRUE(devices.audio_device.value().input.IsValid());
+
+    // Unit tests are executed in a child process that also use the same
+    // executable image (unit_tests.exe) unless the --single-process flag is
+    // passed. Therefore, the application process ID should match either the
+    // parent's process PID or the child's process PID.
+    uint32_t application_process_id =
+        media::GetApplicationIdFromApplicationLoopbackDeviceId(
+            devices.audio_device.value().id);
+    EXPECT_THAT(application_process_id,
+                testing::AnyOf(base::Process::Current().Pid(),
+                               base::GetParentProcessId(
+                                   base::Process::Current().Handle())));
+
+    EXPECT_EQ("Application Audio", devices.audio_device->name);
+  } else {
+    EXPECT_EQ("loopback", devices.audio_device->id);
+    EXPECT_EQ("System Audio", devices.audio_device->name);
+  }
+}
+
+TEST_P(DisplayMediaAccessHandlerWindowAudioCaptureWinTest, InvalidWindowId) {
+  blink::mojom::MediaStreamRequestResult result;
+  blink::mojom::StreamDevices devices;
+  ProcessRequest(content::DesktopMediaID(content::DesktopMediaID::TYPE_WINDOW,
+                                         content::DesktopMediaID::kFakeId,
+                                         true /* audio_share */),
+                 &result, devices, true /* request_audio */);
+
+  EXPECT_EQ(blink::mojom::MediaStreamRequestResult::OK, result);
+  if (IsParamFeatureEnabled()) {
+    // If the feature is enabled but the window ID is invalid, audio should not
+    // be captured.
+    EXPECT_EQ(1u, blink::CountDevices(devices));
+  } else {
+    EXPECT_EQ(2u, blink::CountDevices(devices));
+  }
+  EXPECT_EQ(blink::mojom::MediaStreamType::DISPLAY_VIDEO_CAPTURE,
+            devices.video_device.value().type);
+  EXPECT_TRUE(devices.video_device.value().display_media_info);
+}
+
+INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(
+    DisplayMediaAccessHandlerWindowAudioCaptureWinTest);
+
+#endif  // BUILDFLAG(IS_WIN)

@@ -89,7 +89,7 @@ bool HasNonTrivialSpellingGrammarStyles(const FragmentItem& fragment_item,
                                         PseudoId pseudo) {
   DCHECK(pseudo == kPseudoIdSpellingError || pseudo == kPseudoIdGrammarError);
   if (const ComputedStyle* pseudo_style =
-          HighlightStyleUtils::HighlightPseudoStyle(node, originating_style,
+          HighlightStyleUtils::HighlightPseudoStyle(originating_style,
                                                     pseudo)) {
     const Document& document = node->GetDocument();
     // If the ‘color’, ‘-webkit-text-fill-color’, ‘-webkit-text-stroke-color’,
@@ -284,6 +284,7 @@ HighlightPainter::SelectionPaintState::SelectionPaintState(
                               ->GetDocument()
                               .GetFrame()
                               ->Selection()) {}
+
 HighlightPainter::SelectionPaintState::SelectionPaintState(
     const InlineCursor& containing_block,
     const PhysicalOffset& box_offset,
@@ -303,8 +304,8 @@ void HighlightPainter::SelectionPaintState::ComputeSelectionStyle(
     Node* node,
     const PaintInfo& paint_info,
     const TextPaintStyle& text_style) {
-  const ComputedStyle* pseudo_style = HighlightStyleUtils::HighlightPseudoStyle(
-      node, style, kPseudoIdSelection);
+  const ComputedStyle* pseudo_style =
+      HighlightStyleUtils::HighlightPseudoStyle(style, kPseudoIdSelection);
   selection_style_ = HighlightStyleUtils::HighlightPaintingStyle(
       document, style, pseudo_style, node, kPseudoIdSelection, text_style,
       paint_info, SearchTextIsActiveMatch::kNo);
@@ -449,21 +450,25 @@ HighlightPainter::HighlightPainter(
             *text_node, fragment_paint_info_.from, fragment_paint_info_.to);
         DCHECK(fragment_dom_offsets_);
         markers_ = controller.ComputeMarkersToPaint(*text_node);
-        if (RuntimeEnabledFeatures::SearchTextHighlightPseudoEnabled() &&
-            !fragment_item_.IsSvgText()) {
-          search_ = controller.MarkersFor(
-              *text_node, DocumentMarker::kTextMatch,
+        if (!paint_info.IsPrivacyPreserving()) {
+          // When preserving privacy, only paint custom highlights. This check
+          // only protects markers painted with the highlight overlay system.
+          if (RuntimeEnabledFeatures::SearchTextHighlightPseudoEnabled() &&
+              !fragment_item_.IsSvgText()) {
+            search_ = controller.MarkersFor(
+                *text_node, DocumentMarker::kTextMatch,
+                fragment_dom_offsets_->start, fragment_dom_offsets_->end);
+          }
+          target_ = controller.MarkersFor(
+              *text_node, DocumentMarker::kTextFragment,
               fragment_dom_offsets_->start, fragment_dom_offsets_->end);
+          spelling_ = controller.MarkersFor(
+              *text_node, DocumentMarker::kSpelling,
+              fragment_dom_offsets_->start, fragment_dom_offsets_->end);
+          grammar_ = controller.MarkersFor(*text_node, DocumentMarker::kGrammar,
+                                           fragment_dom_offsets_->start,
+                                           fragment_dom_offsets_->end);
         }
-        target_ = controller.MarkersFor(
-            *text_node, DocumentMarker::kTextFragment,
-            fragment_dom_offsets_->start, fragment_dom_offsets_->end);
-        spelling_ = controller.MarkersFor(*text_node, DocumentMarker::kSpelling,
-                                          fragment_dom_offsets_->start,
-                                          fragment_dom_offsets_->end);
-        grammar_ = controller.MarkersFor(*text_node, DocumentMarker::kGrammar,
-                                         fragment_dom_offsets_->start,
-                                         fragment_dom_offsets_->end);
         custom_ = controller.MarkersFor(
             *text_node, DocumentMarker::kCustomHighlight,
             fragment_dom_offsets_->start, fragment_dom_offsets_->end);
@@ -528,6 +533,13 @@ HighlightPainter::HighlightPainter(
 void HighlightPainter::PaintNonCssMarkers(Phase phase) {
   if (markers_.empty())
     return;
+
+  // Find-in-page markers are PII because they reveal what a user is
+  // interested in (though we may change this). Editing markers are transient
+  // and reflect uncommitted content, so do not draw them.
+  if (paint_info_.IsPrivacyPreserving()) {
+    return;
+  }
 
   CHECK(node_);
   const StringView text = cursor_.CurrentText();
@@ -634,8 +646,9 @@ HighlightPainter::Case HighlightPainter::PaintCase() const {
 }
 
 HighlightPainter::Case HighlightPainter::ComputePaintCase() const {
-  if (selection_ && selection_->ShouldPaintSelectedTextOnly())
+  if (selection_ && selection_->ShouldPaintSelectedTextOnly()) {
     return kSelectionOnly;
+  }
 
   // This can yield false positives (weakening the optimisations below) if all
   // non-spelling/grammar/selection highlights are outside the text fragment.
@@ -645,7 +658,7 @@ HighlightPainter::Case HighlightPainter::ComputePaintCase() const {
 
   if (selection_ && spelling_.empty() && grammar_.empty()) {
     const ComputedStyle* pseudo_style =
-        HighlightStyleUtils::HighlightPseudoStyle(node_, originating_style_,
+        HighlightStyleUtils::HighlightPseudoStyle(originating_style_,
                                                   kPseudoIdSelection);
 
     // If we only have a selection, and there are no selection or originating
@@ -720,7 +733,7 @@ void HighlightPainter::PaintOneSpellingGrammarDecoration(
 
   if (!text_painter_.GetSvgState()) {
     if (const auto* pseudo_style = HighlightStyleUtils::HighlightPseudoStyle(
-            node_, originating_style_, PseudoFor(type))) {
+            originating_style_, PseudoFor(type))) {
       const TextPaintStyle text_style =
           HighlightStyleUtils::HighlightPaintingStyle(
               node_->GetDocument(), originating_style_, pseudo_style, node_,
@@ -796,7 +809,7 @@ TextOffsetRange HighlightPainter::GetFragmentDOMOffsets(const Text& text,
   const OffsetMapping* mapping = OffsetMapping::GetFor(text.GetLayoutObject());
   unsigned last_from = mapping->GetLastPosition(from).OffsetInContainerNode();
   unsigned first_to = mapping->GetFirstPosition(to).OffsetInContainerNode();
-  return {last_from, first_to};
+  return {last_from, std::max(last_from, first_to)};
 }
 
 const PhysicalRect HighlightPainter::ComputeBackgroundRect(

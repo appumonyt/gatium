@@ -26,7 +26,6 @@
 #import "ios/chrome/browser/saved_tab_groups/model/ios_tab_group_sync_util.h"
 #import "ios/chrome/browser/saved_tab_groups/model/tab_group_sync_service_factory.h"
 #import "ios/chrome/browser/saved_tab_groups/ui/face_pile_providing.h"
-#import "ios/chrome/browser/share_kit/model/share_kit_face_pile_configuration.h"
 #import "ios/chrome/browser/share_kit/model/share_kit_manage_configuration.h"
 #import "ios/chrome/browser/share_kit/model/share_kit_service.h"
 #import "ios/chrome/browser/share_kit/model/share_kit_service_factory.h"
@@ -64,7 +63,6 @@ constexpr CGFloat kTabGroupPresentationDuration = 0.3;
 constexpr CGFloat kTabGroupDismissalDuration = 0.25;
 constexpr CGFloat kTabGroupBackgroundElementDurationFactor = 0.75;
 // The preferred size in points for the avatar icons.
-constexpr CGFloat kLegacyFacePileAvatarSize = 24;
 constexpr CGFloat kFacePileAvatarSize = 26;
 }  // namespace
 
@@ -533,12 +531,7 @@ constexpr CGFloat kFacePileAvatarSize = 26;
   FacePileConfiguration* config = [[FacePileConfiguration alloc] init];
   config.showsEmptyState = YES;
   config.groupID = data_sharing::GroupId(groupID);
-
-  if (IsContainedTabGroupEnabled()) {
-    config.avatarSize = kFacePileAvatarSize;
-  } else {
-    config.avatarSize = kLegacyFacePileAvatarSize;
-  }
+  config.avatarSize = kFacePileAvatarSize;
 
   FacePileCoordinator* facePileCoordinator =
       [[FacePileCoordinator alloc] initWithFacePileConfiguration:config

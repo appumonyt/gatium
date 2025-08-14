@@ -1030,8 +1030,9 @@ EVENT_TYPE(TCP_STREAM_ATTEMPT_CONNECT)
 //   }
 EVENT_TYPE(TLS_STREAM_ATTEMPT_ALIVE)
 
-// Measures the time TlsStreamAttempt was waiting SSLConfig to be ready.
-EVENT_TYPE(TLS_STREAM_ATTEMPT_WAIT_FOR_SSL_CONFIG)
+// Measures the time TlsStreamAttempt was waiting for the ServiceEndpoint to be
+// ready.
+EVENT_TYPE(TLS_STREAM_ATTEMPT_WAIT_FOR_SERVICE_ENDPOINT)
 
 // Measures the time TlsStreamAttempt took to connect (TLS handshake).
 // For the END phase, if there was an error, the following parameters are
@@ -1394,8 +1395,6 @@ EVENT_TYPE(HTTP_STREAM_JOB_RESUMED)
 // The following parameters are attached:
 //   {
 //      "url": <String of request URL>,
-//      "url_after_host_mapping": <URL after applying hostmapping.
-//                                 Only present if different from URL>,
 //      "is_preconnect": <True if controller is created for a preconnect>,
 //      "private_mode": <Privacy mode of the request>,
 //   }
@@ -1661,6 +1660,14 @@ EVENT_TYPE(HTTP_STREAM_POOL_ATTEMPT_MANAGER_QUIC_ATTEMPT_BOUND)
 //                           task succeeded>,
 //   }
 EVENT_TYPE(HTTP_STREAM_POOL_ATTEMPT_MANAGER_QUIC_ATTEMPT_COMPLETED)
+
+// Emitted when an HttpStreamPool::AttemptManager checks whether it can attempt
+// a TCP based connection. The event parameter is:
+//  {
+//     "can_attempt": <The reason why AttemptManager can or cannot make an
+//                     attempt>,
+//  }
+EVENT_TYPE(HTTP_STREAM_POOL_ATTEMPT_MANAGER_CAN_ATTEMPT_TCP)
 
 // Marks the start/end of a HttpStreamPool::AttemptManager::QuicAttempt.
 // For the BEGIN phase, the following parameters are attached:

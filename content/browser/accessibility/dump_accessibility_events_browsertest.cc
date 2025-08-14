@@ -14,6 +14,8 @@
 #include "base/functional/callback_helpers.h"
 #include "base/path_service.h"
 #include "base/strings/escape.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -78,8 +80,6 @@ class DumpAccessibilityEventsTest : public DumpAccessibilityTestBase {
  public:
   void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures,
-                                    "KeyboardFocusableScrollers");
-    command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures,
                                     "ShadowRootReferenceTarget");
     // Enable AOMAriaRelationshipProperties
     command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures,
@@ -87,28 +87,73 @@ class DumpAccessibilityEventsTest : public DumpAccessibilityTestBase {
     DumpAccessibilityTestBase::SetUpCommandLine(command_line);
   }
 
-  std::vector<ui::AXPropertyFilter> DefaultFilters() const override {
-    std::vector<ui::AXPropertyFilter> property_filters;
-    // Suppress spurious focus events on the document object.
-    property_filters.emplace_back("EVENT_OBJECT_FOCUS*DOCUMENT*",
-                                  AXPropertyFilter::DENY);
-    property_filters.emplace_back("AutomationFocusChanged*document*",
-                                  AXPropertyFilter::DENY);
-    // Implementing IRawElementProviderAdviseEvents causes Win7 to fire
-    // spurious focus events (regardless of what the implementation does).
-    property_filters.emplace_back("AutomationFocusChanged on role=region",
-                                  AXPropertyFilter::DENY);
-    return property_filters;
-  }
 
   std::vector<std::string> Dump() override;
 
   void OnDiffFailed() override;
   void RunEventTest(const base::FilePath::CharType* file_path);
 
- private:
+ protected:
+  bool ShouldDumpAccessibilityTreeAfterEachGoPass() const {
+    return scenario_.events_tree_dump_enabled;
+  }
+
+  std::vector<ui::AXPropertyFilter> DefaultFilters() const override {
+    std::vector<ui::AXPropertyFilter> filters =
+        DumpAccessibilityTestBase::DefaultFilters();
+
+    // Event-specific filters
+    // Suppress spurious focus events on the document object.
+    filters.emplace_back("EVENT_OBJECT_FOCUS*DOCUMENT*",
+                         AXPropertyFilter::DENY);
+    filters.emplace_back("AutomationFocusChanged*document*",
+                         AXPropertyFilter::DENY);
+    // Implementing IRawElementProviderAdviseEvents causes Win7 to fire
+    // spurious focus events (regardless of what the implementation does).
+    filters.emplace_back("AutomationFocusChanged on role=region",
+                         AXPropertyFilter::DENY);
+
+    // Tree-specific filters
+    // States that are not included in the default tree dumps, but which help us
+    // verify that state-change events and attributes are in sync.
+    filters.emplace_back("indeterminate*", ui::AXPropertyFilter::ALLOW);
+    filters.emplace_back("pressed*", ui::AXPropertyFilter::ALLOW);
+    filters.emplace_back("focused*", ui::AXPropertyFilter::ALLOW);
+    // In the case of tree dumps with many generic objects, these make it easier
+    // to identify which element is which.
+    filters.emplace_back("htmlTag*", ui::AXPropertyFilter::ALLOW);
+    filters.emplace_back("className*", ui::AXPropertyFilter::ALLOW);
+    return filters;
+  }
+
   std::string initial_tree_;
   std::string final_tree_;
+
+  // If tree dumping is enabled we'll have a "before" and an "after" tree dump
+  // for each `go()` run. Depending on the tree associated with a given test,
+  // the ability to quickly identify what changed in response to an interaction
+  // can be hard to spot. Adding a simple marker to the end of each changed line
+  // in the "after" tree makes it possible to dump the full tree without
+  // modifications and locate the difference(s).
+  std::vector<std::string> AddDiffMarkersToAfterTree(
+      const std::vector<std::string>& before_tree_lines,
+      const std::vector<std::string>& after_tree_lines) const {
+    // Don't add diff markers if the before tree is too small.
+    if (before_tree_lines.size() <= 3) {
+      return after_tree_lines;
+    }
+    std::set<std::string> before_lines_set(before_tree_lines.begin(),
+                                           before_tree_lines.end());
+    std::vector<std::string> marked_after_lines;
+    for (const std::string& after_line : after_tree_lines) {
+      if (before_lines_set.find(after_line) == before_lines_set.end()) {
+        marked_after_lines.push_back(after_line + " <<<<<< CHANGED");
+      } else {
+        marked_after_lines.push_back(after_line);
+      }
+    }
+    return marked_after_lines;
+  }
 };
 
 std::vector<std::string> DumpAccessibilityEventsTest::Dump() {
@@ -121,17 +166,37 @@ std::vector<std::string> DumpAccessibilityEventsTest::Dump() {
   final_tree_.clear();
   bool run_go_again = false;
   std::vector<std::string> result;
+  int go_pass_number = 1;
+
   do {
-    // Dump the event logs, running them through any filters specified
-    // in the HTML file.
-    auto [go_results, event_logs] = CaptureEvents(
-        base::BindOnce([](RenderFrameHostImpl* frame,
-                          std::string script) { return EvalJs(frame, script); },
-                       web_contents->GetPrimaryMainFrame(), "go()"));
+    std::vector<std::string> before_tree_lines;
+    // 1. Optionally dump the before-run accessibility tree.
+    if (ShouldDumpAccessibilityTreeAfterEachGoPass()) {
+      // For the first go pass, wait for final tree contents like tree tests do.
+      // This ensures the document has fully loaded before dumping the tree.
+      if (go_pass_number == 1) {
+        WaitForFinalTreeContents();
+      }
+      std::string initial_tree_dump = DumpTreeAsString();
+      result.emplace_back("=== Accessibility tree before go() pass " +
+                          base::NumberToString(go_pass_number) + " ===");
+      before_tree_lines =
+          base::SplitString(initial_tree_dump, "\n", base::KEEP_WHITESPACE,
+                            base::SPLIT_WANT_NONEMPTY);
+      for (const std::string& line : before_tree_lines) {
+        result.push_back(line);
+      }
+      result.emplace_back("=== End accessibility tree ===");
+    }
+
+    // 2. Capture and log the events for this `go()` run.
+    auto [go_results, event_logs] = CaptureEvents(base::BindOnce(
+        [](RenderFrameHostImpl* frame, std::string script) {
+          return EvalJs(frame, script).TakeValue();
+        },
+        web_contents->GetPrimaryMainFrame(),
+        "typeof go === 'function' ? go() : false"));
     run_go_again = go_results == true;
-    // Save a copy of the final accessibility tree (as a text dump); we'll
-    // log this for the user later if the test fails.
-    final_tree_.append(DumpUnfilteredAccessibilityTreeAsString());
 
     for (auto& event_log : event_logs) {
       if (AXTreeFormatter::MatchesPropertyFilters(scenario_.property_filters,
@@ -140,9 +205,32 @@ std::vector<std::string> DumpAccessibilityEventsTest::Dump() {
       }
     }
 
+    // 3. Optionally dump the after-run accessibility tree, noting any changes.
+    if (ShouldDumpAccessibilityTreeAfterEachGoPass()) {
+      std::string final_tree_dump = DumpTreeAsString();
+      result.emplace_back("=== Accessibility tree after go() pass " +
+                          base::NumberToString(go_pass_number) + " ===");
+      std::vector<std::string> after_tree_lines =
+          base::SplitString(final_tree_dump, "\n", base::KEEP_WHITESPACE,
+                            base::SPLIT_WANT_NONEMPTY);
+
+      std::vector<std::string> marked_after_lines =
+          AddDiffMarkersToAfterTree(before_tree_lines, after_tree_lines);
+
+      for (const std::string& line : marked_after_lines) {
+        result.push_back(line);
+      }
+      result.emplace_back("=== End accessibility tree ===");
+    }
+
+    // Save a copy of the final accessibility tree (as a text dump); we'll
+    // log this for the user later if the test fails.
+    final_tree_.append(DumpUnfilteredAccessibilityTreeAsString());
+
     if (run_go_again) {
       final_tree_.append("=== Start Continuation ===\n");
       result.emplace_back("=== Start Continuation ===");
+      go_pass_number++;
     }
   } while (run_go_again);
 
@@ -196,6 +284,23 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ValuesIn(DumpAccessibilityTestBase::EventTestPassesExceptUIA()),
     DumpAccessibilityEventsTestPassToString());
 
+#if !BUILDFLAG(IS_ANDROID)
+class DumpAccessibilityEventsWithMaterialDesignTest
+    : public DumpAccessibilityEventsTest {
+ public:
+  void SetUpOnMainThread() override {
+    SetUpMaterialDesignRequestHandler();
+    DumpAccessibilityEventsTest::SetUpOnMainThread();
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    DumpAccessibilityEventsWithMaterialDesignTest,
+    ::testing::ValuesIn(DumpAccessibilityTestBase::EventTestPasses()),
+    DumpAccessibilityEventsTestPassToString());
+#endif  // !BUILDFLAG(IS_ANDROID)
+
 class DumpAccessibilityEventsWithExperimentalWebFeaturesTest
     : public DumpAccessibilityEventsTest {
   void SetUpCommandLine(base::CommandLine* command_line) override {
@@ -219,6 +324,8 @@ GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(DumpAccessibilityEventsTest);
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(
     DumpAccessibilityEventsTestExceptUIA);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(
+    DumpAccessibilityEventsWithMaterialDesignTest);
 
 IN_PROC_BROWSER_TEST_P(
     DumpAccessibilityEventsTest,
@@ -814,6 +921,90 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("menulist-focus.html"));
 }
 
+// The Material Design tests are not supported on Android.
+// In the case of Windows, many DumpAccessibility* tests fail due to
+// crrev.com/c/6620083 which causes tests to fail if there is a leaked COM
+// object. The Material Design tests are not special; just more tests that
+// fail due to the leak.
+// TODO(crbug.com/424781310): Re-enable these tests on Windows once the leak
+// issue is resolved.
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_WIN)
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignButtonEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-button.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignCheckboxEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-checkbox.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignListEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-list.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignMenuEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-menu.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignRadioEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-radio.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignSwitchEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-switch.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignSliderEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-slider.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignProgressEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-progress.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignTabsEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-tabs.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignTextFieldEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-text-field.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignSelectEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-select.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignDialogEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-dialog.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignIconButtonEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-icon-button.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignFabEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-fab.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithMaterialDesignTest,
+                       MaterialDesignChipsEvents) {
+  RunEventTest(FILE_PATH_LITERAL("material-design-chips.html"));
+}
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_WIN)
+
 // TODO(crbug.com/40841326): disabled on UIA
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTestExceptUIA,
                        // TODO(crbug.com/40913066): Re-enable this test
@@ -1128,6 +1319,11 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest, DeleteSubtree) {
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithExperimentalWebFeaturesTest,
                        CarouselWithTabs) {
   RunEventTest(FILE_PATH_LITERAL("carousel-with-tabs.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsWithExperimentalWebFeaturesTest,
+                       CarouselWithLinks) {
+  RunEventTest(FILE_PATH_LITERAL("carousel-with-links.html"));
 }
 
 }  // namespace content

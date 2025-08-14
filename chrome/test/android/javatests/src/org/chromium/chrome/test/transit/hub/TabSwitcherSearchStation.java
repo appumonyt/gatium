@@ -20,15 +20,14 @@ import static org.chromium.base.test.transit.ViewSpec.viewSpec;
 import android.view.KeyEvent;
 import android.view.View;
 
+import androidx.core.util.Pair;
 import androidx.test.espresso.action.ViewActions;
 import androidx.test.espresso.matcher.ViewMatchers;
 
 import org.hamcrest.Matcher;
 
-import org.chromium.base.test.transit.Condition;
 import org.chromium.base.test.transit.Facility;
 import org.chromium.base.test.transit.Station;
-import org.chromium.base.test.transit.Transition;
 import org.chromium.base.test.transit.ViewElement;
 import org.chromium.base.test.transit.ViewSpec;
 import org.chromium.build.annotations.Nullable;
@@ -87,26 +86,26 @@ public class TabSwitcherSearchStation extends Station<SearchActivity> {
     }
 
     public void typeInOmnibox(String query) {
-        Condition.waitFor(new UrlBarHasFocusCondition(urlBarElement.get()));
-        Condition.runAndWaitFor(
-                Transition.possiblyAlreadyFulfilledOption(),
-                urlBarElement.getTypeTextTrigger(query),
-                new SuggestionsShownCondition(locationBarElement.get()));
+        noopTo().waitFor(new UrlBarHasFocusCondition(urlBarElement.get()));
+        urlBarElement
+                .typeTextTo(query)
+                .withPossiblyAlreadyFulfilled()
+                .waitFor(new SuggestionsShownCondition(locationBarElement.get()));
     }
 
     public void checkSuggestionsShown() {
-        Condition.waitFor(new SuggestionsShownCondition(locationBarElement.get()));
+        noopTo().waitFor(new SuggestionsShownCondition(locationBarElement.get()));
     }
 
     public void checkSuggestionsNotShown() {
-        Condition.waitFor(new SuggestionsNotShownCondition(locationBarElement.get()));
+        noopTo().waitFor(new SuggestionsNotShownCondition(locationBarElement.get()));
     }
 
     /** Expect a suggestion with the given |index|, |title| and |text| combination. */
     public SuggestionFacility findSuggestion(
             @Nullable Integer index, @Nullable String title, @Nullable String text) {
         SUGGESTIONS_LIST.printFromRoot();
-        return enterFacilitySync(new SuggestionFacility(index, title, text), /* trigger= */ null);
+        return noopTo().enterFacility(new SuggestionFacility(index, title, text));
     }
 
     /** Expect suggestions with all the given |texts|. */
@@ -117,13 +116,13 @@ public class TabSwitcherSearchStation extends Station<SearchActivity> {
             allSuggestionFacilities.add(
                     new SuggestionFacility(/* index= */ null, /* title= */ null, prefix + text));
         }
-        enterFacilitiesSync(allSuggestionFacilities, /* trigger= */ null);
+        noopTo().enterFacilities(allSuggestionFacilities.toArray(new Facility[0]));
     }
 
     /** Expect a suggestion with the given |index| and |text|. */
     public SectionHeaderFacility findSectionHeaderByIndexAndText(int index, String text) {
         SUGGESTIONS_LIST.printFromRoot();
-        return enterFacilitySync(new SectionHeaderFacility(index, text), /* trigger= */ null);
+        return noopTo().enterFacility(new SectionHeaderFacility(index, text));
     }
 
     /** A suggestion in the search results. */
@@ -169,9 +168,19 @@ public class TabSwitcherSearchStation extends Station<SearchActivity> {
             return suggestionElement.clickTo().arriveAt(buildDestinationPageStation());
         }
 
+        public Pair<RegularTabSwitcherStation, TabGroupDialogFacility> openTabGroup(
+                ChromeTabbedActivity activity, List<Integer> tabIdsInGroup, String title) {
+            RegularTabSwitcherStation tabSwitcher =
+                    RegularTabSwitcherStation.from(activity.getTabModelSelector());
+            TabGroupDialogFacility dialog =
+                    new TabGroupDialogFacility<>(tabIdsInGroup, title, null);
+            suggestionElement.clickTo().arriveAtAnd(tabSwitcher).enterFacility(dialog);
+            return new Pair<>(tabSwitcher, dialog);
+        }
+
         public WebPageStation openPagePressingEnter() {
             UrlBar urlBar = urlBarElement.get();
-            Condition.waitFor(new UrlBarHasFocusCondition(urlBar, /* active= */ true));
+            noopTo().waitFor(new UrlBarHasFocusCondition(urlBar, /* active= */ true));
             return urlBarElement
                     .performViewActionTo(ViewActions.pressKey(KeyEvent.KEYCODE_ENTER))
                     .arriveAt(buildDestinationPageStation());

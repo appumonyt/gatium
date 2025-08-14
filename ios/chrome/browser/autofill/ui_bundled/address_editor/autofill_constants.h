@@ -23,6 +23,16 @@ enum class AutofillSaveProfilePromptMode {
   kMigrateProfile
 };
 
+// Defines the context in which the address is being saved/updated.
+enum class SaveAddressContext {
+  // Saving or updating an address captured during form submission.
+  kInfobarSaveUpdateAddress,
+  // Editing an existing, previously saved address.
+  kEditingSavedAddress,
+  // Manually adding a new address from scratch.
+  kAddingManualAddress
+};
+
 // `AutofillProfileEditTableViewController` and
 // `AutofillSettingsProfileEditTableViewController` both create the same view
 // using the below section identifiers and item types. Identifier for section
@@ -36,6 +46,7 @@ typedef NS_ENUM(NSInteger, AutofillProfileDetailsSectionIdentifier) {
   AutofillProfileDetailsSectionIdentifierMigrationButton,
   AutofillProfileDetailsSectionIdentifierErrorFooter,
   AutofillProfileDetailsSectionIdentifierFooter,
+  AutofillProfileDetailsSectionIdentifierEdit
 };
 
 // Identifier for item types for autofill profile edit views.
@@ -46,7 +57,8 @@ typedef NS_ENUM(NSInteger, AutofillProfileDetailsItemType) {
   AutofillProfileDetailsItemTypeFooter,
   AutofillProfileDetailsItemTypeSaveButton,
   AutofillProfileDetailsItemTypeMigrateToAccountRecommendation,
-  AutofillProfileDetailsItemTypeMigrateToAccountButton
+  AutofillProfileDetailsItemTypeMigrateToAccountButton,
+  AutofillProfileDetailsItemTypeEdit
 };
 
 #endif  // IOS_CHROME_BROWSER_AUTOFILL_UI_BUNDLED_ADDRESS_EDITOR_AUTOFILL_CONSTANTS_H_

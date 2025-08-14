@@ -10,7 +10,9 @@
 #import "components/themes/ntp_background_data.h"
 #import "ios/chrome/browser/home_customization/model/background_customization_configuration.h"
 #import "ios/chrome/browser/home_customization/utils/home_customization_constants.h"
+#import "ui/color/color_provider_key.h"
 
+struct FramingCoordinates;
 /**
  * A class representing a background customization configuration.
  * This class holds all the necessary data for a background choice.
@@ -23,15 +25,27 @@
 - (instancetype)initWithCollectionImage:(const CollectionImage&)collectionImage;
 
 // Initializes a new instance of the background customization configuration
-// with the provided background color.
-- (instancetype)initWithBackgroundColor:(UIColor*)backgroundColor;
+// with the provided background color and a variant.
+- (instancetype)initWithBackgroundColor:(UIColor*)backgroundColor
+                           colorVariant:(ui::ColorProviderKey::SchemeVariant)
+                                            colorVariant;
 
 // Initializes a new instance of the background customization configuration
 /// with no background.
 - (instancetype)initWithNoBackground;
 
+// Initializes a new instance of the background customization configuration
+// with a user-uploaded image path and framing coordinates.
+- (instancetype)initWithUserUploadedImagePath:(NSString*)imagePath
+                           framingCoordinates:
+                               (const FramingCoordinates&)coordinates;
+
 // A pointer to a CollectionImage that points to the background image.
 @property(readonly, nonatomic) const CollectionImage& collectionImage;
+
+// The color scheme variant associated with the UIColor representing the
+// background's base color.
+@property(nonatomic, assign) ui::ColorProviderKey::SchemeVariant colorVariant;
 
 @end
 

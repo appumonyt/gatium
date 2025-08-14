@@ -298,6 +298,9 @@ public class Features {
 
     // WebViewCompat.startUpWebView
     public static final String ASYNC_WEBVIEW_STARTUP = "ASYNC_WEBVIEW_STARTUP";
+    // WebViewStartUpResult.getAsyncStartUpLocations
+    public static final String ASYNC_WEBVIEW_STARTUP_ASYNC_STARTUP_LOCATIONS =
+            "ASYNC_WEBVIEW_STARTUP_ASYNC_STARTUP_LOCATIONS";
 
     // WebViewCompat.prerenderUrl
     // WebViewCompat.clearPrerender
@@ -369,4 +372,14 @@ public class Features {
     // Profile.clearExtraHeaderForOrigins
     // Profile.clearAllExtraHeadersForOrigins
     public static final String EXTRA_HEADER_FOR_ORIGINS = "EXTRA_HEADER_FOR_ORIGINS";
+
+    // WebSettingsCompat.setBackForwardCacheSettings
+    // WebSettingsCompat.getBackForwardCacheSettings
+    public static final String BACK_FORWARD_CACHE_SETTINGS = "BACK_FORWARD_CACHE_SETTINGS";
+
+    // Profile.preconnect
+    public static final String PRECONNECT = "PRECONNECT";
+
+    // WebSettingsCompat#setHyperlinkContextMenuItems
+    public static final String HYPERLINK_CONTEXT_MENU_ITEMS = "HYPERLINK_CONTEXT_MENU_ITEMS";
 }

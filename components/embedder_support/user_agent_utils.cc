@@ -338,7 +338,10 @@ std::string GetUnifiedPlatform() {
   constexpr char kUnifiedPlatformLinuxX64[] = "X11; Linux x86_64";
 #endif
 #if BUILDFLAG(IS_ANDROID)
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP) {
+  // The Android XR device by default also has the unified platform of desktop
+  // form factor.
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP ||
+      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_XR) {
     return kUnifiedPlatformLinuxX64;
   }
   return "Linux; Android 10; K";
@@ -598,7 +601,8 @@ bool GetMobileBitForUAMetadata() {
   // Android and not a desktop form factor, AND the kUseMobileUserAgent switch
   // is present.
 #if BUILDFLAG(IS_ANDROID)
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP) {
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP ||
+      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_XR) {
     return false;
   }
 #endif
@@ -620,7 +624,8 @@ std::string GetPlatformVersion() {
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP) {
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP ||
+      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_XR) {
     return std::string();
   }
 #endif
@@ -637,7 +642,8 @@ std::string GetPlatformVersion() {
 
 std::string GetPlatformForUAMetadata() {
 #if BUILDFLAG(IS_ANDROID)
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP) {
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP ||
+      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_XR) {
     return "Linux";
   }
 #endif
@@ -711,9 +717,11 @@ std::vector<std::string> GetFormFactorsClientHint(
   std::vector<std::string> form_factors = {
       is_mobile ? blink::kMobileFormFactor : blink::kDesktopFormFactor};
 
-  if (base::FeatureList::IsEnabled(blink::features::kClientHintsXRFormFactor)) {
+#if BUILDFLAG(IS_ANDROID)
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_XR) {
     form_factors.push_back(blink::kXRFormFactor);
   }
+#endif  // BUILDFLAG(IS_ANDROID)
   return form_factors;
 }
 
@@ -780,7 +788,11 @@ std::string GetCpuArchitecture() {
 #elif BUILDFLAG(IS_IOS)
   return "arm";
 #elif BUILDFLAG(IS_ANDROID)
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP) {
+  // TODO(crbug.com/433345971) The user agent string should contain the actual
+  // cpu type information obtained from the Android device. Same for the cpu bit
+  // count in #GetCpuBitness below.
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP ||
+      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_XR) {
     return "x86";
   }
   return std::string();
@@ -819,7 +831,8 @@ std::string GetCpuBitness() {
 #elif BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_FUCHSIA)
   return "64";
 #elif BUILDFLAG(IS_ANDROID)
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP) {
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_DESKTOP ||
+      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_XR) {
     return "64";
   }
   return std::string();

@@ -23,7 +23,7 @@
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/interaction/interactive_browser_test.h"
 #include "components/autofill/content/browser/content_autofill_client.h"
-#include "components/plus_addresses/features.h"
+#include "components/plus_addresses/core/common/features.h"
 #include "components/plus_addresses/grit/plus_addresses_strings.h"
 #include "components/plus_addresses/plus_address_test_utils.h"
 #include "components/plus_addresses/plus_address_types.h"
@@ -342,6 +342,10 @@ IN_PROC_BROWSER_TEST_F(PlusAddressCreationDialogInteractiveTest,
               &views::Label::GetText, kFakePlusAddressU16),
           // Ensure hidden elements are not present.
           EnsureNotPresent(PlusAddressCreationView::kPlusAddressProgressBarId),
+          // Ensure the confirm button has focus.
+          InSameContext(CheckViewProperty(
+              PlusAddressCreationView::kPlusAddressConfirmButtonElementId,
+              &views::View::HasFocus, true)),
           // Simulate confirming plus address.
           PressButton(
               PlusAddressCreationView::kPlusAddressConfirmButtonElementId),
@@ -804,6 +808,10 @@ IN_PROC_BROWSER_TEST_P(PlusAddressCreationDialogUiVariationsOnboardingTest,
           CheckViewProperty(
               PlusAddressCreationView::kPlusAddressConfirmButtonElementId,
               &views::View::GetEnabled, false),
+          // Ensure the cancel button has focus while `Reserve()` is pending.
+          InSameContext(CheckViewProperty(
+              PlusAddressCreationView::kPlusAddressCancelButtonElementId,
+              &views::View::HasFocus, true)),
           // UI should time out and eventually show an error state.
           WaitForShow(PlusAddressCreationView::kPlusAddressReserveErrorId),
           WaitForHide(
@@ -861,6 +869,10 @@ IN_PROC_BROWSER_TEST_P(PlusAddressCreationDialogUiVariationsOnboardingTest,
           WaitForHide(PlusAddressCreationView::kPlusAddressProgressBarId, true),
           // UI should time out and eventually show an error state.
           WaitForShow(PlusAddressCreationView::kPlusAddressCreateErrorId),
+          // Ensure the confirm (try again) button has focus.
+          InSameContext(CheckViewProperty(
+              PlusAddressCreationView::kPlusAddressConfirmButtonElementId,
+              &views::View::HasFocus, true)),
           SetOnIncompatibleAction(OnIncompatibleAction::kIgnoreAndContinue,
                                   kSuppressedScreenshotError),
           Screenshot(PlusAddressCreationView::kTopViewId,

@@ -16,7 +16,7 @@
 #include "chrome/browser/ui/tabs/tab_types.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+#include "chrome/browser/ui/views/frame/tab_strip_view_interface.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/grit/theme_resources.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -39,9 +39,6 @@
 #include "ui/views/win/hwnd_util.h"
 #endif
 
-// static
-constexpr int BrowserNonClientFrameView::kMinimumDragHeight;
-
 BrowserNonClientFrameView::BrowserNonClientFrameView(BrowserFrame* frame,
                                                      BrowserView* browser_view)
     : frame_(frame), browser_view_(browser_view) {
@@ -55,13 +52,7 @@ void BrowserNonClientFrameView::OnBrowserViewInitViewsComplete() {
   UpdateMinimumSize();
 }
 
-void BrowserNonClientFrameView::OnFullscreenStateChanged() {
-  if (frame_->IsFullscreen()) {
-    browser_view_->HideDownloadShelf();
-  } else {
-    browser_view_->UnhideDownloadShelf();
-  }
-}
+void BrowserNonClientFrameView::OnFullscreenStateChanged() {}
 
 bool BrowserNonClientFrameView::CaptionButtonsOnLeadingEdge() const {
   return false;
@@ -85,11 +76,8 @@ bool BrowserNonClientFrameView::HasVisibleBackgroundTabShapes(
     BrowserFrameActiveState active_state) const {
   DCHECK(browser_view_->GetSupportsTabStrip());
 
-  TabStrip* const tab_strip = browser_view_->tabstrip();
-
   const bool active = ShouldPaintAsActiveForState(active_state);
-  const std::optional<int> bg_id =
-      tab_strip->GetCustomBackgroundId(active_state);
+  const std::optional<int> bg_id = GetCustomBackgroundId(active_state);
   if (bg_id.has_value()) {
     // If the theme has a custom tab background image, assume tab shapes are
     // visible.  This is pessimistic; the theme may use the same image as the
@@ -262,8 +250,12 @@ int BrowserNonClientFrameView::GetSystemMenuY() const {
   if (!browser_view()->GetTabStripVisible()) {
     return GetTopInset(false);
   }
+
+  // TODO(crbug.com/437915662): Find an alternative way to get the starting Y
+  // position when in vertical tabs mode since the top element will now be the
+  // toolbar instead of the tabstrip.
   return GetBoundsForTabStripRegion(
-             browser_view()->tab_strip_region_view()->GetMinimumSize())
+             browser_view()->tab_strip_view()->GetMinimumSize())
              .bottom() -
          GetLayoutConstant(TABSTRIP_TOOLBAR_OVERLAP);
 }

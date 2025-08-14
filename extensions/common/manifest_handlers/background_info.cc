@@ -9,7 +9,6 @@
 #include <memory>
 
 #include "base/command_line.h"
-#include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/lazy_instance.h"
@@ -36,10 +35,6 @@ namespace values = manifest_values;
 namespace errors = manifest_errors;
 
 namespace {
-
-BASE_FEATURE(kValidateBackgroundScriptMimeType,
-             "ValidateBackgroundScriptMimeType",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 const char kBackground[] = "background";
 
@@ -89,7 +84,7 @@ BackgroundServiceWorkerType BackgroundInfo::GetBackgroundServiceWorkerType(
 }
 
 // static
-const std::vector<std::string>& BackgroundInfo::GetBackgroundScripts(
+const std::vector<ExtensionResource>& BackgroundInfo::GetBackgroundScripts(
     const Extension* extension) {
   return GetBackgroundInfo(extension).background_scripts_;
 }
@@ -173,15 +168,18 @@ bool BackgroundInfo::LoadBackgroundScripts(Extension* extension,
       return false;
     }
 
-    const std::string& background_script = background_scripts[i].GetString();
+    ExtensionResource background_script =
+        extension->GetResource(background_scripts[i].GetString());
+    if (background_script.empty()) {
+      *error = ErrorUtils::FormatErrorMessageUTF16(
+          errors::kInvalidBackgroundScript, base::NumberToString(i));
+      return false;
+    }
 
     std::string mime_type;
-    // TODO(https://crbug.com/40059598): Remove this if-check and always
-    // validate the mime type in M139.
-    if (base::FeatureList::IsEnabled(kValidateBackgroundScriptMimeType) &&
-        (!net::GetWellKnownMimeTypeFromFile(
-             base::FilePath::FromUTF8Unsafe(background_script), &mime_type) ||
-         !blink::IsSupportedJavascriptMimeType(mime_type))) {
+    if (!net::GetWellKnownMimeTypeFromFile(background_script.relative_path(),
+                                           &mime_type) ||
+        !blink::IsSupportedJavascriptMimeType(mime_type)) {
       // Issue a warning and ignore this file. This is a warning and not a
       // hard-error to preserve both backwards compatibility and potential
       // future-compatibility if mime types change.
@@ -193,7 +191,7 @@ bool BackgroundInfo::LoadBackgroundScripts(Extension* extension,
       continue;
     }
 
-    background_scripts_.push_back(background_script);
+    background_scripts_.push_back(std::move(background_script));
   }
 
   return true;
@@ -386,14 +384,14 @@ bool BackgroundManifestHandler::Validate(
     std::string* error,
     std::vector<InstallWarning>* warnings) const {
   // Validate that background scripts exist.
-  const std::vector<std::string>& background_scripts =
+  const std::vector<ExtensionResource>& background_scripts =
       BackgroundInfo::GetBackgroundScripts(&extension);
   for (const auto& background_script : background_scripts) {
-    if (!base::PathExists(
-            extension.GetResource(background_script).GetFilePath())) {
-      *error =
-          l10n_util::GetStringFUTF8(IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
-                                    base::UTF8ToUTF16(background_script));
+    base::FilePath path = background_script.GetFilePath();
+    if (path.empty() || !base::PathExists(path)) {
+      *error = l10n_util::GetStringFUTF8(
+          IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
+          background_script.relative_path().AsUTF16Unsafe());
       return false;
     }
   }

@@ -71,18 +71,26 @@ namespace {
 const char* kDuplicateTagBaseError =
     "Unexpected duplicate view-transition-name: ";
 
-CSSPropertyID kPropertiesToCapture[] = {
+const CSSPropertyID kPropertiesToCapture[] = {
     CSSPropertyID::kBackdropFilter, CSSPropertyID::kColorScheme,
     CSSPropertyID::kMixBlendMode,   CSSPropertyID::kTextOrientation,
     CSSPropertyID::kWritingMode,
 };
 
-CSSPropertyID kPropertiesToCaptureOnGroupChildren[] = {
-    CSSPropertyID::kBorderWidth,
+const CSSPropertyID kPropertiesToAnimate[] = {
+    CSSPropertyID::kBackdropFilter,
 };
 
-CSSPropertyID kPropertiesToAnimate[] = {
-    CSSPropertyID::kBackdropFilter,
+const CSSPropertyID kPropertiesToCaptureOnGroupChildren[] = {
+    CSSPropertyID::kBorderRadius,
+    CSSPropertyID::kBorderWidth,
+    CSSPropertyID::kCornerShape,
+};
+
+const CSSPropertyID kPropertiesToAnimateOnGroupChildren[] = {
+    CSSPropertyID::kBorderRadius,
+    CSSPropertyID::kBorderWidth,
+    CSSPropertyID::kCornerShape,
 };
 
 template <typename K, typename V>
@@ -106,8 +114,10 @@ class FlatMapBuilder {
 
 #define FOR_EACH_CSS_PROPERTY(OP) \
   OP(BackdropFilter)              \
+  OP(BorderRadius)                \
   OP(BorderWidth)                 \
   OP(ColorScheme)                 \
+  OP(CornerShape)                 \
   OP(MixBlendMode)                \
   OP(TextOrientation)             \
   OP(WritingMode)
@@ -531,7 +541,7 @@ ViewTransitionStyleTracker::ViewTransitionStyleTracker(
   // new Document is render-blocked. This is conceptually the same layer as on
   // the ViewTransition on the old Document since it uses the same resource ID.
   if (transition_state.subframe_snapshot_id.IsValid()) {
-    subframe_snapshot_layer_ = cc::ViewTransitionContentLayer::Create(
+    scope_snapshot_layer_ = cc::ViewTransitionContentLayer::Create(
         transition_state.subframe_snapshot_id, /*is_live_content_layer=*/false);
   }
 
@@ -990,13 +1000,12 @@ bool ViewTransitionStyleTracker::Capture(bool snap_browser_controls) {
   DCHECK(!snapshot_root_layout_size_at_capture_.has_value());
   snapshot_root_layout_size_at_capture_ = GetSnapshotRootSize();
 
-  if (RuntimeEnabledFeatures::PaintHoldingForLocalIframesEnabled() &&
-      !document_->GetFrame()->IsLocalRoot()) {
-    subframe_snapshot_layer_ = cc::ViewTransitionContentLayer::Create(
-        GenerateResourceId(/*for_subframe_snapshot=*/true),
+  if (NeedsSnapshotForCapture()) {
+    scope_snapshot_layer_ = cc::ViewTransitionContentLayer::Create(
+        GenerateResourceId(/*for_scope_snapshot=*/true),
         /*is_live_content_layer=*/true);
     capture_resource_ids_.push_back(
-        subframe_snapshot_layer_->ViewTransitionResourceId());
+        scope_snapshot_layer_->ViewTransitionResourceId());
   }
 
   return true;
@@ -1108,7 +1117,7 @@ AtomicString ViewTransitionStyleTracker::GetContainingGroupName(
 bool ViewTransitionStyleTracker::Start() {
   DCHECK_EQ(state_, State::kCaptured);
 
-  subframe_snapshot_layer_.reset();
+  scope_snapshot_layer_.reset();
 
   // Flatten `pending_transition_element_names_` into a vector of names and
   // elements. This process also verifies that the name-element combinations are
@@ -1236,12 +1245,12 @@ void ViewTransitionStyleTracker::Abort() {
   EndTransition();
 }
 
-void ViewTransitionStyleTracker::DidThrottleLocalSubframeRendering() {
+void ViewTransitionStyleTracker::PauseRendering() {
   DCHECK_EQ(state_, State::kCapturing);
 
-  if (subframe_snapshot_layer_) {
-    auto resource_id = subframe_snapshot_layer_->ViewTransitionResourceId();
-    subframe_snapshot_layer_ = cc::ViewTransitionContentLayer::Create(
+  if (scope_snapshot_layer_) {
+    auto resource_id = scope_snapshot_layer_->ViewTransitionResourceId();
+    scope_snapshot_layer_ = cc::ViewTransitionContentLayer::Create(
         resource_id, /*is_live_content_layer=*/false);
   }
 }
@@ -1285,8 +1294,8 @@ viz::ViewTransitionElementResourceId ViewTransitionStyleTracker::GetSnapshotId(
 }
 
 const scoped_refptr<cc::ViewTransitionContentLayer>&
-ViewTransitionStyleTracker::GetSubframeSnapshotLayer() const {
-  return subframe_snapshot_layer_;
+ViewTransitionStyleTracker::GetScopeSnapshotLayer() const {
+  return scope_snapshot_layer_;
 }
 
 PseudoElement* ViewTransitionStyleTracker::CreatePseudoElement(
@@ -1529,8 +1538,10 @@ bool ViewTransitionStyleTracker::RunPostPrePaintStepsForElement(
     capture_property(id, css_property_builder);
   }
 
-  for (CSSPropertyID id : kPropertiesToCaptureOnGroupChildren) {
-    capture_property(id, group_children_css_property_builder);
+  if (RuntimeEnabledFeatures::NestedViewTransitionEnabled()) {
+    for (CSSPropertyID id : kPropertiesToCaptureOnGroupChildren) {
+      capture_property(id, group_children_css_property_builder);
+    }
   }
 
   auto css_properties = std::move(css_property_builder).Finish();
@@ -1548,10 +1559,9 @@ bool ViewTransitionStyleTracker::RunPostPrePaintStepsForElement(
       captured_rect_in_layout_space ==
           element_data->captured_rect_in_layout_space &&
       css_properties == element_data->captured_css_properties &&
-      (state_ != State::kCapturing ||
-       (group_children_css_properties ==
-            element_data->group_children_css_properties &&
-        border_offset == element_data->border_offset))) {
+      group_children_css_properties ==
+          element_data->group_children_css_properties &&
+      border_offset == element_data->border_offset) {
     return true;
   }
 
@@ -1561,6 +1571,9 @@ bool ViewTransitionStyleTracker::RunPostPrePaintStepsForElement(
       visual_overflow_rect_in_layout_space;
   element_data->captured_css_properties = std::move(css_properties);
   element_data->captured_rect_in_layout_space = captured_rect_in_layout_space;
+  element_data->group_children_css_properties =
+      std::move(group_children_css_properties);
+  element_data->border_offset = border_offset;
 
   PseudoId live_content_element = HasLiveNewContent()
                                       ? kPseudoIdViewTransitionNew
@@ -1583,9 +1596,6 @@ bool ViewTransitionStyleTracker::RunPostPrePaintStepsForElement(
   // Ensure that the cached state stays in sync with the current state while
   // we're capturing.
   if (state_ == State::kCapturing) {
-    element_data->group_children_css_properties =
-        std::move(group_children_css_properties);
-    element_data->border_offset = border_offset;
     element_data->CacheStateForOldSnapshot();
   }
 
@@ -2038,9 +2048,9 @@ ViewTransitionState ViewTransitionStyleTracker::GetViewTransitionState() const {
   // the new document can continue the sequence.
   transition_state.next_element_resource_id = GenerateResourceId().local_id();
 
-  if (subframe_snapshot_layer_) {
+  if (scope_snapshot_layer_) {
     transition_state.subframe_snapshot_id =
-        subframe_snapshot_layer_->ViewTransitionResourceId();
+        scope_snapshot_layer_->ViewTransitionResourceId();
   }
 
   std::vector<std::pair<std::string, std::string>> id_to_auto_name_list;
@@ -2203,7 +2213,7 @@ CSSStyleSheet& ViewTransitionStyleTracker::UAStyleSheet() {
 
         old_parent_transform = compute_parent_transform(
             containing_group_data->cached_container_properties.snapshot_matrix,
-            containing_group_data->border_offset);
+            containing_group_data->cached_border_offset);
 
         if (containing_group_data->container_properties) {
           const auto& new_container_properties =
@@ -2240,6 +2250,10 @@ CSSStyleSheet& ViewTransitionStyleTracker::UAStyleSheet() {
                               element_data->cached_container_properties,
                               element_data->cached_animated_css_properties,
                               old_parent_transform);
+
+        builder.AddGroupChildrenAnimations(
+            view_transition_name,
+            element_data->cached_group_children_animated_properties);
       }
     }
   }
@@ -2338,15 +2352,27 @@ void ViewTransitionStyleTracker::ElementData::CacheStateForOldSnapshot() {
       visual_overflow_rect_in_layout_space;
   cached_captured_rect_in_layout_space = captured_rect_in_layout_space;
 
-  FlatMapBuilder<CSSPropertyID, String> builder(
-      std::size(kPropertiesToAnimate));
-  for (auto& id : kPropertiesToAnimate) {
-    auto it = captured_css_properties.find(id);
-    if (it != captured_css_properties.end()) {
-      builder.Insert(it->first, it->second);
-    }
-  }
-  cached_animated_css_properties = std::move(builder).Finish();
+  auto copy_animated_properties =
+      [](const base::span<const CSSPropertyID>& properties_to_animate,
+         const base::flat_map<CSSPropertyID, String>& captured_properties) {
+        FlatMapBuilder<CSSPropertyID, String> builder(
+            std::size(properties_to_animate));
+        for (auto id : properties_to_animate) {
+          auto it = captured_properties.find(id);
+          if (it != captured_properties.end()) {
+            builder.Insert(it->first, it->second);
+          }
+        }
+        return std::move(builder).Finish();
+      };
+
+  cached_animated_css_properties =
+      copy_animated_properties(kPropertiesToAnimate, captured_css_properties);
+
+  cached_group_children_animated_properties = copy_animated_properties(
+      kPropertiesToAnimateOnGroupChildren, group_children_css_properties);
+
+  cached_border_offset = border_offset;
 }
 
 // TODO(vmpstr): This could be optimized by caching values for individual layout
@@ -2390,15 +2416,13 @@ const char* ViewTransitionStyleTracker::StateToString(State state) {
 }
 
 viz::ViewTransitionElementResourceId
-ViewTransitionStyleTracker::GenerateResourceId(
-    bool for_subframe_snapshot) const {
+ViewTransitionStyleTracker::GenerateResourceId(bool for_scope_snapshot) const {
   // If we've already send the state to the incoming document, generating a new
   // ID now would collide with IDs generated by that document.
   CHECK(!state_extracted_);
   auto* supplement = ViewTransitionSupplement::FromIfExists(*document_);
   CHECK(supplement);
-  return supplement->GenerateResourceId(transition_token_,
-                                        for_subframe_snapshot);
+  return supplement->GenerateResourceId(transition_token_, for_scope_snapshot);
 }
 
 void ViewTransitionStyleTracker::SnapBrowserControlsToFullyShown() {
@@ -2485,6 +2509,20 @@ gfx::Transform ViewTransitionStyleTracker::ContainerProperties::
       border_box_rect_in_enclosing_layer_css_space.size.height / 2);
 
   return center_transform;
+}
+
+bool ViewTransitionStyleTracker::NeedsSnapshotForCapture() const {
+  if (!RuntimeEnabledFeatures::ScopedViewTransitionsEnabled()) {
+    return !document_->GetFrame()->IsLocalRoot();
+  }
+  auto* element = OriginatingElement();
+  if (!element) {
+    return false;
+  }
+  if (!element->IsDocumentElement()) {
+    return true;
+  }
+  return !document_->GetFrame()->IsLocalRoot();
 }
 
 }  // namespace blink

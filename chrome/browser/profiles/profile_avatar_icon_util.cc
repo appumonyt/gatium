@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 
 #include <algorithm>
@@ -24,6 +19,7 @@
 #include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -377,6 +373,58 @@ class CircleImageSource : public gfx::CanvasImageSource {
 
  private:
   const SkColor color_;
+};
+
+// CanvasImageSource that combines a background image with user's avatar,
+// the avatar is positioned and resized in terms of the background image DIPs,
+// it also is cropped in a circle.
+class AvatarEmbeddedImageSource : public gfx::CanvasImageSource {
+ public:
+  AvatarEmbeddedImageSource(const gfx::Image& image,
+                            const gfx::Image& avatar,
+                            const gfx::Point& avatar_position,
+                            size_t avatar_size)
+      : gfx::CanvasImageSource(image.Size()),
+        image_(image),
+        avatar_(avatar),
+        avatar_position_(avatar_position),
+        avatar_size_(avatar_size) {
+    CHECK(!image_.IsEmpty());
+  }
+
+  AvatarEmbeddedImageSource(const AvatarEmbeddedImageSource&) = delete;
+  AvatarEmbeddedImageSource& operator=(const AvatarEmbeddedImageSource&) =
+      delete;
+
+  ~AvatarEmbeddedImageSource() override = default;
+
+  // gfx::CanvasImageSource:
+  void Draw(gfx::Canvas* canvas) override {
+    // Draw the background image first.
+    canvas->DrawImageInt(image_.AsImageSkia(), 0, 0);
+
+    // Setting a clippath makes subsequent avatar drawing cropped in a circle.
+    SkPath avatar_bound = SkPath().addOval(
+        SkRect::MakeXYWH(avatar_position_.x(), avatar_position_.y(),
+                         /*w=*/avatar_size_, /*h=*/avatar_size_));
+    canvas->ClipPath(avatar_bound, /*do_anti_alias=*/true);
+
+    // Finally draw the avatar, above the background and cropped.
+    // Note that some testing profiles do not have an avatar.
+    if (!avatar_.IsEmpty()) {
+      gfx::ImageSkia avatar = gfx::ImageSkiaOperations::CreateResizedImage(
+          avatar_.AsImageSkia(),
+          skia::ImageOperations::ResizeMethod::RESIZE_BEST,
+          gfx::Size(avatar_size_, avatar_size_));
+      canvas->DrawImageInt(avatar, avatar_position_.x(), avatar_position_.y());
+    }
+  }
+
+ private:
+  const gfx::Image image_;
+  const gfx::Image avatar_;
+  const gfx::Point avatar_position_;
+  const size_t avatar_size_;
 };
 
 }  // namespace
@@ -1052,6 +1100,16 @@ gfx::ImageSkia AddBackgroundToImage(const gfx::ImageSkia& image,
   return gfx::ImageSkia(
       std::make_unique<ImageWithBackgroundSource>(image, background_color),
       image.size());
+}
+
+ui::ImageModel EmbedAvatarOntoImage(int resource_id,
+                                    const gfx::Image& avatar,
+                                    const gfx::Point& avatar_position,
+                                    size_t avatar_size) {
+  return ui::ImageModel::FromImageSkia(
+      gfx::CanvasImageSource::MakeImageSkia<AvatarEmbeddedImageSource>(
+          ui::ResourceBundle::GetSharedInstance().GetImageNamed(resource_id),
+          avatar, avatar_position, avatar_size));
 }
 
 }  // namespace profiles

@@ -19,6 +19,7 @@
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/interaction/browser_elements.h"
 #include "chrome/browser/ui/signin/dice_web_signin_interceptor_delegate.h"
 #include "chrome/browser/ui/signin/signin_view_controller.h"
 #include "chrome/browser/ui/signin/signin_view_controller_delegate.h"
@@ -45,7 +46,6 @@
 #include "google_apis/gaia/core_account_id.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/interaction/element_identifier.h"
-#include "ui/base/interaction/element_tracker.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/interaction/interactive_views_test.h"
 #if !BUILDFLAG(IS_CHROMEOS)
@@ -175,12 +175,9 @@ class SignInViewControllerInteractiveBrowserTest
 
   void SendCustomEvent(ui::ElementIdentifier element,
                        ui::CustomElementEventType event_type) {
-    auto* const target =
-        ui::ElementTracker::GetElementTracker()->GetUniqueElement(
-            element, browser()->window()->GetElementContext());
-    ASSERT_NE(nullptr, target);
-    ui::ElementTracker::GetFrameworkDelegate()->NotifyCustomEvent(target,
-                                                                  event_type);
+    const bool result =
+        BrowserElements::From(browser())->NotifyEvent(element, event_type);
+    CHECK(result);
   }
 };
 
@@ -273,58 +270,5 @@ IN_PROC_BROWSER_TEST_F(SignInViewControllerBrowserTest,
                                               /*command=*/false));
   // Default action simply closes the dialog.
   dialog_destroyed_watcher.Wait();
-  EXPECT_FALSE(signin_view_controller->ShowsModalDialog());
-}
-
-// Tests that the confirm button is focused by default in the enterprise
-// interception dialog.
-// TODO(crbug.com/40943548): Enable the flaky test.
-#if BUILDFLAG(IS_WIN)
-#define MAYBE_EnterpriseConfirmationDefaultFocus \
-  DISABLED_EnterpriseConfirmationDefaultFocus
-#else
-#define MAYBE_EnterpriseConfirmationDefaultFocus \
-  EnterpriseConfirmationDefaultFocus
-#endif
-IN_PROC_BROWSER_TEST_F(SignInViewControllerBrowserTest,
-                       MAYBE_EnterpriseConfirmationDefaultFocus) {
-  if (base::FeatureList::IsEnabled(
-          features::kEnterpriseUpdatedProfileCreationScreen)) {
-    GTEST_SKIP() << "EnterpriseUpdatedProfileCreationScreen feature replaces "
-                    "this dialog with a new one";
-  }
-  auto account_info = signin::MakePrimaryAccountAvailable(
-      GetIdentityManager(), "alice@gmail.com", signin::ConsentLevel::kSync);
-  content::TestNavigationObserver content_observer(
-      (GURL(chrome::kChromeUIManagedUserProfileNoticeUrl)));
-  content_observer.StartWatchingNewWebContents();
-  signin::SigninChoice result;
-  auto* signin_view_controller =
-      browser()->GetFeatures().signin_view_controller();
-
-  signin_view_controller->ShowModalManagedUserNoticeDialog(
-      std::make_unique<signin::EnterpriseProfileCreationDialogParams>(
-          account_info, /*is_oidc_account=*/false,
-          /*turn_sync_on_signed_profile=*/false, /*force_new_profile=*/true,
-          /*show_link_data_option=*/true,
-          /*process_user_choice_callback=*/
-          base::BindOnce([](signin::SigninChoice* result,
-                            signin::SigninChoice choice) { *result = choice; },
-                         &result),
-          /*done_callback=*/
-          base::BindOnce(&SigninViewController::CloseModalSignin,
-                         signin_view_controller->AsWeakPtr())));
-  EXPECT_TRUE(signin_view_controller->ShowsModalDialog());
-  content_observer.Wait();
-
-  content::WebContentsDestroyedWatcher dialog_destroyed_watcher(
-      signin_view_controller->GetModalDialogWebContentsForTesting());
-  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(browser(), ui::VKEY_RETURN,
-                                              /*control=*/false,
-                                              /*shift=*/false, /*alt=*/false,
-                                              /*command=*/false));
-
-  dialog_destroyed_watcher.Wait();
-  EXPECT_EQ(result, signin::SigninChoice::SIGNIN_CHOICE_NEW_PROFILE);
   EXPECT_FALSE(signin_view_controller->ShowsModalDialog());
 }

@@ -27,6 +27,7 @@
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "media/base/cdm_promise.h"
+#include "media/base/media_switches.h"
 #include "media/base/win/hresults.h"
 #include "media/base/win/media_foundation_cdm_proxy.h"
 #include "media/base/win/mf_helpers.h"
@@ -314,13 +315,13 @@ MediaFoundationCdm::MediaFoundationCdm(
       session_keys_change_cb_(session_keys_change_cb),
       session_expiration_update_cb_(session_expiration_update_cb) {
   DVLOG_FUNC(1);
-  CHECK(!uma_prefix_.empty(), base::NotFatalUntil::M140);
-  CHECK(create_mf_cdm_cb_, base::NotFatalUntil::M140);
-  CHECK(is_type_supported_cb_, base::NotFatalUntil::M140);
-  CHECK(session_message_cb_, base::NotFatalUntil::M140);
-  CHECK(session_closed_cb_, base::NotFatalUntil::M140);
-  CHECK(session_keys_change_cb_, base::NotFatalUntil::M140);
-  CHECK(session_expiration_update_cb_, base::NotFatalUntil::M140);
+  CHECK(!uma_prefix_.empty());
+  CHECK(create_mf_cdm_cb_);
+  CHECK(is_type_supported_cb_);
+  CHECK(session_message_cb_);
+  CHECK(session_closed_cb_);
+  CHECK(session_keys_change_cb_);
+  CHECK(session_expiration_update_cb_);
 }
 
 MediaFoundationCdm::~MediaFoundationCdm() {
@@ -332,7 +333,7 @@ HRESULT MediaFoundationCdm::Initialize() {
   ComPtr<IMFContentDecryptionModule> mf_cdm;
   create_mf_cdm_cb_.Run(hr, mf_cdm);
   if (!mf_cdm) {
-    CHECK(FAILED(hr), base::NotFatalUntil::M140);
+    CHECK(FAILED(hr));
 
     if (hr == DRM_E_TEE_INVALID_HWDRM_STATE) {
       OnCdmEvent(CdmEvent::kHardwareContextReset, hr);
@@ -370,6 +371,7 @@ void MediaFoundationCdm::SetServerCertificate(
     return;
   }
 
+  server_certificate_set_ = true;
   promise->resolve();
 }
 
@@ -408,6 +410,17 @@ void MediaFoundationCdm::CreateSessionAndGenerateRequest(
 
   if (!mf_cdm_) {
     promise->reject(Exception::INVALID_STATE_ERROR, 0, "CDM Unavailable");
+    return;
+  }
+
+  // Check if server certificate requirement is enforced
+  if (base::FeatureList::IsEnabled(
+          kHardwareSecureDecryptionRequireServerCert) &&
+      MediaFoundationCdmModule::GetInstance()->IsOsCdm() &&
+      !server_certificate_set_) {
+    promise->reject(Exception::INVALID_STATE_ERROR, 0,
+                    "setServerCertificate must be called before "
+                    "generateRequest");
     return;
   }
 
@@ -602,7 +615,7 @@ bool MediaFoundationCdm::OnSessionId(
   auto itr = pending_sessions_.find(session_token);
   CHECK(itr != pending_sessions_.end());
   auto session = std::move(itr->second);
-  CHECK(session, base::NotFatalUntil::M140);
+  CHECK(session);
   pending_sessions_.erase(itr);
 
   if (session_id.empty() || sessions_.count(session_id)) {
@@ -691,10 +704,13 @@ void MediaFoundationCdm::OnHardwareContextReset() {
   // Reset IMFContentDecryptionModule which also holds the old ITA.
   mf_cdm_.Reset();
 
+  // Reset server certificate flag since the CDM is being recreated
+  server_certificate_set_ = false;
+
   // Recreates IMFContentDecryptionModule so we can create new sessions.
   if (FAILED(Initialize())) {
     DLOG(ERROR) << __func__ << ": Re-initialization failed";
-    CHECK(!mf_cdm_, base::NotFatalUntil::M140);
+    CHECK(!mf_cdm_);
   }
 }
 

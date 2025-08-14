@@ -14,6 +14,7 @@
 #include "base/trace_event/traced_value.h"
 #include "base/values.h"
 #include "cc/base/features.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 
 namespace cc {
@@ -668,6 +669,14 @@ bool SchedulerStateMachine::ShouldThrottleSendBeginMainFrame() const {
       last_begin_impl_frame_time_ - last_sent_begin_main_frame_time_ <
           throttled_interval) {
     result = true;
+  }
+
+  // Throttling main frame production when the current scroll is blocked on it
+  // is visually bad, as it loses the benefit of high refresh rate. Don't
+  // throttle. This is more expensive, but is required to reach perceptual
+  // visual parity between throttled and non-throttled scrolling.
+  if (is_current_scroll_main_painted_) {
+    result = false;
   }
 
   TRACE_EVENT_INSTANT("cc", __PRETTY_FUNCTION__, "result", result);
@@ -1550,6 +1559,9 @@ void SchedulerStateMachine::FrameIntervalUpdated(
 }
 
 bool SchedulerStateMachine::IsDrawThrottled() const {
+  if (base::FeatureList::IsEnabled(features::kNoCompositorFrameAcks)) {
+    return false;
+  }
   return pending_submit_frames_ >= kMaxPendingSubmitFrames &&
          !settings_.disable_frame_rate_limit;
 }
@@ -1604,25 +1616,27 @@ void SchedulerStateMachine::SetNeedsPrepareTiles() {
   }
 }
 void SchedulerStateMachine::DidSubmitCompositorFrame() {
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("cc", "Scheduler:pending_submit_frames",
-                                    TRACE_ID_LOCAL(this), "pending_frames",
-                                    pending_submit_frames_);
+  if (!base::FeatureList::IsEnabled(features::kNoCompositorFrameAcks)) {
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("cc", "Scheduler:pending_submit_frames",
+                                      TRACE_ID_LOCAL(this), "pending_frames",
+                                      pending_submit_frames_);
 
-  // If we are running with no frame rate limits, the GPU process can submit
-  // a new BeginFrame request if the deadline for the pending BeginFrame
-  // request expires. It will basically cause this DCHECK to fire as we may
-  // not have received acks for previously submitted requests.
-  // Please see SchedulerStateMachine::IsDrawThrottled() where throttling
-  // is disabled when the disable_frame_rate_limit setting is enabled.
-  // TODO(ananta/jonross/sunnyps)
-  // http://crbug.com/346931323
-  // We should remove or change this once VRR support is implemented for
-  // Windows and other platforms potentially.
-  if (!settings_.disable_frame_rate_limit) {
-    DCHECK_LT(pending_submit_frames_, kMaxPendingSubmitFrames);
+    // If we are running with no frame rate limits, the GPU process can submit
+    // a new BeginFrame request if the deadline for the pending BeginFrame
+    // request expires. It will basically cause this DCHECK to fire as we may
+    // not have received acks for previously submitted requests.
+    // Please see SchedulerStateMachine::IsDrawThrottled() where throttling
+    // is disabled when the disable_frame_rate_limit setting is enabled.
+    // TODO(ananta/jonross/sunnyps)
+    // http://crbug.com/346931323
+    // We should remove or change this once VRR support is implemented for
+    // Windows and other platforms potentially.
+    if (!settings_.disable_frame_rate_limit) {
+      DCHECK_LT(pending_submit_frames_, kMaxPendingSubmitFrames);
+    }
+
+    pending_submit_frames_++;
   }
-
-  pending_submit_frames_++;
   submit_frames_with_current_layer_tree_frame_sink_++;
 
   did_submit_in_last_frame_ = true;
@@ -1630,17 +1644,23 @@ void SchedulerStateMachine::DidSubmitCompositorFrame() {
 }
 
 void SchedulerStateMachine::DidReceiveCompositorFrameAck() {
-  TRACE_EVENT_NESTABLE_ASYNC_END1("cc", "Scheduler:pending_submit_frames",
-                                  TRACE_ID_LOCAL(this), "pending_frames",
-                                  pending_submit_frames_);
-  pending_submit_frames_--;
+  if (base::FeatureList::IsEnabled(features::kNoCompositorFrameAcks)) {
+    NOTREACHED();
+  } else {
+    TRACE_EVENT_NESTABLE_ASYNC_END1("cc", "Scheduler:pending_submit_frames",
+                                    TRACE_ID_LOCAL(this), "pending_frames",
+                                    pending_submit_frames_);
+    pending_submit_frames_--;
+  }
 }
 
 void SchedulerStateMachine::SetTreePrioritiesAndScrollState(
     TreePriority tree_priority,
-    ScrollHandlerState scroll_handler_state) {
+    ScrollHandlerState scroll_handler_state,
+    bool is_current_scroll_main_painted) {
   tree_priority_ = tree_priority;
   scroll_handler_state_ = scroll_handler_state;
+  is_current_scroll_main_painted_ = is_current_scroll_main_painted;
 }
 
 void SchedulerStateMachine::SetCriticalBeginMainFrameToActivateIsFast(

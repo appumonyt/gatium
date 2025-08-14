@@ -7,8 +7,8 @@
 
 #import <UIKit/UIKit.h>
 
-@class MDCProgressView;
 @class ToolbarButton;
+@class ToolbarProgressBar;
 @class ToolbarTabGridButton;
 @class ToolbarToolsMenuButton;
 enum class ToolbarTabGroupState;
@@ -21,7 +21,7 @@ enum class ToolbarTabGroupState;
 @property(nonatomic, strong, readonly) NSArray<ToolbarButton*>* allButtons;
 
 // Progress bar displayed below the toolbar.
-@property(nonatomic, strong, readonly) MDCProgressView* progressBar;
+@property(nonatomic, strong, readonly) ToolbarProgressBar* progressBar;
 // Button to navigate back.
 @property(nonatomic, strong, readonly) ToolbarButton* backButton;
 // Buttons to navigate forward.
@@ -38,6 +38,8 @@ enum class ToolbarTabGroupState;
 @property(nonatomic, strong, readonly) ToolbarButton* toolsMenuButton;
 // Button to create a new tab.
 @property(nonatomic, strong, readonly) ToolbarButton* openNewTabButton;
+// Button for the diamond prototype.
+@property(nonatomic, strong, readonly) ToolbarButton* diamondPrototypeButton;
 // Separator between the toolbar and the content.
 @property(nonatomic, strong, readonly) UIView* separator;
 

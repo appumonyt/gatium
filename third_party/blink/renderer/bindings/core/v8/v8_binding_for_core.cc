@@ -438,6 +438,14 @@ int64_t ToInt64Slow(v8::Isolate* isolate,
     return EnforceRange(number_value, -kJSMaxInteger, kJSMaxInteger,
                         "long long", exception_state);
   }
+  if (std::isnan(number_value)) {
+    return 0;
+  }
+
+  if (configuration == kClamp) {
+    return ClampTo<int64_t>(std::nearbyint(number_value), -kJSMaxInteger,
+                            kJSMaxInteger);
+  }
 
   return DoubleToInteger(number_value);
 }
@@ -479,8 +487,9 @@ uint64_t ToUInt64Slow(v8::Isolate* isolate,
   if (std::isnan(number_value))
     return 0;
 
-  if (configuration == kClamp)
-    return ClampTo<uint64_t>(number_value);
+  if (configuration == kClamp) {
+    return ClampTo<uint64_t>(std::nearbyint(number_value), 0, kJSMaxInteger);
+  }
 
   return DoubleToInteger(number_value);
 }
@@ -661,7 +670,7 @@ LocalDOMWindow* CurrentDOMWindow(v8::Isolate* isolate) {
 
 ExecutionContext* ToExecutionContext(v8::Local<v8::Context> context) {
   DCHECK(!context.IsEmpty());
-  v8::Isolate* isolate = context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   ScriptState* script_state = ScriptState::MaybeFrom(isolate, context);
   return script_state ? ToExecutionContext(script_state) : nullptr;
 }
@@ -687,7 +696,7 @@ static ScriptState* ToScriptStateImpl(LocalFrame* frame,
   v8::Local<v8::Context> context = ToV8ContextEvenIfDetached(frame, world);
   if (context.IsEmpty())
     return nullptr;
-  v8::Isolate* isolate = context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   ScriptState* script_state = ScriptState::From(isolate, context);
   if (!script_state->ContextIsValid())
     return nullptr;
@@ -802,11 +811,13 @@ v8::Isolate* ToIsolate(const LocalFrame* frame) {
 }
 
 v8::Local<v8::Value> FromJSONString(ScriptState* script_state,
-                                    const String& stringified_json) {
+                                    const String& stringified_json,
+                                    std::optional<v8::ScriptOrigin> origin) {
   auto v8_string = V8String(script_state->GetIsolate(), stringified_json);
   v8::Local<v8::Value> parsed;
-  std::ignore =
-      v8::JSON::Parse(script_state->GetContext(), v8_string).ToLocal(&parsed);
+
+  std::ignore = v8::JSON::Parse(script_state->GetContext(), v8_string, origin)
+                    .ToLocal(&parsed);
   return parsed;
 }
 
@@ -867,23 +878,15 @@ bool IsInParallelAlgorithmRunnable(ExecutionContext* execution_context,
 
 void ApplyContextToException(ScriptState* script_state,
                              v8::Local<v8::Value> exception,
-                             const ExceptionContext& exception_context) {
-  ApplyContextToException(
-      script_state->GetIsolate(), script_state->GetContext(), exception,
-      exception_context.GetType(), exception_context.GetClassName(),
-      exception_context.GetPropertyName());
-}
-
-void ApplyContextToException(v8::Isolate* isolate,
-                             v8::Local<v8::Context> context,
-                             v8::Local<v8::Value> exception,
                              v8::ExceptionContext type,
                              const char* class_name,
                              const String& property_name) {
+  v8::Isolate* isolate = script_state->GetIsolate();
   if (auto* dom_exception = V8DOMException::ToWrappable(isolate, exception)) {
     dom_exception->AddContextToMessages(type, class_name, property_name);
   } else if (exception->IsObject()) {
     v8::TryCatch try_catch(isolate);
+    v8::Local<v8::Context> context = script_state->GetContext();
     v8::Local<v8::String> message_key = V8String(isolate, "message");
     auto exception_object = exception.As<v8::Object>();
     String updated_message = ExceptionMessages::AddContextToMessage(

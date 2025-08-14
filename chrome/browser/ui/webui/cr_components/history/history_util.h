@@ -5,7 +5,19 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_CR_COMPONENTS_HISTORY_HISTORY_UTIL_H_
 #define CHROME_BROWSER_UI_WEBUI_CR_COMPONENTS_HISTORY_HISTORY_UTIL_H_
 
-inline constexpr char kIsUserSignedInKey[] = "isUserSignedIn";
+inline constexpr char kSignInStateKey[] = "signInState";
+
+// This enum is used to differentiate all the relevant sign-in/history-sync
+// states.
+// LINT.IfChange(HistorySignInState)
+enum class HistorySignInState {
+  kSignedOut = 0,
+  // TODO(crbug.com/418144047): Add additional signin states (like signed in
+  // without history). Also rename kSignedIn to better reflect what it actually
+  // means - currently it means "Sync-the-feature is enabled".
+  kSignedIn = 1,
+};
+// LINT.ThenChange(/chrome/browser/resources/history/constants.ts:HistorySignInState)
 
 class Profile;
 
@@ -15,8 +27,10 @@ class WebUIDataSource;
 
 class HistoryUtil {
  public:
-  static bool IsUserSignedIn(Profile* profile);
-  static content::WebUIDataSource* PopulateSourceForSidePanelHistory(
+  static HistorySignInState GetSignInState(Profile* profile);
+  // Populates `source` with strings and configuration data that's used by both
+  // the main chrome://history UI and the history side panel.
+  static content::WebUIDataSource* PopulateCommonSourceForHistory(
       content::WebUIDataSource* source,
       Profile* profile);
 };

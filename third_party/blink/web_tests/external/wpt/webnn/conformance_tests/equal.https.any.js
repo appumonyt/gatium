@@ -13,14 +13,6 @@
 //
 // MLOperand equal(MLOperand a, MLOperand b);
 
-
-const getEqualPrecisionTolerance = (graphResources) => {
-  const toleranceValueDict = {uint8: 0};
-  const expectedDataType =
-      getExpectedDataTypeOfSingleOutput(graphResources.expectedOutputs);
-  return {metricType: 'ULP', value: toleranceValueDict[expectedDataType]};
-};
-
 const equalTests = [
   {
     'name': 'equal float32 0D scalar',
@@ -985,10 +977,8 @@ const equalTests = [
 ];
 
 if (navigator.ml) {
-  equalTests.forEach((test) => {
-    webnn_conformance_test(
-        buildAndExecuteGraph, getEqualPrecisionTolerance, test,
-        /*cast_to_supported_type=*/true);
+  equalTests.filter(isTargetTest).forEach((test) => {
+    webnn_conformance_test(buildAndExecuteGraph, getZeroULPTolerance, test);
   });
 } else {
   test(() => assert_implements(navigator.ml, 'missing navigator.ml'));

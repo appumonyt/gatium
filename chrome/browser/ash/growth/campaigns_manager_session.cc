@@ -21,13 +21,15 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_ash.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+#include "chrome/browser/ash/browser_delegate/browser_controller.h"
+#include "chrome/browser/ash/browser_delegate/browser_delegate.h"
+#include "chrome/browser/ash/browser_delegate/browser_type.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash_factory.h"
 #include "chrome/browser/ash/system_web_apps/system_web_app_manager.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chromeos/ash/components/growth/action_performer.h"
 #include "chromeos/ash/components/growth/campaigns_constants.h"
@@ -226,37 +228,43 @@ content::WebContents* FindActiveWebContent(
     const Profile* profile,
     Browser::Type browser_type,
     const webapps::AppId& app_id = std::string()) {
-  for (Browser* browser : BrowserList::GetInstance()->OrderedByActivation()) {
-    if (browser->IsAttemptingToCloseBrowser() || browser->IsBrowserClosing()) {
-      continue;
-    }
-    if (browser->type() != browser_type) {
-      continue;
-    }
-    if (browser->profile() != profile) {
-      continue;
-    }
-    // For web app type, it must match the app_id.
-    if (browser_type == Browser::TYPE_APP &&
-        !web_app::AppBrowserController::IsForWebApp(browser, app_id)) {
-      continue;
-    }
+  content::WebContents* result = nullptr;
+  ash::BrowserController::GetInstance()->ForEachBrowser(
+      ash::BrowserController::BrowserOrder::kAscendingActivationTime,
+      [&](ash::BrowserDelegate& delegate) {
+        Browser* browser = &delegate.GetBrowser();
+        if (browser->IsAttemptingToCloseBrowser() ||
+            browser->IsBrowserClosing()) {
+          return ash::BrowserController::kContinueIteration;
+        }
+        if (browser->type() != browser_type) {
+          return ash::BrowserController::kContinueIteration;
+        }
+        if (browser->profile() != profile) {
+          return ash::BrowserController::kContinueIteration;
+        }
+        // For web app type, it must match the app_id.
+        if (browser_type == Browser::TYPE_APP &&
+            !web_app::AppBrowserController::IsForWebApp(browser, app_id)) {
+          return ash::BrowserController::kContinueIteration;
+        }
 
-    const auto* tab_strip_model = browser->tab_strip_model();
-    if (!tab_strip_model) {
-      CAMPAIGNS_LOG(ERROR) << "No tab_strip_model.";
-      continue;
-    }
+        const auto* tab_strip_model = browser->tab_strip_model();
+        if (!tab_strip_model) {
+          CAMPAIGNS_LOG(ERROR) << "No tab_strip_model.";
+          return ash::BrowserController::kContinueIteration;
+        }
 
-    auto* active_web_contents = tab_strip_model->GetActiveWebContents();
-    if (!active_web_contents) {
-      CAMPAIGNS_LOG(ERROR) << "No active web contents.";
-      continue;
-    }
+        auto* active_web_contents = tab_strip_model->GetActiveWebContents();
+        if (!active_web_contents) {
+          CAMPAIGNS_LOG(ERROR) << "No active web contents.";
+          return ash::BrowserController::kContinueIteration;
+        }
 
-    return active_web_contents;
-  }
-  return nullptr;
+        result = active_web_contents;
+        return ash::BrowserController::kBreakIteration;
+      });
+  return result;
 }
 
 const GURL FindActiveWebAppUrl(Profile* profile, const webapps::AppId& app_id) {
@@ -294,26 +302,29 @@ bool IsSystemWebApp(Profile* profile, const webapps::AppId& app_id) {
 }
 
 bool HasValidPwaBrowserForAppId(const std::string& app_id) {
-  for (Browser* browser : BrowserList::GetInstance()->OrderedByActivation()) {
-    if (browser->profile()->IsOffTheRecord() || !browser->IsActive()) {
-      continue;
-    }
-
-    if (browser->type() != Browser::TYPE_APP) {
-      CAMPAIGNS_LOG(ERROR) << "Not pwa browser type";
-      return false;
-    }
-
-    if (!web_app::AppBrowserController::IsForWebApp(browser, app_id)) {
-      CAMPAIGNS_LOG(ERROR) << "Browser belongs to a different app";
-      return false;
-    }
-
-    return true;
+  ash::BrowserDelegate* browser =
+      ash::BrowserController::GetInstance()->GetLastUsedBrowser();
+  if (!browser) {
+    return false;
   }
 
-  CAMPAIGNS_LOG(ERROR) << "No browser window";
-  return false;
+  if (browser->IsOffTheRecord() || !browser->IsActive()) {
+    CAMPAIGNS_LOG(ERROR) << "No browser window";
+    return false;
+  }
+
+  if (browser->GetType() != ash::BrowserType::kApp) {
+    CAMPAIGNS_LOG(ERROR) << "Not pwa browser type";
+    return false;
+  }
+
+  std::optional<webapps::AppId> browser_app_id = browser->GetAppId();
+  if (!browser->IsWebApp() || browser_app_id != app_id) {
+    CAMPAIGNS_LOG(ERROR) << "Browser belongs to a different app";
+    return false;
+  }
+
+  return true;
 }
 
 void SetCampaignManagerPrefService(Profile* profile) {

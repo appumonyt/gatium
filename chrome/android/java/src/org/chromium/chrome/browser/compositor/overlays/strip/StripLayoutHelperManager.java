@@ -41,6 +41,10 @@ import org.chromium.cc.input.BrowserControlsState;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsOffsetTagsInfo;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider;
+import org.chromium.chrome.browser.browser_controls.TopControlLayer;
+import org.chromium.chrome.browser.browser_controls.TopControlsStacker;
+import org.chromium.chrome.browser.browser_controls.TopControlsStacker.TopControlType;
+import org.chromium.chrome.browser.browser_controls.TopControlsStacker.TopControlVisibility;
 import org.chromium.chrome.browser.compositor.LayerTitleCache;
 import org.chromium.chrome.browser.compositor.layouts.LayoutManagerHost;
 import org.chromium.chrome.browser.compositor.layouts.LayoutManagerImpl;
@@ -50,7 +54,7 @@ import org.chromium.chrome.browser.compositor.layouts.components.CompositorButto
 import org.chromium.chrome.browser.compositor.layouts.components.CompositorButton.ButtonType;
 import org.chromium.chrome.browser.compositor.layouts.components.TintedCompositorButton;
 import org.chromium.chrome.browser.compositor.layouts.eventfilter.AreaMotionEventFilter;
-import org.chromium.chrome.browser.compositor.layouts.eventfilter.MotionEventHandler;
+import org.chromium.chrome.browser.compositor.layouts.eventfilter.AreaMotionEventHandler;
 import org.chromium.chrome.browser.compositor.overlays.strip.StripLayoutView.StripLayoutViewOnClickHandler;
 import org.chromium.chrome.browser.compositor.overlays.strip.StripLayoutView.StripLayoutViewOnKeyboardFocusHandler;
 import org.chromium.chrome.browser.compositor.overlays.strip.reorder.TabStripDragHandler;
@@ -125,7 +129,8 @@ public class StripLayoutHelperManager
                 PauseResumeWithNativeObserver,
                 TabStripTransitionDelegate,
                 TopResumedActivityChangedObserver,
-                AppHeaderObserver {
+                AppHeaderObserver,
+                TopControlLayer {
     /**
      * POD type that contains the necessary tab model info on startup. Used in the startup flicker
      * fix experiment where we create a placeholder tab strip on startup to mitigate jank as tabs
@@ -174,8 +179,12 @@ public class StripLayoutHelperManager
     private static final float MODEL_SELECTOR_BUTTON_BACKGROUND_HEIGHT_DP = 32.f;
     private static final float MODEL_SELECTOR_BUTTON_HOVER_BACKGROUND_PRESSED_OPACITY = 0.12f;
     private static final float MODEL_SELECTOR_BUTTON_HOVER_BACKGROUND_DEFAULT_OPACITY = 0.08f;
-    private static final float MODEL_SELECTOR_BUTTON_CLICK_SLOP_DP = 12.f;
-    private static final float BUTTON_DESIRED_TOUCH_TARGET_SIZE = 48.f;
+    private static final float BUTTON_DESIRED_TOUCH_TARGET_SIZE =
+            StripLayoutUtils.shouldApplyMoreDensity()
+                    ? MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP
+                    : 48.f;
+    private static final float MODEL_SELECTOR_BUTTON_CLICK_SLOP_DP =
+            (BUTTON_DESIRED_TOUCH_TARGET_SIZE - MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP) / 2;
 
     // Tab strip transition constants.
     @VisibleForTesting
@@ -257,11 +266,12 @@ public class StripLayoutHelperManager
     private final Callback<Integer> mStripVisibilityStateObserver;
     private final ObservableSupplierImpl<Integer> mStripVisibilityStateSupplier;
     private final @Nullable ObservableSupplier<Boolean> mXrSpaceModeObservableSupplier;
+    private final TopControlsStacker mTopControlsStacker;
 
     // Drag-Drop
     private @Nullable TabStripDragHandler mTabStripDragHandler;
 
-    private class TabStripEventHandler implements MotionEventHandler {
+    private class TabStripEventHandler implements AreaMotionEventHandler {
         @Override
         public void onDown(float x, float y, int buttons) {
             if (DragDropGlobalState.hasValue()) {
@@ -298,16 +308,16 @@ public class StripLayoutHelperManager
         }
 
         @Override
-        public void click(float x, float y, int buttons) {
+        public void click(float x, float y, int buttons, int modifiers) {
             if (DragDropGlobalState.hasValue()) {
                 return;
             }
             long time = time();
             if (mModelSelectorButton != null && mModelSelectorButton.click(x, y, buttons)) {
-                mModelSelectorButton.handleClick(time, buttons);
+                mModelSelectorButton.handleClick(time, buttons, modifiers);
                 return;
             }
-            getActiveStripLayoutHelper().click(time(), x, y, buttons);
+            getActiveStripLayoutHelper().click(time(), x, y, buttons, modifiers);
         }
 
         @Override
@@ -354,8 +364,8 @@ public class StripLayoutHelperManager
         }
 
         @Override
-        public void onHoverExit() {
-            getActiveStripLayoutHelper().onHoverExit();
+        public void onHoverExit(boolean inArea) {
+            getActiveStripLayoutHelper().onHoverExit(inArea);
         }
 
         @Override
@@ -438,6 +448,7 @@ public class StripLayoutHelperManager
      * @param shareDelegateSupplier Supplies {@link ShareDelegate} to share tab URLs.
      * @param xrSpaceModeObservableSupplier Supplies current XR space mode status. True for XR full
      *     space mode, false otherwise.
+     * @param topControlsStacker The {@link TopControlsStacker} to add |this| as a control to.
      */
     public StripLayoutHelperManager(
             Context context,
@@ -462,7 +473,8 @@ public class StripLayoutHelperManager
             DataSharingTabManager dataSharingTabManager,
             BottomSheetController bottomSheetController,
             Supplier<ShareDelegate> shareDelegateSupplier,
-            @Nullable ObservableSupplier<Boolean> xrSpaceModeObservableSupplier) {
+            @Nullable ObservableSupplier<Boolean> xrSpaceModeObservableSupplier,
+            TopControlsStacker topControlsStacker) {
         mContext = context;
         Resources res = context.getResources();
         mManagerHost = managerHost;
@@ -502,7 +514,8 @@ public class StripLayoutHelperManager
 
         if (!ChromeFeatureList.sTabStripIncognitoMigration.isEnabled()) {
             StripLayoutViewOnClickHandler selectorClickHandler =
-                    (time, view, motionEventButtonState) -> handleModelSelectorButtonClick();
+                    (time, view, motionEventButtonState, modifiers) ->
+                            handleModelSelectorButtonClick();
             StripLayoutViewOnKeyboardFocusHandler selectorKeyboardFocusHandler =
                     (isFocused, view) -> {
                         getActiveStripLayoutHelper().onKeyboardFocus(isFocused, view);
@@ -536,6 +549,7 @@ public class StripLayoutHelperManager
         mNormalHelper =
                 new StripLayoutHelper(
                         context,
+                        this,
                         managerHost,
                         updateHost,
                         renderHost,
@@ -554,6 +568,7 @@ public class StripLayoutHelperManager
         mIncognitoHelper =
                 new StripLayoutHelper(
                         context,
+                        this,
                         managerHost,
                         updateHost,
                         renderHost,
@@ -608,6 +623,9 @@ public class StripLayoutHelperManager
         }
 
         mXrSpaceModeObservableSupplier = xrSpaceModeObservableSupplier;
+
+        mTopControlsStacker = topControlsStacker;
+        mTopControlsStacker.addControl(this);
     }
 
     @EnsuresNonNullIf("mDesktopWindowStateManager")
@@ -627,7 +645,6 @@ public class StripLayoutHelperManager
                 startupInfo.createdIncognitoTabOnStartup);
     }
 
-    // Incognito button for Tab Strip Redesign.
     private void createModelSelectorButton(
             Context context,
             StripLayoutViewOnClickHandler selectorClickHandler,
@@ -647,7 +664,7 @@ public class StripLayoutHelperManager
                         R.drawable.ic_incognito,
                         MODEL_SELECTOR_BUTTON_CLICK_SLOP_DP);
 
-        // Tab strip redesign button bg size is 32 * 32.
+        // Button bg size is 32 * 32.
         mModelSelectorButton.setBackgroundResourceId(R.drawable.bg_circle_tab_strip_button);
 
         mModelSelectorWidth = MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP;
@@ -744,6 +761,7 @@ public class StripLayoutHelperManager
         if (mDesktopWindowStateManager != null) {
             mDesktopWindowStateManager.removeObserver(this);
         }
+        mTopControlsStacker.removeControl(this);
     }
 
     /** Mark whether tab strip is hidden by a height transition. */
@@ -764,7 +782,7 @@ public class StripLayoutHelperManager
     @Override
     public void onPauseWithNative() {
         // Clear any persisting tab strip hover state when the activity is paused.
-        getActiveStripLayoutHelper().onHoverExit();
+        getActiveStripLayoutHelper().onHoverExit(/* inTabStrip= */ false);
     }
 
     private void handleModelSelectorButtonClick() {
@@ -776,8 +794,8 @@ public class StripLayoutHelperManager
     }
 
     @VisibleForTesting
-    public void simulateClick(float x, float y, int buttons) {
-        mTabStripEventHandler.click(x, y, buttons);
+    public void simulateClick(float x, float y, int buttons, int modifiers) {
+        mTabStripEventHandler.click(x, y, buttons, modifiers);
     }
 
     @VisibleForTesting
@@ -1162,6 +1180,23 @@ public class StripLayoutHelperManager
                         (int) Math.ceil(tabStripRectDp.bottom * mDensity));
         rects.add(tabStripRect);
 
+        TintedCompositorButton ntb = getNewTabButton();
+        if (ntb != null && ntb.isVisible()) {
+            var ntbTouchRect = new RectF();
+            ntb.getTouchTarget(ntbTouchRect);
+            // The click slop in `CompositorButton` can extend the touchable region of the new
+            // tab button into the `mTopPadding` region, so the "top" coordinate  of `ntbRect`
+            // intentionally isn't bound by `mTopPadding`. Doing so causes an inaccurate region
+            // to ultimately be reported in `setSystemGestureExclusionRects()`.
+            Rect ntbRect =
+                    new Rect(
+                            (int) Math.floor(ntbTouchRect.left * mDensity),
+                            (int) Math.floor(ntbTouchRect.top * mDensity),
+                            (int) Math.ceil(ntbTouchRect.right * mDensity),
+                            (int) Math.ceil(ntbTouchRect.bottom * mDensity));
+            rects.add(ntbRect);
+        }
+
         if (mModelSelectorButton != null && mModelSelectorButton.isVisible()) {
             var msbTouchRect = new RectF();
             mModelSelectorButton.getTouchTarget(msbTouchRect);
@@ -1372,14 +1407,10 @@ public class StripLayoutHelperManager
                     }
 
                     @Override
-                    public void tabPendingClosure(Tab tab, @TabClosingSource int closingSource) {
-                        getStripLayoutHelper(tab.isIncognitoBranded())
-                                .tabClosed(time(), tab.getId());
-                        updateModelSwitcherButton();
-                    }
-
-                    @Override
-                    public void multipleTabsPendingClosure(List<Tab> tabs, boolean isAllTabs) {
+                    public void onTabClosePending(
+                            List<Tab> tabs,
+                            boolean isAllTabs,
+                            @TabClosingSource int closingSource) {
                         if (tabs.isEmpty()) return;
                         getStripLayoutHelper(tabs.get(0).isIncognitoBranded())
                                 .multipleTabsClosed(tabs);
@@ -1409,7 +1440,10 @@ public class StripLayoutHelperManager
 
                     @Override
                     public void didAddTab(
-                            Tab tab, int type, int creationState, boolean markedForSelection) {
+                            Tab tab,
+                            @TabLaunchType int type,
+                            @TabCreationState int creationState,
+                            boolean markedForSelection) {
                         boolean onStartup = type == TabLaunchType.FROM_RESTORE;
                         getStripLayoutHelper(tab.isIncognitoBranded())
                                 .tabCreated(
@@ -1615,6 +1649,7 @@ public class StripLayoutHelperManager
 
     @Override
     public @StripVisibilityState int getStripVisibilityState() {
+        // TODO(crbug.com/417238089): This returns a stale value during height transitions.
         return assumeNonNull(mStripVisibilityStateSupplier.get());
     }
 
@@ -1681,7 +1716,43 @@ public class StripLayoutHelperManager
         return getActiveStripLayoutHelper().openKeyboardFocusedContextMenu();
     }
 
+    /**
+     * Reorders the currently keyboard-focused item, if applicable.
+     *
+     * @param toLeft Whether the focused item should be reordered to the left (note: this is still
+     *     left in RTL).
+     * @return Whether the item was successfully reordered.
+     */
+    public boolean reorderKeyboardFocusedItem(boolean toLeft) {
+        return getActiveStripLayoutHelper().moveSelectedStripView(toLeft);
+    }
+
     private boolean isActivityInXrFullSpaceModeNow() {
         return mXrSpaceModeObservableSupplier != null && mXrSpaceModeObservableSupplier.get();
+    }
+
+    // TopControlLayer implementation:
+
+    @Override
+    public @TopControlType int getTopControlType() {
+        return TopControlType.TABSTRIP;
+    }
+
+    @Override
+    public int getTopControlHeight() {
+        return mToolbarManager.getTabStripHeightSupplier().get();
+    }
+
+    @Override
+    public int getTopControlVisibility() {
+        // The tab strip adds to the total height of the top controls regardless of whether or not
+        // it is "visible" to the user, i.e. we take its inherent height into account even when
+        // scrolled offscreen or obscured, except when hidden by height transition.
+        // TODO(crbug.com/417238089): Possibly add way to notify stacker of visibility changes.
+        boolean isHiddenByHeightTransition =
+                (getStripVisibilityState() & StripVisibilityState.HIDDEN_BY_HEIGHT_TRANSITION) != 0;
+        return !isHiddenByHeightTransition
+                ? TopControlVisibility.VISIBLE
+                : TopControlVisibility.HIDDEN;
     }
 }

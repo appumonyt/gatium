@@ -223,10 +223,23 @@ class PaymentsNetworkInterfaceTest : public PaymentsNetworkInterfaceTestBase,
     parsed_legal_message_ = std::move(legal_message);
   }
 
+  void OnDidGetDetailsForUpdateBnplPaymentInstrument(
+      PaymentsRpcResult result,
+      std::string context_token,
+      LegalMessageLines legal_message) {
+    result_ = result;
+    context_token_ = std::move(context_token);
+    parsed_legal_message_ = std::move(legal_message);
+  }
+
   void OnDidCreateBnplPaymentInstrument(PaymentsRpcResult result,
                                         std::string instrument_id) {
     result_ = result;
     instrument_id_ = std::move(instrument_id);
+  }
+
+  void OnDidUpdateBnplPaymentInstrument(PaymentsRpcResult result) {
+    result_ = result;
   }
 
   void OnDidGetBnplPaymentInstrumentForFetchingVcn(
@@ -323,7 +336,7 @@ class PaymentsNetworkInterfaceTest : public PaymentsNetworkInterfaceTestBase,
         /*billable_service_number=*/12345,
         /*billing_customer_number=*/111222333444L,
         /*upload_card_source=*/
-        UploadCardSource::UNKNOWN_UPLOAD_CARD_SOURCE);
+        UploadCardSource::kUnknown);
   }
 
   // Issue an UploadCard request. This requires an OAuth token before starting
@@ -900,7 +913,7 @@ TEST_F(PaymentsNetworkInterfaceTest,
 }
 
 TEST_F(PaymentsNetworkInterfaceTest, OptInSuccess) {
-  StartOptChangeRequest(OptChangeRequestDetails::ENABLE_FIDO_AUTH);
+  StartOptChangeRequest(OptChangeRequestDetails::Reason::kEnableFidoAuth);
   IssueOAuthToken();
   ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
                  "{ \"fido_authentication_info\": { \"user_status\": "
@@ -910,7 +923,7 @@ TEST_F(PaymentsNetworkInterfaceTest, OptInSuccess) {
 }
 
 TEST_F(PaymentsNetworkInterfaceTest, OptInServerUnresponsive) {
-  StartOptChangeRequest(OptChangeRequestDetails::ENABLE_FIDO_AUTH);
+  StartOptChangeRequest(OptChangeRequestDetails::Reason::kEnableFidoAuth);
   IssueOAuthToken();
   ReturnResponse(payments_network_interface_.get(), net::HTTP_REQUEST_TIMEOUT,
                  "");
@@ -919,7 +932,7 @@ TEST_F(PaymentsNetworkInterfaceTest, OptInServerUnresponsive) {
 }
 
 TEST_F(PaymentsNetworkInterfaceTest, OptOutSuccess) {
-  StartOptChangeRequest(OptChangeRequestDetails::DISABLE_FIDO_AUTH);
+  StartOptChangeRequest(OptChangeRequestDetails::Reason::kDisableFidoAuth);
   IssueOAuthToken();
   ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
                  "{ \"fido_authentication_info\": { \"user_status\": "
@@ -929,7 +942,8 @@ TEST_F(PaymentsNetworkInterfaceTest, OptOutSuccess) {
 }
 
 TEST_F(PaymentsNetworkInterfaceTest, EnrollAttemptReturnsCreationOptions) {
-  StartOptChangeRequest(OptChangeRequestDetails::ENABLE_FIDO_AUTH);
+  StartOptChangeRequest(OptChangeRequestDetails::Reason::kEnableFidoAuth);
+
   IssueOAuthToken();
   ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
                  "{ \"fido_authentication_info\": { \"user_status\": "
@@ -1208,12 +1222,6 @@ TEST_F(PaymentsNetworkInterfaceTest, UploadSuccessCardArtUrlPresent) {
 TEST_F(PaymentsNetworkInterfaceTest, UploadSuccessMeasureTimeoutHistogram) {
   base::HistogramTester histogram_tester;
 
-  base::FieldTrialParams params;
-  params["autofill_upload_card_request_timeout_milliseconds"] = "10000";
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeatureWithParameters(
-      features::kAutofillUploadCardRequestTimeout, params);
-
   StartUploading();
   IssueOAuthToken();
   ReturnResponse(payments_network_interface_.get(), net::HTTP_OK, "{}");
@@ -1226,12 +1234,6 @@ TEST_F(PaymentsNetworkInterfaceTest, UploadSuccessMeasureTimeoutHistogram) {
 
 TEST_F(PaymentsNetworkInterfaceTest, UploadFailureDueToClientSideTimeout) {
   base::HistogramTester histogram_tester;
-
-  base::FieldTrialParams params;
-  params["autofill_upload_card_request_timeout_milliseconds"] = "10000";
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeatureWithParameters(
-      features::kAutofillUploadCardRequestTimeout, params);
 
   // Fake a client-side timeout on the card upload.
   StartUploading();
@@ -1247,12 +1249,6 @@ TEST_F(PaymentsNetworkInterfaceTest, UploadFailureDueToClientSideTimeout) {
 TEST_F(PaymentsNetworkInterfaceTest,
        UploadClientTimeoutNotRecordedForOtherFailure) {
   base::HistogramTester histogram_tester;
-
-  base::FieldTrialParams params;
-  params["autofill_upload_card_request_timeout_milliseconds"] = "10000";
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeatureWithParameters(
-      features::kAutofillUploadCardRequestTimeout, params);
 
   // Fake a network issue on the upload; this shouldn't result in any record
   // being made for the client timeout histogram. In particular,
@@ -1830,6 +1826,69 @@ TEST_P(PaymentsNetworkInterfaceTestWithPaymentsRpcResultParam,
   }
 }
 
+// Test GetDetailsForUpdateBnplPaymentInstrument() with all the different
+// PaymentsRpcResults.
+TEST_P(PaymentsNetworkInterfaceTestWithPaymentsRpcResultParam,
+       GetDetailsForUpdateBnplPaymentInstrument) {
+  GetDetailsForUpdateBnplPaymentInstrumentRequestDetails request_details;
+  request_details.app_locale = "en-US";
+  request_details.billing_customer_number = 555666777888;
+  request_details.type =
+      GetDetailsForUpdateBnplPaymentInstrumentRequestDetails::
+          GetDetailsForUpdateBnplPaymentInstrumentType::kGetDetailsForAcceptTos;
+  request_details.instrument_id = 111222333444;
+  std::string context_token = "some_token";
+
+  payments_network_interface_->GetDetailsForUpdateBnplPaymentInstrument(
+      request_details,
+      base::BindOnce(&PaymentsNetworkInterfaceTest::
+                         OnDidGetDetailsForUpdateBnplPaymentInstrument,
+                     GetWeakPtr()));
+  IssueOAuthToken();
+
+  // Ensures the PaymentsRpcResult is set correctly.
+  PaymentsRpcResult result = GetParam();
+  switch (result) {
+    case PaymentsRpcResult::kSuccess:
+      ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
+                     "{ \"buy_now_pay_later_details\": {"
+                     "    \"legal_message\": {"
+                     "      \"line\": ["
+                     "        {\"template\": \"terms of service\"}"
+                     "      ]"
+                     "    }"
+                     "  },"
+                     "  \"context_token\": \"" +
+                         context_token + "\" }");
+      break;
+    case PaymentsRpcResult::kTryAgainFailure:
+      ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
+                     "{ \"error\": { \"code\": \"INTERNAL\", "
+                     "\"api_error_reason\": \"ANYTHING_ELSE\"} }");
+      break;
+    case PaymentsRpcResult::kPermanentFailure:
+      ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
+                     "{ \"error\": { \"code\": \"ANYTHING_ELSE\" } }");
+      break;
+    case PaymentsRpcResult::kNetworkError:
+      ReturnResponse(payments_network_interface_.get(),
+                     net::HTTP_REQUEST_TIMEOUT, "");
+      break;
+    case PaymentsRpcResult::kClientSideTimeout:
+      ReturnResponse(payments_network_interface_.get(), net::ERR_TIMED_OUT, "");
+      break;
+    case PaymentsRpcResult::kVcnRetrievalTryAgainFailure:
+    case PaymentsRpcResult::kVcnRetrievalPermanentFailure:
+    case PaymentsRpcResult::kNone:
+      NOTREACHED();
+  }
+  EXPECT_EQ(result, result_);
+  if (result == PaymentsRpcResult::kSuccess) {
+    EXPECT_EQ(context_token, context_token_);
+    EXPECT_FALSE(parsed_legal_message_.empty());
+  }
+}
+
 // Test CreateBnplPaymentInstrument() with all the different PaymentsRpcResults.
 TEST_P(PaymentsNetworkInterfaceTestWithPaymentsRpcResultParam,
        CreateBnplPaymentInstrument_TestAllFlows) {
@@ -1880,6 +1939,56 @@ TEST_P(PaymentsNetworkInterfaceTestWithPaymentsRpcResultParam,
   if (result == PaymentsRpcResult::kSuccess) {
     EXPECT_EQ(instrument_id, instrument_id_);
   }
+}
+
+// Test UpdateBnplPaymentInstrument() with all the different PaymentsRpcResults.
+TEST_P(PaymentsNetworkInterfaceTestWithPaymentsRpcResultParam,
+       UpdateBnplPaymentInstrument_TestAllFlows) {
+  UpdateBnplPaymentInstrumentRequestDetails request_details;
+  request_details.app_locale = "en-US";
+  request_details.billing_customer_number = 555666777888;
+  request_details.context_token = "context_token";
+  request_details.risk_data = "wjhJLg";
+  request_details.instrument_id = 111222333444;
+  request_details.issuer_id = "Affirm";
+  request_details.type = UpdateBnplPaymentInstrumentRequestDetails::
+      UpdateBnplPaymentInstrumentType::kAcceptTos;
+
+  payments_network_interface_->UpdateBnplPaymentInstrument(
+      request_details,
+      base::BindOnce(
+          &PaymentsNetworkInterfaceTest::OnDidUpdateBnplPaymentInstrument,
+          GetWeakPtr()));
+  IssueOAuthToken();
+
+  // Ensures the PaymentsRpcResult is set correctly.
+  PaymentsRpcResult result = GetParam();
+  switch (result) {
+    case PaymentsRpcResult::kSuccess:
+      ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
+                     "{ \"buy_now_pay_later_info\": {} }");
+      break;
+    case PaymentsRpcResult::kTryAgainFailure:
+      ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
+                     "{ \"error\": { \"code\": \"INTERNAL\", "
+                     "\"api_error_reason\": \"ANYTHING_ELSE\"} }");
+      break;
+    case PaymentsRpcResult::kPermanentFailure:
+      ReturnResponse(payments_network_interface_.get(), net::HTTP_OK, "");
+      break;
+    case PaymentsRpcResult::kNetworkError:
+      ReturnResponse(payments_network_interface_.get(),
+                     net::HTTP_REQUEST_TIMEOUT, "");
+      break;
+    case PaymentsRpcResult::kClientSideTimeout:
+      ReturnResponse(payments_network_interface_.get(), net::ERR_TIMED_OUT, "");
+      break;
+    case PaymentsRpcResult::kVcnRetrievalTryAgainFailure:
+    case PaymentsRpcResult::kVcnRetrievalPermanentFailure:
+    case PaymentsRpcResult::kNone:
+      NOTREACHED();
+  }
+  EXPECT_EQ(result, result_);
 }
 
 // Test GetBnplPaymentInstrumentForFetchingVcn() with all the different

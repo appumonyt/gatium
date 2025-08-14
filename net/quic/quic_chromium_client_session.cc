@@ -57,6 +57,7 @@
 #include "net/quic/quic_chromium_packet_writer.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_server_info.h"
+#include "net/quic/quic_session_attempt_manager.h"
 #include "net/quic/quic_session_pool.h"
 #include "net/socket/datagram_client_socket.h"
 #include "net/spdy/multiplexed_session_creation_initiator.h"
@@ -1276,6 +1277,10 @@ void QuicChromiumClientSession::OnOriginFrame(const quic::OriginFrame& frame) {
                     [&] { return NetLogReceivedOrigins(received_origins_); });
   base::UmaHistogramCounts100("Net.QuicSession.NumReceivedOrigins",
                               received_origins_.size());
+
+  if (session_pool_ && session_pool_->session_attempt_manager()) {
+    session_pool_->session_attempt_manager()->OnOriginFrame(this);
+  }
 }
 
 void QuicChromiumClientSession::AddHandle(Handle* handle) {
@@ -1403,10 +1408,6 @@ bool QuicChromiumClientSession::ShouldCreateOutgoingBidirectionalStream() {
   return true;
 }
 
-bool QuicChromiumClientSession::ShouldCreateOutgoingUnidirectionalStream() {
-  NOTREACHED() << "Try to create outgoing unidirectional streams";
-}
-
 bool QuicChromiumClientSession::WasConnectionEverUsed() {
   const quic::QuicConnectionStats& stats = connection()->GetStats();
   return stats.bytes_sent > 0 || stats.bytes_received > 0;
@@ -1415,11 +1416,6 @@ bool QuicChromiumClientSession::WasConnectionEverUsed() {
 QuicChromiumClientStream*
 QuicChromiumClientSession::CreateOutgoingBidirectionalStream() {
   NOTREACHED() << "CreateOutgoingReliableStreamImpl should be called directly";
-}
-
-QuicChromiumClientStream*
-QuicChromiumClientSession::CreateOutgoingUnidirectionalStream() {
-  NOTREACHED() << "Try to create outgoing unidirectional stream";
 }
 
 QuicChromiumClientStream*
@@ -1721,6 +1717,9 @@ quic::QuicSSLConfig QuicChromiumClientSession::GetSSLConfig() const {
                                   ech_config_list_.end());
   }
   if (base::FeatureList::IsEnabled(features::kTLSTrustAnchorIDs)) {
+    // TODO(crbug.com/432044228): This should still configure the extension when
+    // `trust_anchor_ids_` is empty, after QUICHE has been updated to make
+    // `trust_anchor_ids` a `std::optional`.
     if (!trust_anchor_ids_.empty() &&
         !ssl_context_config.trust_anchor_ids.empty()) {
       std::vector<uint8_t> selected_trust_anchor_ids =

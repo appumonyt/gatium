@@ -614,33 +614,6 @@
       <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_ICON_DESCRIPTION" desc="Accessibility string describing what color the current tab group color icon has. Tap this item to change the color.">
         <ph name="COLOR_NAME">%1$s<ex>Blue</ex></ph> tab group color icon
       </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_GREY" desc="The accessibility string for the grey color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Grey
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_BLUE" desc="The accessibility string for the blue color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Blue
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_RED" desc="The accessibility string for the red color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Red
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_YELLOW" desc="The accessibility string for the yellow color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Yellow
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_GREEN" desc="The accessibility string for the green color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Green
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_PINK" desc="The accessibility string for the pink color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Pink
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_PURPLE" desc="The accessibility string for the purple color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Purple
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_CYAN" desc="The accessibility string for the cyan color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Cyan
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_ORANGE" desc="The accessibility string for the orange color item in the tab group color picker. Tap this item to toggle the color selection.">
-        Orange
-      </message>
       <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_SELECTED_DESCRIPTION" desc="Accessibility string describing the icon that indicates that this color item is the currently selected one.">
         <ph name="COLOR_NAME">%1$s<ex>Blue</ex></ph> Selected
       </message>
@@ -682,6 +655,9 @@
           =1 {Expand shared <ph name="TITLE_OF_GROUP">%1$s<ex>Shopping cart</ex></ph> tab group with <ph name="TABS_COUNT_ONE">%2$d<ex>1</ex></ph> tab, color <ph name="COLOR_NAME">%3$s<ex>Blue</ex></ph>, with label <ph name="CARD_LABEL">%4$s<ex>New Activity</ex></ph>.}
           other {Expand shared <ph name="TITLE_OF_GROUP">%1$s<ex>Shopping cart</ex></ph> tab group with <ph name="TABS_COUNT_MANY">%2$d<ex>2</ex></ph> tabs, color <ph name="COLOR_NAME">%3$s<ex>Blue</ex></ph>, with label <ph name="CARD_LABEL">%4$s<ex>New Activity</ex></ph>.}
         }
+      </message>
+      <message name="IDS_ACCESSIBILITY_RESTORE_TAB" desc="The accessibility text to read when a tab is clicked in the inactive tabs surface. TAB_TITLE is the title of the tab.s">
+        Restore and open <ph name="TAB_TITLE">%1$s<ex>Google</ex></ph> tab
       </message>
       <message name="IDS_ACCESSIBILITY_RESTORE_TAB_GROUP_WITH_COLOR" desc="The accessibility text to read when a card representing a tab group is clicked in the inactive tabs surface. NUMBER_OF_TABS is the number of tabs within this group. COLOR_NAME is the color of this group.">
         {NUMBER_OF_TABS, plural,
@@ -1018,12 +994,12 @@
 
       <!-- Auto Delete Decision Promo Strings -->
       <message name="IDS_ARCHIVED_TABS_AUTO_DELETE_PROMO_TITLE" desc="Title text for the Auto Delete Decision Bottom Sheet.">
-        Keep your inactive section tidy?
+        Your inactive items won’t pile up
       </message>
       <message name="IDS_ARCHIVED_TABS_AUTO_DELETE_PROMO_DESCRIPTION" desc="Description text for the Auto Delete Decision Bottom Sheet.">
           {AUTO_DELETE_DELAY, plural,
-            =1 {Chrome automatically closes items in the inactive section that you haven't used in <ph name="AUTO_DELETE_DELAY_ONE">%1$d<ex>1</ex></ph> month. You can turn this off now or anytime in Settings.}
-            other {Chrome automatically closes items in the inactive section that you haven't used in <ph name="AUTO_DELETE_DELAY_MANY">%1$d<ex>3</ex></ph> months. You can turn this off now or anytime in Settings.}
+            =1 {Chrome automatically closes inactive tabs and tab groups after <ph name="AUTO_DELETE_DELAY_ONE">%1$d<ex>1</ex></ph> month. You can change this in settings.}
+            other {Chrome automatically closes inactive tabs and tab groups after <ph name="AUTO_DELETE_DELAY_MANY">%1$d<ex>3</ex></ph> months. You can change this in settings.}
           }
       </message>
       <message name="IDS_ARCHIVED_TABS_AUTO_DELETE_PROMO_CLOSED" desc="The announcement when the Tabs Auto Delete Promo bottom sheet is closed.">
@@ -1035,11 +1011,11 @@
       <message name="IDS_ARCHIVED_TABS_AUTO_DELETE_PROMO_FULL_HEIGHT" desc="The announcement when the Tabs Auto Delete Promo bottom sheet is opened to full height.">
         Notice about Tabs Auto Delete at full height
       </message>
-      <message name="IDS_ARCHIVED_TABS_AUTO_DELETE_PROMO_YES_BUTTON" desc="Button to accept the Auto Delete feature. ">
-        Yes. I'm in
+      <message name="IDS_ARCHIVED_TABS_AUTO_DELETE_PROMO_YES_BUTTON" desc="Button to accept the Auto Delete feature.">
+        Got it
       </message>
-      <message name="IDS_ARCHIVED_TABS_AUTO_DELETE_PROMO_NO_BUTTON" desc="Button to deny the Auto Delete feature. ">
-        Turn off
+      <message name="IDS_ARCHIVED_TABS_AUTO_DELETE_PROMO_NO_BUTTON" desc="Button to take the user to archived tabs settings page.">
+        Go to settings
       </message>
 
       <!-- Tab Group Removed Message Strings -->
@@ -1074,6 +1050,19 @@
       <message name="IDS_PIN_TAB" desc="Content description for an action which pins a singular tab.">
         Pin tab
       </message>
+      <message name="IDS_UNPIN_TAB" desc="Content description for an action which unpins a singular tab.">
+        Unpin tab
+      </message>
+
+      <!-- Multi Selected Tabs Context Menu -->
+      <message name="IDS_REMOVE_TABS_FROM_GROUP" desc="Content description for an action which removes a list of selected tabs from their group.">
+        Remove tabs from group
+      </message>
+      <message name="IDS_MOVE_TABS_TO_ANOTHER_WINDOW" desc="Content description for an action which moves a list of selected tabs to another window.">
+        {WINDOW_COUNT, plural,
+          =1 {Move tabs to new window}
+          other {Move tabs to another window}}
+      </message>
 
       <!-- Tab Group List Bottom Sheet -->
       <message name="IDS_TAB_GROUP_LIST_BOTTOM_SHEET_TITLE" desc="Title text for a bottom sheet which is used to add a tab to a tab group.">
@@ -1101,6 +1090,12 @@
         {TAB_COUNT, plural,
           =1 {Add to group named <ph name="TITLE_OF_GROUP">%1$s<ex>shopping</ex></ph> with <ph name="TAB_COUNT1">%2$d<ex>12</ex></ph> tab}
           other {Add to group named <ph name="TITLE_OF_GROUP">%1$s<ex>shopping</ex></ph> with <ph name="TAB_COUNT1">%2$d<ex>12</ex></ph> tabs}
+        }
+      </message>
+      <message name="IDS_NUMBER_OF_SELECTED_ITEMS" desc="String to display the number of selected items">
+        {ITEMS_COUNT, plural,
+          =1 {<ph name="ITEMS_COUNT_ONE">%1$d<ex>1</ex></ph> selected}
+          other {<ph name="ITEMS_COUNT_MANY">%1$d<ex>8</ex></ph> selected}
         }
       </message>
     </messages>

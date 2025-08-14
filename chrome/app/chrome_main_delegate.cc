@@ -96,7 +96,6 @@
 #include "net/http/http_cache.h"
 #include "net/url_request/url_request.h"
 #include "pdf/buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
 #include "third_party/blink/public/common/features.h"
@@ -266,10 +265,8 @@ bool IsSandboxedProcess() {
 void AdjustLinuxOOMScore(const std::string& process_type) {
   int score = -1;
 
-  if (process_type == switches::kPpapiPluginProcess) {
-    score = content::kPluginOomScore;
-  } else if (process_type == switches::kUtilityProcess ||
-             process_type == switches::kGpuProcess) {
+  if (process_type == switches::kUtilityProcess ||
+      process_type == switches::kGpuProcess) {
     score = content::kMiscOomScore;
   } else if (process_type == switches::kZygoteProcess || process_type.empty()) {
     // For zygotes and unlabeled process types, we want to still make
@@ -306,7 +303,6 @@ bool SubprocessNeedsResourceBundle(const std::string& process_type) {
   // profiles.
       process_type == switches::kGpuProcess ||
 #endif
-      process_type == switches::kPpapiPluginProcess ||
       process_type == switches::kRendererProcess ||
       process_type == switches::kUtilityProcess;
 }
@@ -600,6 +596,14 @@ void InitializeUserDataDir(base::CommandLine* command_line) {
   // child or service processes will attempt to use the invalid directory.
   if (specified_directory_was_invalid)
     command_line->AppendSwitchPath(switches::kUserDataDir, user_data_dir);
+
+#if BUILDFLAG(IS_CHROMEOS)
+  // Set the same value to ash::DIR_USER_DATA. The directory should be already
+  // created above, so `create` should be set to false.
+  CHECK(base::PathService::OverrideAndCreateIfNeeded(
+      ash::DIR_USER_DATA, user_data_dir, /*absolute=*/false, /*create=*/false));
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
 #endif  // BUILDFLAG(IS_WIN)
 }
 
@@ -1340,8 +1344,7 @@ void ChromeMainDelegate::PreSandboxStartup() {
     // browser process as a command line flag.
     DUMP_WILL_BE_CHECK(command_line.HasSwitch(switches::kLang) ||
                        process_type == switches::kZygoteProcess ||
-                       process_type == switches::kGpuProcess ||
-                       process_type == switches::kPpapiPluginProcess);
+                       process_type == switches::kGpuProcess);
 
     // TODO(markusheintz): The command line flag --lang is actually processed
     // by the CommandLinePrefStore, and made available through the PrefService
@@ -1384,15 +1387,24 @@ void ChromeMainDelegate::PreSandboxStartup() {
       }
     }
 
-    int extra_pak_keys[] = {
-        kAndroidChrome100PercentPakDescriptor,
-        kAndroidUIResourcesPakDescriptor,
+    // Define PAK file configurations with their scale factors
+    struct {
+      int key;
+      ui::ResourceScaleFactor scale;
+    } pak_configs[] = {
+        {kAndroidChrome100PercentPakDescriptor, ui::k100Percent},
+        {kAndroidUIResourcesPakDescriptor, ui::k100Percent},
+#if BUILDFLAG(ENABLE_HIDPI)
+        {kAndroidChrome200PercentPakDescriptor, ui::k200Percent},
+#endif
     };
-    for (int extra_pak_key : extra_pak_keys) {
-      pak_fd = global_descriptors->Get(extra_pak_key);
-      pak_region = global_descriptors->GetRegion(extra_pak_key);
+
+    // Load all configured PAK files
+    for (const auto& config : pak_configs) {
+      pak_fd = global_descriptors->Get(config.key);
+      pak_region = global_descriptors->GetRegion(config.key);
       ui::ResourceBundle::GetSharedInstance().AddDataPackFromFileRegion(
-          base::File(pak_fd), pak_region, ui::k100Percent);
+          base::File(pak_fd), pak_region, config.scale);
     }
 
     // For Android: Native resources for DFMs should only be used by the browser

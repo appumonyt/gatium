@@ -49,13 +49,16 @@ class PrefetchDocumentManager;
 class PrefetchNetworkContext;
 class PrefetchResponseReader;
 class PrefetchService;
+class PrefetchServingHandle;
 class PrefetchServingPageMetricsContainer;
+class PrefetchSingleRedirectHop;
 class PrefetchStreamingURLLoader;
 class PreloadingAttempt;
 class ProxyLookupClientImpl;
 class RenderFrameHost;
 class RenderFrameHostImpl;
-class ServiceWorkerClient;
+enum class PrefetchPotentialCandidateServingResult;
+enum class PrefetchServableState;
 
 // Holds the relevant size information of the prefetched response. The struct is
 // installed onto `PrefetchContainer`, and gets passed into
@@ -70,24 +73,26 @@ struct PrefetchResponseSizes {
 
 // This class contains the state for a request to prefetch a specific URL.
 //
-// A `PrefetchContainer` can have multiple `PrefetchContainer::SinglePrefetch`es
-// and `PrefetchStreamingURLLoader`s to support redirects. Each
-// `PrefetchContainer::SinglePrefetch` in `redirect_chain_` corresponds to a
-// single redirect hop, while a single `PrefetchStreamingURLLoader` can receive
-// multiple redirect hops unless network context switching is needed.
+// A `PrefetchContainer` can have multiple
+// `PrefetchSingleRedirectHop`s and `PrefetchStreamingURLLoader`s to
+// support redirects. Each `PrefetchSingleRedirectHop` in
+// `redirect_chain_` corresponds to a single redirect hop, while a single
+// `PrefetchStreamingURLLoader` can receive multiple redirect hops unless
+// network context switching is needed.
 //
 // For example:
 //
 // |PrefetchStreamingURLLoader A-----| |PrefetchStreamingURLLoader B ---------|
 // HandleRedirect  - HandleRedirect  - HandleRedirect  - ReceiveResponse-Finish
-// |SinglePrefetch0| |SinglePrefetch1| |SinglePrefetch2| |SinglePrefetch3-----|
+// |S.RedirectHop0-| |S.RedirectHop1-| |S.RedirectHop2-| |S.RedirectHop3------|
 //
 // While prefetching (see methods named like "ForCurrentPrefetch" or
-// "ToPrefetch"), `SinglePrefetch`es and `PrefetchStreamingURLLoader`s (among
-// other members) are added and filled. The steps for creating these objects and
-// associating with each other span multiple classes/methods:
+// "ToPrefetch"), `PrefetchSingleRedirectHop`es and
+// `PrefetchStreamingURLLoader`s (among other members) are added and filled. The
+// steps for creating these objects and associating with each other span
+// multiple classes/methods:
 //
-// 1. A new `PrefetchContainer::SinglePrefetch` and thus a new
+// 1. A new `PrefetchSingleRedirectHop` and thus a new
 // `PrefetchResponseReader` is created and added to `redirect_chain_`.
 // This is done either in:
 // - `PrefetchContainer` constructor [for an initial request], or
@@ -181,8 +186,7 @@ class CONTENT_EXPORT PrefetchContainer {
   // - If the prefetch is browser-initiated, `std::nullopt` (for
   //   `referring_document_token`) is used.
   // - If the prefetch is embedder-initiated, `net::NetworkIsolationKey` of the
-  //   embedder is used. Only used if `kPrefetchBrowserInitiatedTriggers` is
-  //   enabeld. See crbug.com/40942681.
+  //   embedder is used. See crbug.com/40942681.
   //
   // For navigation, `std::optional<DocumentToken>` of the initiating document
   // of the navigation is used.
@@ -237,7 +241,7 @@ class CONTENT_EXPORT PrefetchContainer {
   // Each callback is called at most once in the lifecycle of a container.
   //
   // Be careful about using this. This is designed only for
-  // `PrefetchMatchResolver`.
+  // `PrefetchMatchResolver` and some other prefetch-internal classes.
   class Observer : public base::CheckedObserver {
    public:
     // Called at the head of dtor.
@@ -254,6 +258,7 @@ class CONTENT_EXPORT PrefetchContainer {
     virtual void OnDeterminedHead(PrefetchContainer& prefetch_container) = 0;
     // Called when load of prefetch completed or failed.
     virtual void OnPrefetchCompletedOrFailed(
+        PrefetchContainer& prefetch_container,
         const network::URLLoaderCompletionStatus& completion_status,
         const std::optional<int>& response_code) = 0;
   };
@@ -372,10 +377,30 @@ class CONTENT_EXPORT PrefetchContainer {
     // --- Phase 3. PrefetchService::StartSinglePrefetch() has been called and
     // the holdback check has completed.
 
-    // [Final state] Not heldback.
+    // Not heldback:
     //
-    // On this state, refer to `PrefetchResponseReader`s for detailed
+    // On these states, refer to `PrefetchResponseReader`s for detailed
     // prefetching state and servability.
+    //
+    // - `kStarted`: Prefetch is started.
+    // - `kDeterminedHead`: `PrefetchContainer::OnDeterminedHead()` is called.
+    //   `Observer::OnDeterminedHead()` is called after transitioning to this
+    //   state.
+    // - [Final state] `kCompletedOrFailed`:
+    //   `PrefetchContainer::OnPrefetchComplete()` is called.
+    //   `Observer::OnPrefetchCompletedOrFailed()` is called after transitioning
+    //   to this state.
+    //
+    // Currently the distinction between these three states is introduced for
+    // CHECK()ing the calling order of `OnDeterminedHead()` and
+    // `OnPrefetchComplete()` (for https://crbug.com/400761083) and shouldn't be
+    // used for
+    // other purposes (i.e. these three enum values should behave in the same
+    // way).
+    //
+    // TODO(https://crbug.com/432518638): Make more strict association with
+    // `PrefetchContainer::LoadState` and `PrefetchResponseReader::LoadState`
+    // and verify it by adding CHECK()s.
     //
     // Also, refer to `attempt_` for triggering outcome and failure reasons for
     // metrics.
@@ -385,6 +410,8 @@ class CONTENT_EXPORT PrefetchContainer {
     // (e.g. `PrefetchResponseReader::GetServableState()` can be still
     // `kServable` even if `attempt_` has a failure).
     kStarted,
+    kDeterminedHead,
+    kCompletedOrFailed,
 
     // [Final state] Heldback due to `PreloadingAttempt::ShouldHoldback()`.
     kFailedHeldback,
@@ -403,7 +430,6 @@ class CONTENT_EXPORT PrefetchContainer {
 
   // Whether or not the prefetch was determined to be eligibile.
   void OnEligibilityCheckComplete(PreloadingEligibility eligibility);
-  bool IsInitialPrefetchEligible() const;
 
   // Adds a the new URL to |redirect_chain_|.
   void AddRedirectHop(const net::RedirectInfo& redirect_info);
@@ -427,10 +453,15 @@ class CONTENT_EXPORT PrefetchContainer {
   void MarkCrossSiteContaminated();
 
   // Allows for |PrefetchCookieListener|s to be reigsitered for
-  // `GetCurrentSinglePrefetchToPrefetch()`.
+  // `GetCurrentSingleRedirectHopToPrefetch()`.
   void RegisterCookieListener(network::mojom::CookieManager* cookie_manager);
   void PauseAllCookieListeners();
   void ResumeAllCookieListeners();
+
+  // The network context used to make network requests, copy cookies, etc. for
+  // the given `is_isolated_network_context_required`.
+  PrefetchNetworkContext* GetNetworkContext(
+      bool is_isolated_network_context_required) const;
 
   // The network context used to make network requests for the next prefetch.
   PrefetchNetworkContext* GetOrCreateNetworkContextForCurrentPrefetch();
@@ -482,43 +513,11 @@ class CONTENT_EXPORT PrefetchContainer {
   void OnPrefetchComplete(
       const network::URLLoaderCompletionStatus& completion_status);
 
-  // TODO(crbug.com/372186548): Revisit the shape of ServableState.
-  //
-  // See also https://crrev.com/c/5831122
-  enum class ServableState {
-    // `PrefetchService` is checking eligibility of the prefetch or waiting load
-    // start after eligibility check.
-    //
-    // Prefetch matching process should block until eligibility is got (and load
-    // start)
-    // not to fall back normal navigation without waiting prefetch ahead of
-    // prerender and send a duplicated fetch request.
-    //
-    // This state occurs only if `kPrerender2FallbackPrefetchSpecRules` is
-    // enabled. Otherwise, `kNotServable` is returned for this period.
-    kShouldBlockUntilEligibilityGot,
-
-    // The load is started but non redirect header is not received yet.
-    //
-    // Prefetch matching process should block until the head of this is received
-    // on a navigation to a matching URL, as a server can send a response header
-    // including NoVarySearch header that contradicts NoVarySearch hint.
-    kShouldBlockUntilHeadReceived,
-
-    // This received non redirect header and is not expired.
-    //
-    // Note that it needs more checks to serve, e.g. cookie check. See also e.g.
-    // `PrefetchMatchResolver::OnDeterminedHead()`.
-    kServable,
-
-    // Not other states.
-    kNotServable,
-  };
-
   // Note: Even if this returns `kServable`, `CreateRequestHandler()` can still
   // fail (returning null handler) due to final checks. See also the comment for
   // `PrefetchResponseReader::CreateRequestHandler()`.
-  ServableState GetServableState(base::TimeDelta cacheable_duration) const;
+  PrefetchServableState GetServableState(
+      base::TimeDelta cacheable_duration) const;
 
   // Starts blocking `PrefetchMatchResolver` until non-redirect response header
   // is determined or timeouted. `on_maybe_determined_head_callback` will be
@@ -558,10 +557,6 @@ class CONTENT_EXPORT PrefetchContainer {
 
   // Returns request id to be used by DevTools and test utilities.
   const std::string& RequestId() const { return request_id_; }
-
-  const std::optional<PrefetchResponseSizes>& GetPrefetchResponseSizes() const {
-    return prefetch_response_sizes_;
-  }
 
   bool HasPreloadingAttempt() { return !!attempt_; }
   base::WeakPtr<PreloadingAttempt> preloading_attempt() { return attempt_; }
@@ -618,115 +613,7 @@ class CONTENT_EXPORT PrefetchContainer {
   // & started).
   void OnPrefetchStarted();
 
-  class SinglePrefetch;
-
-  // A `Reader` represents the current state of serving.
-  // The `Reader` methods all operate on the currently *serving*
-  // `SinglePrefetch`, which is the element in |redirect_chain_| at index
-  // |index_redirect_chain_to_serve_|.
-  //
-  // This works like `base::WeakPtr<PrefetchContainer>` plus additional states,
-  // so check that the reader is valid (e.g. `if (reader)`) before calling other
-  // methods (except for `Clone()`).
-  //
-  // TODO(crbug.com/40064891): Allow multiple Readers for a PrefetchContainer.
-  // This might need ownership/lifetime changes of `Reader` and further cleaning
-  // up the dependencies between `PrefetchContainer` and `Reader`.
-  class CONTENT_EXPORT Reader final {
-   public:
-    Reader();
-
-    Reader(base::WeakPtr<PrefetchContainer> prefetch_container,
-           size_t index_redirect_chain_to_serve);
-
-    Reader(const Reader&) = delete;
-    Reader& operator=(const Reader&) = delete;
-
-    Reader(Reader&&);
-    Reader& operator=(Reader&&);
-
-    ~Reader();
-
-    PrefetchContainer* GetPrefetchContainer() const {
-      return prefetch_container_.get();
-    }
-    Reader Clone() const;
-
-    // Returns true if `this` is valid.
-    // Do not call methods below if false.
-    explicit operator bool() const { return GetPrefetchContainer(); }
-
-    // Methods redirecting to `prefetch_container_`.
-    PrefetchContainer::ServableState GetServableState(
-        base::TimeDelta cacheable_duration) const;
-    bool HasPrefetchStatus() const;
-    PrefetchStatus GetPrefetchStatus() const;
-
-    // Returns whether the Reader reached the end. If true, the methods below
-    // shouldn't be called, because the current `SinglePrefetch` doesn't exist.
-    bool IsEnd() const;
-
-    // Whether or not an isolated network context is required to serve.
-    bool IsIsolatedNetworkContextRequiredToServe() const;
-
-    PrefetchNetworkContext* GetCurrentNetworkContextToServe() const;
-
-    bool HaveDefaultContextCookiesChanged() const;
-
-    // Before a prefetch can be served, any cookies added to the isolated
-    // network context must be copied over to the default network context. These
-    // functions are used to check and update the status of this process, as
-    // well as record metrics about how long this process takes.
-    bool HasIsolatedCookieCopyStarted() const;
-    bool IsIsolatedCookieCopyInProgress() const;
-    void OnIsolatedCookieCopyStart() const;
-    void OnIsolatedCookiesReadCompleteAndWriteStart() const;
-    void OnIsolatedCookieCopyComplete() const;
-    void OnInterceptorCheckCookieCopy() const;
-    void SetOnCookieCopyCompleteCallback(base::OnceClosure callback) const;
-
-    // Called with the result of the probe. If the probing feature is enabled,
-    // then a probe must complete successfully before the prefetch can be
-    // served.
-    void OnPrefetchProbeResult(PrefetchProbeResult probe_result) const;
-
-    // Checks if the given URL matches the the URL that can be served next.
-    bool DoesCurrentURLToServeMatch(const GURL& url) const;
-
-    // Returns the URL that can be served next.
-    const GURL& GetCurrentURLToServe() const;
-
-    // Gets the current PrefetchResponseReader.
-    base::WeakPtr<PrefetchResponseReader>
-    GetCurrentResponseReaderToServeForTesting();
-
-    // Called when one element of |redirect_chain_| is served and the next
-    // element can now be served.
-    void AdvanceCurrentURLToServe() { index_redirect_chain_to_serve_++; }
-
-    // Returns the `SinglePrefetch` to be served next.
-    const SinglePrefetch& GetCurrentSinglePrefetchToServe() const;
-
-    // See the comment for `PrefetchResponseReader::CreateRequestHandler()`.
-    std::pair<PrefetchRequestHandler, base::WeakPtr<ServiceWorkerClient>>
-    CreateRequestHandler();
-
-    // See the corresponding functions on `PrefetchResponseReader`.
-    // These apply to the current `SinglePrefetch` (and so, may change as the
-    // prefetch advances through a redirect change).
-    bool VariesOnCookieIndices() const;
-    bool MatchesCookieIndices(
-        base::span<const std::pair<std::string, std::string>> cookies) const;
-
-   private:
-    base::WeakPtr<PrefetchContainer> prefetch_container_;
-
-    // The index of the element in |prefetch_container_.redirect_chain_| that
-    // can be served.
-    size_t index_redirect_chain_to_serve_ = 0;
-  };
-
-  Reader CreateReader();
+  PrefetchServingHandle CreateServingHandle();
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
@@ -749,10 +636,12 @@ class CONTENT_EXPORT PrefetchContainer {
   //
   // This can be called multiple times, because this can be called for multiple
   // `PrefetchMatchResolver`s.
-  void OnUnregisterCandidate(const GURL& navigated_url,
-                             bool is_served,
-                             bool is_nav_prerender,
-                             std::optional<base::TimeDelta> blocked_duration);
+  void OnUnregisterCandidate(
+      const GURL& navigated_url,
+      bool is_served,
+      PrefetchPotentialCandidateServingResult matching_result,
+      bool is_nav_prerender,
+      std::optional<base::TimeDelta> blocked_duration);
 
   // TODO(crbug.com/372186548): Revisit the semantics of
   // `IsLikelyAheadOfPrerender()`.
@@ -814,13 +703,19 @@ class CONTENT_EXPORT PrefetchContainer {
     return priority_;
   }
 
- protected:
-  friend class PrefetchContainerTestBase;
+  // Methods only exposed for `PrefetchServingHandle`.
+  const std::vector<std::unique_ptr<PrefetchSingleRedirectHop>>& redirect_chain(
+      base::PassKey<PrefetchServingHandle>) const;
+  void SetProbeResult(base::PassKey<PrefetchServingHandle>,
+                      PrefetchProbeResult probe_result);
+  static std::optional<PreloadingTriggeringOutcome>
+  TriggeringOutcomeFromStatusForServingHandle(
+      base::PassKey<PrefetchServingHandle>,
+      PrefetchStatus prefetch_status);
 
+ protected:
   // Updates metrics based on the result of the prefetch request.
   void UpdatePrefetchRequestMetrics(
-      const std::optional<network::URLLoaderCompletionStatus>&
-          completion_status,
       const network::mojom::URLResponseHead* head);
 
  private:
@@ -867,16 +762,17 @@ class CONTENT_EXPORT PrefetchContainer {
   // Add X-Client-Data request header to a request.
   void AddXClientDataHeader(network::ResourceRequest& request);
 
-  // Returns the `SinglePrefetch` to be prefetched next. This is the last
-  // element in `redirect_chain_`, because, during prefetching from the network,
-  // we push back `SinglePrefetch`s to `redirect_chain_` and access the latest
-  // redirect hop.
-  SinglePrefetch& GetCurrentSinglePrefetchToPrefetch() const;
+  // Returns the `PrefetchSingleRedirectHop` to be prefetched next.
+  // This is the last element in `redirect_chain_`, because, during prefetching
+  // from the network, we push back `PrefetchSingleRedirectHop`s to
+  // `redirect_chain_` and access the latest redirect hop.
+  PrefetchSingleRedirectHop& GetCurrentSingleRedirectHopToPrefetch() const;
 
-  // Returns the `SinglePrefetch` for the redirect leg before
-  // `GetCurrentSinglePrefetchToPrefetch()`. This must be called only if `this`
-  // has redirect(s).
-  const SinglePrefetch& GetPreviousSinglePrefetchToPrefetch() const;
+  // Returns the `PrefetchSingleRedirectHop` for the redirect leg
+  // before `GetCurrentSingleRedirectHopToPrefetch()`. This must be called only
+  // if `this` has redirect(s).
+  const PrefetchSingleRedirectHop& GetPreviousSingleRedirectHopToPrefetch()
+      const;
 
   // Returns "Sec-Purpose" header value for a prefetch request to `request_url`.
   const char* GetSecPurposeHeaderValue(const GURL& request_url) const;
@@ -886,22 +782,39 @@ class CONTENT_EXPORT PrefetchContainer {
   // redirects.
   void OnInitialPrefetchFailedIneligible(PreloadingEligibility eligibility);
 
+  std::string GetMetricsSuffix() const;
+
   // Record `prefetch_status` to UMA if it hasn't already been recorded for this
   // container.
   // Note: We use a parameter instead of just `prefetch_status_` as it may not
   // be updated to the latest value when this method is called.
   void MaybeRecordPrefetchStatusToUMA(PrefetchStatus prefetch_status);
 
-  // Records `Prefetch.PrefetchContainer.DurationAdded*` UMAs.
-  void RecordDurationFromAdded();
+  // Records UMAs tracking some certain durations during prefetch addition to
+  // prefetch completion (e.g. `Prefetch.PrefetchContainer.AddedTo*`).
+  void RecordPrefetchDurationHistogram();
   // Records `Prefetch.PrefetchMatchingBlockedNavigationWithPrefetch.*` UMAs.
   void RecordPrefetchMatchingBlockedNavigationHistogram(bool blocked_until_head,
                                                         bool is_nav_prerender);
+  // Records `Prefetch.PrefetchContainer.ServedCount`.
+  void RecordPrefetchContainerServedCountHistogram();
+
   // Records `Prefetch.BlockUntilHeadDuration.*` UMAs.
   void RecordBlockUntilHeadDurationHistogram(
       const std::optional<base::TimeDelta>& blocked_duration,
       bool served,
       bool is_nav_prerender);
+  // Records
+  // `Prefetch.PrefetchPotentialCandidateServingResult.PerMatchingCandidate.*`
+  // UMAs.
+  void RecordPrefetchPotentialCandidateServingResultHistogram(
+      PrefetchPotentialCandidateServingResult matching_result);
+
+  // Should be called only from `OnPrefetchComplete()`, so that
+  // `OnPrefetchCompletedOrFailed()` is always called after
+  // `OnPrefetchCompleteInternal()`.
+  void OnPrefetchCompleteInternal(
+      const network::URLLoaderCompletionStatus& completion_status);
 
   // The ID of the RenderFrameHost/Document that triggered the prefetch.
   // This will be empty when browser-initiated prefetch.
@@ -989,7 +902,7 @@ class CONTENT_EXPORT PrefetchContainer {
   bool is_decoy_ = false;
 
   // The redirect chain resulting from prefetching |GetURL()|.
-  std::vector<std::unique_ptr<SinglePrefetch>> redirect_chain_;
+  std::vector<std::unique_ptr<PrefetchSingleRedirectHop>> redirect_chain_;
 
   // The network contexts used for this prefetch. They key corresponds to the
   // |is_isolated_network_context_required| param of the
@@ -1007,17 +920,12 @@ class CONTENT_EXPORT PrefetchContainer {
 
   ukm::SourceId ukm_source_id_;
 
-  // The sizes information of the prefetched response.
-  std::optional<PrefetchResponseSizes> prefetch_response_sizes_;
-
-  // The amount of time it took for the prefetch to complete.
-  std::optional<base::TimeDelta> fetch_duration_;
-
   // The amount of time it took for the headers to be received.
   std::optional<base::TimeDelta> header_latency_;
 
-  // Whether or not a navigation to this prefetch occurred.
-  bool navigated_to_ = false;
+  // Counts how many times this container has been served to the navigation.
+  // Only used for the metrics.
+  base::ClampedNumeric<uint32_t> served_count_ = 0;
 
   // The result of probe when checked on navigation.
   std::optional<PrefetchProbeResult> probe_result_;
@@ -1153,10 +1061,6 @@ CONTENT_EXPORT std::ostream& operator<<(
 CONTENT_EXPORT std::ostream& operator<<(
     std::ostream& ostream,
     const PrefetchContainer::Key& prefetch_key);
-
-CONTENT_EXPORT std::ostream& operator<<(
-    std::ostream& ostream,
-    PrefetchContainer::ServableState servable_state);
 
 CONTENT_EXPORT std::ostream& operator<<(std::ostream& ostream,
                                         PrefetchContainer::LoadState state);

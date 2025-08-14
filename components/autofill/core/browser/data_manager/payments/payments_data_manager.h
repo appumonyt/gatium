@@ -370,14 +370,14 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   void SetAutofillHasSeenIban();
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   // Returns the value of the kAutofillHasSeenBnpl pref.
   bool IsAutofillHasSeenBnplPrefEnabled() const;
 
   // Sets the value of the kAutofillHasSeenBnpl pref to true.
   void SetAutofillHasSeenBnpl();
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
-        // BUILDFLAG(IS_CHROMEOS)
+        // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 
   // Returns if the user has seen a BNPL suggestion before and if the BNPL
   // feature is enabled. Does not check for user's locale.
@@ -520,6 +520,12 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Returns the value of the FacilitatedPaymentsEwallet user pref.
   bool IsFacilitatedPaymentsEwalletUserPrefEnabled() const;
 
+  // Returns the value of the FacilitatedPaymentsA2AEnabled user pref.
+  bool IsFacilitatedPaymentsA2AUserPrefEnabled() const;
+
+  // Sets the FacilitatedPaymentsA2ATriggeredOnce user pref value to `enabled`.
+  void SetFacilitatedPaymentsA2ATriggeredOnce(bool enabled);
+
   // Whether server cards or IBANs are enabled and should be suggested to the
   // user.
   virtual bool ShouldSuggestServerPaymentMethods() const;
@@ -570,6 +576,9 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   void LogStoredPaymentsDataMetrics() const;
 
   void SetPrefService(PrefService* pref_service);
+
+  // Returns the value of the AutofillBnplEnabled pref.
+  virtual bool IsAutofillBnplPrefEnabled() const;
 
   void NotifyObservers();
 
@@ -646,9 +655,6 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Returns whether Autofill card benefit suggestion labels should be blocked.
   bool ShouldBlockCardBenefitSuggestionLabels() const;
 
-  // Returns the value of the AutofillBnplEnabled pref.
-  virtual bool IsAutofillBnplPrefEnabled() const;
-
   // Checks whether any new card art url is synced. If so, attempt to fetch the
   // image based on the url.
   void ProcessCardArtUrlChanges();
@@ -693,13 +699,13 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   void ClearAllCreditCardBenefits();
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   // Monitors the `kAutofillBnplEnabled` preference for changes and controls the
   // clearing/loading of payment instruments accordingly. Will also log the
   // `Autofill.SettingsPage.BnplToggled` metric.
   void OnBnplEnabledPrefChange();
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
-        // BUILDFLAG(IS_CHROMEOS)
+        // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 
   // Saves |imported_credit_card| to the WebDB if it exists. Returns the guid of
   // the new or updated card, or the empty string if no card was saved.

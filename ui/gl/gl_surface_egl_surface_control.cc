@@ -8,7 +8,7 @@
 #include <variant>
 
 #include "base/android/android_hardware_buffer_compat.h"
-#include "base/android/build_info.h"
+#include "base/android/apk_info.h"
 #include "base/android/scoped_hardware_buffer_fence_sync.h"
 #include "base/functional/bind.h"
 #include "base/posix/eintr_wrapper.h"
@@ -40,8 +40,7 @@ gfx::Size GetBufferSize(const AHardwareBuffer* buffer) {
 }
 
 std::string BuildSurfaceName(const char* suffix) {
-  return base::StrCat(
-      {base::android::BuildInfo::GetInstance()->package_name(), "/", suffix});
+  return base::StrCat({base::android::apk_info::package_name(), "/", suffix});
 }
 
 base::TimeTicks GetSignalTime(const base::ScopedFD& fence) {
@@ -207,8 +206,8 @@ void GLSurfaceEGLSurfaceControl::CommitPendingTransaction(
   pending_transaction_->SetOnCompleteCb(std::move(complete_cb),
                                         gpu_task_runner_);
 
-  if (use_target_deadline_) {
-    DCHECK(!!choreographer_vsync_id_for_next_frame_);
+  if (use_target_deadline_ &&
+      choreographer_vsync_id_for_next_frame_.has_value()) {
     DCHECK(gfx::SurfaceControl::SupportsSetFrameTimeline());
     pending_transaction_->SetFrameTimelineId(
         choreographer_vsync_id_for_next_frame_.value());

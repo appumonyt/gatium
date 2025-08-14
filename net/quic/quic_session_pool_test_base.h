@@ -165,7 +165,8 @@ class QuicSessionPoolTestBase : public WithTaskEnvironment {
           NetworkAnonymizationKey(),
       const ProxyChain& proxy_chain = ProxyChain::Direct(),
       SessionUsage session_usage = SessionUsage::kDestination,
-      bool require_dns_https_alpn = false);
+      bool require_dns_https_alpn = false,
+      bool disable_cert_verification_network_fetches = false);
   bool HasActiveJob(const url::SchemeHostPort& scheme_host_port,
                     const PrivacyMode privacy_mode,
                     bool require_dns_https_alpn = false);
@@ -180,7 +181,8 @@ class QuicSessionPoolTestBase : public WithTaskEnvironment {
           NetworkAnonymizationKey(),
       const ProxyChain& proxy_chain = ProxyChain::Direct(),
       SessionUsage session_usage = SessionUsage::kDestination,
-      bool require_dns_https_alpn = false);
+      bool require_dns_https_alpn = false,
+      bool disable_cert_verification_network_fetches = false);
 
   int GetSourcePortForNewSessionAndGoAway(
       const url::SchemeHostPort& destination);
@@ -244,8 +246,8 @@ class QuicSessionPoolTestBase : public WithTaskEnvironment {
       test::QuicTestPacketMaker& packet_maker,
       uint64_t packet_number,
       uint64_t packet_num_received,
-      uint64_t smallest_received,
-      uint64_t largest_received);
+      uint64_t largest_received,
+      uint64_t smallest_received);
   std::string ConstructDataHeader(size_t body_len);
 
   std::unique_ptr<quic::QuicEncryptedPacket> ConstructServerDataPacket(
@@ -288,7 +290,7 @@ class QuicSessionPoolTestBase : public WithTaskEnvironment {
   std::unique_ptr<TestProxyDelegate> proxy_delegate_;
   std::unique_ptr<ScopedMockNetworkChangeNotifier>
       scoped_mock_network_change_notifier_;
-  std::unique_ptr<QuicSessionPool> factory_;
+  std::unique_ptr<QuicSessionPool> pool_;
 
   NetLogWithSource net_log_;
   TestCompletionCallback callback_;

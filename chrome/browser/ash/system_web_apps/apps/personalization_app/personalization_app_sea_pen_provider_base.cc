@@ -31,12 +31,12 @@
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/wallpaper/wallpaper_controller_client_impl.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chromeos/ash/components/demo_mode/utils/demo_session_utils.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "components/feedback/feedback_constants.h"
-#include "components/manta/features.h"
 #include "components/manta/manta_status.h"
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -86,7 +86,6 @@ PersonalizationAppSeaPenProviderBase::~PersonalizationAppSeaPenProviderBase() =
 void PersonalizationAppSeaPenProviderBase::BindInterface(
     mojo::PendingReceiver<::ash::personalization_app::mojom::SeaPenProvider>
         receiver) {
-  CHECK(manta::features::IsMantaServiceEnabled());
   CHECK(::ash::features::IsSeaPenEnabled() ||
         ::ash::features::IsVcBackgroundReplaceEnabled());
   sea_pen_receiver_.reset();

@@ -26,6 +26,7 @@
 #include "components/signin/public/identity_manager/access_token_fetcher.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/identity_mutator.h"
+#include "components/signin/public/identity_manager/oauth_consumer_ids.h"
 #include "components/signin/public/identity_manager/scope_set.h"
 #include "google_apis/gaia/oauth2_access_token_manager.h"
 
@@ -185,6 +186,10 @@ class IdentityManager : public KeyedService,
   void RemoveObserver(Observer* observer);
 
 #if BUILDFLAG(IS_IOS)
+  // Whether a batch of primary account changes is in progress. See
+  // `OnEndBatchOfPrimaryAccountChanges()`.
+  bool IsBatchOfPrimaryAccountChangesInProgress();
+
   // Starts a batch of primary account changes by setting
   // `batch_of_primary_account_changes_in_progress_` to `true`. As long as the
   // batch is running, `OnEndBatchOfPrimaryAccountChanges()` are not sent when
@@ -243,7 +248,27 @@ class IdentityManager : public KeyedService,
       AccessTokenFetcher::TokenCallback callback,
       AccessTokenFetcher::Mode mode);
 
+  // Creates an AccessTokenFetcher for the |oauth_consumer_id| feature.
+  [[nodiscard]] std::unique_ptr<AccessTokenFetcher>
+  CreateAccessTokenFetcherForAccount(const CoreAccountId& account_id,
+                                     OAuthConsumerId oauth_consumer_id,
+                                     AccessTokenFetcher::TokenCallback callback,
+                                     AccessTokenFetcher::Mode mode,
+                                     AccessTokenFetcher::Source token_source =
+                                         AccessTokenFetcher::Source::kProfile);
+
+  // Creates an AccessTokenFetcher for the |oauth_conumser_id| feature, allowing
+  // to specify a custom |url_loader_factory| as well.
+  [[nodiscard]] std::unique_ptr<AccessTokenFetcher>
+  CreateAccessTokenFetcherForAccount(
+      const CoreAccountId& account_id,
+      OAuthConsumerId oauth_consumer_id,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      AccessTokenFetcher::TokenCallback callback,
+      AccessTokenFetcher::Mode mode);
+
 #if BUILDFLAG(IS_IOS)
+  // TODO(crbug.com/425896213): Use OAuthConsumerId instead of ScopeSet.
   void GetRefreshTokenFromDevice(
       const CoreAccountId& account_id,
       const OAuth2AccessTokenManager::ScopeSet& scopes,
@@ -256,6 +281,14 @@ class IdentityManager : public KeyedService,
   // network. Otherwise, is a no-op.
   void RemoveAccessTokenFromCache(const CoreAccountId& account_id,
                                   const ScopeSet& scopes,
+                                  const std::string& access_token);
+
+  // If an entry exists in the cache of access tokens corresponding to the
+  // given information, removes that entry; in this case, the next access token
+  // request for |account_id| and |oauth_consumer_id| will fetch a new token
+  // from the network. Otherwise, is a no-op.
+  void RemoveAccessTokenFromCache(const CoreAccountId& account_id,
+                                  OAuthConsumerId oauth_consumer_id,
                                   const std::string& access_token);
 
   // Provides the information of all accounts that have refresh tokens.
@@ -291,14 +324,22 @@ class IdentityManager : public KeyedService,
   bool HasAccountWithRefreshTokenInPersistentErrorState(
       const CoreAccountId& account_id) const;
 
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
   // Returns the wrapped binding key of a refresh token associated with
   // `account_id`, if any.
   // Returns a non-empty vector iff (a) a refresh token exists for `account_id`,
   // and (b) the refresh token is bound to a device.
   std::vector<uint8_t> GetWrappedBindingKeyOfRefreshTokenForAccount(
       const CoreAccountId& account_id) const;
-#endif
+
+  // Returns the wrapped binding key to reuse if any existing account is already
+  // bound. It returns an empty vector if no existing account is bound.
+  //
+  // NOTE: The refresh tokens must be loaded to correctly check the binding
+  // status of the accounts. If the refresh tokens are not loaded, calling this
+  // function results in a crash.
+  std::vector<uint8_t> GetWrappedBindingKey() const;
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
   // Returns the error state of the refresh token associated with |account_id|.
   // In particular: Returns GoogleServiceAuthError::AuthErrorNone() if either
@@ -551,12 +592,8 @@ class IdentityManager : public KeyedService,
   friend void SetRefreshTokenForAccount(
       IdentityManager* identity_manager,
       const CoreAccountId& account_id,
-      const std::string& token_value
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-      ,
-      const std::vector<uint8_t>& wrapped_binding_key
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  );
+      const std::string& token_value,
+      const std::vector<uint8_t>& wrapped_binding_key);
   friend void SetInvalidRefreshTokenForAccount(
       IdentityManager* identity_manager,
       const CoreAccountId& account_id,

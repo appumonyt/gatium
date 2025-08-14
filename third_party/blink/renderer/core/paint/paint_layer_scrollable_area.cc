@@ -95,7 +95,6 @@
 #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
-#include "third_party/blink/renderer/core/layout/legacy_layout_tree_walking.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/page/autoscroll_controller.h"
@@ -172,10 +171,8 @@ PaintLayerScrollableArea::PaintLayerScrollableArea(PaintLayer& layer)
     element->SetSavedLayerScrollOffset(ScrollOffset());
   }
 
-  if (RuntimeEnabledFeatures::ScrollableAreaOptimizationEnabled()) {
-    if (LocalFrameView* frame_view = GetLayoutBox()->GetFrameView()) {
-      frame_view->AddScrollableArea(*this);
-    }
+  if (LocalFrameView* frame_view = GetLayoutBox()->GetFrameView()) {
+    frame_view->AddScrollableArea(*this);
   }
 }
 
@@ -2600,14 +2597,6 @@ void PaintLayerScrollableArea::UpdateScrollableAreaSet() {
   // (see: BoxPainter::PaintBoxDecorationBackground).
   GetLayoutBox()->SetBackgroundNeedsFullPaintInvalidation();
 
-  if (!RuntimeEnabledFeatures::ScrollableAreaOptimizationEnabled()) {
-    if (scrolls_overflow_) {
-      DCHECK(CanHaveOverflowScrollbars(*GetLayoutBox()));
-      frame_view->AddUserScrollableArea(*this);
-    } else {
-      frame_view->RemoveUserScrollableArea(*this);
-    }
-  }
   probe::UpdateScrollableFlag(GetLayoutBox()->GetNode(), std::nullopt);
 
   layer_->DidUpdateScrollsOverflow();

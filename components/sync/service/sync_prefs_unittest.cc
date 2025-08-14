@@ -762,41 +762,6 @@ TEST_F(SyncPrefsTest, PassphrasePromptMutedProductVersion) {
   EXPECT_EQ(0, sync_prefs_->GetPassphrasePromptMutedProductVersion());
 }
 
-TEST_F(SyncPrefsTest, PasswordSyncAllowed_DefaultValue) {
-  // Passwords is in its default state. For syncing users, it's enabled. For
-  // non-syncing users, it depends on the platform.
-  ASSERT_TRUE(sync_prefs_->GetSelectedTypesForSyncingUser().Has(
-      UserSelectableType::kPasswords));
-  StrictMock<MockSyncPrefObserver> observer;
-  sync_prefs_->AddObserver(&observer);
-  EXPECT_CALL(observer, OnSelectedTypesPrefChange);
-
-  sync_prefs_->SetPasswordSyncAllowed(false);
-
-  EXPECT_FALSE(sync_prefs_->GetSelectedTypesForSyncingUser().Has(
-      UserSelectableType::kPasswords));
-  EXPECT_FALSE(sync_prefs_->GetSelectedTypesForAccount(gaia_id_).Has(
-      UserSelectableType::kPasswords));
-  sync_prefs_->RemoveObserver(&observer);
-}
-
-TEST_F(SyncPrefsTest, PasswordSyncAllowed_ExplicitValue) {
-  // Make passwords explicitly enabled (no default value).
-  sync_prefs_->SetSelectedTypesForSyncingUser(
-      /*keep_everything_synced=*/false,
-      /*registered_types=*/UserSelectableTypeSet::All(),
-      /*selected_types=*/{UserSelectableType::kPasswords});
-  sync_prefs_->SetSelectedTypeForAccount(UserSelectableType::kPasswords, true,
-                                         gaia_id_);
-
-  sync_prefs_->SetPasswordSyncAllowed(false);
-
-  EXPECT_FALSE(sync_prefs_->GetSelectedTypesForSyncingUser().Has(
-      UserSelectableType::kPasswords));
-  EXPECT_FALSE(sync_prefs_->GetSelectedTypesForAccount(gaia_id_).Has(
-      UserSelectableType::kPasswords));
-}
-
 enum BooleanPrefState { PREF_FALSE, PREF_TRUE, PREF_UNSET };
 
 // Similar to SyncPrefsTest, but does not create a SyncPrefs instance. This lets
@@ -1140,7 +1105,7 @@ TEST_F(SyncPrefsMigrationTest, RunsOnlyOnce) {
 
     // Both methods are called. No migration should run.
     EXPECT_FALSE(prefs.MaybeMigratePrefsForSyncToSigninPart1(
-        SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_));
+        SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_));
     EXPECT_FALSE(prefs.MaybeMigratePrefsForSyncToSigninPart2(
         gaia_id_,
         /*is_using_explicit_passphrase=*/true));
@@ -1158,7 +1123,7 @@ TEST_F(SyncPrefsMigrationTest, RunsAgainAfterFeatureReenabled) {
     // The user is signed-in non-syncing, so part 1 runs. The user also has an
     // explicit passphrase, so part 2 runs too.
     EXPECT_TRUE(prefs.MaybeMigratePrefsForSyncToSigninPart1(
-        SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_));
+        SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_));
     EXPECT_TRUE(prefs.MaybeMigratePrefsForSyncToSigninPart2(
         gaia_id_,
         /*is_using_explicit_passphrase=*/true));
@@ -1174,7 +1139,7 @@ TEST_F(SyncPrefsMigrationTest, RunsAgainAfterFeatureReenabled) {
 
     // Since the feature is disabled now, no migration runs.
     EXPECT_FALSE(prefs.MaybeMigratePrefsForSyncToSigninPart1(
-        SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_));
+        SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_));
     EXPECT_FALSE(prefs.MaybeMigratePrefsForSyncToSigninPart2(
         gaia_id_,
         /*is_using_explicit_passphrase=*/true));
@@ -1189,7 +1154,7 @@ TEST_F(SyncPrefsMigrationTest, RunsAgainAfterFeatureReenabled) {
 
     // Since it was disabled in between, the migration should run again.
     EXPECT_TRUE(prefs.MaybeMigratePrefsForSyncToSigninPart1(
-        SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_));
+        SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_));
     EXPECT_TRUE(prefs.MaybeMigratePrefsForSyncToSigninPart2(
         gaia_id_,
         /*is_using_explicit_passphrase=*/true));
@@ -1209,7 +1174,7 @@ TEST_F(SyncPrefsMigrationTest, GlobalPrefsAreUnchanged) {
   SyncPrefs prefs(&pref_service_);
 
   ASSERT_TRUE(prefs.MaybeMigratePrefsForSyncToSigninPart1(
-      SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_));
+      SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_));
   ASSERT_TRUE(prefs.MaybeMigratePrefsForSyncToSigninPart2(
       gaia_id_,
       /*is_using_explicit_passphrase=*/true));
@@ -1221,7 +1186,7 @@ TEST_F(SyncPrefsMigrationTest, GlobalPrefsAreUnchanged) {
   }
 }
 
-TEST_F(SyncPrefsMigrationTest, TurnsPreferencesOff) {
+TEST_F(SyncPrefsMigrationTest, MigratesPreferencesNotOptedIn) {
   base::test::ScopedFeatureList enable_sync_to_signin(
       kReplaceSyncPromosWithSignInPromos);
 
@@ -1233,11 +1198,17 @@ TEST_F(SyncPrefsMigrationTest, TurnsPreferencesOff) {
 
   // Run the migration for a pre-existing signed-in non-syncing user.
   prefs.MaybeMigratePrefsForSyncToSigninPart1(
-      SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_);
+      SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_);
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+  // After migration, Preferences should still be enabled (by default).
+  EXPECT_TRUE(prefs.GetSelectedTypesForAccount(gaia_id_).Has(
+      UserSelectableType::kPreferences));
+#else
   // Preferences should've been turned off in the account-scoped settings.
   EXPECT_FALSE(prefs.GetSelectedTypesForAccount(gaia_id_).Has(
       UserSelectableType::kPreferences));
+#endif
 }
 
 TEST_F(SyncPrefsMigrationTest, MigratesBookmarksOptedIn) {
@@ -1281,7 +1252,7 @@ TEST_F(SyncPrefsMigrationTest, MigratesBookmarksOptedIn) {
         UserSelectableType::kReadingList));
 
     prefs.MaybeMigratePrefsForSyncToSigninPart1(
-        SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_);
+        SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_);
 
     // Bookmarks and ReadingList should still be enabled.
     EXPECT_TRUE(prefs.GetSelectedTypesForAccount(gaia_id_).Has(
@@ -1323,13 +1294,21 @@ TEST_F(SyncPrefsMigrationTest, MigratesBookmarksNotOptedIn) {
 
     // Run the migration!
     prefs.MaybeMigratePrefsForSyncToSigninPart1(
-        SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_);
+        SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_);
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+    // After the migration, the types should be enabled.
+    EXPECT_TRUE(prefs.GetSelectedTypesForAccount(gaia_id_).Has(
+        UserSelectableType::kBookmarks));
+    EXPECT_TRUE(prefs.GetSelectedTypesForAccount(gaia_id_).Has(
+        UserSelectableType::kReadingList));
+#else
     // After the migration, the types should be disabled.
     EXPECT_FALSE(prefs.GetSelectedTypesForAccount(gaia_id_).Has(
         UserSelectableType::kBookmarks));
     EXPECT_FALSE(prefs.GetSelectedTypesForAccount(gaia_id_).Has(
         UserSelectableType::kReadingList));
+#endif
   }
 }
 
@@ -1345,7 +1324,7 @@ TEST_F(SyncPrefsMigrationTest, TurnsAutofillOffForCustomPassphraseUser) {
 
   // Run the first phase of the migration.
   prefs.MaybeMigratePrefsForSyncToSigninPart1(
-      SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_);
+      SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_);
 
   // Autofill should still be unaffected for now, since the passphrase state
   // wasn't known yet.
@@ -1378,7 +1357,7 @@ TEST_F(SyncPrefsMigrationTest,
 
   // Run the first phase of the migration.
   prefs.MaybeMigratePrefsForSyncToSigninPart1(
-      SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_);
+      SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_);
 
   // The types should still be unaffected for now, since the passphrase state
   // wasn't known yet.
@@ -1414,7 +1393,7 @@ TEST_F(SyncPrefsMigrationTest, Part2RunsOnSecondAttempt) {
 
     // Run the first phase of the migration.
     prefs.MaybeMigratePrefsForSyncToSigninPart1(
-        SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_);
+        SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_);
 
     // The account-scoped settings should still be unaffected for now, since the
     // passphrase state wasn't known yet.
@@ -1428,7 +1407,7 @@ TEST_F(SyncPrefsMigrationTest, Part2RunsOnSecondAttempt) {
 
     // The first phase runs again. This should effectively do nothing.
     prefs.MaybeMigratePrefsForSyncToSigninPart1(
-        SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_);
+        SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent, gaia_id_);
 
     ASSERT_TRUE(prefs.GetSelectedTypesForAccount(gaia_id_).Has(
         UserSelectableType::kAutofill));
@@ -1634,10 +1613,10 @@ TEST_F(SyncPrefsMigrationTest,
 
   // After the GlobalToAccount migration has run, the SyncToSignin migration
   // should not have any effect anymore.
-  EXPECT_FALSE(
-      SyncPrefs(&pref_service_)
-          .MaybeMigratePrefsForSyncToSigninPart1(
-              SyncPrefs::SyncAccountState::kSignedInNotSyncing, gaia_id_));
+  EXPECT_FALSE(SyncPrefs(&pref_service_)
+                   .MaybeMigratePrefsForSyncToSigninPart1(
+                       SyncPrefs::SyncAccountState::kSignedInWithoutSyncConsent,
+                       gaia_id_));
 }
 
 TEST_F(SyncPrefsTest, IsTypeDisabledByUserForAccount) {

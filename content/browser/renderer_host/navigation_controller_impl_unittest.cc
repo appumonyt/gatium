@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "content/browser/renderer_host/navigation_controller_impl.h"
 
 #include <stddef.h>
@@ -18,6 +13,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -100,8 +96,8 @@ bool DoImagesMatch(const gfx::Image& a, const gfx::Image& b) {
   // memcmp(nullptr, nullptr, 0) is undefined, so empty bitmaps must be
   // special-cased.
   return a_bitmap.computeByteSize() == 0 ||
-         memcmp(a_bitmap.getPixels(), b_bitmap.getPixels(),
-                a_bitmap.computeByteSize()) == 0;
+         UNSAFE_TODO(memcmp(a_bitmap.getPixels(), b_bitmap.getPixels(),
+                            a_bitmap.computeByteSize())) == 0;
 }
 
 class MockPageBroadcast : public blink::mojom::PageBroadcast {
@@ -165,6 +161,11 @@ class MockPageBroadcast : public blink::mojom::PageBroadcast {
   MOCK_METHOD(void,
               SetPageAttributionSupport,
               (network::mojom::AttributionSupport support),
+              (override));
+
+  MOCK_METHOD(void,
+              UpdateCanvasNoiseToken,
+              (const std::optional<uint64_t> canvas_noise_token),
               (override));
 
   mojo::PendingAssociatedRemote<blink::mojom::PageBroadcast> GetRemote() {
@@ -240,13 +241,6 @@ TEST(TimeSmoother, ClockBackwardsJump) {
 class NavigationControllerTest : public RenderViewHostImplTestHarness,
                                  public WebContentsObserver {
  public:
-  NavigationControllerTest() {
-    // Disable BackForward cache size overwritten by
-    // `kBackForwardCacheSize` so that it won't break some tests assumption.
-    scoped_feature_list_.InitWithFeaturesAndParameters({},
-                                                       {kBackForwardCacheSize});
-  }
-
   void SetUp() override {
     RenderViewHostImplTestHarness::SetUp();
     WebContents* web_contents = RenderViewHostImplTestHarness::web_contents();
@@ -3297,7 +3291,6 @@ TEST_F(NavigationControllerTest, HistoryNavigate) {
   NavigateAndCommit(url3);
   controller.GoBack();
   contents()->CommitPendingNavigation();
-  process()->sink().ClearMessages();
 
   // Simulate the page calling history.back(). It should create a pending entry.
   main_test_rfh()->GoToEntryAtOffset(-1, false, base::TimeTicks::Now(),
@@ -3308,7 +3301,6 @@ TEST_F(NavigationControllerTest, HistoryNavigate) {
   GURL nav_url = GetLastNavigationURL();
   EXPECT_EQ(url1, nav_url);
   contents()->CommitPendingNavigation();
-  process()->sink().ClearMessages();
 
   // Now test history.forward()
   main_test_rfh()->GoToEntryAtOffset(2, false, base::TimeTicks::Now(),
@@ -3318,7 +3310,6 @@ TEST_F(NavigationControllerTest, HistoryNavigate) {
   nav_url = GetLastNavigationURL();
   EXPECT_EQ(url3, nav_url);
   contents()->CommitPendingNavigation();
-  process()->sink().ClearMessages();
 
   controller.DiscardNonCommittedEntries();
 
@@ -3326,9 +3317,7 @@ TEST_F(NavigationControllerTest, HistoryNavigate) {
   main_test_rfh()->GoToEntryAtOffset(120, false, base::TimeTicks::Now(),
                                      std::nullopt);  // Out of bounds.
   EXPECT_EQ(-1, controller.GetPendingEntryIndex());
-  // TODO(crbug.com/40780539): Figure out why HasNavigationRequest() is
-  // true when back/forward cache is enabled.
-  EXPECT_EQ(IsBackForwardCacheEnabled(), HasNavigationRequest());
+  EXPECT_FALSE(HasNavigationRequest());
 }
 
 // Test call to PruneAllButLastCommitted for the only entry.

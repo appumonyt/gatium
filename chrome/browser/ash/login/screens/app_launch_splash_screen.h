@@ -67,7 +67,7 @@ class AppLaunchSplashScreen : public BaseScreen {
   virtual void HideThrobber();
 
   // Continues app launch after error screen is shown.
-  virtual void CloseNetworkConfigureUI();
+  virtual void ContinueAppLaunch();
 
   // Sets the network configuration controller.
   void SetDelegate(Delegate* delegate);
@@ -101,11 +101,15 @@ class AppLaunchSplashScreen : public BaseScreen {
   raw_ptr<Delegate> delegate_ = nullptr;
 
  private:
+  void OnErrorScreenHidden();
+
   base::WeakPtr<AppLaunchSplashScreenView> view_;
 
   raw_ptr<ErrorScreen, DanglingUntriaged> error_screen_;
 
   base::RepeatingClosure exit_callback_;
+
+  base::WeakPtrFactory<AppLaunchSplashScreen> weak_factory_{this};
 };
 
 }  // namespace ash

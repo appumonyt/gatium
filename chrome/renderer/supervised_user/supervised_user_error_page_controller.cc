@@ -13,15 +13,15 @@
 #include "components/supervised_user/core/common/features.h"
 #include "components/supervised_user/core/common/supervised_user_constants.h"
 #include "content/public/renderer/render_frame.h"
-#include "gin/handle.h"
 #include "gin/object_template_builder.h"
+#include "gin/persistent.h"
 #include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
 #include "third_party/blink/public/web/web_local_frame.h"
+#include "v8/include/cppgc/allocation.h"
+#include "v8/include/cppgc/visitor.h"
 #include "v8/include/v8-context.h"
+#include "v8/include/v8-cppgc.h"
 #include "v8/include/v8-microtask-queue.h"
-
-gin::WrapperInfo SupervisedUserErrorPageController::kWrapperInfo = {
-    gin::kEmbedderNativeGin};
 
 void SupervisedUserErrorPageController::Install(
     content::RenderFrame* render_frame,
@@ -38,16 +38,19 @@ void SupervisedUserErrorPageController::Install(
       v8::MicrotasksScope::kDoNotRunMicrotasks);
   v8::Context::Scope context_scope(context);
 
-  gin::Handle<SupervisedUserErrorPageController> controller = gin::CreateHandle(
-      isolate, new SupervisedUserErrorPageController(delegate, render_frame));
-  if (controller.IsEmpty())
+  auto* controller =
+      cppgc::MakeGarbageCollected<SupervisedUserErrorPageController>(
+          isolate->GetCppHeap()->GetAllocationHandle(), delegate, render_frame);
+  v8::Local<v8::Object> wrapper;
+  if (!controller->GetWrapper(isolate).ToLocal(&wrapper)) {
     return;
+  }
 
   v8::Local<v8::Object> global = context->Global();
   global
       ->Set(context,
             gin::StringToV8(isolate, "supervisedUserErrorPageController"),
-            controller.ToV8())
+            wrapper)
       .Check();
 }
 
@@ -59,6 +62,11 @@ SupervisedUserErrorPageController::SupervisedUserErrorPageController(
 SupervisedUserErrorPageController::~SupervisedUserErrorPageController() =
     default;
 
+void SupervisedUserErrorPageController::Trace(cppgc::Visitor* visitor) const {
+  gin::Wrappable<SupervisedUserErrorPageController>::Trace(visitor);
+  visitor->Trace(weak_factory_);
+}
+
 void SupervisedUserErrorPageController::GoBack() {
   if (delegate_)
     delegate_->GoBack();
@@ -68,7 +76,8 @@ void SupervisedUserErrorPageController::RequestUrlAccessRemote() {
   if (delegate_) {
     delegate_->RequestUrlAccessRemote(base::BindOnce(
         &SupervisedUserErrorPageController::OnRequestUrlAccessRemote,
-        weak_factory_.GetWeakPtr()));
+        gin::WrapPersistent(weak_factory_.GetWeakCell(
+            v8::Isolate::GetCurrent()->GetCppHeap()->GetAllocationHandle()))));
   }
 }
 
@@ -85,9 +94,10 @@ void SupervisedUserErrorPageController::RequestUrlAccessLocal() {
 #if BUILDFLAG(IS_ANDROID)
 void SupervisedUserErrorPageController::LearnMore() {
   if (delegate_) {
-    delegate_->LearnMore(
-        base::BindOnce(&SupervisedUserErrorPageController::OnLearnMore,
-                       weak_factory_.GetWeakPtr()));
+    delegate_->LearnMore(base::BindOnce(
+        &SupervisedUserErrorPageController::OnLearnMore,
+        gin::WrapPersistent(weak_factory_.GetWeakCell(
+            v8::Isolate::GetCurrent()->GetCppHeap()->GetAllocationHandle()))));
   }
 }
 
@@ -114,8 +124,8 @@ void SupervisedUserErrorPageController::OnRequestUrlAccessRemote(bool success) {
 gin::ObjectTemplateBuilder
 SupervisedUserErrorPageController::GetObjectTemplateBuilder(
     v8::Isolate* isolate) {
-  return gin::Wrappable<SupervisedUserErrorPageController>::
-      GetObjectTemplateBuilder(isolate)
+  return gin::Wrappable<
+      SupervisedUserErrorPageController>::GetObjectTemplateBuilder(isolate)
           .SetMethod("goBack", &SupervisedUserErrorPageController::GoBack)
           .SetMethod("requestUrlAccessRemote",
                      &SupervisedUserErrorPageController::RequestUrlAccessRemote)
@@ -125,4 +135,8 @@ SupervisedUserErrorPageController::GetObjectTemplateBuilder(
           .SetMethod("learnMore", &SupervisedUserErrorPageController::LearnMore)
 #endif  // BUILDFLAG(IS_ANDROID)
       ;
+}
+
+const gin::WrapperInfo* SupervisedUserErrorPageController::wrapper_info() const {
+  return &kWrapperInfo;
 }

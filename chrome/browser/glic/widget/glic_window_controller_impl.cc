@@ -12,20 +12,20 @@
 #include "base/metrics/user_metrics.h"
 #include "base/notimplemented.h"
 #include "base/time/time.h"
+#include "chrome/browser/actor/actor_keyed_service.h"
+#include "chrome/browser/actor/ui/actor_ui_state_manager_interface.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/glic/browser_ui/scoped_glic_button_indicator.h"
 #include "chrome/browser/glic/fre/glic_fre_controller.h"
 #include "chrome/browser/glic/fre/glic_fre_dialog_view.h"
-#include "chrome/browser/glic/glic_enabling.h"
-#include "chrome/browser/glic/glic_keyed_service.h"
 #include "chrome/browser/glic/glic_metrics.h"
 #include "chrome/browser/glic/glic_pref_names.h"
 #include "chrome/browser/glic/glic_profile_manager.h"
-#include "chrome/browser/glic/host/glic.mojom-data-view.h"
 #include "chrome/browser/glic/host/glic.mojom.h"
 #include "chrome/browser/glic/host/host.h"
 #include "chrome/browser/glic/host/webui_contents_container.h"
-#include "chrome/browser/glic/resources/grit/glic_browser_resources.h"
+#include "chrome/browser/glic/public/glic_enabling.h"
+#include "chrome/browser/glic/public/glic_keyed_service.h"
 #include "chrome/browser/glic/widget/browser_conditions.h"
 #include "chrome/browser/glic/widget/glic_view.h"
 #include "chrome/browser/glic/widget/glic_widget.h"
@@ -40,11 +40,13 @@
 #include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/views/chrome_widget_sublevel.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+#include "chrome/browser/ui/views/frame/tab_strip_view_interface.h"
 #include "chrome/browser/ui/views/tabs/glic_button.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_action_container.h"
 #include "chrome/browser/ui/views/tabs/window_finder.h"
 #include "chrome/common/chrome_features.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/prefs/pref_service.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/web_contents.h"
@@ -52,8 +54,10 @@
 #include "ui/base/ui_base_types.h"
 #include "ui/display/display.h"
 #include "ui/display/display_finder.h"
+#include "ui/display/display_observer.h"
 #include "ui/display/screen.h"
 #include "ui/events/event_observer.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/event_monitor.h"
 #include "ui/views/interaction/element_tracker_views.h"
@@ -97,10 +101,7 @@ mojom::PanelState CreatePanelState(bool widget_visible,
 }
 
 GlicButton* GetGlicButton(const Browser& browser) {
-  return browser.window()
-      ->AsBrowserView()
-      ->tab_strip_region_view()
-      ->GetGlicButton();
+  return browser.window()->AsBrowserView()->tab_strip_view()->GetGlicButton();
 }
 
 display::Display GetDisplayForOpeningDetached() {
@@ -399,6 +400,13 @@ void GlicWindowControllerImpl::OnWidgetUserResizeEnded() {
   user_resizing_ = false;
 }
 
+void GlicWindowControllerImpl::OnDisplayMetricsChanged(
+    const display::Display& display,
+    uint32_t changed_metrics) {
+  MaybeAdjustSizeForDisplay(/*animate=*/false);
+  AdjustPositionIfNeeded();
+}
+
 void GlicWindowControllerImpl::ShowAfterSignIn(base::WeakPtr<Browser> browser) {
   Toggle(browser.get(), true,
          // Prefer the source that triggered the sign-in, but if that's not
@@ -454,6 +462,13 @@ void GlicWindowControllerImpl::Toggle(BrowserWindowInterface* bwi,
       Close();
     }
   };
+
+  // Send a change view request if the current view is different than the
+  // source.
+  // TODO(crbug.com/437140901): The client may not be connected yet. If not,
+  // this request is dropped.
+  MaybeSendViewChangeRequest(source);
+
   // If floaty is closed, open floaty
   if (state_ == State::kClosed) {
     Show(new_attached_browser, source);
@@ -468,16 +483,32 @@ void GlicWindowControllerImpl::Toggle(BrowserWindowInterface* bwi,
   }
 #endif  // BUILDFLAG(IS_WIN)
 
-  // If floaty is focused or the source is the top button, close it.
-  // If floaty is unfocused and open, focus it.
-  if (IsActive() ||
-      (source == mojom::InvocationSource::kTopChromeButton &&
+  // TODO(crbug.com/438164568): Add handling to always close on the second
+  // click of the same source.
+  // If floaty is focused and click is not from the Task Icon or Glic
+  // Button, close it. If floaty is open and the current view matches the
+  // expected view, close it. If floaty is unfocused and open, focus it.
+  if ((IsActive() && (source != mojom::InvocationSource::kActorTaskIcon &&
+                      source != mojom::InvocationSource::kTopChromeButton)) ||
+      (InvocationSourceMatchesCurrentView(source) &&
        !base::FeatureList::IsEnabled(features::kGlicZOrderChanges))) {
     maybe_close();
   } else if (state_ == State::kOpen) {
     // TODO(crbug.com/404601783): Bring focus to the textbox.
     GetGlicWidget()->Activate();
     GetGlicView()->GetWebContents()->Focus();
+  }
+}
+
+void GlicWindowControllerImpl::MaybeSendViewChangeRequest(
+    mojom::InvocationSource source) {
+  auto current_view = host().GetPrimaryCurrentView();
+  if (source == mojom::InvocationSource::kActorTaskIcon &&
+      current_view == mojom::CurrentView::kConversation) {
+    MaybeSendActuationViewRequest();
+  } else if (source == mojom::InvocationSource::kTopChromeButton &&
+             current_view == mojom::CurrentView::kActuation) {
+    MaybeSendConversationViewRequest();
   }
 }
 
@@ -603,6 +634,16 @@ void GlicWindowControllerImpl::Show(Browser* browser,
   if (window_config_.ShouldResetOnNewSession()) {
     previous_position_.reset();
   }
+  if (window_config_.ShouldResetSizeAndLocationOnShow()) {
+    previous_position_.reset();
+    gfx::Size initial_size = GlicWidget::GetInitialSize();
+    // Keep the old height if it is larger than the initial size.
+    if (glic_size_.has_value() &&
+        glic_size_->height() > initial_size.height()) {
+      initial_size.set_height((glic_size_->height()));
+    }
+    glic_size_ = initial_size;
+  }
   window_config_.SetLastOpenTime();
   if (!glic_service_->GetAuthController().CheckAuthBeforeShowSync(
           base::BindOnce(&GlicWindowControllerImpl::ShowAfterSignIn,
@@ -643,9 +684,8 @@ void GlicWindowControllerImpl::Show(Browser* browser,
 
   std::optional<display::Display> display =
       GetGlicWidget()->GetNearestDisplay();
-  gfx::Point glic_center_point =
-      GetGlicWidget()->GetWindowBoundsInScreen().CenterPoint();
-  glic_service_->metrics()->OnGlicWindowShown(display, glic_center_point);
+  glic_service_->metrics()->OnGlicWindowShown(
+      browser, display, GetGlicWidget()->GetWindowBoundsInScreen());
 }
 
 void GlicWindowControllerImpl::SetupGlicWidget(Browser* browser) {
@@ -810,6 +850,13 @@ void GlicWindowControllerImpl::ClientReadyToShow(
 
   if (state_ == State::kWaitingForGlicToLoad) {
     GlicLoadedAndReadyToDisplay();
+  }
+}
+
+void GlicWindowControllerImpl::OnViewChanged(mojom::CurrentView view) {
+  if (auto* actor_keyed_service = actor::ActorKeyedService::Get(profile_)) {
+    actor_keyed_service->GetActorUiStateManager()->OnGlicUpdateFloatyState(
+        state(), view);
   }
 }
 
@@ -1068,9 +1115,9 @@ void GlicWindowControllerImpl::Close() {
   glic_window_animator_.reset();
   std::optional<display::Display> display =
       GetGlicWidget()->GetNearestDisplay();
-  gfx::Point glic_center_point =
-      GetGlicWidget()->GetWindowBoundsInScreen().CenterPoint();
-  glic_service_->metrics()->OnGlicWindowClose(display, glic_center_point);
+  glic_service_->metrics()->OnGlicWindowClose(
+      BrowserList::GetInstance()->GetLastActive(), display,
+      GetGlicWidget()->GetWindowBoundsInScreen());
   base::UmaHistogramEnumeration("Glic.PanelWebUiState.FinishState2",
                                 host().GetPrimaryWebUiState());
 
@@ -1167,6 +1214,7 @@ void GlicWindowControllerImpl::HandleWindowDragWithOffset(
     // request.
     glic_window_animator_->MaybeAnimateToTargetSize();
 
+    MaybeAdjustSizeForDisplay(/*animate=*/false);
     AdjustPositionIfNeeded();
     SaveWidgetPosition(/*user_modified=*/true);
 
@@ -1185,6 +1233,9 @@ const mojom::PanelState& GlicWindowControllerImpl::GetPanelState() const {
 }
 
 void GlicWindowControllerImpl::AdjustPositionIfNeeded() {
+  if (!GetGlicWidget()) {
+    return;
+  }
   // Always have at least `kMinimumVisible` px visible from glic window in
   // both vertical and horizontal directions.
   constexpr int kMinimumVisible = 40;
@@ -1249,14 +1300,13 @@ Browser* GlicWindowControllerImpl::FindBrowserForAttachment() {
     }
 
     // If the profile is enabled, the Glic button must be available.
-    auto* tab_strip_region_view =
-        browser->GetBrowserView().tab_strip_region_view();
-    CHECK(tab_strip_region_view);
-    CHECK(tab_strip_region_view->GetGlicButton());
+    auto* tab_strip_view = browser->GetBrowserView().tab_strip_view();
+    CHECK(tab_strip_view);
+    CHECK(tab_strip_view->GetGlicButton());
 
     // Define attachment zone as the right of the tab strip. It either is the
     // width of the widget or 1/3 of the tab strip, whichever is smaller.
-    gfx::Rect attachment_zone = tab_strip_region_view->GetBoundsInScreen();
+    gfx::Rect attachment_zone = tab_strip_view->GetBoundsInScreenForView();
     int width = std::min(attachment_zone.width() / 3,
                          GlicWidget::GetInitialSize().width());
     attachment_zone.SetByBounds(attachment_zone.right() - width,
@@ -1267,7 +1317,7 @@ Browser* GlicWindowControllerImpl::FindBrowserForAttachment() {
     // If both the left center of the attachment zone and glic button right
     // center are occluded, don't consider for attachment.
     if (IsBrowserOccludedAtPoint(browser, attachment_zone.left_center()) &&
-        IsBrowserOccludedAtPoint(browser, tab_strip_region_view->GetGlicButton()
+        IsBrowserOccludedAtPoint(browser, tab_strip_view->GetGlicButton()
                                               ->GetBoundsInScreen()
                                               .right_center())) {
       continue;
@@ -1463,6 +1513,19 @@ void GlicWindowControllerImpl::SetWindowState(State new_state) {
   }
   state_ = new_state;
 
+  if (auto* actor_keyed_service = actor::ActorKeyedService::Get(profile_)) {
+    // Show toast if floaty is closed.
+    Browser* last_active_browser = BrowserList::GetInstance()->GetLastActive();
+    if (state_ == State::kClosed) {
+      actor_keyed_service->GetActorUiStateManager()->MaybeShowToast(
+          last_active_browser);
+    }
+
+    // Regardless, update the ActorUiStateManager.
+    actor_keyed_service->GetActorUiStateManager()->OnGlicUpdateFloatyState(
+        state_, glic_service_->host().GetPrimaryCurrentView());
+  }
+
   if (IsWindowOpenAndReady()) {
     glic_service_->metrics()->OnGlicWindowOpenAndReady();
   }
@@ -1539,6 +1602,29 @@ void GlicWindowControllerImpl::AddObserver(
 void GlicWindowControllerImpl::RemoveObserver(
     web_modal::ModalDialogHostObserver* observer) {
   modal_dialog_host_observers_.RemoveObserver(observer);
+}
+
+void GlicWindowControllerImpl::MaybeSendConversationViewRequest() {
+  auto request = mojom::ViewChangeRequest::New(
+      mojom::ViewChangeRequestDetails::NewConversation(
+          mojom::ViewChangeRequestConversation::New()));
+  host().SendViewChangeRequest(std::move(request));
+}
+
+void GlicWindowControllerImpl::MaybeSendActuationViewRequest() {
+  auto request = mojom::ViewChangeRequest::New(
+      mojom::ViewChangeRequestDetails::NewActuation(
+          mojom::ViewChangeRequestActuation::New()));
+  host().SendViewChangeRequest(std::move(request));
+}
+
+bool GlicWindowControllerImpl::InvocationSourceMatchesCurrentView(
+    mojom::InvocationSource source) {
+  auto current_view = host().GetPrimaryCurrentView();
+  return (source == mojom::InvocationSource::kActorTaskIcon &&
+          current_view == mojom::CurrentView::kActuation) ||
+         (source == mojom::InvocationSource::kTopChromeButton &&
+          current_view == mojom::CurrentView::kConversation);
 }
 
 }  // namespace glic

@@ -31,6 +31,7 @@ enum UrlQueryParams {
   TOKEN_SECRET = 'token_secret',
   TAB_GROUP_ID = 'tab_group_id',
   TAB_GROUP_TITLE = 'tab_group_title',
+  IS_DISABLED_FOR_POLICY = 'is_disabled_for_policy',
 }
 
 enum FlowValues {
@@ -212,6 +213,8 @@ export function createTranslationMap(): TranslationMap {
       [StaticMessageKey.DELETE_FLOW_HEADER]:
           loadTimeData.getString('deleteFlowHeader'),
       [StaticMessageKey.DELETE]: loadTimeData.getString('delete'),
+      [StaticMessageKey.SHARING_DISABLED_DESCRIPTION]:
+          loadTimeData.getString('sharingDisabledDescription'),
     },
     dynamic: {
       /** Invite flow */
@@ -419,6 +422,8 @@ export class DataSharingApp extends CustomElement implements Logger {
         return ProgressType.FAILED;
       case (Progress.SUCCEEDED):
         return ProgressType.SUCCEEDED;
+      default:
+        break;
     }
 
     return ProgressType.UNKNOWN;
@@ -455,6 +460,8 @@ export class DataSharingApp extends CustomElement implements Logger {
         return DataSharingIntentType.ACCEPT_JOIN_AND_OPEN;
       case (LoggingIntent.ABANDON_JOIN):
         return DataSharingIntentType.ABANDON_JOIN;
+      default:
+        break;
     }
 
     return DataSharingIntentType.UNKNOWN;
@@ -468,6 +475,8 @@ export class DataSharingApp extends CustomElement implements Logger {
     const tokenSecret = params.get(UrlQueryParams.TOKEN_SECRET);
     const tabGroupId = params.get(UrlQueryParams.TAB_GROUP_ID);
     const parent = this.getRequiredElement('#dialog-container');
+    const isSharingDisabled =
+        (params.get(UrlQueryParams.IS_DISABLED_FOR_POLICY) === 'true');
 
     this.tabGroupId_ = tabGroupId;
 
@@ -488,6 +497,8 @@ export class DataSharingApp extends CustomElement implements Logger {
         break;
       case FlowValues.JOIN:
         document.title = loadTimeData.getStringF('previewA11yName');
+        break;
+      default:
         break;
     }
 
@@ -584,6 +595,7 @@ export class DataSharingApp extends CustomElement implements Logger {
               },
               logger: this,
               showLeaveDialogAtStartup: flow === FlowValues.LEAVE,
+              isSharingDisabled,
             })
             .then((res) => {
               this.browserProxy_.closeUi(res.status);

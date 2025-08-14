@@ -125,11 +125,10 @@ WebRtcVideoTrackSource::WebRtcVideoTrackSource(
     media::GpuVideoAcceleratorFactories* gpu_factories,
     scoped_refptr<WebRtcVideoFrameAdapter::SharedResources> shared_resources)
     : AdaptedVideoTrackSource(/*required_alignment=*/1),
-      adapter_resources_(
-          shared_resources
-              ? shared_resources
-              : base::MakeRefCounted<WebRtcVideoFrameAdapter::SharedResources>(
-                    gpu_factories)),
+      adapter_resources_(shared_resources
+                             ? shared_resources
+                             : WebRtcVideoFrameAdapter::SharedResources::Create(
+                                   gpu_factories)),
       is_screencast_(is_screencast),
       needs_denoising_(needs_denoising),
       feedback_callback_(std::move(feedback_callback)),
@@ -422,7 +421,7 @@ void WebRtcVideoTrackSource::ProcessMappedFrame(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   TRACE_EVENT("webrtc", "WebRtcVideoTrackSource::ProcessMappedFrame");
 
-  WTF::Deque<PendingFrame>::iterator it;
+  Deque<PendingFrame>::iterator it;
   for (it = pending_frames_.begin(); it != pending_frames_.end(); ++it) {
     if (it->id == id) {
       break;
@@ -499,7 +498,8 @@ void WebRtcVideoTrackSource::DeliverFrame(
         update_rect->height()});
   }
 
-  if (ShouldSetColorSpace(frame->ColorSpace())) {
+  if (frame->ColorSpace().IsValid() &&
+      base::FeatureList::IsEnabled(media::kWebRTCColorAccuracy)) {
     frame_builder.set_color_space(GfxToWebRtcColorSpace(frame->ColorSpace()));
   }
   OnFrame(frame_builder.build());
@@ -508,17 +508,6 @@ void WebRtcVideoTrackSource::DeliverFrame(
   accumulated_update_rect_ = gfx::Rect();
 }
 
-bool WebRtcVideoTrackSource::ShouldSetColorSpace(
-    const gfx::ColorSpace& color_space) {
-  if (!base::FeatureList::IsEnabled(media::kWebRTCColorAccuracy)) {
-    return false;
-  }
-
-  // The remote end will assume REC601 if not instructed otherwise, so there's
-  // no need to pass this information on the wire.
-  return color_space.IsValid() &&
-         color_space != gfx::ColorSpace::CreateREC601();
-}
 
 void WebRtcVideoTrackSource::Dispose() {
   callback_proxy_->Reset();

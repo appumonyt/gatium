@@ -33,10 +33,11 @@ import java.util.Objects;
 class TileInteractionDelegateImpl
         implements TileGroup.TileInteractionDelegate,
                 ContextMenuManager.Delegate,
-                TileGroup.TileDragHandlerDelegate {
+                TileDragSession.EventListener {
+
     private final ContextMenuManager mContextMenuManager;
     private final TileGroup.Delegate mTileGroupDelegate;
-    private final TileGroup.TileDragDelegate mTileDragDelegate;
+    private final TileDragDelegate mTileDragDelegate;
     private final TileGroup.CustomTileModificationDelegate mCustomTileModificationDelegate;
     private final int mPrerenderDelay;
     private final Tile mTile;
@@ -51,7 +52,7 @@ class TileInteractionDelegateImpl
     public TileInteractionDelegateImpl(
             ContextMenuManager contextMenuManager,
             TileGroup.Delegate tileGroupDelegate,
-            TileGroup.TileDragDelegate tileDragDelegate,
+            TileDragDelegate tileDragDelegate,
             TileGroup.CustomTileModificationDelegate customTileModificationDelegate,
             int prerenderDelay,
             Tile tile,
@@ -78,11 +79,6 @@ class TileInteractionDelegateImpl
     }
 
     private void maybePrerender(GURL url) {
-        if (!ChromeFeatureList.isEnabled(
-                ChromeFeatureList.NEW_TAB_PAGE_ANDROID_TRIGGER_FOR_PRERENDER2)) {
-            return;
-        }
-
         // Avoid resetting the delayed task if witness several MotionEvent.ACTION_DOWN in a row. If
         // the URL has been scheduled to be prerendered or already prerendered, it should be
         // skipped.
@@ -107,11 +103,6 @@ class TileInteractionDelegateImpl
     // This function cancels scheduled prerendering or calls stopPrerendering to stop stale
     // prerendering.
     private void cancelPrerender() {
-        if (!ChromeFeatureList.isEnabled(
-                ChromeFeatureList.NEW_TAB_PAGE_ANDROID_TRIGGER_FOR_PRERENDER2)) {
-            return;
-        }
-
         if (mPrerenderRunnable != null) {
             mPrerenderRunnable.cancel();
             mPrerenderRunnable = null;
@@ -174,11 +165,17 @@ class TileInteractionDelegateImpl
     }
 
     @Override
+    public void openAllItems() {}
+
+    @Override
     public void removeItem() {
         if (mOnRemoveRunnable != null) mOnRemoveRunnable.run();
 
         mTileGroupDelegate.removeMostVisitedItem(mTile);
     }
+
+    @Override
+    public void removeAllItems() {}
 
     @Override
     public void pinItem() {
@@ -208,6 +205,16 @@ class TileInteractionDelegateImpl
     @Override
     public boolean isItemSupported(@ContextMenuItemId int menuItemId) {
         switch (menuItemId) {
+            case ContextMenuItemId.OPEN_IN_NEW_TAB:
+                return true;
+            case ContextMenuItemId.OPEN_IN_NEW_TAB_IN_GROUP:
+                return true;
+            case ContextMenuItemId.OPEN_IN_INCOGNITO_TAB:
+                return true;
+            case ContextMenuItemId.OPEN_IN_NEW_WINDOW:
+                return true;
+            case ContextMenuItemId.SAVE_FOR_OFFLINE:
+                return true;
             case ContextMenuItemId.REMOVE:
                 return !isCustomizationItemSupported(/* matchIsCustomLink= */ true);
             case ContextMenuItemId.PIN_THIS_SHORTCUT:
@@ -216,7 +223,7 @@ class TileInteractionDelegateImpl
             case ContextMenuItemId.UNPIN:
                 return isCustomizationItemSupported(/* matchIsCustomLink= */ true);
             default:
-                return true;
+                return false;
         }
     }
 
@@ -228,7 +235,15 @@ class TileInteractionDelegateImpl
     @Override
     public void onContextMenuCreated() {}
 
-    // TileGroup.TileDragHandlerDelegate implementation.
+    @Override
+    public void hideAllItems() {}
+
+    // TileDragSession.EventListener implementation.
+    @Override
+    public void onDragStart() {
+        mTileDragDelegate.showDivider(/* isAnimated= */ true);
+    }
+
     @Override
     public void onDragDominate() {
         mContextMenuManager.hideListContextMenu();
@@ -237,7 +252,20 @@ class TileInteractionDelegateImpl
     @Override
     public boolean onDragAccept(SiteSuggestion fromSuggestion, SiteSuggestion toSuggestion) {
         RecordUserAction.record("Suggestions.Drag.ReorderItem");
-        return mCustomTileModificationDelegate.reorder(fromSuggestion, toSuggestion);
+        return mCustomTileModificationDelegate.reorder(
+                fromSuggestion,
+                toSuggestion,
+                () -> {
+                    // Refresh has taken place, and the divider is re-rendered. For seamless
+                    // transition, show divider immediately, then hide it with animation.
+                    mTileDragDelegate.showDivider(/* isAnimated= */ false);
+                    mTileDragDelegate.hideDivider(/* isAnimated= */ true);
+                });
+    }
+
+    @Override
+    public void onDragCancel() {
+        mTileDragDelegate.hideDivider(/* isAnimated= */ true);
     }
 
     boolean isCustomizationItemSupported(boolean matchIsCustomLink) {

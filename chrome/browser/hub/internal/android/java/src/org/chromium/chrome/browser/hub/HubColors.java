@@ -18,6 +18,7 @@ import com.google.android.material.color.MaterialColors;
 
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.chrome.browser.theme.SurfaceColorUpdateUtils;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
 import org.chromium.ui.util.ColorUtils;
@@ -27,6 +28,7 @@ import org.chromium.ui.util.ValueUtils;
 @NullMarked
 public final class HubColors {
     private static final String TAG = "HubColors";
+    private static @Nullable ObservableSupplier<Boolean> sXrSpaceModeObservableSupplier;
     private static final int[][] SELECTED_AND_NORMAL_STATES =
             new int[][] {new int[] {android.R.attr.state_selected}, new int[] {}};
     private static final int[][] DISABLED_AND_NORMAL_STATES =
@@ -79,6 +81,7 @@ public final class HubColors {
 
     /** Returns the color most icons should use per the given color scheme. */
     public static @ColorInt int getIconColor(Context context, @HubColorScheme int colorScheme) {
+        if (isXrFullSpaceMode()) return SemanticColorUtils.getDefaultIconColor(context);
         switch (colorScheme) {
             case HubColorScheme.DEFAULT:
                 return SemanticColorUtils.getDefaultIconColor(context);
@@ -220,6 +223,29 @@ public final class HubColors {
         }
     }
 
+    /**
+     * Adapts the given color to a color state list that supports enabled and disabled states.
+     *
+     * @param context The {@link Context} to use for the color state list.
+     * @param enabledColor The color to use for the enabled state.
+     * @return A {@link ColorStateList} with the given color for the enabled state and a disabled
+     *     state.
+     */
+    public static ColorStateList getButtonColorStateList(
+            Context context, @ColorInt int enabledColor) {
+        @DimenRes int disabledAlpha = R.dimen.default_disabled_alpha;
+        return generateDisabledAndNormalStatesColorStateList(context, enabledColor, disabledAlpha);
+    }
+
+    /**
+     * Adapts the given color to a color state list that supports enabled and disabled states for
+     * the hub action button.
+     *
+     * @param context The {@link Context} to use for the color state list.
+     * @param enabledColor The color to use for the enabled state.
+     * @return A {@link ColorStateList} with the given color for the enabled state and a disabled
+     *     state.
+     */
     public static ColorStateList getActionButtonColor(
             Context context, @ColorInt int enabledColor, boolean isGtsUpdateEnabled) {
         if (isGtsUpdateEnabled) {
@@ -228,10 +254,18 @@ public final class HubColors {
             return generateDisabledAndNormalStatesColorStateList(enabledColor, disabledColor);
         }
 
-        @DimenRes int disabledAlpha = R.dimen.default_disabled_alpha;
-        return generateDisabledAndNormalStatesColorStateList(context, enabledColor, disabledAlpha);
+        return getButtonColorStateList(context, enabledColor);
     }
 
+    /**
+     * Adapts the given color to a color state list that supports enabled and disabled states for
+     * the hub action button background.
+     *
+     * @param context The {@link Context} to use for the color state list.
+     * @param enabledColor The color to use for the enabled state.
+     * @return A {@link ColorStateList} with the given color for the enabled state and a disabled
+     *     state.
+     */
     public static ColorStateList getActionButtonBgColor(Context context, @ColorInt int color) {
         @ColorRes int disabledColorRes = R.color.hub_action_button_disabled_background_color;
         @ColorInt int disabledColor = ContextCompat.getColor(context, disabledColorRes);
@@ -267,5 +301,20 @@ public final class HubColors {
         int alphaScaled = Math.round(alpha * 255);
 
         return ColorUtils.setAlphaComponent(color, alphaScaled);
+    }
+
+    /**
+     * Sets the {@link ObservableSupplier} for XR space mode.
+     * DISCLAIMER: This is possibly unsafe for multi-window mode. This should
+     * be used with caution for more complex use cases.
+     * @param supplier The {@link ObservableSupplier} for XR space mode.
+     */
+    public static void setXrSpaceModeObservableSupplier(
+            @Nullable ObservableSupplier<Boolean> supplier) {
+        sXrSpaceModeObservableSupplier = supplier;
+    }
+
+    private static boolean isXrFullSpaceMode() {
+        return sXrSpaceModeObservableSupplier != null && sXrSpaceModeObservableSupplier.get();
     }
 }

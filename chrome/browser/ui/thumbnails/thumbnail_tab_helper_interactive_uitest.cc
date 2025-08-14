@@ -9,12 +9,14 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
+#include "chrome/browser/performance_manager/test_support/page_discarding_utils.h"
 #include "chrome/browser/sessions/tab_loader_tester.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/interaction/browser_elements.h"
 #include "chrome/browser/ui/performance_controls/test_support/memory_saver_interactive_test_mixin.h"
 #include "chrome/browser/ui/thumbnails/thumbnail_image.h"
 #include "chrome/browser/ui/thumbnails/thumbnail_tab_helper.h"
@@ -87,6 +89,7 @@ DEFINE_LOCAL_STATE_IDENTIFIER_VALUE(ThumbnailObserver, kThumbnailCreatedState);
 DEFINE_LOCAL_STATE_IDENTIFIER_VALUE(BrowserRemovedObserver,
                                     kBrowserRemovedState);
 
+using ::performance_manager::testing::ScopedSetAllPagesDiscardableForTesting;
 }  // anonymous namespace
 
 class ThumbnailTabHelperUpdatedInteractiveTest
@@ -107,6 +110,19 @@ class ThumbnailTabHelperUpdatedInteractiveTest
     // that also trigger the existence of the helper.
     scoped_feature_list_.InitAndEnableFeature(features::kTabHoverCardImages);
     InteractiveBrowserTest::SetUp();
+  }
+
+  void SetUpOnMainThread() override {
+    MemorySaverInteractiveTestMixin<
+        InteractiveBrowserTest>::SetUpOnMainThread();
+    unconditionally_discard_pages_ =
+        std::make_unique<ScopedSetAllPagesDiscardableForTesting>();
+  }
+
+  void TearDownOnMainThread() override {
+    unconditionally_discard_pages_.reset();
+    MemorySaverInteractiveTestMixin<
+        InteractiveBrowserTest>::TearDownOnMainThread();
   }
 
   int GetTabCount() { return browser()->tab_strip_model()->count(); }
@@ -175,6 +191,8 @@ class ThumbnailTabHelperUpdatedInteractiveTest
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
+  std::unique_ptr<ScopedSetAllPagesDiscardableForTesting>
+      unconditionally_discard_pages_;
 };
 
 IN_PROC_BROWSER_TEST_F(ThumbnailTabHelperUpdatedInteractiveTest,
@@ -212,7 +230,7 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTabHelperUpdatedInteractiveTest,
       ui_test_utils::BROWSER_TEST_WAIT_FOR_BROWSER);
   RunTestSequence(
       InContext(
-          GetBrowser(1)->window()->GetElementContext(),
+          BrowserElements::From(GetBrowser(1))->GetContext(),
           AddInstrumentedTab(kFirstTab, GURL(chrome::kChromeUINewTabURL), 1),
           WaitForWebContentsReady(kFirstTab),
           AddInstrumentedTab(kSecondTab, GURL(chrome::kChromeUINewTabURL), 2),

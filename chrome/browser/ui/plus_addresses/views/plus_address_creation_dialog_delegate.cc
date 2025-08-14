@@ -21,7 +21,7 @@
 #include "chrome/browser/ui/views/chrome_typography.h"
 #include "chrome/grit/theme_resources.h"
 #include "components/constrained_window/constrained_window_views.h"
-#include "components/plus_addresses/features.h"
+#include "components/plus_addresses/core/common/features.h"
 #include "components/plus_addresses/grit/plus_addresses_strings.h"
 #include "components/plus_addresses/plus_address_types.h"
 #include "components/vector_icons/vector_icons.h"
@@ -497,6 +497,8 @@ PlusAddressCreationDialogDelegate::PlusAddressCreationDialogDelegate(
   }
   primary_view->AddChildView(CreateButtons());
 
+  SetInitiallyFocusedView(cancel_button_);
+
   wrapper_view->AddChildView(std::move(primary_view));
   SetContentsView(std::move(wrapper_view));
 }
@@ -524,6 +526,7 @@ void PlusAddressCreationDialogDelegate::ShowReserveResult(
     plus_address_container_->ShowPlusAddress(
         base::UTF8ToUTF16(*maybe_plus_profile->plus_address));
     confirm_button_->SetEnabled(true);
+    confirm_button_->RequestFocus();
     return;
   }
 
@@ -549,6 +552,7 @@ void PlusAddressCreationDialogDelegate::ShowConfirmResult(
   confirm_button_->SetText(
       l10n_util::GetStringUTF16(IDS_PLUS_ADDRESS_MODAL_CREATE_ERROR_BUTTON));
   confirm_button_->SetEnabled(true);
+  confirm_button_->RequestFocus();
 }
 
 void PlusAddressCreationDialogDelegate::HandleButtonPress(
@@ -616,6 +620,7 @@ PlusAddressCreationDialogDelegate::CreateButtons() {
           views::DistanceMetric::DISTANCE_RELATED_BUTTON_HORIZONTAL))
       .AddChildren(
           views::Builder<views::MdTextButton>()
+              .CopyAddressTo(&cancel_button_)
               .SetCallback(base::BindRepeating(
                   &PlusAddressCreationDialogDelegate::HandleButtonPress,
                   // Safe because this delegate outlives the Widget (and

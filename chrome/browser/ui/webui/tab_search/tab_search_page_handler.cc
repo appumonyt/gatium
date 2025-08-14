@@ -39,6 +39,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
+#include "chrome/browser/ui/interaction/browser_elements.h"
 #include "chrome/browser/ui/tabs/alert/tab_alert.h"
 #include "chrome/browser/ui/tabs/organization/tab_declutter_controller.h"
 #include "chrome/browser/ui/tabs/organization/tab_organization_request.h"
@@ -63,6 +64,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "components/optimization_guide/core/optimization_guide_model_executor.h"
 #include "components/optimization_guide/proto/model_quality_service.pb.h"
+#include "components/prefs/pref_service.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/user_education/common/tutorial/tutorial_identifier.h"
@@ -955,7 +957,8 @@ void TabSearchPageHandler::StartTabGroupTutorial() {
                              : nullptr;
   CHECK(tutorial_service);
 
-  const ui::ElementContext context = browser_->window()->GetElementContext();
+  const ui::ElementContext context =
+      BrowserElements::From(browser_)->GetContext();
   CHECK(context);
 
   user_education::TutorialIdentifier tutorial_id = kTabGroupTutorialId;
@@ -1801,9 +1804,9 @@ void TabSearchPageHandler::SetTabDeclutterControllerForTesting(
   SetTabDeclutterController(tab_declutter_controller);
 }
 
-bool TabSearchPageHandler::ShouldTrackBrowser(Browser* browser) {
-  return browser->profile() == Profile::FromWebUI(web_ui_) &&
-         browser->type() == Browser::Type::TYPE_NORMAL;
+bool TabSearchPageHandler::ShouldTrackBrowser(BrowserWindowInterface* browser) {
+  return browser->GetProfile() == Profile::FromWebUI(web_ui_) &&
+         browser->GetType() == BrowserWindowInterface::TYPE_NORMAL;
 }
 
 void TabSearchPageHandler::SetTimerForTesting(

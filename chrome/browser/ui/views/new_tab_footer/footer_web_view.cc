@@ -7,6 +7,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/webui/top_chrome/webui_contents_wrapper.h"
 #include "chrome/browser/ui/webui/webui_embedding_context.h"
@@ -15,13 +16,11 @@
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/views/view_class_properties.h"
 
-DEFINE_ELEMENT_IDENTIFIER_VALUE(kNtpFooterId);
-
 namespace new_tab_footer {
 
 NewTabFooterWebView::NewTabFooterWebView(BrowserWindowInterface* browser)
     : views::WebView(browser->GetProfile()), browser_(browser) {
-  SetProperty(views::kElementIdentifierKey, kNtpFooterId);
+  SetProperty(views::kElementIdentifierKey, kNtpFooterViewElementId);
 }
 
 NewTabFooterWebView::~NewTabFooterWebView() {
@@ -76,7 +75,9 @@ void NewTabFooterWebView::ShowCustomContextMenu(
   context_menu_model_ = std::move(menu_model);
   context_menu_runner_ = std::make_unique<views::MenuRunner>(
       context_menu_model_.get(),
-      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU);
+      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU,
+      base::BindRepeating(&NewTabFooterWebView::HideCustomContextMenu,
+                          weak_factory_.GetWeakPtr()));
   context_menu_runner_->RunMenuAt(
       GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
       views::MenuAnchorPosition::kTopLeft, ui::mojom::MenuSourceType::kMouse,
@@ -84,9 +85,11 @@ void NewTabFooterWebView::ShowCustomContextMenu(
 }
 
 void NewTabFooterWebView::HideCustomContextMenu() {
-  if (context_menu_runner_) {
+  if (context_menu_runner_ && context_menu_runner_->IsRunning()) {
     context_menu_runner_->Cancel();
   }
+  context_menu_runner_.reset();
+  context_menu_model_.reset();
 }
 
 bool NewTabFooterWebView::HandleKeyboardEvent(

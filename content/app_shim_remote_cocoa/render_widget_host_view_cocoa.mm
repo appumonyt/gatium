@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
 
 #import "content/app_shim_remote_cocoa/render_widget_host_view_cocoa.h"
 
@@ -664,7 +660,7 @@ void ExtractUnderlines(NSAttributedString* string,
   _availableTextChangeCounter++;
   _textSelectionRange = range;
   _substitutionWasApplied = NO;
-  [NSSpellChecker.sharedSpellChecker dismissCorrectionIndicatorForView:self];
+  [self.spellChecker dismissCorrectionIndicatorForView:self];
   if (_shouldRequestTextSubstitutions && !_substitutionWasApplied &&
       _textSelectionRange.is_empty()) {
     _shouldRequestTextSubstitutions = NO;

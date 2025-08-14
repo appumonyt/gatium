@@ -56,7 +56,6 @@
 #include "gpu/command_buffer/client/client_shared_image.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
-#include "gpu/ipc/client/client_shared_image_interface.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_types.h"
@@ -584,11 +583,22 @@ class TestVideoFrameBuilder {
       uint8_t y_foreground,
       uint8_t u_foreground,
       uint8_t v_foreground) {
-    int planes[] = {media::VideoFrame::Plane::kY, media::VideoFrame::Plane::kU,
-                    media::VideoFrame::Plane::kV};
-    uint8_t yuv_background[] = {y_background, u_background, v_background};
-    uint8_t yuv_foreground[] = {y_foreground, u_foreground, v_foreground};
-    int sample_size[] = {1, 2, 2};
+    auto planes = std::to_array<int>({
+        media::VideoFrame::Plane::kY,
+        media::VideoFrame::Plane::kU,
+        media::VideoFrame::Plane::kV,
+    });
+    auto yuv_background = std::to_array<uint8_t>({
+        y_background,
+        u_background,
+        v_background,
+    });
+    auto yuv_foreground = std::to_array<uint8_t>({
+        y_foreground,
+        u_foreground,
+        v_foreground,
+    });
+    auto sample_size = std::to_array<int>({1, 2, 2});
 
     for (int i = 0; i < 3; ++i) {
       memset(video_frame_->writable_data(planes[i]), yuv_background[i],
@@ -6280,8 +6290,7 @@ class ColorTransformPixelTest
     // Ensure our expected color contains the texture color blended in a
     // blending-suitable space, if a color conversion was required.
     const gfx::ColorSpace blend_color_space =
-        this->display_color_spaces_.GetCompositingColorSpace(
-            /*needs_alpha=*/true,
+        this->display_color_spaces_.GetRasterAndCompositeColorSpace(
             this->dst_color_space_.GetContentColorUsage());
     std::unique_ptr<gfx::ColorTransform> transform_src_to_blend =
         gfx::ColorTransform::NewColorTransform(this->src_color_space_,

@@ -104,6 +104,12 @@
   <message name ="IDS_COLLABORATION_ENTREPRISE_GROUP_CLOSED_BODY" desc="The body of the error dialog when entreprise group is closed.">
     When a group is closed, it limits who can join
   </message>
+  <message name ="IDS_COLLABORATION_ENTREPRISE_SHARING_OFF_HEADER" desc="The header of the error dialog when enterprise turns off sharing." formatter_data="android_java">
+    Your organization limits what you can share
+  </message>
+  <message name ="IDS_COLLABORATION_ENTREPRISE_SHARING_OFF_BODY" desc="The body of the error dialog when enterprise turns off sharing.">
+    Sharing is currently turned off
+  </message>
   <!-- /Error Messages -->
   <!-- /Collaboration -->
 
@@ -222,5 +228,17 @@
     {NUM_TABS, plural, =1 {1 tab} other {# tabs}}
   </message>
   <!-- Instant Messages -->
+
+  <!-- Comments -->
+  <!-- Excluded from Android to pass LINT check until it needs to be used there. -->
+  <if expr="not is_android">
+    <message name="IDS_COLLABORATION_SHARED_TAB_GROUPS_COMMENTS_TITLE" desc="Title of the comments side panel." formatter_data="android_java">
+      Comments
+    </message>
+    <message name="IDS_COLLABORATION_SHARED_TAB_GROUPS_COMMENTS_TITLE_WITH_NAME" desc="Title of the comments side panel." formatter_data="android_java">
+      Comments - <ph name="GROUP_NAME">$1<ex>Vacation</ex></ph>
+    </message>
+  </if>
+  <!-- Comments -->
 
 </grit-part>

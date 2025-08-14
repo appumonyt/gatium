@@ -5,6 +5,7 @@
 package org.chromium.chrome.browser.toolbar.top;
 
 import static org.chromium.build.NullUtil.assumeNonNull;
+import static org.chromium.chrome.browser.tab_ui.VersionUpdateIphHandler.maybeShowVersioningIph;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
@@ -33,6 +34,7 @@ import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab_ui.TabModelDotInfo;
 import org.chromium.chrome.browser.tabmodel.IncognitoStateProvider;
+import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelUtils;
 import org.chromium.chrome.browser.theme.ThemeColorProvider;
@@ -315,6 +317,19 @@ public class ToggleTabStackButtonCoordinator extends ToolbarChild {
     @VisibleForTesting
     void handlePageLoadFinished() {
         if (!mToggleTabStackButton.isShown()) return;
+
+        TabGroupModelFilter tabGroupModelFilter =
+                mTabModelSelectorSupplier
+                        .get()
+                        .getTabGroupModelFilterProvider()
+                        .getCurrentTabGroupModelFilter();
+        if (tabGroupModelFilter != null) {
+            maybeShowVersioningIph(
+                    mUserEducationHelper,
+                    mToggleTabStackButton,
+                    tabGroupModelFilter,
+                    /* expectsAutoOpen= */ false);
+        }
 
         HighlightParams params = new HighlightParams(HighlightShape.CIRCLE);
         params.setBoundsRespectPadding(true);

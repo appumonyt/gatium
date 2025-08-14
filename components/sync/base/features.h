@@ -27,6 +27,9 @@ BASE_DECLARE_FEATURE(kSyncAutofillLoyaltyCard);
 // Enables syncing account-local metadata for shared tab groups.
 BASE_DECLARE_FEATURE(kSyncSharedTabGroupAccountData);
 
+// Enables syncing comments for shared contexts.
+BASE_DECLARE_FEATURE(kSyncSharedComment);
+
 #if BUILDFLAG(IS_ANDROID)
 // Flag that controls Uno fast-follow features which are:
 // - Batch upload of left-behind bookmarks from the bookmark manager
@@ -166,6 +169,11 @@ BASE_DECLARE_FEATURE(kSyncTrustedVaultInfobarImprovements);
 BASE_DECLARE_FEATURE(kSyncTrustedVaultInfobarMessageImprovements);
 #endif  // BUILDFLAG(IS_IOS)
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+// Enables syncing of Vehicle Registrations and Flight reservations coming from
+// Google Wallet.
+BASE_DECLARE_FEATURE(kSyncWalletPublicPasses);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 }  // namespace syncer
 
 #endif  // COMPONENTS_SYNC_BASE_FEATURES_H_

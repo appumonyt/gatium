@@ -19,10 +19,12 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.IntDef;
 import androidx.annotation.VisibleForTesting;
 
+import org.chromium.base.CommandLine;
 import org.chromium.base.Log;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.build.annotations.NullMarked;
+import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;
 import org.chromium.chrome.browser.search_engines.R;
@@ -46,6 +48,11 @@ import java.util.function.Function;
 @NullMarked
 public class ChoiceDialogCoordinator implements ChoiceDialogMediator.Delegate {
     private static final String TAG = "ChoiceDialogCoordntr";
+
+    // Number of blocked Chrome sessions after which we suppress the blocking dialog. This is
+    // intended as an escape hatch to mitigate potential bugs.
+    @VisibleForTesting
+    public static final int ESCAPE_HATCH_BLOCK_LIMIT = 10;
 
     // TODO(b/365100489): Refactor this coordinator to implement the dialog's custom view fully
     // using the standard chromium MVC patterns. This class is a temporary shortcut.
@@ -115,7 +122,8 @@ public class ChoiceDialogCoordinator implements ChoiceDialogMediator.Delegate {
         var searchEngineChoiceService = SearchEngineChoiceService.getInstance();
         final boolean canShow =
                 searchEngineChoiceService != null
-                        && searchEngineChoiceService.isDeviceChoiceDialogEligible();
+                        && searchEngineChoiceService.isDeviceChoiceDialogEligible()
+                        && !CommandLine.getInstance().hasSwitch(ChromeSwitches.NO_FIRST_RUN);
 
         if (SearchEnginesFeatureUtils.getInstance().isChoiceApisDebugEnabled()) {
             Log.i(TAG, "maybeShow() - Client eligible for the device choice dialog: %b", canShow);
@@ -247,16 +255,14 @@ public class ChoiceDialogCoordinator implements ChoiceDialogMediator.Delegate {
         int blockCount =
                 ChromeSharedPreferences.getInstance()
                         .readInt(SEARCH_ENGINE_CHOICE_PENDING_OS_CHOICE_DIALOG_SHOWN_ATTEMPTS);
-        int blockLimit =
-                SearchEnginesFeatureUtils.getInstance().clayBlockingEscapeHatchBlockLimit();
-        if (blockCount >= blockLimit) {
+        if (blockCount >= ESCAPE_HATCH_BLOCK_LIMIT) {
             if (SearchEnginesFeatureUtils.getInstance().isChoiceApisDebugEnabled()) {
                 Log.i(
                         TAG,
                         "The dialog is suppressed: Escape Hatch triggered, blocked %d times"
                                 + " (limit=%d).",
                         blockCount,
-                        blockLimit);
+                        ESCAPE_HATCH_BLOCK_LIMIT);
             }
             return DialogSuppressionStatus.SUPPRESSED_ESCAPE_HATCH;
         }

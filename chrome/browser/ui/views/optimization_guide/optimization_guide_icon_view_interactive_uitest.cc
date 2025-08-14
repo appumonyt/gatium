@@ -8,14 +8,15 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/views/interaction/browser_elements_views.h"
 #include "chrome/browser/ui/views/optimization_guide/optimization_guide_icon_view.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/optimization_guide/core/optimization_guide_proto_util.h"
 #include "components/optimization_guide/proto/icon_view_metadata.pb.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
-#include "ui/views/interaction/element_tracker_views.h"
 
 namespace {
 
@@ -33,7 +34,8 @@ class OptimizationGuideIconViewTestBase : public InProcessBrowserTest {
         icon_view_metadata;
     icon_view_metadata.set_cue_label(label);
     optimization_guide::OptimizationMetadata metadata;
-    metadata.SetAnyMetadataForTesting(icon_view_metadata);
+    metadata.set_any_metadata(
+        optimization_guide::AnyWrapProto(icon_view_metadata));
     OptimizationGuideKeyedServiceFactory::GetForProfile(browser()->profile())
         ->AddHintForTesting(
             url, optimization_guide::proto::OPTIMIZATION_GUIDE_ICON_VIEW,
@@ -41,12 +43,8 @@ class OptimizationGuideIconViewTestBase : public InProcessBrowserTest {
   }
 
   OptimizationGuideIconView* optimization_guide_icon_view() {
-    views::View* const icon_view =
-        views::ElementTrackerViews::GetInstance()->GetFirstMatchingView(
-            kOptimizationGuideChipElementId,
-            browser()->window()->GetElementContext());
-    return icon_view ? views::AsViewClass<OptimizationGuideIconView>(icon_view)
-                     : nullptr;
+    return BrowserElementsViews::From(browser())
+        ->GetViewAs<OptimizationGuideIconView>(kOptimizationGuideChipElementId);
   }
 };
 

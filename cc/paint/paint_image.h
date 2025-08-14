@@ -366,14 +366,14 @@ class CC_PAINT_EXPORT PaintImage {
   }
 
   bool IsOpaque() const;
-  bool HasGainmap() const {
+  bool HasGainmapInfo() const {
     DCHECK_EQ(gainmap_paint_image_generator_ != nullptr ||
                   gainmap_sk_image_ != nullptr,
               gainmap_info_.has_value());
     return gainmap_info_.has_value();
   }
   const SkGainmapInfo& GetGainmapInfo() const {
-    DCHECK(HasGainmap());
+    DCHECK(HasGainmapInfo());
     return gainmap_info_.value();
   }
 
@@ -430,9 +430,6 @@ class CC_PAINT_EXPORT PaintImage {
   // If true, then this images will be reinterpreted as being sRGB during paint.
   // This is used by createImageBitmap's colorSpaceConversion:"none".
   bool reinterpret_as_srgb_ = false;
-
-  // The target HDR headroom for gainmap and global tone map application.
-  float target_hdr_headroom_ = 1.f;
 
   // Gainmap HDR metadata.
   sk_sp<SkImage> gainmap_sk_image_;

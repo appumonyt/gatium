@@ -101,6 +101,10 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
     return last_activated_surface_id_.local_surface_id();
   }
 
+  const SurfaceId& last_created_surface_id() const {
+    return last_created_surface_id_;
+  }
+
   bool is_root() const { return is_root_; }
 
   FrameSinkManagerImpl* frame_sink_manager() { return frame_sink_manager_; }
@@ -217,8 +221,7 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
       const LocalSurfaceId& local_surface_id,
       CompositorFrame frame,
       std::optional<HitTestRegionList> hit_test_region_list,
-      uint64_t submit_time,
-      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback callback);
+      uint64_t submit_time);
 
   // CapturableFrameSink implementation.
   const FrameSinkId& GetFrameSinkId() const override;
@@ -312,10 +315,6 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   void StartObservingBeginFrameSource();
   void StopObservingBeginFrameSource();
 
-  // For the sync API calls, if we are blocking a client callback, runs it once
-  // BeginFrame and FrameAck are done.
-  void HandleCallback();
-
   void MaybeEvictSurfaces();
   void EvictLastActiveSurface();
   bool ShouldSendBeginFrame(BeginFrameId frame_id,
@@ -367,16 +366,9 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   // This has a HitTestAggregator if and only if |is_root_| is true.
   std::unique_ptr<HitTestAggregator> hit_test_aggregator_;
 
-  struct FrameData {
-    // True if this frame was submitted from viz itself. This happens during
-    // root surface eviction when an empty compositor frame is submitted to
-    // deref existing resources.
-    bool local_frame;
-  };
-
   // Keeps track of CompositorFrames that have been submitted and have not
   // yet received an ACK from their Surface.
-  base::circular_deque<FrameData> pending_frames_;
+  int pending_frames_ = 0;
 
   std::vector<ReturnedResource> surface_returned_resources_;
 
@@ -439,8 +431,6 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   // next surface will take it regardless of its LocalSurfaceId.
   std::vector<PendingCopyOutputRequest> copy_output_requests_;
 
-  mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback
-      compositor_frame_callback_;
   bool callback_received_begin_frame_ = true;
   bool callback_received_receive_ack_ = true;
   uint32_t trace_sequence_ = 0;
@@ -452,6 +442,7 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   class PendingFrameDetails : SurfaceObserver {
    public:
     PendingFrameDetails(base::TimeTicks frame_submit_timestamp,
+                        TreesInVizTiming frame_timing_details,
                         SurfaceManager* surface_manager);
     ~PendingFrameDetails() override;
 
@@ -463,6 +454,15 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
 
     base::TimeTicks frame_submit_timestamp() const {
       return frame_submit_timestamp_;
+    }
+    base::TimeTicks start_update_display_tree() const {
+      return trees_in_viz_timing_details_.start_update_display_tree;
+    }
+    base::TimeTicks start_prepare_to_draw() const {
+      return trees_in_viz_timing_details_.start_prepare_to_draw;
+    }
+    base::TimeTicks start_draw_layers() const {
+      return trees_in_viz_timing_details_.start_draw_layers;
     }
     base::TimeTicks frame_embed_timestamp() const {
       return frame_embed_timestamp_;
@@ -480,6 +480,9 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
     void SetOrObserveFrameEmbedTimeStamp();
 
     const base::TimeTicks frame_submit_timestamp_;
+
+    // TreesInViz related timestamps.
+    const TreesInVizTiming trees_in_viz_timing_details_;
     base::TimeTicks frame_embed_timestamp_;
     // The surface ID that is associated with the frame.
     SurfaceId surface_id_;

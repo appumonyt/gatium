@@ -214,8 +214,10 @@ public class PreviewTabTest {
                 () ->
                         mEphemeralTabCoordinator.requestOpenSheet(
                                 new GURL(mActivityTestRule.getTestServer().getURL(PREVIEW_TAB)),
+                                null,
                                 "PreviewTab",
-                                mActivityTestRule.getProfile(false)));
+                                mActivityTestRule.getProfile(false),
+                                /* canPromoteToNewTab= */ true));
         endAnimations();
         Assert.assertTrue("The Preview Tab did not open", mEphemeralTabCoordinator.isOpened());
         Assert.assertTrue("Contextual Search should be suppressed", csManager.isSuppressed());
@@ -236,11 +238,12 @@ public class PreviewTabTest {
         // Open Preview Tab.
         ThreadUtils.runOnUiThreadBlocking(
                 () ->
-                        mEphemeralTabCoordinator.requestOpenSheetWithFullPageUrl(
+                        mEphemeralTabCoordinator.requestOpenSheet(
                                 new GURL(mActivityTestRule.getTestServer().getURL(PREVIEW_TAB)),
                                 null,
                                 "PreviewTab",
-                                mActivityTestRule.getProfile(false)));
+                                mActivityTestRule.getProfile(false),
+                                /* canPromoteToNewTab= */ true));
         endAnimations();
 
         mEphemeralTabObserver.onToolbarCreatedCallback.waitForCallback(0, 1);

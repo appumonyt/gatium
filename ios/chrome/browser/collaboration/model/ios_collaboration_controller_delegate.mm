@@ -198,19 +198,25 @@ void IOSCollaborationControllerDelegate::ShowError(const ErrorInfo& error,
                                                    message:message];
 
   if (error.type() == ErrorInfo::Type::kUpdateChromeUiForVersionOutOfDate) {
+    auto split_result_callback = base::SplitOnceCallback(std::move(result));
+
     auto update_action = base::CallbackToBlock(
         base::BindOnce(&IOSCollaborationControllerDelegate::Update,
-                       weak_ptr_factory_.GetWeakPtr(), std::move(result)));
+                       weak_ptr_factory_.GetWeakPtr(),
+                       std::move(split_result_callback.first)));
     [alert_coordinator_
         addItemWithTitle:
             l10n_util::GetNSString(
                 IDS_COLLABORATION_CHROME_OUT_OF_DATE_ERROR_DIALOG_UPDATE_BUTTON)
                   action:update_action
-                   style:UIAlertActionStyleDefault];
+                   style:UIAlertActionStyleDefault
+               preferred:YES
+                 enabled:YES];
 
     auto dismiss_action = base::CallbackToBlock(
         base::BindOnce(&IOSCollaborationControllerDelegate::ErrorAccepted,
-                       weak_ptr_factory_.GetWeakPtr(), std::move(result)));
+                       weak_ptr_factory_.GetWeakPtr(),
+                       std::move(split_result_callback.second)));
     [alert_coordinator_
         addItemWithTitle:
             l10n_util::GetNSString(
@@ -295,6 +301,10 @@ void IOSCollaborationControllerDelegate::ShowAuthenticationUi(
           &IOSCollaborationControllerDelegate::OnAuthenticationComplete,
           weak_ptr_factory_.GetWeakPtr(), std::move(result)));
       // For a paused sign-in, re-authentication is required.
+      // In case of double-tap, we must stop the first coordinator. This may
+      // occur because, up to iOS 18, the view may have disappeared without
+      // calling the signin completion. See crbug.com/395959814
+      [signin_coordinator_ stop];
       signin_coordinator_ = [SigninCoordinator
           primaryAccountReauthCoordinatorWithBaseViewController:
               base_view_controller_
@@ -821,6 +831,9 @@ void IOSCollaborationControllerDelegate::ConfigureAndManageTabGroup(
   config.tabGroup = tab_group;
   config.groupImage = faviconsGridImage;
   config.collabID = base::SysUTF8ToNSString(collaboration_id.value());
+  config.enterpriseSharingDisabled =
+      collaboration_service_->GetServiceStatus().collaboration_status ==
+      CollaborationStatus::kDisabledForPolicy;
   config.applicationHandler =
       HandlerForProtocol(browser_->GetCommandDispatcher(), ApplicationCommands);
   auto completion_block = base::CallbackToBlock(std::move(result));
@@ -847,6 +860,8 @@ UIImage* IOSCollaborationControllerDelegate::JoinGroupImage(
   CGRect frame = CGRectMake(0, 0, kJoinGroupImageSize, kJoinGroupImageSize);
   TabGroupFaviconsGrid* favicons_grid =
       [[TabGroupFaviconsGrid alloc] initWithFrame:frame];
+  favicons_grid.overrideUserInterfaceStyle =
+      base_view_controller_.traitCollection.userInterfaceStyle;
   favicons_grid.translatesAutoresizingMaskIntoConstraints = NO;
   favicons_grid.numberOfTabs = [preview_items count];
   favicons_grid_configurator_->ConfigureFaviconsGrid(favicons_grid,

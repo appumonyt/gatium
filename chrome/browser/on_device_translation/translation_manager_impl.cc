@@ -9,6 +9,7 @@
 #include "base/feature_list.h"
 #include "base/rand_util.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/ai/ai_crx_component.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/component_updater/translate_kit_component_installer.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -30,6 +31,7 @@
 #include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/public/mojom/ai/model_download_progress_observer.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 namespace on_device_translation {
 
@@ -160,6 +162,12 @@ base::Value TranslationManagerImpl::GetInitializedTranslationsValue() {
 bool TranslationManagerImpl::HasInitializedTranslator(
     const std::string& source_language,
     const std::string& target_language) {
+  const GURL url = origin_.GetURL();
+  if (!url.is_valid() || url.SchemeIsFile()) {
+    return transient_initialized_translations_.contains(
+        {source_language, target_language});
+  }
+
   base::Value initialized_translations_value =
       GetInitializedTranslationsValue();
   if (initialized_translations_value.is_dict()) {
@@ -182,6 +190,13 @@ void TranslationManagerImpl::SetTranslatorInitializedContentSetting(
 void TranslationManagerImpl::SetInitializedTranslation(
     const std::string& source_language,
     const std::string& target_language) {
+  const GURL url = origin_.GetURL();
+  if (!url.is_valid() || url.SchemeIsFile()) {
+    transient_initialized_translations_.insert(
+        {source_language, target_language});
+    return;
+  }
+
   base::Value initialized_translations_value =
       GetInitializedTranslationsValue();
 
@@ -340,8 +355,9 @@ void TranslationManagerImpl::CreateTranslator(
           crx_file::id_util::GenerateIdFromHash(config.public_key_sha));
     }
     model_download_progress_manager_.AddObserver(
-        GetComponentUpdateService(), std::move(options->observer_remote),
-        std::move(component_ids));
+        std::move(options->observer_remote),
+        on_device_ai::AICrxComponent::FromComponentIds(
+            GetComponentUpdateService(), std::move(component_ids)));
   }
 
   base::OnceClosure create_translator =

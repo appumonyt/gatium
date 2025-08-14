@@ -68,6 +68,7 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeH265Delegate
   ~D3D12VideoEncodeH265Delegate() override;
 
   size_t GetMaxNumOfRefFrames() const override;
+  size_t GetMaxNumOfManualRefBuffers() const override;
   bool ReportsAverageQp() const override;
 
   bool UpdateRateControl(const Bitrate& bitrate, uint32_t framerate) override;
@@ -77,7 +78,8 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeH265Delegate
   EncoderStatus::Or<BitstreamBufferMetadata> EncodeImpl(
       ID3D12Resource* input_frame,
       UINT input_frame_subresource,
-      const VideoEncoder::EncodeOptions& options) override;
+      const VideoEncoder::EncodeOptions& options,
+      const gfx::ColorSpace& input_color_space) override;
 
  private:
   EncoderStatus InitializeVideoEncoder(
@@ -90,6 +92,8 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeH265Delegate
   H265VPS ToVPS() const;
   H265SPS ToSPS(const H265VPS& vps) const;
   H265PPS ToPPS(const H265SPS& sps) const;
+
+  uint32_t max_num_ref_frames_ = 0;
 
   D3D12_VIDEO_ENCODER_SUPPORT_FLAGS encoder_support_flags_{};
 

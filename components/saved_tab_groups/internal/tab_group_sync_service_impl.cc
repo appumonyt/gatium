@@ -205,9 +205,9 @@ TabGroupSyncServiceImpl::TabGroupSyncServiceImpl(
   model_->AddObserver(this);
   if (opt_guide_) {
     opt_guide_->RegisterOptimizationTypes(
-        {optimization_guide::proto::PAGE_ENTITIES,
-         optimization_guide::proto::SAVED_TAB_GROUP});
+        {optimization_guide::proto::SAVED_TAB_GROUP});
   }
+
   if (identity_manager) {
     identity_manager_observation_.Observe(identity_manager);
   }
@@ -488,6 +488,18 @@ void TabGroupSyncServiceImpl::UpdateGroupPosition(
   }
 }
 
+void TabGroupSyncServiceImpl::UpdateBookmarkNodeId(
+    const base::Uuid& sync_id,
+    std::optional<base::Uuid> bookmark_node_id) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  VLOG(2) << __func__;
+
+  const SavedTabGroup* tab_group = model_->Get(sync_id);
+  if (tab_group) {
+    model_->UpdateBookmarkNodeId(sync_id, bookmark_node_id);
+  }
+}
+
 void TabGroupSyncServiceImpl::AddTab(const LocalTabGroupID& group_id,
                                      const LocalTabID& tab_id,
                                      const std::u16string& title,
@@ -661,8 +673,8 @@ void TabGroupSyncServiceImpl::OnTabSelected(
   UpdateAttributions(*group_id);
   model_->UpdateLastUserInteractionTimeLocally(*group_id);
   if (group->is_shared_tab_group()) {
-    model_->UpdateTabLastSeenTime(group->saved_guid(), tab->saved_tab_guid(),
-                                  base::Time::Now(), TriggerSource::LOCAL);
+    model_->UpdateTabLastSeenTimeFromLocal(group->saved_guid(),
+                                           tab->saved_tab_guid());
   }
   LogEvent(TabGroupEvent::kTabSelected, *group_id, tab_id);
 }
@@ -710,6 +722,8 @@ void TabGroupSyncServiceImpl::MakeTabGroupShared(
   if (!saved_group || saved_group->is_shared_tab_group()) {
     return;
   }
+
+  RegisterPageEntityOptimizationTypeIfNeeded();
 
   LogTabGroupEvent(logger_, "MakeTabGroupShared", saved_group);
 
@@ -858,6 +872,12 @@ void TabGroupSyncServiceImpl::MakeTabGroupSharedForTesting(
     const syncer::CollaborationId& collaboration_id) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   model_->MakeTabGroupSharedForTesting(local_group_id, collaboration_id);
+}
+
+void TabGroupSyncServiceImpl::MakeTabGroupUnsharedForTesting(
+    const LocalTabGroupID& local_group_id) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  model_->MakeTabGroupUnsharedForTesting(local_group_id);
 }
 
 bool TabGroupSyncServiceImpl::ShouldExposeSavedTabGroupInList(
@@ -1150,7 +1170,7 @@ void TabGroupSyncServiceImpl::UpdateTabLastSeenTime(const base::Uuid& group_id,
     return;
   }
 
-  model_->UpdateTabLastSeenTime(group_id, tab_id, base::Time::Now(), source);
+  model_->UpdateTabLastSeenTimeFromLocal(group_id, tab_id);
 }
 
 TabGroupSyncMetricsLogger*
@@ -1239,6 +1259,10 @@ void TabGroupSyncServiceImpl::HandleTabGroupAdded(const base::Uuid& guid,
   if (saved_tab_group->is_hidden()) {
     // Ignore any updates to the groups which were hidden.
     return;
+  }
+
+  if (saved_tab_group->is_shared_tab_group()) {
+    RegisterPageEntityOptimizationTypeIfNeeded();
   }
 
   if (saved_tab_group->saved_tabs().empty()) {
@@ -1359,8 +1383,8 @@ void TabGroupSyncServiceImpl::
   for (const LocalTabID& local_tab_id : GetSelectedTabs()) {
     const SavedTabGroupTab* tab = group->GetTab(local_tab_id);
     if (tab) {
-      model_->UpdateTabLastSeenTime(group->saved_guid(), tab->saved_tab_guid(),
-                                    base::Time::Now(), TriggerSource::LOCAL);
+      model_->UpdateTabLastSeenTimeFromLocal(group->saved_guid(),
+                                             tab->saved_tab_guid());
     }
   }
 }
@@ -1647,6 +1671,10 @@ void TabGroupSyncServiceImpl::NotifyServiceInitialized() {
   }
 
   ForceRemoveClosedTabGroupsOnStartup();
+
+  if (!model_->GetSharedTabGroupsOnly().empty()) {
+    RegisterPageEntityOptimizationTypeIfNeeded();
+  }
 
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
@@ -2120,6 +2148,14 @@ void TabGroupSyncServiceImpl::FinishTransitionToSharedIfNotCompleted() {
     if (TransitionSavedToSharedTabGroupIfNeeded(*shared_group)) {
       NotifyTabGroupMigrated(shared_group_id, TriggerSource::REMOTE);
     }
+  }
+}
+
+void TabGroupSyncServiceImpl::RegisterPageEntityOptimizationTypeIfNeeded() {
+  if (opt_guide_ && !page_entity_optimization_type_registered_) {
+    opt_guide_->RegisterOptimizationTypes(
+        {optimization_guide::proto::PAGE_ENTITIES});
+    page_entity_optimization_type_registered_ = true;
   }
 }
 

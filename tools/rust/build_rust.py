@@ -66,7 +66,17 @@ from update_rust import (RUST_REVISION, RUST_TOOLCHAIN_OUT_DIR,
 
 EXCLUDED_TESTS = [
     # Temporarily disabled due to https://crbug.com/396424971
-    os.path.join('tests', 'codegen', 'common_prim_int_ptr.rs'),
+    os.path.join('tests', 'codegen-llvm', 'common_prim_int_ptr.rs'),
+    # Temporarily disabled due to https://crbug.com/433249564
+    os.path.join('tests', 'codegen-llvm', 'enum', 'enum-discriminant-eq.rs'),
+    # Temporarily disabled due to https://crbug.com/437926231
+    os.path.join('tests', 'codegen-llvm', 'align-byval-alignment-mismatch.rs'),
+    os.path.join('tests', 'codegen-llvm', 'call-tmps-lifetime.rs'),
+    os.path.join('tests', 'codegen-llvm', 'issues', 'issue-105386-ub-in-debuginfo.rs'),
+    os.path.join('tests', 'codegen-llvm', 'intrinsics', 'transmute-simd.rs'),
+    os.path.join('tests', 'codegen-llvm', 'intrinsics', 'transmute.rs'),
+    os.path.join('tests', 'codegen-llvm', 'lifetime_start_end.rs'),
+    os.path.join('tests', 'codegen-llvm', 'uninhabited-transparent-return-abi.rs'),
 ]
 EXCLUDED_TESTS_WINDOWS = [
     # Temporarily disabled due to https://crbug.com/379308086
@@ -141,7 +151,7 @@ BUILD_TARGETS = [
 # Which test suites to run. Any failure will fail the build.
 TEST_SUITES = [
     'library/std',
-    'tests/codegen',
+    'tests/codegen-llvm',
     'tests/ui',
 ]
 

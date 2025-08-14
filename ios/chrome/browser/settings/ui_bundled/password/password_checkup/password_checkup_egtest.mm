@@ -345,9 +345,9 @@ NSString* LeakedPasswordDescription() {
   [PasswordSettingsAppInterface mockReauthenticationModuleReturnMockedResult];
 
   // Password Manager UI should be dismissed leaving the Settings UI Visible.
+  [ChromeEarlGrey
+      waitForUIElementToDisappearWithMatcher:ReauthenticationController()];
   [[EarlGrey selectElementWithMatcher:PasswordCheckupTableView()]
-      assertWithMatcher:grey_notVisible()];
-  [[EarlGrey selectElementWithMatcher:ReauthenticationController()]
       assertWithMatcher:grey_notVisible()];
 
   [[EarlGrey selectElementWithMatcher:SettingsCollectionView()]
@@ -415,9 +415,8 @@ NSString* LeakedPasswordDescription() {
   VerifyCompromisedPasswordIssuesPageIsVisible(/*issue_count=*/1);
 }
 
-// TODO(crbug.com/427936710): This test is failing.
 // Tests the loading state of the Password Checkup Homepage.
-- (void)DISABLED_testPasswordCheckupHomepageLoadingState {
+- (void)testPasswordCheckupHomepageLoadingState {
   SaveCompromisedPasswordFormToProfileStore();
 
   NSInteger numberOfAffiliatedGroups = 1;
@@ -453,7 +452,7 @@ NSString* LeakedPasswordDescription() {
 
   // Artificially reset the loading state to idle.
   [PasswordSettingsAppInterface
-      setFakeBulkLeakCheckBufferedState:
+      setFakeBulkLeakCheckBufferedStateAndNotifyObservers:
           password_manager::BulkLeakCheckServiceInterface::State::kIdle];
 
   // Wait for Password Checkup to finish loading.
@@ -502,7 +501,11 @@ NSString* LeakedPasswordDescription() {
 
 // Tests that the Password Checkup Homepage header image view is correctly
 // shown/hidden depending on the device's orientation.
+// TODO(crbug.com/435095080): Reenable this test.
 - (void)testPasswordCheckupHomepageDeviceOrientation {
+  if (![ChromeEarlGrey isIPadIdiom]) {
+    EARL_GREY_TEST_DISABLED(@"Failing on iPhone Simulator");
+  }
   if ([ChromeEarlGrey isIPadIdiom]) {
     EARL_GREY_TEST_SKIPPED(@"Landscape orientation doesn't change the look of "
                            @"the Password Checkup Homepage.");
@@ -954,7 +957,14 @@ NSString* LeakedPasswordDescription() {
 
 // Validates that the Password Manager UI is dismissed when local authentication
 // fails while in the Password Issues UI.
-- (void)testPasswordIssuesWithFailedAuth {
+// TODO(crbug.com/437856519): Test is flaky on simulator. Reenable the test.
+#if TARGET_OS_SIMULATOR
+#define MAYBE_testPasswordIssuesWithFailedAuth \
+  FLAKY_testPasswordIssuesWithFailedAuth
+#else
+#define MAYBE_testPasswordIssuesWithFailedAuth testPasswordIssuesWithFailedAuth
+#endif
+- (void)MAYBE_testPasswordIssuesWithFailedAuth {
   SaveWeakPasswordFormToProfileStore();
 
   OpenPasswordCheckupHomepage(

@@ -16,11 +16,13 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "base/types/expected_macros.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_host.h"
 #include "cc/animation/animation_timeline.h"
 #include "cc/animation/keyframe_effect.h"
+#include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/input/browser_controls_offset_manager.h"
 #include "cc/layers/layer_impl.h"
@@ -1626,13 +1628,14 @@ void LayerContextImpl::UpdateDisplayTree(mojom::LayerTreeUpdatePtr update) {
   CHECK(receiver_);
 
   const BeginFrameArgs begin_frame_args = update->begin_frame_args;
+  auto start_update_display_tree = base::TimeTicks::Now();
   auto result = DoUpdateDisplayTree(std::move(update));
   if (!result.has_value()) {
     receiver_->ReportBadMessage(result.error());
   }
 
   // After a tree update, either Draw or schedule animations.
-  DoDraw(begin_frame_args);
+  DoDraw(begin_frame_args, start_update_display_tree);
 
   // We may have resources to return after a tree update and draw.
   DoReturnResources();
@@ -1717,17 +1720,34 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
   RETURN_IF_ERROR(CreateOrUpdateLayers(
       *(this->host_impl_.get()), update->layers, update->layer_order, layers));
 
-  if (update->local_surface_id_from_parent) {
-    layers.SetLocalSurfaceIdFromParent(*update->local_surface_id_from_parent);
-    if (update->new_local_surface_id_request) {
-      layers.RequestNewLocalSurfaceId();
+  // After layers are updated, validate backdrop_mask_element_id.
+  for (const auto& wire : update->effect_nodes) {
+    if (wire->backdrop_mask_element_id) {
+      if (auto* layer =
+              layers.LayerByElementId(wire->backdrop_mask_element_id)) {
+        if (layer->GetLayerType() != cc::mojom::LayerType::kTileDisplay) {
+          return base::unexpected(
+              "Invalid backdrop_mask_element_id: layer is not a "
+              "TileDisplayLayer");
+        }
+      } else {
+        return base::unexpected(
+            "Invalid backdrop_mask_element_id: layer not found");
+      }
     }
-    host_impl_->UpdateChildLocalSurfaceId();
   }
 
+  if (update->local_surface_id_from_parent) {
+    layers.SetLocalSurfaceIdFromParent(*update->local_surface_id_from_parent);
+  }
+  host_impl_->set_current_local_surface_id_from_client(
+      update->current_local_surface_id);
   if (update->target_local_surface_id) {
     host_impl_->SetTargetLocalSurfaceId(*update->target_local_surface_id);
   }
+
+  RETURN_IF_FALSE(update->next_frame_token > 0, "invalid frame token");
+  host_impl_->set_next_frame_token_from_client(update->next_frame_token);
 
   for (const auto& tiling : update->tilings) {
     if (cc::LayerImpl* layer = layers.LayerById(tiling->layer_id)) {
@@ -1750,6 +1770,8 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
   layers.set_primary_main_frame_item_sequence_number(
       update->primary_main_frame_item_sequence_number);
   layers.SetDeviceViewportRect(update->device_viewport);
+
+  layers.RegisterSelection(update->selection);
 
   if (update->page_scale_factor <= 0 ||
       !std::isfinite(update->page_scale_factor) ||
@@ -1794,9 +1816,6 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
   layers.SetMaxSafeAreaInsetBottom(update->max_safe_area_inset_bottom);
   layers.set_painted_device_scale_factor(update->painted_device_scale_factor);
   layers.SetDisplayColorSpaces(update->display_color_spaces);
-  if (update->local_surface_id_from_parent) {
-    layers.SetLocalSurfaceIdFromParent(*update->local_surface_id_from_parent);
-  }
 
   if (!(update->top_controls_shown_ratio >= 0 &&
         update->top_controls_shown_ratio <= 1 &&
@@ -1808,6 +1827,7 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
       update->top_controls_shown_ratio, update->bottom_controls_shown_ratio);
 
   host_impl_->SetViewportDamage(update->viewport_damage_rect);
+  host_impl_->SetDebugState(update->debug_state);
 
   for (auto& ui_resource_request : update->ui_resource_requests) {
     if (ui_resource_request->type ==
@@ -1885,7 +1905,8 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
   return base::ok();
 }
 
-void LayerContextImpl::DoDraw(const BeginFrameArgs& begin_frame_args) {
+void LayerContextImpl::DoDraw(const BeginFrameArgs& begin_frame_args,
+                              base::TimeTicks start_update_display_tree) {
   if (base::FeatureList::IsEnabled(features::kTreeAnimationsInViz)) {
     compositor_sink_->SetLayerContextWantsBeginFrames(true);
   } else {
@@ -1893,10 +1914,15 @@ void LayerContextImpl::DoDraw(const BeginFrameArgs& begin_frame_args) {
       host_impl_->WillBeginImplFrame(begin_frame_args);
 
       cc::LayerTreeHostImpl::FrameData frame;
+      TreesInVizTiming stage_breakdown;
+      stage_breakdown.start_update_display_tree = start_update_display_tree;
       const bool has_damage = true;
       frame.begin_frame_ack = BeginFrameAck(begin_frame_args, has_damage);
       frame.origin_begin_main_frame_args = begin_frame_args;
+      stage_breakdown.start_prepare_to_draw = base::TimeTicks::Now();
       host_impl_->PrepareToDraw(&frame);
+      stage_breakdown.start_draw_layers = base::TimeTicks::Now();
+      frame.set_trees_in_viz_timestamps(std::move(stage_breakdown));
       host_impl_->DrawLayers(&frame);
       host_impl_->DidDrawAllLayers(frame);
       host_impl_->DidFinishImplFrame(begin_frame_args);

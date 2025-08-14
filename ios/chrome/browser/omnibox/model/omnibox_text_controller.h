@@ -14,8 +14,6 @@
 @protocol AutocompleteSuggestion;
 @class OmniboxAutocompleteController;
 class OmniboxClient;
-class OmniboxControllerIOS;
-class OmniboxEditModelIOS;
 @protocol OmniboxFocusDelegate;
 @protocol OmniboxTextControllerDelegate;
 @class OmniboxTextFieldIOS;
@@ -40,12 +38,9 @@ class OmniboxEditModelIOS;
 @property(nonatomic, assign, readonly) NSRange currentSelection;
 
 /// Temporary initializer, used during the refactoring. crbug.com/390409559
-- (instancetype)initWithOmniboxController:
-                    (OmniboxControllerIOS*)omniboxController
-                            omniboxClient:(OmniboxClient*)omniboxClient
-                         omniboxEditModel:(OmniboxEditModelIOS*)omniboxEditModel
-                         omniboxTextModel:(OmniboxTextModel*)omniboxTextModel
-                            inLensOverlay:(BOOL)inLensOverlay
+- (instancetype)initWithOmniboxClient:(OmniboxClient*)omniboxClient
+                     omniboxTextModel:(OmniboxTextModel*)omniboxTextModel
+                        inLensOverlay:(BOOL)inLensOverlay
     NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 

@@ -142,9 +142,6 @@ std::string GetHeadingHtmlTagForPDF(const ui::AXNode* ax_node,
                                     const std::string& html_tag) {
   // Sometimes whole paragraphs can be formatted as a heading. If the text is
   // longer than 2 lines, assume it was meant to be a paragragh.
-  // LINT.IfChange(MaxLineWidth)
-  static constexpr int kMaxLineWidth = 60;
-  // LINT.ThenChange(//chrome/browser/resources/side_panel/read_anything/app.css:MaxLineWidth)
   if (ax_node->GetTextContentLengthUTF8() > (2 * kMaxLineWidth)) {
     return "p";
   }
@@ -178,15 +175,9 @@ std::string GetAltText(const ui::AXNode* ax_node) {
   return alt_text;
 }
 
-std::string GetImageDataUrl(const ui::AXNode* ax_node) {
-  std::string url =
-      ax_node->GetStringAttribute(ax::mojom::StringAttribute::kImageDataUrl);
-  return url;
-}
-
 std::u16string GetTextContent(const ui::AXNode* ax_node,
-                              bool is_docs,
-                              bool is_pdf) {
+                              bool is_pdf,
+                              bool is_docs) {
   // For Google Docs, because the content is rendered in canvas, we distill
   // text from the "Annotated Canvas"
   // (https://sites.google.com/corp/google.com/docs-canvas-migration/home)

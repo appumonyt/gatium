@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 
 #include <algorithm>
 #include <string>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "net/base/mime_util.h"
@@ -195,11 +191,18 @@ void MediaPathFilter::AddExtensionsToMediaFileExtensionMap(
 }
 
 void MediaPathFilter::AddAdditionalExtensionsToMediaFileExtensionMap(
-    const base::FilePath::CharType* const* extensions_list,
-    size_t extensions_list_size,
+    base::span<const base::FilePath::CharType* const> extensions_list,
+    size_t spanification_suspected_redundant_extensions_list_size,
     MediaGalleryFileType type) {
-  for (size_t i = 0; i < extensions_list_size; ++i)
+  // TODO(crbug.com/431824301): Remove unneeded parameter once validated to be
+  // redundant in M143.
+  CHECK(spanification_suspected_redundant_extensions_list_size ==
+            extensions_list.size(),
+        base::NotFatalUntil::M143);
+  for (size_t i = 0; i < spanification_suspected_redundant_extensions_list_size;
+       ++i) {
     AddExtensionToMediaFileExtensionMap(extensions_list[i], type);
+  }
 }
 
 void MediaPathFilter::AddExtensionToMediaFileExtensionMap(

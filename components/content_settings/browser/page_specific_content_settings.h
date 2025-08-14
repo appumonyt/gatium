@@ -169,6 +169,10 @@ class PageSpecificContentSettings
     virtual content::WebContents* MaybeGetSyncedWebContentsForPictureInPicture(
         content::WebContents* web_contents) = 0;
 
+    // Returns `true` if `web_contents` represents a PiP window. Returns `false`
+    // otherwise.
+    virtual bool IsPiPWindow(content::WebContents* web_contents) = 0;
+
     // Notifies the delegate a particular content settings type was allowed for
     // the first time on this page.
     virtual void OnContentAllowed(ContentSettingsType type) = 0;
@@ -489,6 +493,10 @@ class PageSpecificContentSettings
   // is true, then it will try to update activity indicators in the location
   // bar.
   void ResetMediaBlockedState(ContentSettingsType type, bool update_indicators);
+
+  // Called to update the location bar when a site first registers for automatic
+  // picture-in-picture.
+  void OnRegisteredForAutoPictureInPictureChanged();
 
   void set_media_stream_access_origin_for_testing(const GURL& url) {
     media_stream_access_origin_ = url;

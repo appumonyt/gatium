@@ -17,6 +17,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
+#include "components/headless/test/shared_test_util.h"
 #include "content/public/common/content_switches.h"
 #include "headless/lib/browser/headless_web_contents_impl.h"
 #include "headless/public/switches.h"
@@ -31,23 +32,41 @@ namespace headless {
 
 namespace switches {
 static const char kResetResults[] = "reset-results";
-static const char kDumpConsoleMessages[] = "dump-console-messages";
 static const char kDumpDevToolsProtocol[] = "dump-devtools-protocol";
-static const char kDumpTestResult[] = "dump-test-result";
 }  // namespace switches
 
 namespace {
-static const base::FilePath kTestsScriptRoot(
-    FILE_PATH_LITERAL("headless/test/data/protocol"));
+static const base::FilePath kTestDataDir(
+    FILE_PATH_LITERAL("headless/test/data"));
+static const base::FilePath kSharedTestDataDir(
+    FILE_PATH_LITERAL("components/headless/test/data"));
+
+constexpr char kProtocolTestDir[] = "protocol";
 }  // namespace
 
-HeadlessProtocolBrowserTest::HeadlessProtocolBrowserTest() {
-  embedded_test_server()->ServeFilesFromSourceDirectory(
-      "third_party/blink/web_tests/http/tests/inspector-protocol");
-  EXPECT_TRUE(embedded_test_server()->Start());
+HeadlessProtocolBrowserTest::HeadlessProtocolBrowserTest() = default;
+HeadlessProtocolBrowserTest::~HeadlessProtocolBrowserTest() = default;
+
+base::FilePath HeadlessProtocolBrowserTest::GetTestDataDir() {
+  return IsSharedTestScript() ? kSharedTestDataDir : kTestDataDir;
 }
 
-HeadlessProtocolBrowserTest::~HeadlessProtocolBrowserTest() = default;
+base::FilePath HeadlessProtocolBrowserTest::GetScriptPath() {
+  base::FilePath src_dir;
+  CHECK(base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &src_dir));
+  return src_dir.Append(GetTestDataDir())
+      .AppendASCII(kProtocolTestDir)
+      .AppendASCII(GetScriptName());
+}
+
+base::FilePath HeadlessProtocolBrowserTest::GetTestExpectationFilePath() {
+  return headless::GetTestExpectationFilePath(GetScriptPath(), test_meta_info_,
+                                              HeadlessType::kHeadlessShell);
+}
+
+bool HeadlessProtocolBrowserTest::IsSharedTestScript() {
+  return headless::IsSharedTestScript(GetScriptName());
+}
 
 void HeadlessProtocolBrowserTest::SetUp() {
   LoadTestMetaInfo();
@@ -68,13 +87,10 @@ base::Value::Dict HeadlessProtocolBrowserTest::GetPageUrlExtraParams() {
 }
 
 void HeadlessProtocolBrowserTest::LoadTestMetaInfo() {
-  base::FilePath src_dir;
-  CHECK(base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &src_dir));
-  base::FilePath test_path =
-      src_dir.Append(kTestsScriptRoot).AppendASCII(GetScriptName());
+  base::FilePath script_path = GetScriptPath();
   std::string script_body;
-  CHECK(base::ReadFileToString(test_path, &script_body))
-      << "test_path=" << test_path;
+  CHECK(base::ReadFileToString(script_path, &script_body))
+      << "script_path=" << script_path;
 
   auto test_meta_info = TestMetaInfo::FromString(script_body);
   CHECK(test_meta_info.has_value()) << test_meta_info.error();
@@ -82,7 +98,20 @@ void HeadlessProtocolBrowserTest::LoadTestMetaInfo() {
   test_meta_info_ = test_meta_info.value();
 }
 
+void HeadlessProtocolBrowserTest::StartEmbeddedTestServer() {
+  embedded_test_server()->ServeFilesFromSourceDirectory(
+      "third_party/blink/web_tests/http/tests/inspector-protocol");
+
+  if (IsSharedTestScript()) {
+    embedded_test_server()->ServeFilesFromSourceDirectory(GetTestDataDir());
+  }
+
+  CHECK(embedded_test_server()->Start());
+}
+
 void HeadlessProtocolBrowserTest::RunDevTooledTest() {
+  StartEmbeddedTestServer();
+
   scoped_refptr<content::DevToolsAgentHost> agent_host =
       content::DevToolsAgentHost::GetOrCreateFor(
           HeadlessWebContentsImpl::From(web_contents_)->web_contents());
@@ -93,16 +122,6 @@ void HeadlessProtocolBrowserTest::RunDevTooledTest() {
       base::BindRepeating(&HeadlessProtocolBrowserTest::OnLoadEventFired,
                           base::Unretained(this)));
   devtools_client_.SendCommand("Page.enable");
-
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDumpConsoleMessages)) {
-    // Set up Runtime domain to intercept console messages.
-    devtools_client_.AddEventHandler(
-        "Runtime.consoleAPICalled",
-        base::BindRepeating(&HeadlessProtocolBrowserTest::OnConsoleAPICalled,
-                            base::Unretained(this)));
-    devtools_client_.SendCommand("Runtime.enable");
-  }
 
   // Expose DevTools protocol to the target.
   browser_devtools_client_.SendCommand(
@@ -152,11 +171,6 @@ void HeadlessProtocolBrowserTest::OnLoadEventFired(
 }
 
 void HeadlessProtocolBrowserTest::OnEvaluateResult(base::Value::Dict params) {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDumpTestResult)) {
-    LOG(ERROR) << "Test result:\n" << params.DebugString();
-  }
-
   ProcessTestResult(DictString(params, "result.result.value"));
 
   FinishTest();
@@ -165,14 +179,7 @@ void HeadlessProtocolBrowserTest::OnEvaluateResult(base::Value::Dict params) {
 void HeadlessProtocolBrowserTest::ProcessTestResult(
     const std::string& test_result) {
   base::ScopedAllowBlockingForTesting allow_blocking;
-
-  base::FilePath src_dir;
-  CHECK(base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &src_dir));
-  std::string script_name = GetScriptName();
-  base::FilePath expectation_path =
-      src_dir.Append(kTestsScriptRoot)
-          .AppendASCII(script_name.substr(0, script_name.length() - 3) +
-                       "-expected.txt");
+  base::FilePath expectation_path = GetTestExpectationFilePath();
 
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kResetResults)) {
@@ -187,29 +194,6 @@ void HeadlessProtocolBrowserTest::ProcessTestResult(
   }
 
   EXPECT_EQ(expectation, test_result);
-}
-
-void HeadlessProtocolBrowserTest::OnConsoleAPICalled(
-    const base::Value::Dict& params) {
-  ASSERT_THAT(params, DictHasValue("method", "Runtime.consoleAPICalled"));
-
-  const base::Value::List* args = params.FindListByDottedPath("params.args");
-  if (!args || args->empty())
-    return;
-
-  const base::Value* value = args->front().GetDict().Find("value");
-  switch (value->type()) {
-    case base::Value::Type::NONE:
-    case base::Value::Type::BOOLEAN:
-    case base::Value::Type::INTEGER:
-    case base::Value::Type::DOUBLE:
-    case base::Value::Type::STRING:
-      LOG(INFO) << value->DebugString();
-      return;
-    default:
-      LOG(INFO) << "Unhandled value type: " << value->type();
-      return;
-  }
 }
 
 void HeadlessProtocolBrowserTest::FinishTest() {
@@ -347,16 +331,24 @@ HEADLESS_PROTOCOL_TEST(ShowFilePickerInterception,
 
 // The `change-window-*.js` tests cover DevTools methods, while `window-*.js`
 // cover `window.*` JS APIs.
-HEADLESS_PROTOCOL_TEST(ChangeWindowSize, "sanity/change-window-size.js")
-HEADLESS_PROTOCOL_TEST(ChangeWindowState, "sanity/change-window-state.js")
-HEADLESS_PROTOCOL_TEST(HiddenTargetCreate, "sanity/hidden-target-create.js")
-HEADLESS_PROTOCOL_TEST(HiddenTargetClose, "sanity/hidden-target-close.js")
-HEADLESS_PROTOCOL_TEST(HiddenTargetCreateInvalidParams,
-                       "sanity/hidden-target-create-invalid-params.js")
-HEADLESS_PROTOCOL_TEST(HiddenTargetPageEnable,
-                       "sanity/hidden-target-page-enable.js")
-HEADLESS_PROTOCOL_TEST(WindowOuterSize, "sanity/window-outer-size.js")
+HEADLESS_PROTOCOL_TEST(ChangeWindowSize, "shared/change-window-size.js")
+HEADLESS_PROTOCOL_TEST(ChangeWindowState, "shared/change-window-state.js")
+
+HEADLESS_PROTOCOL_TEST(WindowOuterSize, "shared/window-outer-size.js")
+HEADLESS_PROTOCOL_TEST(WindowInnerSize, "shared/window-inner-size.js")
+HEADLESS_PROTOCOL_TEST(WindowInnerSizeScaled,
+                       "shared/window-inner-size-scaled.js")
+
+// This is not shared because Chrome Headless Mode window.resizeTo() only works
+// under certain conditions which are note currently satisfied by the test.
 HEADLESS_PROTOCOL_TEST(WindowResizeTo, "sanity/window-resize-to.js")
+
+HEADLESS_PROTOCOL_TEST(HiddenTargetCreate, "shared/hidden-target-create.js")
+HEADLESS_PROTOCOL_TEST(HiddenTargetClose, "shared/hidden-target-close.js")
+HEADLESS_PROTOCOL_TEST(HiddenTargetCreateInvalidParams,
+                       "shared/hidden-target-create-invalid-params.js")
+HEADLESS_PROTOCOL_TEST(HiddenTargetPageEnable,
+                       "shared/hidden-target-page-enable.js")
 
 // https://crbug.com/378531862
 #if BUILDFLAG(IS_MAC)
@@ -365,15 +357,15 @@ HEADLESS_PROTOCOL_TEST(WindowResizeTo, "sanity/window-resize-to.js")
 #define MAYBE_CreateTargetPosition CreateTargetPosition
 #endif
 HEADLESS_PROTOCOL_TEST(MAYBE_CreateTargetPosition,
-                       "sanity/create-target-position.js")
+                       "shared/create-target-position.js")
 
 HEADLESS_PROTOCOL_TEST(WindowSizeOnStart, "sanity/window-size-on-start.js")
 
 HEADLESS_PROTOCOL_TEST(LargeBrowserWindowSize,
-                       "sanity/large-browser-window-size.js")
+                       "shared/large-browser-window-size.js")
 
-HEADLESS_PROTOCOL_TEST(ScreencastBasics, "sanity/screencast-basics.js")
-HEADLESS_PROTOCOL_TEST(ScreencastViewport, "sanity/screencast-viewport.js")
+HEADLESS_PROTOCOL_TEST(ScreencastBasics, "shared/screencast-basics.js")
+HEADLESS_PROTOCOL_TEST(ScreencastViewport, "shared/screencast-viewport.js")
 
 HEADLESS_PROTOCOL_TEST(GrantPermissions, "sanity/grant_permissions.js")
 
@@ -471,66 +463,6 @@ HEADLESS_PROTOCOL_TEST_F(HeadlessProtocolBrowserTestWithProxy,
                          BrowserSetProxyConfig,
                          "sanity/browser-set-proxy-config.js")
 
-// TODO(kvitekp): Move to headless/test/headless_devtooled_browsertest.cc
-class HeadlessAllowedVideoCodecsTest
-    : public HeadlessDevTooledBrowserTest,
-      public testing::WithParamInterface<
-          std::tuple<std::string, std::string, bool>> {
- protected:
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    command_line->AppendSwitchASCII("allow-video-codecs", allowlist());
-  }
-
-  void RunDevTooledTest() override {
-    ASSERT_TRUE(embedded_test_server()->Start());
-    SendCommandSync(devtools_client_, "Page.enable");
-    devtools_client_.AddEventHandler(
-        "Page.loadEventFired",
-        base::BindRepeating(&HeadlessAllowedVideoCodecsTest::OnLoadEventFired,
-                            base::Unretained(this)));
-    devtools_client_.SendCommand(
-        "Page.navigate",
-        Param("url", embedded_test_server()->GetURL("/hello.html").spec()));
-  }
-
-  void OnLoadEventFired(const base::Value::Dict& params) {
-    base::Value::Dict eval_params;
-    eval_params.Set("returnByValue", true);
-    eval_params.Set("awaitPromise", true);
-    eval_params.Set("expression", base::StringPrintf(R"(
-      VideoDecoder.isConfigSupported({codec: "%s"})
-          .then(result => result.supported)
-    )",
-                                                     codec_name().c_str()));
-    base::Value::Dict result = SendCommandSync(
-        devtools_client_, "Runtime.evaluate", std::move(eval_params));
-    EXPECT_THAT(result.FindBoolByDottedPath("result.result.value"),
-                testing::Optional(is_codec_enabled()));
-    FinishAsynchronousTest();
-  }
-
-  const std::string& allowlist() const { return std::get<0>(GetParam()); }
-  const std::string& codec_name() const { return std::get<1>(GetParam()); }
-  bool is_codec_enabled() const { return std::get<2>(GetParam()); }
-};
-
-constexpr bool have_proprietary_codecs =
-#if BUILDFLAG(USE_PROPRIETARY_CODECS)
-    true;
-#else
-    false;
-#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
-
-INSTANTIATE_TEST_SUITE_P(
-    All,
-    HeadlessAllowedVideoCodecsTest,
-    testing::Values(
-        std::make_tuple("av1,-*", "av01.0.04M.08", true),
-        std::make_tuple("-av1,*", "av01.0.04M.08", false),
-        std::make_tuple("*", "avc1.64000b", have_proprietary_codecs)));
-
-HEADLESS_DEVTOOLED_TEST_P(HeadlessAllowedVideoCodecsTest);
-
 class PopupWindowOpenTest : public HeadlessProtocolBrowserTest,
                             public testing::WithParamInterface<bool> {
  protected:
@@ -576,15 +508,14 @@ class HeadlessProtocolBrowserTestWithFileInputDirectoryUpload
     : public HeadlessProtocolBrowserTest {
  protected:
   static constexpr char kFileInputDirectoryUpload[] =
-      "sanity/resources/file-input-directory-upload";
+      "resources/file-input-directory-upload";
 
   base::Value::Dict GetPageUrlExtraParams() override {
-    base::FilePath src_dir;
-    CHECK(base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &src_dir));
-    base::FilePath path =
-        src_dir.Append(kTestsScriptRoot).AppendASCII(kFileInputDirectoryUpload);
+    base::FilePath data_path =
+        GetScriptPath().DirName().AppendASCII(kFileInputDirectoryUpload);
+
     base::Value::Dict dict;
-    dict.Set("data_path", path.AsUTF8Unsafe());
+    dict.Set("data_path", data_path.AsUTF8Unsafe());
     return dict;
   }
 };
@@ -631,14 +562,10 @@ HEADLESS_PROTOCOL_TEST(DataURIIframe, "sanity/data-uri-iframe.js")
 HEADLESS_PROTOCOL_TEST(MAYBE_IOCommandAfterInput,
                        "input/io-command-after-input.js")
 
-HEADLESS_PROTOCOL_TEST(ScreenScaleFactor, "sanity/screen-scale-factor.js")
+HEADLESS_PROTOCOL_TEST(PrintToPdfTinyPage, "shared/print-to-pdf-tiny-page.js")
 
-HEADLESS_PROTOCOL_TEST(ScreenWorkArea, "sanity/screen-work-area.js")
-
-HEADLESS_PROTOCOL_TEST(ScreenSizeOrientation,
-                       "sanity/screen-size-orientation.js")
-
-HEADLESS_PROTOCOL_TEST(ScreenRotationAngle, "sanity/screen-rotation-angle.js")
+HEADLESS_PROTOCOL_TEST(ScreenDetailsRotationAngle,
+                       "shared/screen-details-rotation-angle.js")
 
 HEADLESS_PROTOCOL_TEST(ScreenOrientationLockNaturalLandscape,
                        "sanity/screen-orientation-lock-natural-landscape.js")
@@ -647,52 +574,102 @@ HEADLESS_PROTOCOL_TEST(ScreenOrientationLockNaturalPortrait,
                        "sanity/screen-orientation-lock-natural-portrait.js")
 
 HEADLESS_PROTOCOL_TEST(ScreenDetailsMultipleScreens,
-                       "sanity/screen-details-multiple-screens.js")
+                       "shared/screen-details-multiple-screens.js")
 
-HEADLESS_PROTOCOL_TEST(ScreenDetailsPixelRatioAndColorDepth,
-                       "sanity/screen-details-pixel-ratio-and-color-depth.js")
+HEADLESS_PROTOCOL_TEST(ScreenDetailsPixelRatio,
+                       "shared/screen-details-pixel-ratio.js")
 
-HEADLESS_PROTOCOL_TEST(RequestFullscreen, "sanity/request-fullscreen.js")
+HEADLESS_PROTOCOL_TEST(ScreenDetailsColorDepth,
+                       "shared/screen-details-color-depth.js")
 
-HEADLESS_PROTOCOL_TEST(WindowOpenOnSecondaryScreen,
-                       "sanity/window-open-on-secondary-screen.js")
+HEADLESS_PROTOCOL_TEST(ScreenDetailsWorkArea,
+                       "shared/screen-details-work-area.js")
+
+HEADLESS_PROTOCOL_TEST(RequestFullscreen, "shared/request-fullscreen.js")
 
 HEADLESS_PROTOCOL_TEST(RequestFullscreenOnSecondaryScreen,
-                       "sanity/request-fullscreen-on-secondary-screen.js")
+                       "shared/request-fullscreen-on-secondary-screen.js")
+
+// Fails on all platforms, see https://crbug.com/429017383
+HEADLESS_PROTOCOL_TEST(DISABLED_MinimizeRestoreWindow,
+                       "shared/minimize-restore-window.js")
+
+HEADLESS_PROTOCOL_TEST(MaximizeRestoreWindow,
+                       "shared/maximize-restore-window.js")
+
+HEADLESS_PROTOCOL_TEST(FullscreenRestoreWindow,
+                       "shared/fullscreen-restore-window.js")
+
+HEADLESS_PROTOCOL_TEST(MaximizedWindowSize, "shared/maximized-window-size.js")
+
+HEADLESS_PROTOCOL_TEST(FullscreenWindowSize, "shared/fullscreen-window-size.js")
+
+HEADLESS_PROTOCOL_TEST(WindowOpenOnSecondaryScreen,
+                       "shared/window-open-on-secondary-screen.js")
 
 HEADLESS_PROTOCOL_TEST(ScreenRotationSecondaryScreen,
                        "sanity/screen-rotation-secondary-screen.js")
 
 HEADLESS_PROTOCOL_TEST(MoveWindowBetweenScreens,
-                       "sanity/move-window-between-screens.js")
+                       "shared/move-window-between-screens.js")
 
 HEADLESS_PROTOCOL_TEST(CreateTargetSecondaryScreen,
-                       "sanity/create-target-secondary-screen.js")
+                       "shared/create-target-secondary-screen.js")
 
 HEADLESS_PROTOCOL_TEST(CreateTargetWindowState,
-                       "sanity/create-target-window-state.js")
+                       "shared/create-target-window-state.js")
 
+HEADLESS_PROTOCOL_TEST(DocumentVisibilityState,
+                       "shared/document-visibility-state.js")
+
+// This currently results in an unexpected screen orientation type,
+// see http://crbug.com/398150465.
 HEADLESS_PROTOCOL_TEST(MultipleScreenDetails,
-                       "sanity/multiple-screen-details.js")
+                       "shared/multiple-screen-details.js")
 
 HEADLESS_PROTOCOL_TEST(WindowOpenPopupPlacement,
-                       "sanity/window-open-popup-placement.js")
+                       "shared/window-open-popup-placement.js")
 
 HEADLESS_PROTOCOL_TEST(WindowSizeSwitchHandling,
-                       "sanity/window-size-switch-handling.js")
+                       "shared/window-size-switch-handling.js")
 
 HEADLESS_PROTOCOL_TEST(WindowSizeSwitchLargerThanScreen,
-                       "sanity/window-size-switch-larger-than-screen.js")
+                       "shared/window-size-switch-larger-than-screen.js")
 
-HEADLESS_PROTOCOL_TEST(WindowScreenAvail, "sanity/window-screen-avail.js")
+HEADLESS_PROTOCOL_TEST(WindowScreenAvail, "shared/window-screen-avail.js")
 
 HEADLESS_PROTOCOL_TEST(WindowStateTransitions,
-                       "sanity/window-state-transitions.js")
+                       "shared/window-state-transitions.js")
 
 HEADLESS_PROTOCOL_TEST(WindowZoomOnSecondaryScreen,
-                       "sanity/window-zoom-on-secondary-screen.js")
+                       "shared/window-zoom-on-secondary-screen.js")
 
 HEADLESS_PROTOCOL_TEST(WindowZoomSizeMatchesWorkArea,
-                       "sanity/window-zoom-size-matches-work-area.js")
+                       "shared/window-zoom-size-matches-work-area.js")
+
+HEADLESS_PROTOCOL_TEST(WindowScreenScaleFactor,
+                       "shared/window-screen-scale-factor.js")
+
+HEADLESS_PROTOCOL_TEST(WindowScreenSizeOrientation,
+                       "shared/window-screen-size-orientation.js")
+
+HEADLESS_PROTOCOL_TEST(GetScreenInfos, "shared/get-screen-infos.js")
+
+HEADLESS_PROTOCOL_TEST(AddScreen, "shared/add-screen.js")
+
+HEADLESS_PROTOCOL_TEST(AddScreenScaleFactor,
+                       "shared/add-screen-scale-factor.js")
+
+HEADLESS_PROTOCOL_TEST(AddScreenWorkArea, "shared/add-screen-work-area.js")
+
+HEADLESS_PROTOCOL_TEST(AddScreenGetScreenDetails,
+                       "shared/add-screen-get-screen-details.js")
+
+HEADLESS_PROTOCOL_TEST(RemoveScreen, "shared/remove-screen.js")
+
+HEADLESS_PROTOCOL_TEST(RemoveScreenGetScreenDetails,
+                       "shared/remove-screen-get-screen-details.js")
+
+HEADLESS_PROTOCOL_TEST(AddRemoveScreen, "shared/add-remove-screen.js")
 
 }  // namespace headless

@@ -134,14 +134,8 @@ void BackForwardCacheMetrics::DidCommitNavigation(
   if (!navigation->IsInPrimaryMainFrame() || navigation->IsSameDocument())
     return;
 
-  // TODO(https://crbug.com/427426299): Remove this and several below.
-  // The stack trace for this crash does not identify a line of code.
-  SCOPED_CRASH_KEY_BOOL("crbug/427426299", "navigation", !!navigation);
-
   // Record metrics for history navigation, if applicable.
   if (IsCrossDocumentMainFrameHistoryNavigation(navigation)) {
-    SCOPED_CRASH_KEY_BOOL("crbug/427426299", "page_store_result_",
-                          !!page_store_result_);
     // We have to update not restored reasons even though we already did in
     // |SendCommitNavigation()|, because the NavigationEntry and
     // the BackForwardCacheMetrics object might not exist anymore, e.g. when the
@@ -176,9 +170,6 @@ void BackForwardCacheMetrics::DidCommitNavigation(
       CaptureTraceForNavigationDebugScenario(
           DebugScenario::kDebugBackForwardCacheMetricsMismatch);
     }
-
-    SCOPED_CRASH_KEY_BOOL("crbug/427426299", "sfbnm",
-                          served_from_bfcache_not_match);
 
     // TODO(crbug.com/40229455): Remove this.
     if (served_from_bfcache_not_match) {
@@ -224,7 +215,8 @@ void BackForwardCacheMetrics::DidCommitNavigation(
       SCOPED_CRASH_KEY_STRING256(
           "BFCacheMismatch", "previous_url",
           navigation->GetPreviousPrimaryMainFrameURL().spec());
-      // base::debug::DumpWithoutCrashing();
+      // TODO(https://crbug.com/40229455): Remove this and the debugging above.
+      base::debug::DumpWithoutCrashing();
     }
 
     TRACE_EVENT1("navigation", "HistoryNavigationOutcome", "outcome",
@@ -573,11 +565,14 @@ void BackForwardCacheMetrics::RecordHistoryNavigationUMA(
         "BackForwardCache.AllSites.HistoryNavigationOutcome.NotRestoredReason",
         reason);
     if (reason == NotRestoredReason::kRendererProcessKilled) {
-      DCHECK(renderer_killed_timestamp_);
-      DCHECK(navigated_away_from_main_document_timestamp_);
+      CHECK(renderer_killed_timestamp_);
+      // It's possible (https://crbug.com/427426299) for the renderer to be
+      // killed before we record this timestamp. In that case, record 0.
       base::TimeDelta time =
-          renderer_killed_timestamp_.value() -
-          navigated_away_from_main_document_timestamp_.value();
+          navigated_away_from_main_document_timestamp_
+              ? (renderer_killed_timestamp_.value() -
+                 navigated_away_from_main_document_timestamp_.value())
+              : base::Seconds(0);
       UMA_HISTOGRAM_LONG_TIMES(
           "BackForwardCache.Eviction.TimeUntilProcessKilled", time);
     }

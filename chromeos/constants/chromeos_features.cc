@@ -50,11 +50,6 @@ BASE_FEATURE(kBlinkExtensionKiosk,
              "BlinkExtensionKiosk",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Enables handling of key press event in background.
-BASE_FEATURE(kCrosAppsBackgroundEventHandling,
-             "CrosAppsBackgroundEventHandling",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // Enables the use of cros-component UI elements. Contact:
 // cros-jellybean-team@google.com.
 BASE_FEATURE(kCrosComponents,
@@ -100,13 +95,6 @@ BASE_FEATURE(kDisableQuickAnswersV2Translation,
              "DisableQuickAnswersV2Translation",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Enables import of PKCS12 files to software backed Chaps storage together with
-// import to NSS DB via the "Import" button in the certificates manager.
-// When the feature is disabled, PKCS12 files are imported to NSS DB only.
-BASE_FEATURE(kEnablePkcs12ToChapsDualWrite,
-             "EnablePkcs12ToChapsDualWrite",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // Enables Essential Search in Omnibox for both launcher and browser.
 BASE_FEATURE(kEssentialSearch,
              "EssentialSearch",
@@ -115,7 +103,7 @@ BASE_FEATURE(kEssentialSearch,
 // Feature flag used to enable external display event telemetry.
 BASE_FEATURE(kExternalDisplayEventTelemetry,
              "ExternalDisplayEventTelemetry",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Feature flag used to gate preinstallation of the Gemini app.
 BASE_FEATURE(kGeminiAppPreinstall,
@@ -135,7 +123,7 @@ BASE_FEATURE(kMagicBoostRevamp,
 // Enables the new Magic Boost Consent Flow For Quick Answers.
 BASE_FEATURE(kMagicBoostRevampForQuickAnswers,
              "MagicBoostRevampForQuickAnswers",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Controls enabling / disabling the mahi feature.
 BASE_FEATURE(kMahi, "Mahi", base::FEATURE_ENABLED_BY_DEFAULT);
@@ -150,7 +138,7 @@ BASE_FEATURE(kFeatureManagementMahi,
 // Does nothing if "Mahi" and "FeatureManagementMahi" are disabled.
 BASE_FEATURE(kMahiPanelResizable,
              "MahiPanelResizable",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Controls whether mahi sends url when making request to the server.
 BASE_FEATURE(kMahiSendingUrl,
@@ -166,12 +154,12 @@ BASE_FEATURE(kMahiDebugging,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Controls enabling / disabling the pompano feature.
-BASE_FEATURE(kPompano, "Pompano", base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kPompano, "Pompano", base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Controls enabling / disabling the summary of selected text feature.
 BASE_FEATURE(kMahiSummarizeSelected,
              "MahiSummarizeSelected",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Controls whether NotebookLM is preinstalled.
 BASE_FEATURE(kNotebookLmAppPreinstall,
@@ -246,7 +234,7 @@ BASE_FEATURE(kFeatureManagementRoundedWindows,
 // `getAllScreensMedia` API.
 BASE_FEATURE(kMultiCaptureReworkedUsageIndicators,
              "MultiCaptureReworkedUsageIndicators",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables the first wave of new features for the chrome.enterprise.platformKeys
 // API. That includes:
@@ -276,7 +264,7 @@ BASE_FEATURE(kQuickAnswersMaterialNextUI,
 // Enables Quick Share v2, which defaults Quick Share to 'Your Devices'
 // visibility, removes the 'Selected Contacts' visibility, removes the Quick
 // Share On/Off toggle, and adds a visibility dialog menu to Quick Settings.
-BASE_FEATURE(kQuickShareV2, "QuickShareV2", base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kQuickShareV2, "QuickShareV2", base::FEATURE_ENABLED_BY_DEFAULT);
 
 bool IsQuickShareV2Enabled() {
   return base::FeatureList::IsEnabled(kQuickShareV2);
@@ -367,10 +355,6 @@ BASE_FEATURE(kMicrosoftOneDriveIntegrationForEnterprise,
              "MicrosoftOneDriveIntegrationForEnterprise",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kRoundedWindows,
-             "RoundedWindows",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // Enables CloudFileSystem for FileSystemProvider extensions.
 BASE_FEATURE(kFileSystemProviderCloudFileSystem,
              "FileSystemProviderCloudFileSystem",
@@ -401,9 +385,7 @@ BASE_FEATURE(kNotebookLmAppShelfPinReset,
 // Enables support for protocols handlers registered via web app manifest.
 BASE_FEATURE(kWebAppManifestProtocolHandlerSupport,
              "WebAppManifestProtocolHandlerSupport",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-const char kRoundedWindowsRadius[] = "window_radius";
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 bool IsApnPoliciesEnabled() {
   return base::FeatureList::IsEnabled(kApnPolicies);
@@ -588,33 +570,15 @@ bool IsMicrosoftOneDriveIntegrationForEnterpriseEnabled() {
 }
 
 bool IsRoundedWindowsEnabled() {
-  static bool is_enabled =
-      base::FeatureList::IsEnabled(kFeatureManagementRoundedWindows) &&
-      base::FeatureList::IsEnabled(kRoundedWindows);
-  return is_enabled;
+  return base::FeatureList::IsEnabled(kFeatureManagementRoundedWindows);
 }
 
 bool IsSystemBlurEnabled() {
-  static bool disable_blur = base::FeatureList::IsEnabled(kDisableSystemBlur);
-  return !disable_blur;
-}
-
-bool IsPkcs12ToChapsDualWriteEnabled() {
-  return base::FeatureList::IsEnabled(kEnablePkcs12ToChapsDualWrite);
+  return !base::FeatureList::IsEnabled(kDisableSystemBlur);
 }
 
 bool IsFeatureManagementHistoryEmbeddingEnabled() {
   return base::FeatureList::IsEnabled(kFeatureManagementHistoryEmbedding);
-}
-
-int RoundedWindowsRadius() {
-  if (!IsRoundedWindowsEnabled()) {
-    return 0;
-  }
-
-  return base::GetFieldTrialParamByFeatureAsInt(kRoundedWindows,
-                                                kRoundedWindowsRadius,
-                                                /*default_value=*/12);
 }
 
 bool IsWebAppManifestProtocolHandlerSupportEnabled() {

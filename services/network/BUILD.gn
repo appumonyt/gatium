@@ -147,8 +147,6 @@ component("network_service") {
     "restricted_cookie_manager.h",
     "restricted_udp_socket.cc",
     "restricted_udp_socket.h",
-    "scheduler/network_service_task_priority.cc",
-    "scheduler/network_service_task_priority.h",
     "scheduler/network_service_task_queues.cc",
     "scheduler/network_service_task_queues.h",
     "scheduler/network_service_task_scheduler.cc",
@@ -422,9 +420,9 @@ if (is_linux || is_chromeos) {
       "network_sandbox_hook_linux.h",
     ]
     deps = [
-      "//base:base",
+      "//base",
       "//sandbox/linux:sandbox_services",
-      "//sandbox/policy:policy",
+      "//sandbox/policy",
     ]
     configs += [ "//build/config/compiler:wexit_time_destructors" ]
   }
@@ -631,6 +629,10 @@ source_set("tests") {
       "//third_party/blink/public/common:preloading_headers",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("test_support") {
@@ -706,18 +708,22 @@ source_set("test_support") {
     "//services/network/public/cpp",
     "//services/network/public/cpp:buildflags",
     "//services/network/public/mojom",
+    "//services/network/trust_tokens",
     "//services/network/trust_tokens:test_support",
-    "//services/network/trust_tokens:trust_tokens",
   ]
 
   deps = [
     "//base",
-    "//components/cbor:cbor",
+    "//components/cbor",
     "//mojo/public/cpp/bindings",
     "//net",
     "//net:test_support",
     "//testing/gtest",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 fuzzer_test("network_content_security_policy_fuzzer") {

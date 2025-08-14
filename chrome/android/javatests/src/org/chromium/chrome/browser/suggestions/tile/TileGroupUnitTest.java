@@ -44,7 +44,6 @@ import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
 import org.chromium.base.ContextUtils;
-import org.chromium.base.FeatureOverrides;
 import org.chromium.base.test.BaseJUnit4ClassRunner;
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.DisabledTest;
@@ -78,7 +77,7 @@ public class TileGroupUnitTest {
     @Rule public final MockitoRule mMockitoRule = MockitoJUnit.rule();
     @Mock private TileGroup.Observer mTileGroupObserver;
     @Mock private TileGroup.Delegate mTileGroupDelegate;
-    @Mock private TileGroup.TileDragDelegate mTileDragDelegate;
+    @Mock private TileDragDelegate mTileDragDelegate;
     @Mock private SuggestionsUiDelegate mSuggestionsUiDelegate;
     @Mock private ContextMenuManager mContextMenuManager;
     @Mock private OfflinePageBridge mOfflinePageBridge;
@@ -110,11 +109,6 @@ public class TileGroupUnitTest {
                         })
                 .when(mTileGroupDelegate)
                 .setMostVisitedSitesObserver(any(MostVisitedSites.Observer.class), anyInt());
-
-        FeatureOverrides.overrideParam(
-                ChromeFeatureList.NEW_TAB_PAGE_ANDROID_TRIGGER_FOR_PRERENDER2,
-                "prerender_new_tab_page_on_touch_trigger",
-                0);
     }
 
     @Test

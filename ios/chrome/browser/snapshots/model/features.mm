@@ -8,10 +8,6 @@ BASE_FEATURE(kSnapshotInSwift,
              "SnapshotInSwift",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kLargeCapacityInSnapshotLRUCache,
-             "LargeCapacityInSnapshotLRUCache",
+BASE_FEATURE(kRemoveGreySnapshot,
+             "RemoveGreySnapshot",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-bool IsLargeCapacityInSnapshotLRUCacheEnabled() {
-  return base::FeatureList::IsEnabled(kLargeCapacityInSnapshotLRUCache);
-}

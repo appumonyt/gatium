@@ -13,12 +13,12 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/trace_event/trace_event.h"
 #include "net/base/connection_endpoint_metadata.h"
 #include "net/base/features.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/base/url_util.h"
 #include "net/cert/x509_util.h"
 #include "net/http/http_proxy_connect_job.h"
@@ -389,11 +389,15 @@ int SSLConnectJob::DoSSLConnect() {
       !ssl_client_context()->config().trust_anchor_ids.empty()) {
     if (!trust_anchor_ids_for_retry_.empty()) {
       ssl_config.trust_anchor_ids = trust_anchor_ids_for_retry_;
-    } else if (endpoint_result_ &&
-               !endpoint_result_->metadata.trust_anchor_ids.empty()) {
+    } else if (endpoint_result_) {
       ssl_config.trust_anchor_ids = SSLConfig::SelectTrustAnchorIDs(
           endpoint_result_->metadata.trust_anchor_ids,
           ssl_client_context()->config().trust_anchor_ids);
+    } else {
+      // Send an empty trust_anchors extension to signal we support the
+      // extension and can trigger the retry flow if the server picked a
+      // certificate wrong.
+      ssl_config.trust_anchor_ids.emplace();
     }
   }
 

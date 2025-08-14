@@ -207,28 +207,7 @@ void GPUAdapter::OnRequestDeviceCallback(
     case wgpu::RequestDeviceStatus::Success: {
       DCHECK(dawn_device);
 
-      GPUDeviceLostInfo* device_lost_info = nullptr;
-      if (is_consumed_) {
-        // Immediately force the device to be lost.
-        // TODO: Ideally this should be handled in Dawn, which can return an
-        // error device.
-        device_lost_info = MakeGarbageCollected<GPUDeviceLostInfo>(
-            wgpu::DeviceLostReason::Unknown,
-            StringFromASCIIAndUTF8(
-                "The adapter is invalid because it has already been used to "
-                "create a device. A lost device has been returned."));
-      }
-      is_consumed_ = true;
-
-      device->Initialize(dawn_device, descriptor, device_lost_info);
-
-      if (device_lost_info) {
-        // Ensure the Dawn device is marked as lost as well.
-        device->InjectError(
-            wgpu::ErrorType::Internal,
-            "Device was marked as lost due to a stale adapter.");
-      }
-
+      device->Initialize(dawn_device, descriptor, /*lost_info=*/nullptr);
       resolver->Resolve(device);
 
       ukm::builders::ClientRenderingAPI(
@@ -271,6 +250,10 @@ ScriptPromise<GPUDevice> GPUAdapter::requestDevice(
 
   wgpu::DeviceDescriptor dawn_desc = {};
 
+  wgpu::DawnConsumeAdapterDescriptor consume_adapter_desc;
+  consume_adapter_desc.consumeAdapter = true;
+  dawn_desc.nextInChain = &consume_adapter_desc;
+
   GPUSupportedLimits::ComboLimits required_limits;
   if (descriptor->hasRequiredLimits()) {
     dawn_desc.requiredLimits = required_limits.GetLinked();
@@ -280,7 +263,8 @@ ScriptPromise<GPUDevice> GPUAdapter::requestDevice(
     }
   }
 
-  Vector<wgpu::FeatureName> required_features;
+  // Use a set to prevent duplicate features.
+  HashSet<wgpu::FeatureName> required_features_set;
   // The ShaderModuleCompilationOptions feature is required only if the adapter
   // has the ShaderModuleCompilationOptions feature and the user has enabled the
   // WebGPUDeveloperFeatures flag. It is needed to control
@@ -288,12 +272,10 @@ ScriptPromise<GPUDevice> GPUAdapter::requestDevice(
   if (RuntimeEnabledFeatures::WebGPUDeveloperFeaturesEnabled() &&
       GetHandle().HasFeature(
           wgpu::FeatureName::ShaderModuleCompilationOptions)) {
-    required_features.push_back(
+    required_features_set.insert(
         wgpu::FeatureName::ShaderModuleCompilationOptions);
   }
   if (descriptor->hasRequiredFeatures()) {
-    // Insert features into a set to dedup them.
-    HashSet<wgpu::FeatureName> required_features_set;
     for (const V8GPUFeatureName& f : descriptor->requiredFeatures()) {
       // If the feature is not a valid feature reject with a type error.
       if (!features_->Has(f.AsEnum())) {
@@ -303,13 +285,13 @@ ScriptPromise<GPUDevice> GPUAdapter::requestDevice(
       }
       required_features_set.insert(AsDawnEnum(f));
     }
-
-    // Then, push the deduped features into a vector.
-    required_features.AppendRange(required_features_set.begin(),
-                                  required_features_set.end());
-    dawn_desc.requiredFeatures = required_features.data();
-    dawn_desc.requiredFeatureCount = required_features.size();
   }
+
+  Vector<wgpu::FeatureName> required_features;
+  required_features.AppendRange(required_features_set.begin(),
+                                required_features_set.end());
+  dawn_desc.requiredFeatures = required_features.data();
+  dawn_desc.requiredFeatureCount = required_features.size();
 
   std::string label = descriptor->label().Utf8();
   if (!label.empty()) {

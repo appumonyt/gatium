@@ -13,22 +13,23 @@
 #include "chrome/browser/ui/lens/lens_overlay_entry_point_controller.h"
 #include "chrome/browser/ui/lens/lens_search_controller.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/interaction/browser_elements_views.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_view.h"
 #include "chrome/browser/user_education/user_education_service.h"
 #include "chrome/grit/branded_strings.h"
 #include "components/lens/lens_features.h"
 #include "components/lens/lens_metrics.h"
+#include "components/omnibox/browser/autocomplete_match_type.h"
 #include "components/vector_icons/vector_icons.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/views/accessibility/view_accessibility.h"
-#include "ui/views/interaction/element_tracker_views.h"
 #include "ui/views/view_class_properties.h"
 
 #if BUILDFLAG(ENABLE_GLIC)
-#include "chrome/browser/glic/glic_enabling.h"
+#include "chrome/browser/glic/public/glic_enabling.h"
 #endif  // BUILDFLAG(ENABLE_GLIC)
 
 LensOverlayHomeworkPageActionIconView::LensOverlayHomeworkPageActionIconView(
@@ -49,6 +50,8 @@ LensOverlayHomeworkPageActionIconView::LensOverlayHomeworkPageActionIconView(
 
   SetLabel(l10n_util::GetStringUTF16(
       IDS_CONTENT_LENS_OVERLAY_HOMEWORK_ENTRYPOINT_LABEL));
+  // Elide behavior must be set to allow label to collapse.
+  SetElideBehavior(gfx::ElideBehavior::NO_ELIDE);
   SetUseTonalColorsWhenExpanded(true);
   SetBackgroundVisibility(BackgroundVisibility::kWithLabel);
 }
@@ -105,10 +108,8 @@ bool LensOverlayHomeworkPageActionIconView::ShouldShow() {
   // Don't show the chip if the location bar isn't visible yet.
   // TODO(crbug.com/421963047): Investigate why we are getting two matching
   // views on ChromeOS.
-  View* location_bar_view =
-      views::ElementTrackerViews::GetInstance()->GetFirstMatchingView(
-          kLocationBarElementId,
-          views::ElementTrackerViews::GetContextForView(this));
+  View* const location_bar_view =
+      BrowserElementsViews::From(browser_)->GetView(kLocationBarElementId);
   if (!location_bar_view) {
     return false;
   }
@@ -160,8 +161,20 @@ void LensOverlayHomeworkPageActionIconView::OnExecuting(
       LensSearchController::FromTabWebContents(GetWebContents());
   CHECK(controller);
 
-  controller->OpenLensOverlay(
-      lens::LensOverlayInvocationSource::kHomeworkActionChip);
+  if (lens::features::IsLensOverlayStraightToSrpEnabled()) {
+    std::string query_text =
+        lens::features::GetStraightToSrpQuery().empty()
+            ? l10n_util::GetStringUTF8(IDS_LENS_CONTEXTUAL_SEARCH_DEFAULT_QUERY)
+            : lens::features::GetStraightToSrpQuery();
+    controller->IssueContextualSearchRequestWithQuery(
+        lens::LensOverlayInvocationSource::kHomeworkActionChip, query_text,
+        /*additional_query_parameters=*/{},
+        AutocompleteMatchType::Type::SEARCH_SUGGEST,
+        /*is_zero_prefix_suggestion=*/false);
+  } else {
+    controller->OpenLensOverlay(
+        lens::LensOverlayInvocationSource::kHomeworkActionChip);
+  }
   UserEducationService::MaybeNotifyNewBadgeFeatureUsed(
       GetWebContents()->GetBrowserContext(), lens::features::kLensOverlay);
 

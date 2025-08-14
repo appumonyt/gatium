@@ -512,6 +512,19 @@ class OptimizationGuideKeyedServiceStartupLogDisabledBrowserTest
   base::test::ScopedFeatureList feature_list_;
 };
 
+class OptimizationGuideKeyedServiceOnDeviceModelDisabledBrowserTest
+    : public OptimizationGuideKeyedServiceBrowserTest {
+ public:
+  OptimizationGuideKeyedServiceOnDeviceModelDisabledBrowserTest() {
+    feature_list_.InitWithFeatures({},
+                                   {features::kOptimizationGuideOnDeviceModel,
+                                    features::kLogOnDeviceMetricsOnStartup});
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
 IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
                        RemoteFetchingDisabled) {
   // ChromeOS has multiple profiles and optimization guide currently does not
@@ -699,9 +712,14 @@ IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
                                       false, 1);
   EXPECT_EQ(OptimizationGuideDecision::kFalse,
             last_can_apply_optimization_decision());
-  histogram_tester.ExpectUniqueSample(
+  // There may be multiple kNoHintAvailable samples but there should not be any
+  // samples in other buckets.
+  auto no_hint_available_count = histogram_tester.GetBucketCount(
       "OptimizationGuide.ApplyDecision.NoScript",
-      static_cast<int>(OptimizationTypeDecision::kNoHintAvailable), 1);
+      OptimizationTypeDecision::kNoHintAvailable);
+  EXPECT_GT(no_hint_available_count, 0);
+  histogram_tester.ExpectTotalCount("OptimizationGuide.ApplyDecision.NoScript",
+                                    no_hint_available_count);
 }
 
 IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
@@ -1080,6 +1098,25 @@ IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(
+    OptimizationGuideKeyedServiceOnDeviceModelDisabledBrowserTest,
+    PerformanceClassNotComputedWhenDisabled) {
+  constexpr auto kKey = optimization_guide::ModelBasedCapabilityKey::kCompose;
+  auto* service =
+      OptimizationGuideKeyedServiceFactory::GetForProfile(browser()->profile());
+
+  base::RunLoop loop;
+  // The call should exit early because the service is not enabled.
+  service->GetOnDeviceModelEligibilityAsync(
+      kKey,
+      /*capabilities=*/{},
+      base::IgnoreArgs<optimization_guide::OnDeviceModelEligibilityReason>(
+          loop.QuitClosure()));
+  loop.Run();
+  histogram_tester()->ExpectTotalCount(
+      "OptimizationGuide.ModelExecution.OnDeviceModelPerformanceClass", 0);
+}
+
+IN_PROC_BROWSER_TEST_F(
     OptimizationGuideKeyedServiceStartupLogDisabledBrowserTest,
     PerformanceClassOnlyComputedOnce) {
   constexpr auto kKey = optimization_guide::ModelBasedCapabilityKey::kCompose;
@@ -1130,9 +1167,6 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
                        LogOnDeviceMetricsAfterStart) {
   OptimizationGuideKeyedServiceFactory::GetForProfile(browser()->profile());
-  OnDeviceModelComponentStateManager* on_device_component_state_manager =
-      OnDeviceModelComponentStateManager::GetInstanceForTesting();
-  ASSERT_TRUE(on_device_component_state_manager);
 
   EXPECT_TRUE(base::test::RunUntil([&]() {
     return histogram_tester()
@@ -1151,9 +1185,6 @@ IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
 IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
                        LogOnDeviceMetricsSingleTimeForMultipleProfiles) {
   OptimizationGuideKeyedServiceFactory::GetForProfile(browser()->profile());
-  OnDeviceModelComponentStateManager* on_device_component_state_manager =
-      OnDeviceModelComponentStateManager::GetInstanceForTesting();
-  ASSERT_TRUE(on_device_component_state_manager);
 
   // Add a second profile which should not log performance class.
   ProfileManager* profile_manager = g_browser_process->profile_manager();

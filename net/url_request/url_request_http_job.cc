@@ -33,10 +33,12 @@
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/optional_util.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/features.h"
+#include "net/base/hash_value.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/http_user_agent_settings.h"
 #include "net/base/load_flags.h"
@@ -49,7 +51,6 @@
 #include "net/base/schemeful_site.h"
 #include "net/base/task/task_runner.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/base/url_util.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/ct_policy_status.h"
@@ -190,7 +191,7 @@ base::Value::Dict CookieInclusionStatusNetLogParams(
 // which is expected to be ordered with the leaf cert first and the root cert
 // last. This complements the per-verification histogram
 // Net.Certificate.TrustAnchor.Verify
-void LogTrustAnchor(const HashValueVector& spki_hashes) {
+void LogTrustAnchor(const std::vector<SHA256HashValue>& spki_hashes) {
   // Don't record metrics if there are no hashes; this is true if the HTTP
   // load did not come from an active network connection, such as the disk
   // cache or a synthesized response.
@@ -354,6 +355,14 @@ bool ClearSiteDataHeaderContainsCookiesOrWildcard(
     }
   }
   return false;
+}
+
+const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
+    net::RequestPriority priority) {
+  if (features::kNetTaskSchedulerURLRequestHttpJob.Get()) {
+    return net::GetTaskRunner(priority);
+  }
+  return base::SingleThreadTaskRunner::GetCurrentDefault();
 }
 
 }  // namespace
@@ -700,7 +709,7 @@ void URLRequestHttpJob::MaybeStartTransactionInternal(int result) {
     request_->net_log().AddEventWithStringParams(NetLogEventType::CANCELLED,
                                                  "source", "delegate");
     // Don't call back synchronously to the delegate.
-    net::GetTaskRunner(priority_)->PostTask(
+    TaskRunner(priority_)->PostTask(
         FROM_HERE, base::BindOnce(&URLRequestHttpJob::NotifyStartError,
                                   weak_factory_.GetWeakPtr(), result));
   }
@@ -777,7 +786,7 @@ void URLRequestHttpJob::StartTransactionInternal() {
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  net::GetTaskRunner(priority_)->PostTask(
+  TaskRunner(priority_)->PostTask(
       FROM_HERE, base::BindOnce(&URLRequestHttpJob::OnStartCompleted,
                                 weak_factory_.GetWeakPtr(), rv));
 }
@@ -1703,7 +1712,7 @@ void URLRequestHttpJob::CancelAuth() {
   //
   // Have to do this via PostTask to avoid re-entrantly calling into the
   // consumer.
-  net::GetTaskRunner(priority_)->PostTask(
+  TaskRunner(priority_)->PostTask(
       FROM_HERE, base::BindOnce(&URLRequestHttpJob::NotifyFinalHeadersReceived,
                                 weak_factory_.GetWeakPtr()));
 }
@@ -1728,7 +1737,7 @@ void URLRequestHttpJob::ContinueWithCertificate(
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  net::GetTaskRunner(priority_)->PostTask(
+  TaskRunner(priority_)->PostTask(
       FROM_HERE, base::BindOnce(&URLRequestHttpJob::OnStartCompleted,
                                 weak_factory_.GetWeakPtr(), rv));
 }
@@ -1751,7 +1760,7 @@ void URLRequestHttpJob::ContinueDespiteLastError() {
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  net::GetTaskRunner(priority_)->PostTask(
+  TaskRunner(priority_)->PostTask(
       FROM_HERE, base::BindOnce(&URLRequestHttpJob::OnStartCompleted,
                                 weak_factory_.GetWeakPtr(), rv));
 }

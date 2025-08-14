@@ -28,7 +28,6 @@
 #include "components/commerce/core/commerce_types.h"
 #include "components/commerce/core/compare/cluster_manager.h"
 #include "components/commerce/core/product_specifications/product_specifications_cache.h"
-#include "components/commerce/core/product_specifications/product_specifications_service.h"
 #include "components/commerce/core/product_specifications/product_specifications_set.h"
 #include "components/commerce/core/proto/cart_db_content.pb.h"
 #include "components/commerce/core/proto/commerce_subscription_db_content.pb.h"
@@ -362,11 +361,6 @@ class ShoppingService : public KeyedService,
   // same name in commerce_feature_list but provides the country and locale as
   // determined by this service at startup.
   bool IsRegionLockedFeatureEnabled(const base::Feature& feature);
-
-  // DEPRECATED: Use the above method for new features.
-  bool IsRegionLockedFeatureEnabled(
-      const base::Feature& feature,
-      const base::Feature& region_specific_feature);
 
   // This is a feature check for the "shopping list". This will only return true
   // if the user has the feature flag enabled, is signed-in, has MSBB enabled,

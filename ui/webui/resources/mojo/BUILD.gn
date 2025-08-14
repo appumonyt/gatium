@@ -11,9 +11,11 @@ import("//ui/webui/webui_features.gni")
 tsc_folder = "$root_gen_dir/ui/webui/resources/tsc/mojo"
 
 mojo_ts_files = [
+  "components/omnibox/browser/omnibox.mojom-webui.ts",
   "mojo/public/mojom/base/absl_status.mojom-webui.ts",
-  "mojo/public/mojom/base/big_string.mojom-webui.ts",
   "mojo/public/mojom/base/big_buffer.mojom-webui.ts",
+  "mojo/public/mojom/base/big_string.mojom-webui.ts",
+  "mojo/public/mojom/base/byte_count.mojom-webui.ts",
   "mojo/public/mojom/base/empty.mojom-webui.ts",
   "mojo/public/mojom/base/error.mojom-webui.ts",
   "mojo/public/mojom/base/file.mojom-webui.ts",
@@ -37,20 +39,24 @@ mojo_ts_files = [
   "mojo/public/mojom/base/unguessable_token_converter.ts",
   "mojo/public/mojom/base/uuid.mojom-webui.ts",
   "mojo/public/mojom/base/values.mojom-webui.ts",
-  "skia/public/mojom/skcolor.mojom-webui.ts",
   "skia/public/mojom/bitmap.mojom-webui.ts",
   "skia/public/mojom/image_info.mojom-webui.ts",
+  "skia/public/mojom/skcolor.mojom-webui.ts",
   "ui/base/mojom/themes.mojom-webui.ts",
   "ui/base/mojom/window_open_disposition.mojom-webui.ts",
+  "ui/gfx/geometry/mojom/geometry.mojom-webui.ts",
   "ui/gfx/image/mojom/image.mojom-webui.ts",
   "ui/gfx/range/mojom/range.mojom-webui.ts",
-  "ui/gfx/geometry/mojom/geometry.mojom-webui.ts",
   "url/mojom/origin.mojom-webui.ts",
   "url/mojom/url.mojom-webui.ts",
 ]
 
 if (is_ios) {
   mojo_ts_files += [ "ui/base/mojom/ui_base_types.mojom-webui.ts" ]
+}
+
+if (!is_android && !is_ios) {
+  mojo_ts_files += [ "components/omnibox/browser/searchbox.mojom-webui.ts" ]
 }
 
 if (is_chromeos) {
@@ -92,6 +98,7 @@ preprocess_if_expr("copy_mojo_ts") {
   out_folder = "$target_gen_dir/preprocessed"
   in_files = mojo_ts_files
   deps = [
+    "//components/omnibox/browser:mojo_bindings_ts__generator",
     "//mojo/public/mojom/base:base_ts__copy_converters",
     "//mojo/public/mojom/base:base_ts__generator",
     "//mojo/public/mojom/base:protobuf_support_ts__generator",

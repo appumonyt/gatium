@@ -101,6 +101,9 @@ declare namespace chrome {
     // If the speech tree has been initialized in the renderer.
     let isSpeechTreeInitialized: boolean;
 
+    // Max number of characters to display in one line of Reading mode.
+    let maxLineWidth: number;
+
     // Returns whether the reading highlight is currently on.
     function isHighlightOn(): boolean;
 
@@ -231,6 +234,12 @@ declare namespace chrome {
     // Called when a user collapses the selection. This is usually accomplished
     // by clicking.
     function onCollapseSelection(): void;
+
+    // Called when the number of words seen by a reading mode user changes.
+    function updateWordsSeen(wordsSeen: number): void;
+
+    // Called when the number of words heard by a read aloud user changes.
+    function updateWordsHeard(wordsHeard: number): void;
 
     // Set the content. Used by tests only.
     // SnapshotLite is a data structure which resembles an AXTreeUpdate. E.g.:

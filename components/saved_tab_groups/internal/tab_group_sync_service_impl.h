@@ -86,6 +86,10 @@ class TabGroupSyncServiceImpl : public TabGroupSyncService,
                            std::optional<bool> is_pinned,
                            std::optional<int> new_index) override;
 
+  void UpdateBookmarkNodeId(
+      const base::Uuid& sync_id,
+      std::optional<base::Uuid> bookmark_node_id) override;
+
   void AddTab(const LocalTabGroupID& group_id,
               const LocalTabID& tab_id,
               const std::u16string& title,
@@ -118,6 +122,8 @@ class TabGroupSyncServiceImpl : public TabGroupSyncService,
   void MakeTabGroupSharedForTesting(
       const LocalTabGroupID& local_group_id,
       const syncer::CollaborationId& collaboration_id) override;
+  void MakeTabGroupUnsharedForTesting(
+      const LocalTabGroupID& local_group_id) override;
 
   void AboutToUnShareTabGroup(const LocalTabGroupID& local_group_id,
                               base::OnceClosure on_complete_callback) override;
@@ -374,6 +380,9 @@ class TabGroupSyncServiceImpl : public TabGroupSyncService,
   // to shared and completes the transition.
   void FinishTransitionToSharedIfNotCompleted();
 
+  // Register PageEntities optimization type if there is a shared tab group.
+  void RegisterPageEntityOptimizationTypeIfNeeded();
+
   THREAD_CHECKER(thread_checker_);
 
   // The in-memory model representing the currently present saved tab groups.
@@ -473,6 +482,8 @@ class TabGroupSyncServiceImpl : public TabGroupSyncService,
   base::ScopedObservation<signin::IdentityManager,
                           signin::IdentityManager::Observer>
       identity_manager_observation_{this};
+
+  bool page_entity_optimization_type_registered_ = false;
 
   base::WeakPtrFactory<TabGroupSyncServiceImpl> weak_ptr_factory_{this};
 };

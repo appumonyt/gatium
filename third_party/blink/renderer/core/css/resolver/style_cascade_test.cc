@@ -19,7 +19,6 @@
 #include "third_party/blink/renderer/core/css/css_test_helpers.h"
 #include "third_party/blink/renderer/core/css/css_unparsed_declaration_value.h"
 #include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
-#include "third_party/blink/renderer/core/css/document_style_sheet_collection.h"
 #include "third_party/blink/renderer/core/css/media_query_evaluator.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_local_context.h"
@@ -40,6 +39,7 @@
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver_state.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
+#include "third_party/blink/renderer/core/css/style_sheet_collection.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -345,7 +345,7 @@ class StyleCascadeTest : public PageTestBase {
         CSSStyleSheet::Create(GetDocument(), init, exception_state);
     sheet->replaceSync(css_text, exception_state);
     sheet->Contents()->EnsureRuleSet(
-        MediaQueryEvaluator(GetDocument().GetFrame()));
+        MediaQueryEvaluator(GetDocument().GetFrame()), /*mixins=*/{});
     return sheet;
   }
 
@@ -358,14 +358,13 @@ class StyleCascadeTest : public PageTestBase {
     TreeScope& tree_scope = body->GetTreeScope();
     ScopedStyleResolver& scoped_resolver =
         tree_scope.EnsureScopedStyleResolver();
-    ActiveStyleSheetVector active_sheets;
-    active_sheets.push_back(
-        std::make_pair(sheet, &sheet->Contents()->GetRuleSet()));
+    ActiveStyleSheetVector active_sheets{std::make_pair(sheet, nullptr)};
     scoped_resolver.AppendActiveStyleSheets(0, active_sheets);
-    GetDocument()
-        .GetStyleEngine()
-        .GetDocumentStyleSheetCollection()
-        .AppendActiveStyleSheet(active_sheets[0]);
+    StyleSheetCollection& collection =
+        GetDocument().GetStyleEngine().GetDocumentStyleSheetCollection();
+    collection.AddPendingActiveStyleSheetForTest(sheet);
+    collection.FinishUpdateActiveStyleSheets(
+        MediaQueryEvaluator(GetDocument().GetFrame()), /*effective_mixins=*/{});
   }
 
   Element* DocumentElement() const { return GetDocument().documentElement(); }
@@ -567,23 +566,7 @@ TEST_F(StyleCascadeTest, RegisteredPropertyFallback) {
   EXPECT_EQ("10px", cascade.ComputedValue("--x"));
 }
 
-TEST_F(StyleCascadeTest, RegisteredPropertyFallbackValidation) {
-  ScopedCSSTypeAgnosticVarFallbackForTest scoped_feature(false);
-
-  RegisterProperty(GetDocument(), "--x", "<length>", "0px", false);
-
-  TestCascade cascade(GetDocument());
-  cascade.Add("--x", "10px");
-  cascade.Add("--y", "var(--x,red)");  // Fallback must be valid <length>.
-  cascade.Add("--z", "var(--y,pass)");
-  cascade.Apply();
-
-  EXPECT_EQ("pass", cascade.ComputedValue("--z"));
-}
-
 TEST_F(StyleCascadeTest, TypeAgnosticFallback) {
-  ScopedCSSTypeAgnosticVarFallbackForTest scoped_feature(true);
-
   RegisterProperty(GetDocument(), "--x", "<length>", "0px", false);
 
   TestCascade cascade(GetDocument());
@@ -4690,34 +4673,6 @@ TEST_F(StyleCascadeTest, CSSFunctionDoesNotExistInShorthand) {
 
     EXPECT_EQ("rgba(0, 0, 0, 0)", cascade.ComputedValue("background-color"));
   }
-}
-
-TEST_F(StyleCascadeTest, VarFallbackValidationCounter) {
-  ScopedCSSTypeAgnosticVarFallbackForTest scoped_feature(false);
-
-  RegisterProperty(GetDocument(), "--registered", "<length>", "0px",
-                   /*inherited=*/false);
-
-  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kVarFallbackValidation));
-
-  {
-    TestCascade cascade(GetDocument());
-    cascade.Add("--unregistered:green");
-    cascade.Add("color:var(--unregistered)");
-    cascade.Add("top:var(--unregistered, 100px)");
-    cascade.Add("right:var(--unregistered, auto)");
-    cascade.Add("bottom:var(--registered)");
-    cascade.Add("left:var(--registered, 100px)");
-    cascade.Apply();
-  }
-  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kVarFallbackValidation));
-
-  {
-    TestCascade cascade(GetDocument());
-    cascade.Add("left:var(--registered, green)");
-    cascade.Apply();
-  }
-  EXPECT_TRUE(GetDocument().IsUseCounted(WebFeature::kVarFallbackValidation));
 }
 
 }  // namespace blink

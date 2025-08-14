@@ -28,7 +28,7 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/caption_button_placeholder_container.h"
-#include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+#include "chrome/browser/ui/views/frame/tab_strip_view_interface.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_frame_toolbar_utils.h"
@@ -46,10 +46,6 @@
 #include "ui/views/cocoa/native_widget_mac_ns_window_host.h"
 
 namespace {
-
-// Empirical measurements of the traffic lights.
-constexpr int kCaptionButtonsWidth = 52;
-constexpr int kCaptionButtonsLeadingPadding = 20;
 
 FullscreenToolbarStyle GetUserPreferredToolbarStyle(bool always_show) {
   // In Kiosk mode, we don't show top Chrome UI.
@@ -210,12 +206,10 @@ void BrowserNonClientFrameViewMac::UpdateFullscreenTopUI() {
   // Update to the new toolbar style if needed.
   FullscreenToolbarStyle new_style;
   if (fullscreen_utils::IsInContentFullscreen(browser)) {
-    browser_view()->HideDownloadShelf();
     new_style = FullscreenToolbarStyle::TOOLBAR_NONE;
   } else {
     bool always_show = fullscreen_utils::IsAlwaysShowToolbarEnabled(browser);
     new_style = GetUserPreferredToolbarStyle(always_show);
-    browser_view()->UnhideDownloadShelf();
   }
 
   if (browser_view()->UsesImmersiveFullscreenMode()) {
@@ -363,8 +357,7 @@ void BrowserNonClientFrameViewMac::WindowControlsOverlayEnabledChanged() {
 gfx::Size BrowserNonClientFrameViewMac::GetMinimumSize() const {
   gfx::Size client_size = frame()->client_view()->GetMinimumSize();
   if (browser_view()->browser()->is_type_normal()) {
-    client_size.SetToMax(
-        browser_view()->tab_strip_region_view()->GetMinimumSize());
+    client_size.SetToMax(browser_view()->tab_strip_view()->GetMinimumSize());
   }
 
   // macOS apps generally don't allow their windows to get shorter than a
@@ -395,13 +388,19 @@ void BrowserNonClientFrameViewMac::PaintChildren(const views::PaintInfo& info) {
 }
 
 gfx::Insets BrowserNonClientFrameViewMac::GetCaptionButtonInsets() const {
-  const int kCaptionButtonInset = kCaptionButtonsWidth +
-                                  (kCaptionButtonsLeadingPadding * 2) -
-                                  TabStyle::Get()->GetBottomCornerRadius();
-  if (CaptionButtonsOnLeadingEdge()) {
-    return gfx::Insets::TLBR(0, kCaptionButtonInset, 0, 0);
+  int button_total_width;
+  if (@available(macOS 26, *)) {
+    button_total_width = 86;
   } else {
-    return gfx::Insets::TLBR(0, 0, 0, kCaptionButtonInset);
+    button_total_width = 92;
+  }
+  int caption_button_inset =
+      button_total_width - TabStyle::Get()->GetBottomCornerRadius();
+
+  if (CaptionButtonsOnLeadingEdge()) {
+    return gfx::Insets::TLBR(0, caption_button_inset, 0, 0);
+  } else {
+    return gfx::Insets::TLBR(0, 0, 0, caption_button_inset);
   }
 }
 

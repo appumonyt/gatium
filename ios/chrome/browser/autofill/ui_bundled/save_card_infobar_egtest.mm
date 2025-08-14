@@ -5,6 +5,7 @@
 #import <memory>
 
 #import "base/i18n/time_formatting.h"
+#import "base/ios/ios_util.h"
 #import "base/strings/sys_string_conversions.h"
 #import "base/strings/utf_string_conversions.h"
 #import "base/test/ios/wait_util.h"
@@ -103,12 +104,22 @@ id<GREYMatcher> UploadBottomSheetCancelButtonMatcher() {
       IDS_AUTOFILL_NO_THANKS_MOBILE_UPLOAD_SAVE);
 }
 
+// Matcher for the activity indicator.
+id<GREYMatcher> ActivityIndicatorMatcher() {
+  return grey_allOf(
+      grey_kindOfClassName(@"UIActivityIndicatorView"),
+      grey_ancestor(grey_accessibilityID(
+          kConfirmationAlertPrimaryActionAccessibilityIdentifier)),
+      nil);
+}
+
 id<GREYMatcher> LocalBannerLabelsMatcher() {
-  NSString* bannerLabel =
-      [NSString stringWithFormat:@"%@,%@",
-                                 l10n_util::GetNSString(
-                                     IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_LOCAL),
-                                 kSaveCardLabel];
+  NSString* bannerLabel = [NSString
+      stringWithFormat:
+          @"%@,%@",
+          l10n_util::GetNSString(
+              IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_LOCAL_ON_THIS_DEVICE),
+          kSaveCardLabel];
   return grey_allOf(
       grey_accessibilityID(kInfobarBannerLabelsStackViewIdentifier),
       grey_accessibilityLabel(bannerLabel), nil);
@@ -269,6 +280,9 @@ void FillAndSubmitXframeCreditCardForm() {
   config.features_enabled.push_back(
       autofill::features::kAutofillLocalSaveCardBottomSheet);
 
+  config.features_enabled.push_back(
+      autofill::features::kAutofillEnableCvcStorageAndFilling);
+
   return config;
 }
 
@@ -381,6 +395,9 @@ void FillAndSubmitXframeCreditCardForm() {
   // Push the cancel button.
   [[EarlGrey selectElementWithMatcher:UploadBottomSheetCancelButtonMatcher()]
       performAction:grey_tap()];
+
+  // Synchronization off due to an infinite spinner.
+  ScopedSynchronizationDisabler disabler;
 
   // Assert save card bottomsheet dimisses.
   GREYAssertTrue(
@@ -834,15 +851,11 @@ void FillAndSubmitXframeCreditCardForm() {
       performAction:grey_tap()];
 
   // Assert an activity indicator view is being shown in the loading state.
-  id<GREYMatcher> activityIndicatorView =
-      grey_kindOfClassName(@"UIActivityIndicatorView");
   GREYAssertTrue(
-      [self waitForUIElementToAppearWithMatcher:activityIndicatorView],
+      [self waitForUIElementToAppearWithMatcher:ActivityIndicatorMatcher()],
       @"Save card bottomsheet failed to show activity indicator in loading "
       @"state.");
-  [[[EarlGrey selectElementWithMatcher:activityIndicatorView]
-      inRoot:grey_accessibilityID(
-                 kConfirmationAlertPrimaryActionAccessibilityIdentifier)]
+  [[EarlGrey selectElementWithMatcher:ActivityIndicatorMatcher()]
       assertWithMatcher:grey_sufficientlyVisible()];
 
   // Assert the accept button is disabled and has accessibility label for
@@ -1184,7 +1197,7 @@ void FillAndSubmitXframeCreditCardForm() {
 
   [[EarlGrey selectElementWithMatcher:
                  grey_accessibilityValue(l10n_util::GetNSString(
-                     IDS_AUTOFILL_SAVE_CARD_ONLY_PROMPT_EXPLANATION_LOCAL))]
+                     IDS_AUTOFILL_SAVE_CARD_WITH_CVC_PROMPT_EXPLANATION_LOCAL))]
       assertWithMatcher:grey_sufficientlyVisible()];
 
   [[EarlGrey selectElementWithMatcher:BottomSheetCardDescriptionMatcher()]
@@ -1196,33 +1209,40 @@ void FillAndSubmitXframeCreditCardForm() {
   [[EarlGrey selectElementWithMatcher:LocalBottomSheetCancelButtonMatcher()]
       assertWithMatcher:grey_userInteractionEnabled()];
 
-  // Push the accept button on the save card bottomsheet.
-  [[EarlGrey selectElementWithMatcher:BottomSheetAcceptButtonMatcher()]
-      performAction:grey_tap()];
+  {
+    // Disable the synchronization, otherwise the test runner waits for the
+    // animation for the accept button and the following assertions will fail on
+    // iOS 26.
+    ScopedSynchronizationDisabler disabler;
 
-  // Assert the accept button is disabled and has accessibility label for
-  // confirmation state.
-  [[EarlGrey selectElementWithMatcher:
-                 grey_accessibilityID(
-                     kConfirmationAlertPrimaryActionAccessibilityIdentifier)]
-      assertWithMatcher:
-          grey_allOf(
-              grey_not(grey_enabled()),
-              grey_accessibilityLabel(l10n_util::GetNSString(
-                  IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_SUCCESS_ACCESSIBLE_NAME)),
-              nil)];
+    // Push the accept button on the save card bottomsheet.
+    [[EarlGrey selectElementWithMatcher:BottomSheetAcceptButtonMatcher()]
+        performAction:grey_tap()];
 
-  // Assert a checkmark symbol is being shown in the confirmation state.
-  [[[EarlGrey
-      selectElementWithMatcher:grey_accessibilityID(
-                                   kConfirmationAlertCheckmarkSymbolIdentifier)]
-      inRoot:grey_accessibilityID(
-                 kConfirmationAlertPrimaryActionAccessibilityIdentifier)]
-      assertWithMatcher:grey_sufficientlyVisible()];
+    // Assert the accept button is disabled and has accessibility label for
+    // confirmation state.
+    [[EarlGrey selectElementWithMatcher:
+                   grey_accessibilityID(
+                       kConfirmationAlertPrimaryActionAccessibilityIdentifier)]
+        assertWithMatcher:
+            grey_allOf(
+                grey_not(grey_enabled()),
+                grey_accessibilityLabel(l10n_util::GetNSString(
+                    IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_SUCCESS_ACCESSIBLE_NAME)),
+                nil)];
 
-  // Assert the cancel button is disabled.
-  [[EarlGrey selectElementWithMatcher:LocalBottomSheetCancelButtonMatcher()]
-      assertWithMatcher:grey_not(grey_enabled())];
+    // Assert a checkmark symbol is being shown in the confirmation state.
+    [[[EarlGrey
+        selectElementWithMatcher:
+            grey_accessibilityID(kConfirmationAlertCheckmarkSymbolIdentifier)]
+        inRoot:grey_accessibilityID(
+                   kConfirmationAlertPrimaryActionAccessibilityIdentifier)]
+        assertWithMatcher:grey_sufficientlyVisible()];
+
+    // Assert the cancel button is disabled.
+    [[EarlGrey selectElementWithMatcher:LocalBottomSheetCancelButtonMatcher()]
+        assertWithMatcher:grey_not(grey_enabled())];
+  }
 
   // Wait for bottomsheet to auto-dismiss.
   GREYAssertTrue(
@@ -1250,9 +1270,7 @@ void FillAndSubmitXframeCreditCardForm() {
       performAction:grey_tap()];
 
   GREYAssertFalse(
-      [self
-          waitForUIElementToAppearWithMatcher:grey_kindOfClassName(
-                                                  @"UIActivityIndicatorView")],
+      [self waitForUIElementToAppearWithMatcher:ActivityIndicatorMatcher()],
       @"Local save card bottomsheet should not show activity indicator.");
 
   // Wait for bottomsheet to auto-dismiss.

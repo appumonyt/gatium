@@ -12,12 +12,14 @@
 #include "chrome/browser/ash/browser_delegate/browser_type.h"
 #include "chrome/browser/ash/browser_delegate/browser_type_conversion.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/web_applications/web_app_launch_utils.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chromeos/ash/components/browser_context_helper/browser_context_helper.h"
@@ -88,6 +90,35 @@ BrowserDelegate* BrowserControllerImpl::GetLastUsedVisibleOnTheRecordBrowser() {
     }
   }
   return nullptr;
+}
+
+void BrowserControllerImpl::ForEachBrowser(
+    BrowserOrder order,
+    base::FunctionRef<IterationDirective(BrowserDelegate&)> callback) {
+  switch (order) {
+    case BrowserOrder::kAscendingCreationTime:
+      for (Browser* browser : *BrowserList::GetInstance()) {
+        if (callback(*GetDelegate(browser)) == kBreakIteration) {
+          break;
+        }
+      }
+      break;
+    case BrowserOrder::kAscendingActivationTime:
+      for (Browser* browser :
+           BrowserList::GetInstance()->OrderedByActivation()) {
+        if (callback(*GetDelegate(browser)) == kBreakIteration) {
+          break;
+        }
+      }
+      break;
+  }
+}
+
+BrowserDelegate* BrowserControllerImpl::GetBrowserForWindow(
+    aura::Window* window) {
+  BrowserView* browser_view =
+      BrowserView::GetBrowserViewForNativeWindow(window);
+  return GetDelegate(browser_view ? browser_view->browser() : nullptr);
 }
 
 BrowserDelegate* BrowserControllerImpl::FindWebApp(const AccountId& account_id,
@@ -218,6 +249,11 @@ void BrowserControllerImpl::OnBrowserRemoved(Browser* browser) {
   }
   browsers_.erase(browser);
   // The corresponding BrowserDelegateImpl, if any, is now dead.
+}
+
+void BrowserControllerImpl::CreateAutofillClientForWebContents(
+    content::WebContents* web_contents) {
+  autofill::ChromeAutofillClient::CreateForWebContents(web_contents);
 }
 
 }  // namespace ash

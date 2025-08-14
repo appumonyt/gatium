@@ -21,9 +21,9 @@
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/common/webui_url_constants.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/url_constants.h"
 #include "net/net_buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
 
 namespace chrome {
 
@@ -385,6 +385,10 @@ inline constexpr char kInsecureDownloadBlockingLearnMoreUrl[] =
 inline constexpr char16_t kMyActivityUrlInClearBrowsingData[] =
     u"https://myactivity.google.com/myactivity?utm_source=chrome_cbd";
 
+// The URL for "Your Gemini Apps Activity" page.
+inline constexpr char16_t kMyActivityGeminiAppsUrl[] =
+    u"https://myactivity.google.com/product/gemini";
+
 // Help URL for the Omnibox setting.
 inline constexpr char16_t kOmniboxLearnMoreURL[] =
 #if BUILDFLAG(IS_CHROMEOS)
@@ -400,6 +404,10 @@ inline constexpr char kPageInfoHelpCenterURL[] =
 #else
     "https://support.google.com/chrome?p=ui_security_indicator";
 #endif
+
+// Help center article URL for automated password change.
+inline constexpr char kPasswordChangeLearnMoreURL[] =
+    "https://support.google.com/chrome?p=automatedpasswordchange";
 
 // Help URL for the bulk password check.
 inline constexpr char kPasswordCheckLearnMoreURL[] =

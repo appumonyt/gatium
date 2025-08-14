@@ -180,7 +180,12 @@ class CORE_EXPORT TreeScope : public GarbageCollectedMixin {
   void ClearAdoptedStyleSheets();
 
 
-  virtual CustomElementRegistry* customElementRegistry() const = 0;
+  CustomElementRegistry* customElementRegistry() const;
+  // Return true when custom element registry was set successfully, return false
+  // otherwise.
+  bool SetCustomElementRegistry(CustomElementRegistry*);
+
+  bool IsWaitingForScopedRegistry() const;
 
   // Given a `node` targeteted by an event, returns the element that this event
   // should be dispatched to.
@@ -230,6 +235,14 @@ class CORE_EXPORT TreeScope : public GarbageCollectedMixin {
   Member<StyleSheetList> style_sheet_list_;
 
   Member<V8ObservableArrayCSSStyleSheet> adopted_style_sheets_;
+
+  Member<CustomElementRegistry> custom_element_registry_;
+  // By default, TreeScope attempts to retrieve the global custom element
+  // registry before it has been explicitly set. In cases where TreeScope is
+  // waiting for registry initialization, we use this flag to indicate that the
+  // registry is currently NULL. This ensures that nullptr is returned instead
+  // of falling back to the default global registry behavior.
+  bool waiting_for_registry_ = false;
 };
 
 inline bool TreeScope::HasElementWithId(const AtomicString& id) const {

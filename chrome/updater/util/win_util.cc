@@ -5,6 +5,7 @@
 #include "base/win/win_util.h"
 
 #include <windows.h>
+#include <winternl.h>
 
 #include <aclapi.h>
 #include <combaseapi.h>
@@ -42,6 +43,7 @@
 #include "base/process/process.h"
 #include "base/process/process_iterator.h"
 #include "base/scoped_native_library.h"
+#include "base/strings/cstring_view.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -80,6 +82,14 @@
 namespace updater {
 
 namespace {
+
+// Undocumented interface used to get the COM client handle.
+MIDL_INTERFACE("68C6A1B9-DE39-42C3-8D28-BF40A5126541")
+ICallingProcessInfo : public IUnknown {
+ public:
+  virtual IFACEMETHODIMP OpenCallerProcessHandle(DWORD desired_access,
+                                                 HANDLE * handle) = 0;
+};
 
 HResultOr<bool> IsUserRunningSplitToken() {
   HANDLE token = NULL;
@@ -1545,6 +1555,104 @@ std::optional<base::FilePath> GetBundledEnterpriseCompanionExecutablePath(
                               kMaxQueryConfigBufferBytes,
                               &bytes_needed_ignored) &&
          (service_config->dwStartType != SERVICE_DISABLED);
+}
+
+HResultOr<std::wstring> GetCommandLineForPid(DWORD process_id) {
+  CHECK(process_id);
+
+  base::win::ScopedHandle process_handle(::OpenProcess(
+      PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, process_id));
+  if (!process_handle.IsValid()) {
+    return base::unexpected(HRESULTFromLastError());
+  }
+
+  static const auto nt_query_information_process =
+      reinterpret_cast<decltype(&::NtQueryInformationProcess)>(::GetProcAddress(
+          ::GetModuleHandle(L"ntdll.dll"), "NtQueryInformationProcess"));
+  if (!nt_query_information_process) {
+    return base::unexpected(HRESULTFromLastError());
+  }
+
+  // Get the PEB address.
+  // https://learn.microsoft.com/en-us/windows/win32/api/winternl/ns-winternl-peb
+  PROCESS_BASIC_INFORMATION info = {};
+  if (!NT_SUCCESS(nt_query_information_process(process_handle.Get(),
+                                               ProcessBasicInformation, &info,
+                                               sizeof(info), nullptr))) {
+    return base::unexpected(E_FAIL);
+  }
+  BYTE* peb = reinterpret_cast<BYTE*>(info.PebBaseAddress);
+  if (!peb) {
+    return base::unexpected(E_FAIL);
+  }
+  SIZE_T bytes_read = 0;
+  DWORD_PTR dw = 0;
+
+  // Get the address of the process parameters.
+  // SAFETY: the `ProcessParameters` offset into the PEB is always valid.
+  if (!::ReadProcessMemory(
+          process_handle.Get(),
+          UNSAFE_BUFFERS(peb + offsetof(PEB, ProcessParameters)), &dw,
+          sizeof(dw), &bytes_read)) {
+    return base::unexpected(HRESULTFromLastError());
+  }
+
+  // Read all the parameters.
+  RTL_USER_PROCESS_PARAMETERS params = {};
+  if (!::ReadProcessMemory(process_handle.Get(), reinterpret_cast<PVOID>(dw),
+                           &params, sizeof(params), &bytes_read)) {
+    return base::unexpected(HRESULTFromLastError());
+  }
+
+  // Read the command line parameter.
+  const int max_cmd_line_len =
+      std::min(static_cast<int>(params.CommandLine.MaximumLength), 4096);
+  std::wstring cmd_line(max_cmd_line_len, L'\0');
+  if (!::ReadProcessMemory(process_handle.Get(), params.CommandLine.Buffer,
+                           cmd_line.data(), max_cmd_line_len, &bytes_read)) {
+    return base::unexpected(HRESULTFromLastError());
+  }
+  cmd_line.resize(bytes_read / sizeof(wchar_t));
+
+  return cmd_line;
+}
+
+void LogComCaller(base::cstring_view caller_func) {
+  Microsoft::WRL::ComPtr<ICallingProcessInfo> calling_proc_info;
+  HRESULT hr = ::CoGetCallContext(IID_PPV_ARGS(&calling_proc_info));
+  if (FAILED(hr)) {
+    VLOG(2) << caller_func
+            << ": Unable to get ICallingProcessInfo interface: " << std::hex
+            << hr;
+    return;
+  }
+
+  ScopedKernelHANDLE handle;
+  hr = calling_proc_info->OpenCallerProcessHandle(
+      PROCESS_QUERY_LIMITED_INFORMATION,
+      ScopedKernelHANDLE::Receiver(handle).get());
+  if (FAILED(hr)) {
+    VLOG(2) << caller_func
+            << ": ICallingProcessInfo::OpenCallerProcessHandle failed: "
+            << std::hex << hr;
+    return;
+  }
+
+  const base::Process process(handle.release());
+  if (!process.IsValid()) {
+    VLOG(2) << caller_func
+            << ": ICallingProcessInfo::OpenCallerProcessHandle returned an "
+               "invalid handle";
+    return;
+  }
+
+  VLOG(2) << caller_func
+          << ": COM client for this COM server has PID: " << process.Pid()
+          << ", and has command line: " << [&] {
+               const HResultOr<std::wstring> cmd_line =
+                   GetCommandLineForPid(process.Pid());
+               return cmd_line.has_value() ? *cmd_line : std::wstring();
+             }();
 }
 
 }  // namespace updater

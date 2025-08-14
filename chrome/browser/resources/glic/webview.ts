@@ -10,9 +10,37 @@ import type {BrowserProxyImpl} from './browser_proxy.js';
 import type {Subscriber} from './glic_api/glic_api.js';
 import {DetailedWebClientState, GlicApiHost, WebClientState} from './glic_api_impl/glic_api_host.js';
 import type {ApiHostEmbedder} from './glic_api_impl/glic_api_host.js';
+import {GlicRequestHeaderInjector} from './glic_request_headers.js';
 import {ObservableValue} from './observable.js';
 import type {ObservableValueReadOnly} from './observable.js';
 import {OneShotTimer} from './timer.js';
+
+// LINT.IfChange(WebviewExitReason)
+enum WebviewExitReason {
+  NORMAL = 0,
+  ABNORMAL = 1,
+  CRASHED = 2,
+  KILLED = 3,
+  OOM_KILLED = 4,
+  OOM = 5,
+  FAILED_TO_LAUNCH = 6,
+  INTEGRITY_FAILURE = 7,
+  UNKNOWN = 8,
+}
+// LINT.ThenChange(//tools/metrics/histograms/metadata/glic/enums.xml:GlicWebviewExitReason)
+
+type WebviewExitReasonString = 'normal'|'abnormal'|'oom killed'|'oom'|'killed'|
+    'crashed'|'failed to launch'|'integrity failure';
+const WEBVIEW_EXIT_REASON_MAP = {
+  'normal': WebviewExitReason.NORMAL,
+  'abnormal': WebviewExitReason.ABNORMAL,
+  'crashed': WebviewExitReason.CRASHED,
+  'killed': WebviewExitReason.KILLED,
+  'oom killed': WebviewExitReason.OOM_KILLED,
+  'oom': WebviewExitReason.OOM,
+  'failed to launch': WebviewExitReason.FAILED_TO_LAUNCH,
+  'integrity failure': WebviewExitReason.INTEGRITY_FAILURE,
+};
 
 export type PageType =
     // A login page.
@@ -84,6 +112,7 @@ export class WebviewController {
   private webClientState =
       ObservableValue.withValue(WebClientState.UNINITIALIZED);
   private oneMinuteTimer = new OneShotTimer(1000 * 60);
+  private glicRequestHeaderInjector: GlicRequestHeaderInjector;
 
   constructor(
       private readonly container: HTMLElement,
@@ -94,6 +123,10 @@ export class WebviewController {
   ) {
     this.webview =
         document.createElement('webview') as chrome.webviewTag.WebView;
+
+    this.glicRequestHeaderInjector = new GlicRequestHeaderInjector(
+        this.webview, loadTimeData.getString('chromeVersion'),
+        loadTimeData.getString('chromeChannel'));
 
     // Intercept all main frame requests, and block them if they are not allowed
     // origins.
@@ -106,17 +139,6 @@ export class WebviewController {
         ['blocking']);
     this.onDestroy.push(() => {
       this.webview.request.onBeforeRequest.removeListener(onBeforeRequest);
-    });
-    const onBeforeSendHeaders = this.onBeforeSendHeaders.bind(this);
-    this.webview.request.onBeforeSendHeaders.addListener(
-        onBeforeSendHeaders, {
-          types: [ResourceType.MAIN_FRAME],
-          urls: ['<all_urls>'],
-        },
-        ['blocking', 'requestHeaders']);
-    this.onDestroy.push(() => {
-      this.webview.request.onBeforeSendHeaders.removeListener(
-          onBeforeSendHeaders);
     });
 
     this.webview.id = 'guestFrame';
@@ -134,7 +156,7 @@ export class WebviewController {
         this.webview, 'permissionrequest', this.onPermissionRequest.bind(this));
     this.eventTracker.add(
         this.webview, 'unresponsive', this.onUnresponsive.bind(this));
-    this.eventTracker.add(this.webview, 'exit', this.onExit.bind(this));
+    this.eventTracker.add(this.webview, 'exit', this.onExit.bind(this) as any);
 
     this.webview.src = this.persistentState.useLoadUrl();
 
@@ -153,6 +175,7 @@ export class WebviewController {
   }
 
   destroy() {
+    this.glicRequestHeaderInjector.destroy();
     this.oneMinuteTimer.reset();
     if (this.host) {
       chrome.metricsPrivate.recordEnumerationValue(
@@ -184,6 +207,15 @@ export class WebviewController {
 
   waitingOnPanelWillOpen(): boolean {
     return this.host?.waitingOnPanelWillOpen() ?? false;
+  }
+
+  onLoadTimeOut(): void {
+    if (this.host) {
+      chrome.metricsPrivate.recordEnumerationValue(
+          'Glic.Host.WebClientState.OnLoadTimeOut',
+          this.host.getDetailedWebClientState(),
+          DetailedWebClientState.MAX_VALUE + 1);
+    }
   }
 
   private onLoadCommit(e: any): void {
@@ -230,13 +262,21 @@ export class WebviewController {
     this.delegate.webviewUnresponsive();
   }
 
-  private onExit(e: any): void {
-    if (e.reason !== 'normal') {
-      this.destroyHost(WebClientState.ERROR);
-      chrome.metricsPrivate.recordUserAction('GlicSessionWebClientCrash');
-      console.warn(`webview exit. reason: ${e.reason}`);
-    }
-  }
+  private onExit: ChromeEventFunctionType<typeof chrome.webviewTag.exit> =
+      (exitEvent: any) => {
+        const reason: WebviewExitReasonString = exitEvent.reason;
+        const exitReason =
+            WEBVIEW_EXIT_REASON_MAP[reason] ?? WebviewExitReason.UNKNOWN;
+        chrome.metricsPrivate.recordEnumerationValue(
+            'Glic.Session.WebClientCrash.ExitReason', exitReason,
+            Object.keys(WEBVIEW_EXIT_REASON_MAP).length);
+        if (reason !== 'normal') {
+          this.destroyHost(WebClientState.ERROR);
+          chrome.metricsPrivate.recordUserAction('GlicSessionWebClientCrash');
+          console.warn(`webview exit. processID: ${
+              exitEvent.processID}, reason: ${reason}`);
+        }
+      };
 
   private loadCommit(url: string, isTopLevel: boolean) {
     if (!isTopLevel) {
@@ -305,33 +345,6 @@ export class WebviewController {
               return {};
             }
             return {cancel: !urlMatchesAllowedOrigin(details.url)};
-          };
-
-  // Attaches the X-Glic headers to all main-frame requests.
-  // X-Glic: 1
-  // X-Glic-Chrome-Channel: stable
-  // X-Glic-Chrome-Version: 137.0.1234.0
-  private onBeforeSendHeaders:
-      ChromeEventFunctionType<typeof chrome.webRequest.onBeforeSendHeaders> =
-          (details) => {
-            // Ignore subframe requests.
-            if (details.frameId !== 0) {
-              return {};
-            }
-            const requestHeaders = details.requestHeaders || [];
-            requestHeaders.push({
-              name: 'X-Glic',
-              value: '1',
-            });
-            requestHeaders.push({
-              name: 'X-Glic-Chrome-Version',
-              value: loadTimeData.getString('chromeVersion'),
-            });
-            requestHeaders.push({
-              name: 'X-Glic-Chrome-Channel',
-              value: loadTimeData.getString('chromeChannel'),
-            });
-            return {requestHeaders};
           };
 }
 

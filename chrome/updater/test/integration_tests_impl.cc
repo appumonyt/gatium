@@ -26,6 +26,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
+#include "base/functional/function_ref.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
@@ -83,6 +84,7 @@
 
 #if BUILDFLAG(IS_WIN)
 #include "base/file_version_info_win.h"
+#include "base/win/elevation_util.h"
 #include "base/win/registry.h"
 #include "chrome/updater/util/win_util.h"
 #include "chrome/updater/win/test/test_executables.h"
@@ -339,22 +341,21 @@ void ExpectUpdateCheckSequence(UpdaterScope scope,
       ")]}'\n");
 }
 
-void ExpectUpdateSequence(
-    UpdaterScope scope,
-    ScopedServer* test_server,
-    const std::string& app_id,
-    const std::string& install_data_index,
-    UpdateService::Priority priority,
-    int event_type,
-    const base::Version& from_version,
-    const base::Version& to_version,
-    bool do_fault_injection,
-    bool skip_download,
-    const base::FilePath& crx_path,
-    const std::string& run_action,
-    const std::string& arguments,
-    const base::Version& updater_version = base::Version(kUpdaterVersion),
-    const std::string& event_regex = ".*") {
+void ExpectUpdateSequence(UpdaterScope scope,
+                          ScopedServer* test_server,
+                          const std::string& app_id,
+                          const std::string& install_data_index,
+                          UpdateService::Priority priority,
+                          int event_type,
+                          const base::Version& from_version,
+                          const base::Version& to_version,
+                          bool do_fault_injection,
+                          bool skip_download,
+                          const base::FilePath& crx_path,
+                          const std::string& run_action,
+                          const std::string& arguments,
+                          const base::Version& updater_version,
+                          const std::string& event_regex = ".*") {
   ASSERT_TRUE(base::PathExists(crx_path));
 
   // First request: update check.
@@ -515,6 +516,7 @@ void EnterTestMode(const GURL& update_url,
           .SetInitialDelay(base::Milliseconds(100))
           .SetServerKeepAliveTime(server_keep_alive_time)
           .SetCrxVerifierFormat(crx_file::VerifierFormat::CRX3)
+          .SetCrxPublicKeyHash(std::nullopt)
           .SetOverinstallTimeout(GetOverinstallTimeoutForEnterTestMode())
           .SetIdleCheckPeriod(idle_timeout)
           .SetCecaConnectionTimeout(ceca_connection_timeout)
@@ -1216,14 +1218,18 @@ void SetAppTag(UpdaterScope scope,
   PrefsCommitPendingWrites(global_prefs->GetPrefService());
 }
 
-void Run(UpdaterScope scope, base::CommandLine command_line, int* exit_code) {
+void Run(
+    UpdaterScope scope,
+    base::CommandLine command_line,
+    int* exit_code,
+    base::FunctionRef<base::Process(const base::CommandLine&)> launch_process) {
   base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait_process;
   if (IsSystemInstall(scope)) {
     command_line.AppendSwitch(kSystemSwitch);
     command_line = MakeElevated(command_line);
   }
   VLOG(0) << " Run command: " << command_line.GetCommandLineString();
-  base::Process process = base::LaunchProcess(command_line, {});
+  base::Process process = launch_process(command_line);
   VPLOG_IF(0, !process.IsValid());
   ASSERT_TRUE(process.IsValid());
 
@@ -1236,6 +1242,21 @@ void Run(UpdaterScope scope, base::CommandLine command_line, int* exit_code) {
       2 * TestTimeouts::action_max_timeout(), exit_code);
   VPLOG_IF(0, !succeeded);
   ASSERT_TRUE(succeeded);
+}
+
+void RunDeElevated(UpdaterScope scope,
+                   base::CommandLine command_line,
+                   int* exit_code) {
+#if BUILDFLAG(IS_WIN)
+  Run(scope, command_line, exit_code,
+      [](const base::CommandLine& command_line) {
+        auto process = base::win::RunDeElevated(command_line);
+        VPLOG_IF(0, !process->IsValid()) << process.error();
+        return process.has_value() ? process->Duplicate() : base::Process();
+      });
+#else
+  Run(scope, command_line, exit_code);
+#endif
 }
 
 void ExpectCliResult(base::CommandLine command_line,
@@ -1484,7 +1505,8 @@ void ExpectEnterpriseCompanionAppOTAInstallSequence(ScopedServer* test_server) {
       /*event_type=*/2, base::Version({0, 0, 0, 0}),
       base::Version(kEnterpriseCompanionVersion),
       /*do_fault_injection=*/false, /*skip_download=*/false, crx_path,
-      kEnterpriseCompanionCRXRun, kEnterpriseCompanionCRXArguments);
+      kEnterpriseCompanionCRXRun, kEnterpriseCompanionCRXArguments,
+      base::Version(kUpdaterVersion));
 }
 
 // Runs multiple cycles of instantiating the update service, calling
@@ -1655,6 +1677,10 @@ VersionProcessFilter::VersionProcessFilter()
         for (const auto& updater_version : GetRealUpdaterVersions()) {
           versions.push_back(updater_version.version);
         }
+        for (const auto& updater_version :
+             GetRealUpdaterLowerVersions("_sans_iid")) {
+          versions.push_back(updater_version.version);
+        }
         return versions;
       }()) {}
 
@@ -1797,31 +1823,6 @@ void InstallEnterpriseCompanionApp() {
                                              &exit_code));
 }
 
-void InstallBrokenEnterpriseCompanionApp() {
-  std::optional<base::FilePath> exe_path =
-      enterprise_companion::GetInstallDirectory();
-  ASSERT_TRUE(exe_path);
-  exe_path = exe_path->Append(GetEnterpriseCompanionAppExeRelativePath());
-
-  ASSERT_TRUE(base::CreateDirectory(exe_path->DirName()));
-  ASSERT_TRUE(base::WriteFile(*exe_path, "broken enterprise companion app"));
-  VLOG(1) << "Broken enterprise companion app installed.";
-}
-
-void UninstallBrokenEnterpriseCompanionApp() {
-  std::optional<base::FilePath> install_dir =
-      enterprise_companion::GetInstallDirectory();
-  ASSERT_TRUE(install_dir);
-  for (const base::FilePath::StringType& process_name :
-       GetCompanionAppProcessNames()) {
-    KillProcesses(process_name, -1);
-    WaitForProcessesToExit(process_name, TestTimeouts::action_timeout());
-    EXPECT_FALSE(IsProcessRunning(process_name)) << process_name;
-  }
-  ASSERT_TRUE(base::DeletePathRecursively(*install_dir));
-  VLOG(1) << "Enterprise companion app manually uninstalled.";
-}
-
 void InstallEnterpriseCompanionAppOverrides(
     const base::Value::Dict& external_overrides) {
   std::optional<base::FilePath> json_path =
@@ -1858,9 +1859,6 @@ void UninstallEnterpriseCompanionApp() {
     VLOG(1) << "Enterprise companion app is removed.";
     return;
   }
-
-  // Forcefully remove the installation in case a broken one exists.
-  ASSERT_NO_FATAL_FAILURE(UninstallBrokenEnterpriseCompanionApp());
 }
 
 void ExpectDeviceManagementRequest(ScopedServer* test_server,

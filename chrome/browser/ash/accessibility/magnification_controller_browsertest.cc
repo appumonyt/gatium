@@ -71,7 +71,6 @@ class FullscreenMagnifierControllerTest
 
     std::vector<base::test::FeatureRef> enabled_features;
     std::vector<base::test::FeatureRef> disabled_features;
-    enabled_features.push_back(::features::kAccessibilityFaceGaze);
     if (GetParam() == ManifestVersion::kTwo) {
       disabled_features.push_back(
           ::features::kAccessibilityManifestV3AccessibilityCommon);
@@ -106,11 +105,12 @@ class FullscreenMagnifierControllerTest
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-// TODO(crbug.com/388867838): Add manifest v3 variant when migration is
-// complete.
 INSTANTIATE_TEST_SUITE_P(ManifestV2,
                          FullscreenMagnifierControllerTest,
                          ::testing::Values(ManifestVersion::kTwo));
+INSTANTIATE_TEST_SUITE_P(ManifestV3,
+                         FullscreenMagnifierControllerTest,
+                         ::testing::Values(ManifestVersion::kThree));
 
 IN_PROC_BROWSER_TEST_P(FullscreenMagnifierControllerTest,
                        FollowFocusOnWebButton) {

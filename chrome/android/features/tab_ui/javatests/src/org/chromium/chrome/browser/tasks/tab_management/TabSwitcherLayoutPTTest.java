@@ -15,6 +15,7 @@ import static org.junit.Assert.assertTrue;
 import static org.chromium.base.GarbageCollectionTestUtils.canBeGarbageCollected;
 import static org.chromium.base.test.transit.TransitAsserts.assertFinalDestination;
 import static org.chromium.chrome.browser.flags.ChromeFeatureList.ANDROID_ELEGANT_TEXT_HEIGHT;
+import static org.chromium.chrome.test.util.ChromeTabUtils.getIndexOnUiThread;
 
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
@@ -30,7 +31,6 @@ import org.junit.runner.RunWith;
 
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.supplier.Supplier;
-import org.chromium.base.test.transit.CarryOn;
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisableIf;
@@ -64,8 +64,9 @@ import org.chromium.chrome.test.transit.hub.TabSwitcherListEditorFacility;
 import org.chromium.chrome.test.transit.hub.TabSwitcherStation;
 import org.chromium.chrome.test.transit.hub.UndoSnackbarFacility;
 import org.chromium.chrome.test.transit.ntp.IncognitoNewTabPageStation;
+import org.chromium.chrome.test.transit.ntp.RegularNewTabPageAppMenuFacility;
 import org.chromium.chrome.test.transit.ntp.RegularNewTabPageStation;
-import org.chromium.chrome.test.transit.page.PageStation;
+import org.chromium.chrome.test.transit.page.CtaPageStation;
 import org.chromium.chrome.test.transit.page.WebPageStation;
 import org.chromium.chrome.test.transit.tabmodel.TabThumbnailsCapturedCarryOn;
 import org.chromium.chrome.test.util.ChromeRenderTestRule;
@@ -116,7 +117,7 @@ public class TabSwitcherLayoutPTTest {
     @Rule
     public ChromeRenderTestRule mRenderTestRule =
             ChromeRenderTestRule.Builder.withPublicCorpus()
-                    .setRevision(9)
+                    .setRevision(11) // Update the empty thumbnail placeholder.
                     .setBugComponent(ChromeRenderTestRule.Component.UI_BROWSER_MOBILE_HUB)
                     .build();
 
@@ -133,24 +134,24 @@ public class TabSwitcherLayoutPTTest {
 
     /** Enters the regular Tab Switcher, making sure all tabs have a thumbnail. */
     private RegularTabSwitcherStation enterRegularHtsWithThumbnailChecking(
-            PageStation currentStation) {
-        RegularTabSwitcherStation tabSwitcherStation = currentStation.openRegularTabSwitcher();
-        CarryOn.pickUp(
-                new TabThumbnailsCapturedCarryOn(
-                        tabSwitcherStation.tabModelSelectorElement.get(), /* isIncognito= */ false),
-                /* trigger= */ null);
-        return tabSwitcherStation;
+            CtaPageStation currentStation) {
+        return currentStation
+                .openRegularTabSwitcherAnd()
+                .pickUpCarryOnAnd(
+                        new TabThumbnailsCapturedCarryOn(
+                                currentStation.getTabModelSelector(), /* isIncognito= */ false))
+                .completeAndGet(RegularTabSwitcherStation.class);
     }
 
     /** Enters the Incognito Tab Switcher, making sure all tabs have a thumbnail. */
     private IncognitoTabSwitcherStation enterIncognitoHtsWithThumbnailChecking(
-            PageStation currentStation) {
-        IncognitoTabSwitcherStation tabSwitcherStation = currentStation.openIncognitoTabSwitcher();
-        CarryOn.pickUp(
-                new TabThumbnailsCapturedCarryOn(
-                        tabSwitcherStation.tabModelSelectorElement.get(), /* isIncognito= */ true),
-                /* trigger= */ null);
-        return tabSwitcherStation;
+            CtaPageStation currentStation) {
+        return currentStation
+                .openIncognitoTabSwitcherAnd()
+                .pickUpCarryOnAnd(
+                        new TabThumbnailsCapturedCarryOn(
+                                currentStation.getTabModelSelector(), /* isIncognito= */ true))
+                .completeAndGet(IncognitoTabSwitcherStation.class);
     }
 
     @Test
@@ -188,7 +189,7 @@ public class TabSwitcherLayoutPTTest {
         WebPageStation pageStation =
                 Journeys.prepareTabsWithThumbnails(
                         mStartPage, 10, 0, "about:blank", WebPageStation::newBuilder);
-        assertEquals(9, cta.getTabModelSelector().getCurrentModel().index());
+        assertEquals(9, getIndexOnUiThread(cta.getTabModelSelector().getCurrentModel()));
         RegularTabSwitcherStation tabSwitcherStation =
                 enterRegularHtsWithThumbnailChecking(pageStation);
         // Make sure the grid tab switcher is scrolled down to show the selected tab.
@@ -246,7 +247,7 @@ public class TabSwitcherLayoutPTTest {
 
         tabSwitcherStation = pageStation.openRegularTabSwitcher();
 
-        mRenderTestRule.render(cta.findViewById(R.id.pane_frame), "3_native_tabs_v3");
+        mRenderTestRule.render(cta.findViewById(R.id.pane_frame), "3_native_tabs_v4");
 
         RegularNewTabPageStation previousPage =
                 tabSwitcherStation.leaveHubToPreviousTabViaBack(
@@ -278,6 +279,38 @@ public class TabSwitcherLayoutPTTest {
 
         WebPageStation previousPage =
                 tabSwitcherStation.leaveHubToPreviousTabViaBack(WebPageStation.newBuilder());
+        assertFinalDestination(previousPage);
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"RenderTest"})
+    @EnableFeatures(ChromeFeatureList.ANDROID_PINNED_TABS)
+    public void testRenderGrid_PinnedTabs() throws IOException {
+        ChromeTabbedActivity cta = mCtaTestRule.getActivity();
+        RegularNewTabPageStation pageStation =
+                Journeys.prepareTabsWithThumbnails(
+                        mStartPage,
+                        3,
+                        0,
+                        UrlConstants.NTP_URL,
+                        RegularNewTabPageStation::newBuilder);
+        // Make sure all thumbnails are there before switching tabs.
+        RegularTabSwitcherStation tabSwitcherStation =
+                enterRegularHtsWithThumbnailChecking(pageStation);
+
+        // Pin a tab.
+        pageStation = tabSwitcherStation.selectTabAtIndex(0, RegularNewTabPageStation.newBuilder());
+        RegularNewTabPageAppMenuFacility menu = pageStation.openAppMenu();
+        menu.pinTab();
+
+        tabSwitcherStation = pageStation.openRegularTabSwitcher();
+
+        mRenderTestRule.render(cta.findViewById(R.id.pane_frame), "regular_pinned_tabs");
+
+        RegularNewTabPageStation previousPage =
+                tabSwitcherStation.leaveHubToPreviousTabViaBack(
+                        RegularNewTabPageStation.newBuilder());
         assertFinalDestination(previousPage);
     }
 
@@ -324,6 +357,7 @@ public class TabSwitcherLayoutPTTest {
     @Test
     @MediumTest
     @TestAnimations.EnableAnimations
+    @DisabledTest(message = "crbug.com/433892577 thumbnail capture is flaky")
     @RequiresRestart("Flaky on desktop (crbug.com/381679686), affects flake rate of other tests")
     public void testTabToGridAndBack_SoftCleanup_Ntp() {
         WebPageStation firstPage = mCtaTestRule.startOnBlankPage();
@@ -657,9 +691,9 @@ public class TabSwitcherLayoutPTTest {
         assertFinalDestination(ntp);
     }
 
-    private <T extends PageStation> T roundtripToHTSWithThumbnailChecks(
+    private <T extends CtaPageStation> T roundtripToHTSWithThumbnailChecks(
             T page,
-            Supplier<PageStation.Builder<T>> destinationBuiderFactory,
+            Supplier<CtaPageStation.Builder<T>> destinationBuiderFactory,
             Runnable resetHTSStateOnUiThread,
             boolean canGarbageCollectBitmaps) {
         RegularTabSwitcherStation tabSwitcher = enterRegularHtsWithThumbnailChecking(page);
@@ -793,7 +827,8 @@ public class TabSwitcherLayoutPTTest {
         TabModel tabModel = tabSwitcher.getTabModel();
         // Create the group.
         for (int i = 0; i < numTabsToGroup; i++) {
-            tabsInGroup.add(tabModel.getTabAt(i));
+            int j = i;
+            tabsInGroup.add(ThreadUtils.runOnUiThreadBlocking(() -> tabModel.getTabAt(j)));
         }
         TabSwitcherGroupCardFacility tabGroupCard =
                 Journeys.mergeTabsToNewGroup(tabSwitcher, tabsInGroup);

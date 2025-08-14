@@ -337,6 +337,8 @@ PreloadingEligibility ToEligibility(PrerenderFinalStatus status) {
     case PrerenderFinalStatus::kPrerenderFailedDuringPrefetch:
     case PrerenderFinalStatus::kBrowsingDataRemoved:
       NOTREACHED();
+    case PrerenderFinalStatus::kPrerenderHostReused:
+      NOTREACHED();
   }
 
   NOTREACHED();
@@ -369,8 +371,10 @@ class PrerenderHostBuilder {
   PrerenderHostBuilder& operator=(PrerenderHostBuilder&&) = delete;
 
   // The following methods consumes this class.
-  std::unique_ptr<PrerenderHost> Build(const PrerenderAttributes& attributes,
-                                       WebContentsImpl& prerender_web_contents);
+  std::unique_ptr<PrerenderHost> Build(
+      std::unique_ptr<PrerenderHost> reuse_host,
+      const PrerenderAttributes& attributes,
+      WebContentsImpl& prerender_web_contents);
   void RejectAsNotEligible(const PrerenderAttributes& attributes,
                            PrerenderFinalStatus status);
   void RejectAsDuplicate();
@@ -413,15 +417,16 @@ bool PrerenderHostBuilder::IsDropped() const {
 }
 
 std::unique_ptr<PrerenderHost> PrerenderHostBuilder::Build(
+    std::unique_ptr<PrerenderHost> reuse_host,
     const PrerenderAttributes& attributes,
     WebContentsImpl& prerender_web_contents) {
   CHECK(!IsDropped());
+  std::unique_ptr<PrerenderHost> prerender_host;
 
-  auto prerender_host = std::make_unique<PrerenderHost>(
-      attributes, prerender_web_contents,
+  prerender_host = std::make_unique<PrerenderHost>(
+      std::move(reuse_host), attributes, prerender_web_contents,
       attempt_ ? attempt_->GetWeakPtr() : nullptr,
       std::move(devtools_attempt_));
-
   Drop();
 
   return prerender_host;
@@ -797,7 +802,23 @@ FrameTreeNodeId PrerenderHostRegistry::CreateAndStartHost(
       return FrameTreeNodeId();
     }
 
-    auto prerender_host = builder.Build(attributes, prerender_web_contents);
+    std::unique_ptr<PrerenderHost> reuse_host;
+    std::unique_ptr<PrerenderHost> prerender_host;
+    if (base::FeatureList::IsEnabled(features::kPrerender2ReuseHost)) {
+      reuse_host = FindAndTakePrerenderHostToReuse(attributes);
+    }
+    base::UmaHistogramBoolean("Prerender.Experimental.FoundReusePrerenderHost",
+                              reuse_host != nullptr);
+    if (!reuse_host) {
+      base::UmaHistogramCounts100(
+          "Prerender.Experimental.ReusePrerenderHost.PrerenderHostCount.Failed",
+          prerender_host_by_frame_tree_node_id_.size());
+    }
+    // If we find a reusable prerender host under the same site. We will
+    // take over its frame tree and initiate a new navigation to the new
+    // prerender URL.
+    prerender_host = builder.Build(std::move(reuse_host), attributes,
+                                   prerender_web_contents);
     frame_tree_node_id = prerender_host->frame_tree_node_id();
 
     CHECK(!base::Contains(prerender_host_by_frame_tree_node_id_,
@@ -812,6 +833,8 @@ FrameTreeNodeId PrerenderHostRegistry::CreateAndStartHost(
     }
   }
 
+  // Now start prerender the new page. If the PrerenderHost is reusing a frame
+  // tree, the previous page will be unloaded after initiating a new navigation.
   switch (attributes.trigger_type) {
     case PreloadingTriggerType::kSpeculationRule:
     case PreloadingTriggerType::kSpeculationRuleFromIsolatedWorld:
@@ -1211,7 +1234,8 @@ FrameTreeNodeId PrerenderHostRegistry::FindPotentialHostToActivate(
              : FrameTreeNodeId();
 }
 
-FrameTreeNodeId PrerenderHostRegistry::ReserveHostToActivate(
+std::optional<ReservedPrerenderHostInfo>
+PrerenderHostRegistry::ReserveHostToActivate(
     NavigationRequest& navigation_request,
     FrameTreeNodeId expected_host_id) {
   RenderFrameHostImpl* render_frame_host =
@@ -1231,7 +1255,7 @@ FrameTreeNodeId PrerenderHostRegistry::ReserveHostToActivate(
   // matched pages may not be ready for activation yet.
   auto it = prerender_host_by_frame_tree_node_id_.find(expected_host_id);
   if (it == prerender_host_by_frame_tree_node_id_.end()) {
-    return FrameTreeNodeId();
+    return std::nullopt;
   }
 
   PrerenderHost& host_ref = *it->second;
@@ -1242,11 +1266,11 @@ FrameTreeNodeId PrerenderHostRegistry::ReserveHostToActivate(
   std::optional<UrlMatchType> match_type =
       host_ref.IsUrlMatch(navigation_request.GetURL());
   if (!match_type.has_value()) {
-    return FrameTreeNodeId();
+    return std::nullopt;
   }
 
   if (!CanNavigationActivateHost(navigation_request, host_ref)) {
-    return FrameTreeNodeId();
+    return std::nullopt;
   }
 
   FrameTreeNodeId host_id = host_ref.frame_tree_node_id();
@@ -1258,7 +1282,7 @@ FrameTreeNodeId PrerenderHostRegistry::ReserveHostToActivate(
   if (prerender_frame_tree.root()->HasNavigation()) {
     CancelHost(host_id,
                PrerenderFinalStatus::kActivatedDuringMainFrameNavigation);
-    return FrameTreeNodeId();
+    return std::nullopt;
   }
 
   // Remove the host from the map of non-reserved hosts.
@@ -1278,7 +1302,10 @@ FrameTreeNodeId PrerenderHostRegistry::ReserveHostToActivate(
   CHECK(!reserved_prerender_host_);
   reserved_prerender_host_ = std::move(host);
 
-  return host_id;
+  return ReservedPrerenderHostInfo(
+      host_id, reserved_prerender_host_->trigger_type(),
+      reserved_prerender_host_->embedder_histogram_suffix(),
+      reserved_prerender_host_->host_reused());
 }
 
 RenderFrameHostImpl* PrerenderHostRegistry::GetRenderFrameHostForReservedHost(
@@ -1588,11 +1615,10 @@ void PrerenderHostRegistry::DidStartNavigation(
 
   // This navigation is running on the main frame in the prerendered page, so
   // its FrameTree::Delegate should be PrerenderHost.
-  auto* prerender_host = static_cast<PrerenderHost*>(
-      navigation_request->frame_tree_node()->frame_tree().delegate());
-  CHECK(prerender_host);
+  auto& prerender_host = PrerenderHost::GetFromFrameTreeNode(
+      *navigation_request->frame_tree_node());
 
-  prerender_host->DidStartNavigation(navigation_handle);
+  prerender_host.DidStartNavigation(navigation_handle);
 }
 
 void PrerenderHostRegistry::ReadyToCommitNavigation(
@@ -1607,11 +1633,10 @@ void PrerenderHostRegistry::ReadyToCommitNavigation(
 
   // This navigation is running on the main frame in the prerendered page, so
   // its FrameTree::Delegate should be PrerenderHost.
-  auto* prerender_host = static_cast<PrerenderHost*>(
-      navigation_request->frame_tree_node()->frame_tree().delegate());
-  CHECK(prerender_host);
+  auto& prerender_host = PrerenderHost::GetFromFrameTreeNode(
+      *navigation_request->frame_tree_node());
 
-  prerender_host->ReadyToCommitNavigation(navigation_handle);
+  prerender_host.ReadyToCommitNavigation(navigation_handle);
 }
 
 void PrerenderHostRegistry::DidFinishNavigation(
@@ -1849,20 +1874,6 @@ void PrerenderHostRegistry::NotifyCancel(
   }
 }
 
-PreloadingTriggerType PrerenderHostRegistry::GetPrerenderTriggerType(
-    FrameTreeNodeId frame_tree_node_id) {
-  CHECK(reserved_prerender_host_);
-  CHECK_EQ(reserved_prerender_host_->frame_tree_node_id(), frame_tree_node_id);
-  return reserved_prerender_host_->trigger_type();
-}
-
-const std::string& PrerenderHostRegistry::GetPrerenderEmbedderHistogramSuffix(
-    FrameTreeNodeId frame_tree_node_id) {
-  CHECK(reserved_prerender_host_);
-  CHECK_EQ(reserved_prerender_host_->frame_tree_node_id(), frame_tree_node_id);
-  return reserved_prerender_host_->embedder_histogram_suffix();
-}
-
 PrerenderHostRegistry::PrerenderLimitGroup
 PrerenderHostRegistry::GetPrerenderLimitGroup(
     PreloadingTriggerType trigger_type,
@@ -2080,6 +2091,25 @@ void PrerenderHostRegistry::RecordPotentialPrerenderProcessReuse(
   }
 
   base::UmaHistogramEnumeration(kPrerenderProcessReuseUMAName, availability);
+}
+
+std::unique_ptr<PrerenderHost>
+PrerenderHostRegistry::FindAndTakePrerenderHostToReuse(
+    const PrerenderAttributes& attributes) {
+  const GURL prerender_url = attributes.prerendering_url;
+  auto iter = std::find_if(prerender_host_by_frame_tree_node_id_.begin(),
+                           prerender_host_by_frame_tree_node_id_.end(),
+                           [&prerender_url](const auto& pair) {
+                             return pair.second->IsUrlSameSite(prerender_url) &&
+                                    pair.second->IsReusable();
+                           });
+  if (iter != prerender_host_by_frame_tree_node_id_.end()) {
+    std::unique_ptr<PrerenderHost> reuse_host = std::move(iter->second);
+    prerender_host_by_frame_tree_node_id_.erase(iter);
+    reuse_host->NotifyReused();
+    return reuse_host;
+  }
+  return nullptr;
 }
 
 }  // namespace content

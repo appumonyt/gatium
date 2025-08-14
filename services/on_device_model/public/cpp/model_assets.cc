@@ -38,8 +38,8 @@ constexpr uint32_t kCacheFlags = kWeightsFlags;
 constexpr uint32_t kWeightsFlags =
     base::File::FLAG_OPEN | base::File::FLAG_READ | base::File::FLAG_ASYNC |
     base::File::FLAG_WIN_SEQUENTIAL_SCAN;
-constexpr uint32_t kCacheFlags = base::File::FLAG_OPEN | base::File::FLAG_READ |
-                                 base::File::FLAG_WRITE;
+constexpr uint32_t kCacheFlags = base::File::FLAG_OPEN_ALWAYS |
+                                 base::File::FLAG_READ | base::File::FLAG_WRITE;
 #endif
 
 // Attempts to make sure `file` will be read from disk quickly when needed.
@@ -135,12 +135,16 @@ ModelAssets::ModelAssets(mojo::DefaultConstruct::Tag tag) : weights(tag) {}
 ModelAssets::ModelAssets(const ModelAssets& other)
     : weights(other.weights),
       sp_model_path(other.sp_model_path),
-      cache(other.cache.Duplicate()) {}
+      cache(other.cache.Duplicate()),
+      encoder_cache(other.encoder_cache.Duplicate()),
+      adapter_cache(other.adapter_cache.Duplicate()) {}
 
 ModelAssets& ModelAssets::operator=(const ModelAssets& other) {
   weights = other.weights;
   sp_model_path = other.sp_model_path;
   cache = other.cache.Duplicate();
+  encoder_cache = other.encoder_cache.Duplicate();
+  adapter_cache = other.adapter_cache.Duplicate();
   return *this;
 }
 
@@ -161,6 +165,16 @@ ModelAssets LoadModelAssets(const ModelAssetPaths& paths) {
   if (!paths.cache.empty()) {
     PrefetchFile(paths.cache);
     assets.cache = base::File(paths.cache, kCacheFlags);
+  }
+
+  if (!paths.encoder_cache.empty()) {
+    PrefetchFile(paths.encoder_cache);
+    assets.encoder_cache = base::File(paths.encoder_cache, kCacheFlags);
+  }
+
+  if (!paths.adapter_cache.empty()) {
+    PrefetchFile(paths.adapter_cache);
+    assets.adapter_cache = base::File(paths.adapter_cache, kCacheFlags);
   }
 
   return assets;

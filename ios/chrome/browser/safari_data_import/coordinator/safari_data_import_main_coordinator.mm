@@ -8,13 +8,15 @@
 
 #import "base/check.h"
 #import "base/feature_list.h"
+#import "ios/chrome/browser/feature_engagement/model/tracker_factory.h"
 #import "ios/chrome/browser/passwords/model/features.h"
 #import "ios/chrome/browser/promos_manager/model/promos_manager.h"
 #import "ios/chrome/browser/promos_manager/model/promos_manager_factory.h"
-#import "ios/chrome/browser/safari_data_import/coordinator/safari_data_import_coordinator_transitioning_delegate.h"
+#import "ios/chrome/browser/safari_data_import/coordinator/safari_data_import_child_coordinator_delegate.h"
+#import "ios/chrome/browser/safari_data_import/coordinator/safari_data_import_entry_point_mediator.h"
 #import "ios/chrome/browser/safari_data_import/coordinator/safari_data_import_export_coordinator.h"
-#import "ios/chrome/browser/safari_data_import/coordinator/safari_data_import_main_mediator.h"
 #import "ios/chrome/browser/safari_data_import/coordinator/safari_data_import_ui_handler.h"
+#import "ios/chrome/browser/safari_data_import/public/metrics.h"
 #import "ios/chrome/browser/safari_data_import/ui/safari_data_import_entry_point_view_controller.h"
 #import "ios/chrome/browser/shared/coordinator/scene/scene_state.h"
 #import "ios/chrome/browser/shared/model/browser/browser.h"
@@ -22,13 +24,15 @@
 
 @interface SafariDataImportMainCoordinator () <
     ConfirmationAlertActionHandler,
-    SafariDataImportCoordinatorTransitioningDelegate>
+    SafariDataImportChildCoordinatorDelegate>
 
 @end
 
 @implementation SafariDataImportMainCoordinator {
+  /// How the Safari data workflow is started.
+  SafariDataImportEntryPoint _entryPoint;
   /// Mediator for the main workflow.
-  SafariDataImportMainMediator* _mediator;
+  SafariDataImportEntryPointMediator* _mediator;
   /// View controller for the entry point of the Ssafari data import workflow.
   SafariDataImportEntryPointViewController* _viewController;
   /// Coordinator that displays the next step in the Safari data importing
@@ -37,16 +41,29 @@
   SafariDataImportExportCoordinator* _exportCoordinator;
 }
 
+- (instancetype)initFromEntryPoint:(SafariDataImportEntryPoint)entryPoint
+            withBaseViewController:(UIViewController*)viewController
+                           browser:(Browser*)browser {
+  self = [super initWithBaseViewController:viewController browser:browser];
+  if (self) {
+    _entryPoint = entryPoint;
+  }
+  return self;
+}
+
 - (void)start {
-  CHECK(base::FeatureList::IsEnabled(kImportPasswordsFromSafari));
+  CHECK(ShouldShowSafariImportWorkflow());
   _viewController = [[SafariDataImportEntryPointViewController alloc] init];
   _viewController.modalInPresentation = YES;
   _viewController.actionHandler = self;
   PromosManager* promosManager =
       PromosManagerFactory::GetForProfile(self.profile);
-  _mediator = [[SafariDataImportMainMediator alloc]
-      initWithUIBlockerTarget:self.browser->GetSceneState()
-                promosManager:promosManager];
+  feature_engagement::Tracker* tracker =
+      feature_engagement::TrackerFactory::GetForProfile(self.profile);
+  _mediator = [[SafariDataImportEntryPointMediator alloc]
+       initWithUIBlockerTarget:self.browser->GetSceneState()
+                 promosManager:promosManager
+      featureEngagementTracker:tracker];
   [self.baseViewController presentViewController:_viewController
                                         animated:YES
                                       completion:nil];
@@ -54,7 +71,7 @@
 
 - (void)stop {
   __weak __typeof(self) weakSelf = self;
-  SafariDataImportMainMediator* mediator = _mediator;
+  SafariDataImportEntryPointMediator* mediator = _mediator;
   [_viewController.presentingViewController
       dismissViewControllerAnimated:YES
                          completion:^{
@@ -69,24 +86,32 @@
 #pragma mark - ConfirmationAlertActionHandler
 
 - (void)confirmationAlertPrimaryAction {
+  RecordSafariImportActionOnEntryPoint(
+      SafariDataImportEntryPointAction::kImport, _entryPoint);
   CHECK(!_exportCoordinator);
+  [_mediator notifyUsedOrDismissed];
   _exportCoordinator = [[SafariDataImportExportCoordinator alloc]
       initWithBaseViewController:_viewController
                          browser:self.browser];
-  _exportCoordinator.transitioningDelegate = self;
+  _exportCoordinator.delegate = self;
   [_exportCoordinator start];
 }
 
 - (void)confirmationAlertSecondaryAction {
+  RecordSafariImportActionOnEntryPoint(
+      SafariDataImportEntryPointAction::kRemindMeLater, _entryPoint);
   [_mediator registerReminder];
   [self.delegate safariImportWorkflowDidEndForCoordinator:self];
 }
 
 - (void)confirmationAlertDismissAction {
+  RecordSafariImportActionOnEntryPoint(
+      SafariDataImportEntryPointAction::kDismiss, _entryPoint);
+  [_mediator notifyUsedOrDismissed];
   [self.delegate safariImportWorkflowDidEndForCoordinator:self];
 }
 
-#pragma mark - SafariDataImportCoordinatorTransitioningDelegate
+#pragma mark - SafariDataImportChildCoordinatorDelegate
 
 - (void)safariDataImportCoordinatorWillDismissWorkflow:
     (ChromeCoordinator*)coordinator {

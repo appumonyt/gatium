@@ -10,6 +10,7 @@ import '/lens/shared/searchbox_ghost_loader.js';
 import '/lens/shared/searchbox_shared_style.css.js';
 import '//resources/cr_components/searchbox/searchbox.js';
 import '//resources/cr_elements/cr_toast/cr_toast.js';
+import '//resources/cr_components/composebox/composebox.js';
 
 import {ColorChangeUpdater} from '//resources/cr_components/color_change_listener/colors_css_updater.js';
 import {HelpBubbleMixin} from '//resources/cr_components/help_bubble/help_bubble_mixin.js';
@@ -77,6 +78,11 @@ export class LensSidePanelAppElement extends LensSidePanelAppElementBase {
       autocompleteRequestStarted: {
         type: Boolean,
         value: false,
+      },
+      enableAimSearchbox: {
+        reflectToAttribute: true,
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('enableAimSearchbox'),
       },
       enableCsbMotionTweaks: {
         reflectToAttribute: true,
@@ -209,6 +215,8 @@ export class LensSidePanelAppElement extends LensSidePanelAppElementBase {
   declare private pageContentType: PageContentType;
   // Whether this is an in flight request to autocomplete.
   declare private autocompleteRequestStarted: boolean;
+  // Whether the AIM searchbox is enabled via feature flag.
+  declare private enableAimSearchbox: boolean;
   declare private isErrorPageVisible: boolean;
   // Whether the results iframe is currently loading. This needs to be done via
   // browser because the iframe is cross-origin. Default true since the side
@@ -223,9 +231,8 @@ export class LensSidePanelAppElement extends LensSidePanelAppElementBase {
   private progressBarAnimation: Animation|null = null;
   private progressBarHideAnimation: Animation|null = null;
   // A helper object responsible for handling post messages received by the
-  // window.
-  private postMessageReceiver: PostMessageReceiver =
-      new PostMessageReceiver(SidePanelBrowserProxyImpl.getInstance());
+  // window. Only alive while this component is connected to the DOM.
+  private postMessageReceiver?: PostMessageReceiver;
   // Whether the feedback toast has been explicitly dismissed by the user.
   private feedbackToastDismissed = false;
   // The timeout ID for reshowing the feedback toast.
@@ -297,7 +304,8 @@ export class LensSidePanelAppElement extends LensSidePanelAppElementBase {
         () => this.feedbackToastDismissed = true);
 
     // Start listening to postMessages on the window.
-    this.postMessageReceiver.listen();
+    this.postMessageReceiver = new PostMessageReceiver(
+        SidePanelBrowserProxyImpl.getInstance(), this.$.results);
   }
 
   override disconnectedCallback() {
@@ -307,7 +315,9 @@ export class LensSidePanelAppElement extends LensSidePanelAppElementBase {
         id => assert(this.browserProxy.callbackRouter.removeListener(id)));
     this.listenerIds = [];
     this.eventTracker_.removeAll();
-    this.postMessageReceiver.detach();
+    // Let the postMessageReceiver cleanup before it is destroyed.
+    this.postMessageReceiver!.detach();
+    this.postMessageReceiver = undefined;
   }
 
   private onBackArrowClick() {
@@ -514,6 +524,10 @@ export class LensSidePanelAppElement extends LensSidePanelAppElementBase {
 
   private pageContentTypeChanged(newPageContentType: PageContentType) {
     this.pageContentType = newPageContentType;
+    this.browserProxy.handler.getIsContextualSearchbox().then(
+        ({isContextualSearchbox}) => {
+          this.isContextualSearchbox = isContextualSearchbox;
+        });
   }
 
   // Show the toast that asks the user to share their feedback.

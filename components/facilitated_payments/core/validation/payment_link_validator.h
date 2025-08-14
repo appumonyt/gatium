@@ -20,6 +20,7 @@ class PaymentLinkValidator {
     kShopeePay = 2,
     kTngd = 3,
     kPromptPay = 4,
+    kMomo = 5,
   };
 
   PaymentLinkValidator();
@@ -30,6 +31,10 @@ class PaymentLinkValidator {
 
   // Returns the `Scheme` of the given `payment_link_url`.
   Scheme GetScheme(const GURL& payment_link_url) const;
+
+  // Sanitizes a GURL by removing components that are not needed for payment app
+  // retrieval.
+  static GURL SanitizeForPaymentAppRetrieval(const GURL& payment_link_url);
 
  private:
   const std::vector<std::string> valid_prefixes_;

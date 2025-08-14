@@ -46,6 +46,7 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/common/pref_names.h"
 #include "components/enterprise/buildflags/buildflags.h"
+#include "components/omnibox/browser/autocomplete_match.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/safe_browsing/core/browser/sync/safe_browsing_primary_account_token_fetcher.h"
@@ -143,6 +144,12 @@ base::TimeDelta kOffstoreFileDataCollectionStartupDelaySeconds =
 // Limit the off-store file data collection duration.
 base::TimeDelta kOffstoreFileDataCollectionDurationLimitSeconds =
     base::Seconds(60);
+
+#if BUILDFLAG(ENTERPRISE_CLOUD_CONTENT_ANALYSIS)
+// Interval for generating and send extension telemetry for enterprise
+base::TimeDelta kExtensionTelemetryEnterpriseReportingIntervalSeconds =
+    base::Seconds(300);
+#endif
 
 void RecordWhenFileWasPersisted(bool persisted_at_write_interval) {
   base::UmaHistogramBoolean(
@@ -468,7 +475,6 @@ ExtensionTelemetryService::ExtensionTelemetryService(
   SetEnabledForESB(IsEnhancedProtectionEnabled(*pref_service_));
 
 #if BUILDFLAG(ENTERPRISE_CLOUD_CONTENT_ANALYSIS)
-  if (base::FeatureList::IsEnabled(kExtensionTelemetryForEnterprise)) {
     // Register for enterprise policy changes.
     auto* connector_service =
         enterprise_connectors::ConnectorsServiceFactory::GetForBrowserContext(
@@ -480,7 +486,6 @@ ExtensionTelemetryService::ExtensionTelemetryService(
     // Set initial enable/disable state for enterprise.
     SetEnabledForEnterprise(
         GetExtensionTelemetryEventRouter(profile_)->IsPolicyEnabled());
-  }
 #endif  // BUILDFLAG(ENTERPRISE_CLOUD_CONTENT_ANALYSIS)
 }
 
@@ -609,10 +614,8 @@ void ExtensionTelemetryService::SetEnabledForEnterprise(bool enable) {
     SetUpOffstoreFileDataCollection();
 
     enterprise_timer_.Start(
-        FROM_HERE,
-        base::Seconds(
-            kExtensionTelemetryEnterpriseReportingIntervalSeconds.Get()),
-        this, &ExtensionTelemetryService::CreateAndSendEnterpriseReport);
+        FROM_HERE, kExtensionTelemetryEnterpriseReportingIntervalSeconds, this,
+        &ExtensionTelemetryService::CreateAndSendEnterpriseReport);
   } else {
     // Stop enterprise timer for periodic telemetry reports.
     enterprise_timer_.Stop();
@@ -673,6 +676,14 @@ void ExtensionTelemetryService::AddSignal(
     AddSignalHelper(*signal, enterprise_extension_store_,
                     enterprise_signal_subscribers_);
   }
+}
+
+void ExtensionTelemetryService::OnOmniboxSearch(
+    const AutocompleteMatch& match) {
+  // TODO(crbug.com/437345485): Check if this is a DSE search,
+  // increment a search event counter and persist it to prefs. The event counts
+  // will be checked for a search hijacking heuristics match in a separate
+  // class periodically (implementation in a separate CL).
 }
 
 void ExtensionTelemetryService::AddSignalHelper(
@@ -1770,6 +1781,13 @@ ExtensionTelemetryService::GetOffstoreFileDataCollectionStartupDelaySeconds() {
 base::TimeDelta
 ExtensionTelemetryService::GetOffstoreFileDataCollectionIntervalSeconds() {
   return kOffstoreFileDataCollectionIntervalSeconds;
+}
+
+void ExtensionTelemetryService::OnDseSerpLoaded() {
+  // TODO(crbug.com/437345485): Increment a search event counter and persist it
+  // to prefs. The event counts will be checked for a search hijacking
+  // heuristics match in a separate class periodically
+  // (implementation in a separate CL).
 }
 
 }  // namespace safe_browsing

@@ -30,12 +30,16 @@ void ComputeAvailableSizes(const BoxStrut& border_scrollbar_padding,
 
 // https://drafts.csswg.org/css-grid-2/#auto-repeat
 //
-// This method assumes that the track list provided has an auto repeater.
-wtf_size_t CalculateAutomaticRepetitions(const GridTrackList& track_list,
-                                         const LayoutUnit gutter_size,
-                                         LayoutUnit available_size,
-                                         LayoutUnit min_available_size,
-                                         LayoutUnit max_available_size);
+// This method assumes that the track list provided has an auto repeater. If
+// `intrinsic_repeat_track_sizes` is not nullptr, this will indicate what to
+// size an intrinsic track definition(s) within an auto repeater.
+wtf_size_t CalculateAutomaticRepetitions(
+    const GridTrackList& track_list,
+    const LayoutUnit gutter_size,
+    LayoutUnit available_size,
+    LayoutUnit min_available_size,
+    LayoutUnit max_available_size,
+    const Vector<LayoutUnit>* intrinsic_repeat_track_sizes = nullptr);
 
 }  // namespace blink
 

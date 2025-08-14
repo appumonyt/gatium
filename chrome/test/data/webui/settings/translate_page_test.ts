@@ -91,7 +91,7 @@ suite('TranslatePage', function() {
       assertEquals(translatePage.getPref(translateTarget).value, 'sw');
     });
 
-    test('test never translate display', function() {
+    test('never translate display', function() {
       // Disable a language not in fake_language_settings_private. The language
       // should not be shown in the never translate list.
       languageHelper.disableTranslateLanguage('eo');
@@ -126,7 +126,7 @@ suite('TranslatePage', function() {
           translatePage.getPref(neverTranslatePref).value);
     });
 
-    test('test always translate display', function() {
+    test('always translate display', function() {
       // Add a language not in fake_language_settings_private. The language
       // should not be shown in the always translate list.
       languageHelper.setLanguageAlwaysTranslateState('eo', true);
@@ -200,7 +200,7 @@ suite('TranslatePage', function() {
       assertTrue(deleteIcons[0]!.disabled);
     });
 
-    test('test translate.enable toggle', function() {
+    test('translate.enable toggle', function() {
       const settingsToggle =
           translatePage.shadowRoot!.querySelector<HTMLElement>(
               '#offerTranslateOtherLanguages');
@@ -266,7 +266,8 @@ suite('TranslatePage', function() {
         dialogClosedResolver = new PromiseResolver();
         dialogClosedObserver = new MutationObserver(onMutation);
         dialogClosedObserver.observe(
-            translatePage.shadowRoot!, {childList: true});
+            translatePage.shadowRoot!.querySelector('settings-section')!,
+            {childList: true});
 
         flush();
       });
@@ -336,7 +337,8 @@ suite('TranslatePage', function() {
         dialogClosedResolver = new PromiseResolver();
         dialogClosedObserver = new MutationObserver(onMutation);
         dialogClosedObserver.observe(
-            translatePage.shadowRoot!, {childList: true});
+            translatePage.shadowRoot!.querySelector('settings-section')!,
+            {childList: true});
 
         flush();
       });

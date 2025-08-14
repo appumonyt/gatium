@@ -15,9 +15,6 @@
 #include "components/prefs/pref_service.h"
 #include "components/sync/service/sync_service.h"
 
-#if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
-#endif
 
 namespace password_manager {
 
@@ -65,18 +62,17 @@ bool PasswordFeatureManagerImpl::IsBiometricAuthenticationBeforeFillingEnabled()
 }
 
 bool PasswordFeatureManagerImpl::IsAccountStorageEnabled() const {
-  return features_util::IsAccountStorageEnabled(pref_service_, sync_service_);
+  return features_util::IsAccountStorageEnabled(sync_service_);
 }
 
 features_util::PasswordAccountStorageUsageLevel
 PasswordFeatureManagerImpl::ComputePasswordAccountStorageUsageLevel() const {
-  return features_util::ComputePasswordAccountStorageUsageLevel(pref_service_,
-                                                                sync_service_);
+  return features_util::ComputePasswordAccountStorageUsageLevel(sync_service_);
 }
 
 #if BUILDFLAG(IS_ANDROID)
 bool PasswordFeatureManagerImpl::ShouldUpdateGmsCore() {
-  return IsGmsCoreUpdateRequired(pref_service_, sync_service_);
+  return IsGmsCoreUpdateRequired();
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 

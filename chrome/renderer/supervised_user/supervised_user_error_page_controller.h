@@ -7,9 +7,13 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
+#include "gin/weak_cell.h"
 #include "gin/wrappable.h"
+
+namespace cppgc {
+class Visitor;
+}
 
 namespace content {
 class RenderFrame;
@@ -23,7 +27,9 @@ class SupervisedUserErrorPageControllerDelegate;
 class SupervisedUserErrorPageController
     : public gin::Wrappable<SupervisedUserErrorPageController> {
  public:
-  static gin::WrapperInfo kWrapperInfo;
+  static constexpr gin::WrapperInfo kWrapperInfo = {
+    {gin::kEmbedderNativeGin},
+    gin::kSupervisedUserErrorPageController};
 
   SupervisedUserErrorPageController(const SupervisedUserErrorPageController&) =
       delete;
@@ -38,12 +44,14 @@ class SupervisedUserErrorPageController
       content::RenderFrame* render_frame,
       base::WeakPtr<SupervisedUserErrorPageControllerDelegate> delegate);
 
- private:
   SupervisedUserErrorPageController(
       base::WeakPtr<SupervisedUserErrorPageControllerDelegate> delegate,
       content::RenderFrame* render_frame);
   ~SupervisedUserErrorPageController() override;
 
+  void Trace(cppgc::Visitor* visitor) const override;
+
+ private:
   void GoBack();
   void RequestUrlAccessRemote();
   void RequestUrlAccessLocal();
@@ -62,6 +70,8 @@ class SupervisedUserErrorPageController
   gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
       v8::Isolate* isolate) override;
 
+  const gin::WrapperInfo* wrapper_info() const override;
+
   base::WeakPtr<SupervisedUserErrorPageControllerDelegate> const delegate_;
 
   raw_ptr<content::RenderFrame, DanglingUntriaged> render_frame_;
@@ -69,7 +79,7 @@ class SupervisedUserErrorPageController
   // This weak factory is used to generate weak pointers to the controller that
   // are used for the request permission callback, so messages to no longer
   // existing interstitials are ignored.
-  base::WeakPtrFactory<SupervisedUserErrorPageController> weak_factory_{this};
+  gin::WeakCellFactory<SupervisedUserErrorPageController> weak_factory_{this};
 };
 
 #endif  // CHROME_RENDERER_SUPERVISED_USER_SUPERVISED_USER_ERROR_PAGE_CONTROLLER_H_

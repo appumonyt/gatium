@@ -18,7 +18,6 @@ namespace safe_browsing {
 // Desktop implementation of IntelligentScanDelegate. This class is responsible
 // for managing the on-device model for intelligent scanning, including loading,
 // observing updates, and executing the model.
-// TODO(crbug.com/424104358): Move remaining functions into this class.
 class ClientSideDetectionIntelligentScanDelegateDesktop
     : public ClientSideDetectionHost::IntelligentScanDelegate,
       public optimization_guide::OnDeviceModelAvailabilityObserver {
@@ -38,14 +37,27 @@ class ClientSideDetectionIntelligentScanDelegateDesktop
   bool IsOnDeviceModelAvailable(bool log_failed_eligibility_reason) override;
   void InquireOnDeviceModel(std::string rendered_texts,
                             InquireOnDeviceModelDoneCallback callback) override;
-  void ResetOnDeviceSession(bool inquiry_complete) override;
-  void StartListeningToOnDeviceModelUpdate() override;
-  void StopListeningToOnDeviceModelUpdate() override;
+  bool ResetOnDeviceSession() override;
+  bool ShouldShowScamWarning(
+      std::optional<IntelligentScanVerdict> verdict) override;
 
   // KeyedService implementation.
   void Shutdown() override;
 
+  bool IsSessionAliveForTesting() { return !!session_; }
+
  private:
+  void OnPrefsUpdated();
+
+  // Starts listening to the on-device model update through OptimizationGuide.
+  // This will be called when the user preferences change and the user is
+  // subscribed to Enhanced Safe Browsing. Does nothing if it is already
+  // listening to the on-device model update.
+  void StartListeningToOnDeviceModelUpdate();
+  // Stops listening to the on-device model update through OptimizationGuide.
+  // Does nothing if it is not listening to the on-device model update.
+  void StopListeningToOnDeviceModelUpdate();
+
   // optimization_guide::OnDeviceModelAvailabilityObserver
   void OnDeviceModelAvailabilityChanged(
       optimization_guide::ModelBasedCapabilityKey feature,
@@ -78,6 +90,10 @@ class ClientSideDetectionIntelligentScanDelegateDesktop
 
   const raw_ref<PrefService> pref_;
   const raw_ptr<OptimizationGuideKeyedService> opt_guide_;
+
+  // PrefChangeRegistrar used to track when the enhanced protection state
+  // changes.
+  PrefChangeRegistrar pref_change_registrar_;
 
   base::WeakPtrFactory<ClientSideDetectionIntelligentScanDelegateDesktop>
       weak_factory_{this};

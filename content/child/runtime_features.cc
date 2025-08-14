@@ -50,7 +50,7 @@
 #include "ui/native_theme/native_theme_utils.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/android_info.h"
 #endif
 
 #if BUILDFLAG(ENABLE_VR)
@@ -106,8 +106,8 @@ void SetRuntimeFeatureDefaultsForPlatform(
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-  if (base::android::BuildInfo::GetInstance()->sdk_int() >=
-      base::android::SDK_VERSION_P) {
+  if (base::android::android_info::sdk_int() >=
+      base::android::android_info::SDK_VERSION_P) {
     // Display Cutout is limited to Android P+.
     WebRuntimeFeatures::EnableDisplayCutoutAPI(true);
   }
@@ -223,9 +223,7 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            kSetOnlyIfOverridden},
           {wf::EnableSharedStorageAPI,
            raw_ref(features::kPrivacySandboxAdsAPIsM1Override)},
-          {wf::EnableFedCmMultipleIdentityProviders,
-           raw_ref(features::kFedCmMultipleIdentityProviders),
-           kSetOnlyIfOverridden},
+
           {wf::EnableFencedFrames,
            raw_ref(features::kPrivacySandboxAdsAPIsOverride),
            kSetOnlyIfOverridden},
@@ -238,6 +236,8 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            raw_ref(features::kGenericSensorExtraClasses)},
 #if BUILDFLAG(IS_ANDROID)
           {wf::EnableGetDisplayMedia,
+           raw_ref(features::kUserMediaScreenCapturing)},
+          {wf::EnableRegionCapture,
            raw_ref(features::kUserMediaScreenCapturing)},
 #endif
           {wf::EnableInstalledApp, raw_ref(features::kInstalledApp)},
@@ -301,8 +301,6 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            raw_ref(device::features::kWebXrIncubations)},
           {wf::EnableWebXRGPUBinding,
            raw_ref(device::features::kWebXrWebGpuBinding)},
-          {wf::EnableWebXRHandInput,
-           raw_ref(device::features::kWebXrHandInput)},
           {wf::EnableWebXRImageTracking,
            raw_ref(device::features::kWebXrIncubations)},
           {wf::EnableWebXRLayers, raw_ref(device::features::kWebXrLayers)},
@@ -353,11 +351,11 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
 #endif
           {"CompressionDictionaryTransport",
            raw_ref(network::features::kCompressionDictionaryTransport)},
-          {"ClipboardChangeEvent", raw_ref(features::kClipboardChangeEvent)},
           {"CompressionDictionaryTransportBackend",
            raw_ref(network::features::kCompressionDictionaryTransportBackend)},
           {"CookieDeprecationFacilitatedTesting",
            raw_ref(features::kCookieDeprecationFacilitatedTesting)},
+          {"CSPHashesV1", raw_ref(network::features::kCSPScriptSrcHashesInV1)},
           {"DocumentPolicyIncludeJSCallStacksInCrashReports",
            raw_ref(blink::features::
                        kDocumentPolicyIncludeJSCallStacksInCrashReports),
@@ -403,9 +401,6 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            raw_ref(features::kTrustedTypesFromLiteral)},
           {"MediaStreamTrackTransfer",
            raw_ref(features::kMediaStreamTrackTransfer)},
-          {"PrivateNetworkAccessPermissionPrompt",
-           raw_ref(network::features::kPrivateNetworkAccessPermissionPrompt),
-           kSetOnlyIfOverridden},
           {"ExperimentalMachineLearningNeuralNetwork",
            raw_ref(webnn::mojom::features::
                        kExperimentalWebMachineLearningNeuralNetwork),
@@ -413,8 +408,6 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
 #if BUILDFLAG(IS_ANDROID)
           {"WebAppLaunchQueue", raw_ref(features::kAndroidWebAppLaunchHandler)},
 #endif
-          {"WebAuthenticationNewBfCacheHandlingBlink",
-           raw_ref(device::kWebAuthnNewBfCacheHandling)},
           {"LocalNetworkAccessPermissionPolicy",
            raw_ref(network::features::kLocalNetworkAccessChecks)}};
   for (const auto& mapping : runtimeFeatureNameToChromiumFeatureMapping) {
@@ -541,6 +534,12 @@ void SetCustomizedRuntimeFeaturesFromCombinedArgs(
 
   WebRuntimeFeatures::EnableBackForwardCache(
       content::IsBackForwardCacheEnabled());
+
+  WebRuntimeFeatures::EnableLocalNetworkAccessWebRTC(
+      base::FeatureList::IsEnabled(
+          network::features::kLocalNetworkAccessChecks) &&
+      base::FeatureList::IsEnabled(
+          network::features::kLocalNetworkAccessChecksWebRTC));
 }
 
 // Ensures that the various ways of enabling/disabling features do not produce

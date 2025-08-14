@@ -68,7 +68,7 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/os_crypt/sync/os_crypt_mocker.h"
 #include "components/password_manager/core/browser/password_manager_buildflags.h"
-#include "components/plus_addresses/features.h"
+#include "components/plus_addresses/core/common/features.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_switches.h"
@@ -105,8 +105,10 @@
 #include "chrome/browser/ash/app_list/test/fake_app_list_model_updater.h"
 #include "chrome/browser/sync/test/integration/sync_arc_package_helper.h"
 #include "chromeos/ash/components/account_manager/account_manager_factory.h"
+#include "chromeos/ash/components/browser_context_helper/browser_context_helper.h"
 #include "chromeos/ash/experiences/arc/test/arc_util_test_support.h"
 #include "components/account_manager_core/chromeos/account_manager.h"
+#include "components/user_manager/user_manager.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_ANDROID)
@@ -122,6 +124,10 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "components/trusted_vault/command_line_switches.h"
 #endif  // BUILDFLAG(IS_ANDROID)
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+#include "chrome/browser/enterprise/util/managed_browser_utils.h"
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 
 using syncer::SyncServiceImpl;
 
@@ -361,8 +367,18 @@ bool SyncTest::CreateProfile(int index) {
   DCHECK_EQ(index, 0);
   Profile* profile = ProfileManager::GetLastUsedProfile();
 #else   // BUILDFLAG(IS_ANDROID)
-  Profile* profile =
-      g_browser_process->profile_manager()->GetProfile(profile_path);
+  Profile* profile = nullptr;
+#if BUILDFLAG(IS_CHROMEOS)
+  if (use_primary_user_profile_) {
+    CHECK_EQ(index, 0);
+    profile = Profile::FromBrowserContext(
+        ash::BrowserContextHelper::Get()->GetBrowserContextByUser(
+            user_manager::UserManager::Get()->GetPrimaryUser()));
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
+  if (!profile) {
+    profile = g_browser_process->profile_manager()->GetProfile(profile_path);
+  }
 #endif  // BUILDFLAG(IS_ANDROID)
 
   InitializeProfile(index, profile);
@@ -393,6 +409,14 @@ std::vector<raw_ptr<Profile, VectorExperimental>> SyncTest::GetAllProfiles() {
   }
   return profiles;
 }
+
+#if BUILDFLAG(IS_CHROMEOS)
+void SyncTest::SetUsePrimaryUserProfile(bool value) {
+  // Must be called early enough.
+  CHECK(profiles_.empty());
+  use_primary_user_profile_ = true;
+}
+#endif
 
 #if !BUILDFLAG(IS_ANDROID)
 Browser* SyncTest::GetBrowser(int index) {
@@ -615,6 +639,11 @@ bool SyncTest::SetupSyncInternal(SetupSyncMode setup_mode,
 
   // Sync each of the profiles.
   for (int client_index = 0; client_index < num_clients_; client_index++) {
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+    auto resetter =
+        enterprise_util::DisableAutomaticManagementDisclaimerUntilReset(
+            GetProfile(client_index));
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
     SyncServiceImplHarness* client = GetClient(client_index);
     DVLOG(1) << "Setting up " << client_index << " client";
     if (!client->SetupSyncNoWaitForCompletion(account)) {
@@ -1079,7 +1108,7 @@ void SyncTest::ExcludeDataTypesFromCheckForDataTypeFailures(
 // enabled by default, e.g. HISTORY requires a dedicated opt-in via
 // SyncUserSettings::SetSelectedTypes().
 syncer::DataTypeSet AllowedTypesInStandaloneTransportMode() {
-  static_assert(55 == syncer::GetNumDataTypes(),
+  static_assert(56 == syncer::GetNumDataTypes(),
                 "Add new types below if they can run in transport mode");
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1143,6 +1172,10 @@ syncer::DataTypeSet AllowedTypesInStandaloneTransportMode() {
       if (base::FeatureList::IsEnabled(
               syncer::kSyncSharedTabGroupAccountData)) {
         allowed_types.Put(syncer::SHARED_TAB_GROUP_ACCOUNT_DATA);
+      }
+
+      if (base::FeatureList::IsEnabled(syncer::kSyncSharedComment)) {
+        allowed_types.Put(syncer::SHARED_COMMENT);
       }
     }
 

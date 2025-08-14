@@ -33,7 +33,6 @@ import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.Features.EnableFeatures;
 import org.chromium.chrome.browser.browsing_data.BrowsingDataBridge;
 import org.chromium.chrome.browser.browsing_data.BrowsingDataType;
 import org.chromium.chrome.browser.browsing_data.TimePeriod;
@@ -53,8 +52,9 @@ import org.chromium.chrome.test.batch.BlankCTATabInitialStateRule;
 import org.chromium.components.content_settings.ContentSettingValues;
 import org.chromium.components.content_settings.ContentSettingsType;
 import org.chromium.components.location.LocationUtils;
-import org.chromium.components.omnibox.OmniboxFeatureList;
 import org.chromium.components.permissions.PermissionDialogController;
+import org.chromium.components.permissions.PermissionsAndroidFeatureList;
+import org.chromium.components.permissions.PermissionsAndroidFeatureMap;
 import org.chromium.components.search_engines.TemplateUrlService;
 import org.chromium.content_public.browser.ContentFeatureList;
 import org.chromium.content_public.browser.ContentFeatureMap;
@@ -81,6 +81,15 @@ public class PageInfoDiscoverabilityTest {
 
     private static final String GEOLOCATION_TEST =
             "/chrome/test/data/geolocation/geolocation_on_load.html";
+
+    private static int getGeolocationType() {
+        boolean enabled =
+                PermissionsAndroidFeatureMap.isEnabled(
+                        PermissionsAndroidFeatureList.APPROXIMATE_GEOLOCATION_PERMISSION);
+        return enabled
+                ? ContentSettingsType.GEOLOCATION_WITH_OPTIONS
+                : ContentSettingsType.GEOLOCATION;
+    }
 
     /**
      * Parameter provider for testing the different |RequestType|s that affect discoverability. The
@@ -182,7 +191,7 @@ public class PageInfoDiscoverabilityTest {
             parameters.add(
                     new ParameterSet()
                             .name("RequestType.kWindowManagement")
-                            .value(ContentSettingsType.WINDOW_MANAGEMENT, false));
+                            .value(ContentSettingsType.WINDOW_MANAGEMENT, true));
 
             return parameters;
         }
@@ -296,7 +305,7 @@ public class PageInfoDiscoverabilityTest {
                 /* javascriptToExecute= */ null,
                 /* missingPermissionPromptTextId= */ 0);
 
-        Assert.assertEquals(ContentSettingsType.GEOLOCATION, mMediator.getLastPermission());
+        Assert.assertEquals(getGeolocationType(), mMediator.getLastPermission());
     }
 
     /** Tests omnibox permission when permission is blocked by the user. */
@@ -328,7 +337,7 @@ public class PageInfoDiscoverabilityTest {
                 /* javascriptToExecute= */ null,
                 /* missingPermissionPromptTextId= */ 0);
 
-        Assert.assertEquals(ContentSettingsType.GEOLOCATION, mMediator.getLastPermission());
+        Assert.assertEquals(getGeolocationType(), mMediator.getLastPermission());
     }
 
     @Test
@@ -344,7 +353,6 @@ public class PageInfoDiscoverabilityTest {
     @MediumTest
     @Feature({"PageInfoDiscoverability"})
     @ParameterAnnotations.UseMethodParameter(RequestTypeTestParams.class)
-    @EnableFeatures(OmniboxFeatureList.OMNIBOX_MOBILE_PARITY_UPDATE)
     @DisabledTest(message = "Flaky - crbug.com/422700100")
     public void testPermissionRequestTypes(
             @ContentSettingsType.EnumType int contentSettingsType, boolean isInSiteSettings) {

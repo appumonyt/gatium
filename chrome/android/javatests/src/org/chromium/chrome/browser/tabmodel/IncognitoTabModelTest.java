@@ -14,6 +14,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import static org.chromium.chrome.test.util.ChromeTabUtils.getTabCountOnUiThread;
+
 import androidx.test.filters.MediumTest;
 import androidx.test.filters.SmallTest;
 
@@ -35,6 +37,7 @@ import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.tab.TabCreationState;
 import org.chromium.chrome.browser.tab.TabLaunchType;
 import org.chromium.chrome.browser.tab.TabStateExtractor;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
@@ -92,7 +95,7 @@ public class IncognitoTabModelTest {
     }
 
     private void removeTabOnUiThread() {
-        Tab tab = mActivityTestRule.getActivity().getTabModelSelector().getCurrentTab();
+        Tab tab = mActivityTestRule.getActivityTab();
         assertTrue(tab.isIncognito());
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
@@ -112,12 +115,12 @@ public class IncognitoTabModelTest {
     @Feature({"OffTheRecord"})
     public void testCloseAllDuringAddTabDoesNotCrash() {
         createTabOnUiThread();
-        assertEquals(1, mIncognitoTabModel.getCount());
+        assertEquals(1, getTabCountOnUiThread(mIncognitoTabModel));
         ThreadUtils.runOnUiThreadBlocking(
                 () -> mIncognitoTabModel.addObserver(new CloseAllDuringAddTabTabModelObserver()));
 
         createTabOnUiThread();
-        assertEquals(1, mIncognitoTabModel.getCount());
+        assertEquals(1, getTabCountOnUiThread(mIncognitoTabModel));
     }
 
     @Test
@@ -155,8 +158,8 @@ public class IncognitoTabModelTest {
                                 @Override
                                 public void didAddTab(
                                         Tab tab,
-                                        int type,
-                                        int creationState,
+                                        @TabLaunchType int type,
+                                        @TabCreationState int creationState,
                                         boolean markedForSelection) {
                                     didAddTabCallbackHelper.notifyCalled();
                                 }

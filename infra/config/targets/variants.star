@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/targets.star", "targets")
+load("@chromium-luci//targets.star", "targets")
 
 targets.variant(
     name = "AMD_RADEON_RX_5500_XT",
@@ -61,21 +61,6 @@ targets.variant(
     identifier = "JACUZZI_RELEASE_LKGM",
     skylab = targets.skylab(
         cros_board = "jacuzzi",
-        use_lkgm = True,
-    ),
-)
-
-targets.variant(
-    name = "CROS_VOLTEER_PUBLIC_RELEASE_ASH_LKGM",
-    identifier = "VOLTEER_PUBLIC_RELEASE_LKGM",
-    generate_pyl_entry = False,
-    skylab = targets.skylab(
-        bucket = "chromiumos-image-archive",
-        cros_board = "volteer",
-        cros_model = "voxel",
-        dut_pool = "chromium",
-        public_builder = "cros_test_platform_public",
-        public_builder_bucket = "testplatform-public",
         use_lkgm = True,
     ),
 )
@@ -254,6 +239,21 @@ targets.variant(
     identifier = "NVIDIA GeForce GTX 1660",
     mixins = [
         "nvidia_geforce_gtx_1660",
+    ],
+)
+
+targets.variant(
+    name = "SIM_APPLE_TV_4K_3RD_GENERATION_18_5",
+    identifier = "Apple TV 4K (3rd generation) 18.5",
+    generate_pyl_entry = False,
+    mixins = [
+        "tvos_runtime_cache_18_5",
+    ],
+    args = [
+        "--platform",
+        "Apple TV 4K (3rd generation)",
+        "--version",
+        "18.5",
     ],
 )
 

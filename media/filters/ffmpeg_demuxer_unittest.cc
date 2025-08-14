@@ -92,10 +92,24 @@ MATCHER_P(SkippingUnsupportedStream, stream_type, "") {
                std::string(stream_type) + " track");
 }
 
-const uint8_t kEncryptedMediaInitData[] = {
-    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
-    0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
-};
+const auto kEncryptedMediaInitData = std::to_array<uint8_t>({
+    0x30,
+    0x31,
+    0x32,
+    0x33,
+    0x34,
+    0x35,
+    0x36,
+    0x37,
+    0x38,
+    0x39,
+    0x30,
+    0x31,
+    0x32,
+    0x33,
+    0x34,
+    0x35,
+});
 
 static void EosOnReadDone(bool* got_eos_buffer,
                           base::OnceClosure quit_closure,
@@ -224,8 +238,10 @@ class FFmpegDemuxerTest : public testing::Test {
       EXPECT_EQ(read_expectation.size, buffer->size());
       EXPECT_EQ(read_expectation.timestamp_us,
                 buffer->timestamp().InMicroseconds());
+      auto discard_padding = buffer->discard_padding();
       EXPECT_EQ(read_expectation.discard_front_padding,
-                buffer->discard_padding().first);
+                discard_padding.has_value() ? discard_padding->first
+                                            : base::TimeDelta());
       EXPECT_EQ(read_expectation.is_key_frame, buffer->is_key_frame());
     }
     OnReadDoneCalled(read_expectation.size, read_expectation.timestamp_us);
@@ -515,12 +531,13 @@ TEST_F(FFmpegDemuxerTest, Initialize_Track_Disabled) {
 #endif
 
 TEST_F(FFmpegDemuxerTest, Initialize_Encrypted) {
-  EXPECT_CALL(*this,
-              OnEncryptedMediaInitData(
-                  EmeInitDataType::WEBM,
-                  std::vector<uint8_t>(kEncryptedMediaInitData,
-                                       kEncryptedMediaInitData +
-                                           std::size(kEncryptedMediaInitData))))
+  EXPECT_CALL(*this, OnEncryptedMediaInitData(
+                         EmeInitDataType::WEBM,
+                         std::vector<uint8_t>(
+                             kEncryptedMediaInitData.data(),
+                             base::span(kEncryptedMediaInitData)
+                                 .subspan(std::size(kEncryptedMediaInitData))
+                                 .data())))
       .Times(Exactly(2));
 
   CreateDemuxer("bear-320x240-av_enc-av.webm");
@@ -858,8 +875,9 @@ TEST_F(FFmpegDemuxerTest, Read_AudioVideoNegativeStartTime) {
                       [&](DemuxerStream::Status status,
                           DemuxerStream::DecoderBufferVector buffers) {
                         for (const auto& buffer : buffers) {
-                          EXPECT_EQ(buffer->discard_padding().first,
-                                    kInfiniteDuration);
+                          auto discard_padding = buffer->discard_padding();
+                          EXPECT_TRUE(discard_padding.has_value());
+                          EXPECT_EQ(discard_padding->first, kInfiniteDuration);
                         }
                         run_loop.QuitWhenIdle();
                       }));

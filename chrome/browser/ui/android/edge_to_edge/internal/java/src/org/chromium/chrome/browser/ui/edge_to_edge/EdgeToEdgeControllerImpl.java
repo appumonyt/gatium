@@ -296,7 +296,8 @@ public class EdgeToEdgeControllerImpl
     static boolean isSupportedByConfiguration(Activity activity, InsetObserver insetObserver) {
         if (shouldMonitorConfigurationChanges()) {
             return EdgeToEdgeUtils.isEdgeToEdgeBottomChinEnabled(activity)
-                    && EdgeToEdgeUtils.doAllInsetsIndicateGestureNavigation(insetObserver);
+                    && EdgeToEdgeUtils.doAllInsetsIndicateGestureNavigation(
+                            insetObserver.getLastRawWindowInsets());
         }
         return EdgeToEdgeUtils.isEdgeToEdgeBottomChinEnabled(activity);
     }
@@ -663,10 +664,21 @@ public class EdgeToEdgeControllerImpl
             builder.setInsets(WindowInsetsCompat.Type.statusBars(), Insets.NONE);
             builder.setInsets(WindowInsetsCompat.Type.captionBar(), Insets.NONE);
         }
+        Insets mandatorySystemGestures =
+                windowInsets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures());
         if (mAppliedContentViewPadding.bottom == 0) {
             builder.setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.NONE);
+            builder.setInsets(WindowInsetsCompat.Type.tappableElement(), Insets.NONE);
             builder.setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE);
+            mandatorySystemGestures =
+                    Insets.of(
+                            mandatorySystemGestures.left,
+                            mandatorySystemGestures.top,
+                            mandatorySystemGestures.right,
+                            0);
         }
+        builder.setInsets(
+                WindowInsetsCompat.Type.mandatorySystemGestures(), mandatorySystemGestures);
         return builder.build();
     }
 
@@ -773,15 +785,12 @@ public class EdgeToEdgeControllerImpl
         // when Chrome does not draw into the system bar region. See https://crbug.com/359659885.
         boolean hasBottomSafeArea =
                 (mIsDrawingToEdge && !mFullscreenManager.getPersistentFullscreenMode());
-        // When pushSafeAreaInsetsForNonOptInPages is not enabled, we are only pushing safe area
-        // insets to pages that are opted into e2e and no bottom controls are presented.
-        boolean pushSafeAreaInsets =
-                EdgeToEdgeUtils.pushSafeAreaInsetsForNonOptInPages()
-                        || (mCurrentTab != null
-                                && mIsPageOptedIntoEdgeToEdge
-                                && mBottomControlsHeight == 0);
-        int bottomInsetOnSafeArea =
-                pushSafeAreaInsets && hasBottomSafeArea ? mSystemInsets.bottom : 0;
+
+        // When the content view is padded (e.g. when keyboard is showing), we should not count the
+        // padding as part of the bottom safe area.
+        int safeAreaInsets = Math.max(mSystemInsets.bottom - mAppliedContentViewPadding.bottom, 0);
+
+        int bottomInsetOnSafeArea = hasBottomSafeArea ? safeAreaInsets : 0;
         mInsetObserver.updateBottomInsetForEdgeToEdge(bottomInsetOnSafeArea);
     }
 
@@ -895,14 +904,22 @@ public class EdgeToEdgeControllerImpl
     private static Insets getSystemInsets(
             WindowInsetsCompat windowInsets, boolean hasSeenNonZeroNavigationBarInsets) {
         Insets systemBarInsets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+
+        if (!EdgeToEdgeUtils.isUseBackupNavbarInsetsEnabled()) return systemBarInsets;
+
         if (systemBarInsets.left == 0
                 && systemBarInsets.right == 0
                 && systemBarInsets.bottom == 0) {
             @Nullable Insets backupNavbarInsets =
-                    EdgeToEdgeUtils.getBackupNavbarInsets(
+                    EdgeToEdgeManager.getBackupNavbarInsets(
                             hasSeenNonZeroNavigationBarInsets,
                             windowInsets,
-                            BackupNavbarInsetsCallSite.EDGE_TO_EDGE_CONTROLLER);
+                            BackupNavbarInsetsCallSite.EDGE_TO_EDGE_CONTROLLER,
+                            EdgeToEdgeFieldTrialImpl.getBackupNavbarInsetsOverrides(),
+                            ChromeFeatureList.sEdgeToEdgeUseBackupNavbarInsetsUseTappable
+                                    .getValue(),
+                            ChromeFeatureList.sEdgeToEdgeUseBackupNavbarInsetsUseGestures
+                                    .getValue());
             // If applicable, apply backup navbar insets to the left, right, and bottom (not the
             // top, as that's always the status bar).
             if (backupNavbarInsets != null) {

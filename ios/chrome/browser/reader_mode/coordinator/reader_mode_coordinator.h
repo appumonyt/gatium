@@ -7,11 +7,23 @@
 
 #import "ios/chrome/browser/shared/coordinator/chrome_coordinator/chrome_coordinator.h"
 
+@protocol OverscrollActionsControllerDelegate;
+
 // Coordinator for the Reader mode UI.
 @interface ReaderModeCoordinator : ChromeCoordinator
 
+// Required to support Overscroll Actions UI, which is displayed when Reader
+// mode is pulled down.
+@property(nonatomic, weak) id<OverscrollActionsControllerDelegate>
+    overscrollDelegate;
+
 // UIView used for snapshot overlay.
 @property(nonatomic, readonly) UIView* viewForSnapshot;
+
+// Starts/stops the coordinator.
+// If `animated` is true then the UI is presented/dismissed with an animation.
+- (void)startAnimated:(BOOL)animated;
+- (void)stopAnimated:(BOOL)animated;
 
 @end
 

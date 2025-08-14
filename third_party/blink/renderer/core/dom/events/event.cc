@@ -233,6 +233,10 @@ bool Event::IsErrorEvent() const {
   return false;
 }
 
+bool Event::IsPatchEvent() const {
+  return false;
+}
+
 void Event::preventDefault() {
   if (handling_passive_ != PassiveMode::kNotPassive &&
       handling_passive_ != PassiveMode::kNotPassiveDefault) {
@@ -250,6 +254,14 @@ void Event::preventDefault() {
     default_prevented_ = true;
   else
     prevent_default_called_on_uncancelable_event_ = true;
+}
+
+EventTarget* Event::target() const {
+  DCHECK(!target_ || !target_->ToNode() ||
+         !target_->ToNode()->IsPseudoElement())
+      << "Event target should not be a pseudo-element, but got "
+      << target_->ToNode()->DebugName();
+  return target_.Get();
 }
 
 void Event::SetTarget(EventTarget* target) {

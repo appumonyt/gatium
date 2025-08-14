@@ -17,6 +17,10 @@ namespace base {
 class CommandLine;
 }  // namespace base
 
+namespace gpu {
+struct GpuFeatureInfo;
+}  // namespace gpu
+
 namespace features {
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kUseGles2ForOopR);
@@ -64,6 +68,8 @@ GPU_CONFIG_EXPORT extern const base::FeatureParam<bool>
     kSkiaGraphiteDawnBackendValidation;
 GPU_CONFIG_EXPORT extern const base::FeatureParam<bool>
     kSkiaGraphiteDawnBackendDebugLabels;
+GPU_CONFIG_EXPORT extern const base::FeatureParam<int>
+    kSkiaGraphiteMaxPendingRecordings;
 
 #if BUILDFLAG(IS_WIN)
 GPU_CONFIG_EXPORT extern const base::FeatureParam<bool>
@@ -75,8 +81,6 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kSkiaGraphiteDawnUseD3D12);
 #endif
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kConditionallySkipGpuChannelFlush);
-
-GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kEnableVkPipelineCache);
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kNoDiscardableMemoryForGpuDecodePath);
 
@@ -95,6 +99,7 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUBlobCache);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUUseVulkanMemoryModel);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUEnableRangeAnalysisForRobustness);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUAndroidOpenGLES);
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUUseSpirv14);
 GPU_CONFIG_EXPORT extern const base::FeatureParam<std::string>
     kWebGPUDisabledToggles;
 GPU_CONFIG_EXPORT extern const base::FeatureParam<std::string>
@@ -122,7 +127,9 @@ GPU_CONFIG_EXPORT extern const base::FeatureParam<int>
 
 GPU_CONFIG_EXPORT bool UseGles2ForOopR();
 GPU_CONFIG_EXPORT bool IsUsingVulkan();
-GPU_CONFIG_EXPORT bool IsDrDcEnabled();
+GPU_CONFIG_EXPORT bool IsDrDcEnabled(
+    const gpu::GpuFeatureInfo& gpu_feature_info);
+GPU_CONFIG_EXPORT bool ShouldEnableDrDc();
 GPU_CONFIG_EXPORT bool NeedThreadSafeAndroidMedia();
 GPU_CONFIG_EXPORT bool IsSkiaGraphiteEnabled(
     const base::CommandLine* command_line);

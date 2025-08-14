@@ -41,6 +41,38 @@ class D3D12VideoEncodeH264DelegateTest
           EXPECT_TRUE(false) << "Unexpected feature: " << feature;
           return E_INVALIDARG;
         });
+    ON_CALL(
+        *video_device3_.Get(),
+        CheckFeatureSupport(
+            D3D12_FEATURE_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT, _, _))
+        .WillByDefault([](D3D12_FEATURE_VIDEO, void* data, UINT size) {
+          EXPECT_EQ(
+              size,
+              sizeof(
+                  D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT));
+          if (size !=
+              sizeof(
+                  D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT)) {
+            return E_INVALIDARG;
+          }
+          auto* picture_control = static_cast<
+              D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT*>(
+              data);
+          EXPECT_EQ(picture_control->Codec, D3D12_VIDEO_ENCODER_CODEC_H264);
+          picture_control->IsSupported =
+              picture_control->Codec == D3D12_VIDEO_ENCODER_CODEC_H264;
+          EXPECT_EQ(
+              picture_control->PictureSupport.DataSize,
+              sizeof(D3D12_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT_H264));
+          if (picture_control->PictureSupport.DataSize !=
+              sizeof(D3D12_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT_H264)) {
+            return E_INVALIDARG;
+          }
+          picture_control->PictureSupport.pH264Support->MaxLongTermReferences =
+              1;
+          picture_control->PictureSupport.pH264Support->MaxDPBCapacity = 16;
+          return S_OK;
+        });
     ON_CALL(*video_device3_.Get(),
             CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_CODEC, _, _))
         .WillByDefault([](D3D12_FEATURE_VIDEO, void* data, UINT size) {
@@ -136,7 +168,8 @@ class D3D12VideoEncodeH264DelegateTest
                       support->InputFormat == DXGI_FORMAT_P010);
           support->SupportFlags =
               support->Codec == D3D12_VIDEO_ENCODER_CODEC_H264
-                  ? D3D12_VIDEO_ENCODER_SUPPORT_FLAG_GENERAL_SUPPORT_OK
+                  ? D3D12_VIDEO_ENCODER_SUPPORT_FLAG_GENERAL_SUPPORT_OK |
+                        D3D12_VIDEO_ENCODER_SUPPORT_FLAG_RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS
                   : D3D12_VIDEO_ENCODER_SUPPORT_FLAG_NONE;
           support->ValidationFlags =
               support->Codec != D3D12_VIDEO_ENCODER_CODEC_H264
@@ -149,7 +182,7 @@ class D3D12VideoEncodeH264DelegateTest
         });
 
     encoder_delegate_ =
-        std::make_unique<D3D12VideoEncodeH264Delegate>(video_device3_);
+        std::make_unique<D3D12VideoEncodeH264Delegate>(video_device3_, true);
     encoder_delegate_->SetFactoriesForTesting(
         base::BindRepeating(&CreateVideoEncoderWrapper),
         base::BindRepeating(&CreateVideoProcessorWrapper));
@@ -165,8 +198,8 @@ TEST_F(D3D12VideoEncodeH264ReferenceFrameManagerTest,
        ProcessMemoryManagementControlOperation) {
   // Initialization
   D3D12VideoEncodeH264ReferenceFrameManager reference_manager;
-  ASSERT_TRUE(reference_manager.InitializeTextureArray(
-      device_.Get(), {1280, 720}, DXGI_FORMAT_NV12, 4));
+  ASSERT_TRUE(reference_manager.InitializeTextureResources(
+      device_.Get(), {1280, 720}, DXGI_FORMAT_NV12, 4, true));
   EXPECT_EQ(reference_manager.GetMaxLongTermFrameIndexPlus1(), 0u);
   EXPECT_EQ(reference_manager.GetLongTermReferenceFrameResourceId(0),
             std::nullopt);
@@ -328,7 +361,7 @@ TEST_F(D3D12VideoEncodeH264DelegateTest, EncodeFrame) {
   ASSERT_TRUE(result_or_error.has_value());
 
   BitstreamBufferMetadata metadata =
-      std::move(result_or_error).value().metadata_;
+      std::move(result_or_error).value().metadata;
   EXPECT_EQ(metadata.key_frame, is_key_frame);
   if (encoder_delegate_->ReportsAverageQp()) {
     EXPECT_GE(metadata.qp, 0);

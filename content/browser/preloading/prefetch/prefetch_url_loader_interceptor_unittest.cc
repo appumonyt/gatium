@@ -26,6 +26,7 @@
 #include "content/browser/preloading/prefetch/prefetch_origin_prober.h"
 #include "content/browser/preloading/prefetch/prefetch_params.h"
 #include "content/browser/preloading/prefetch/prefetch_probe_result.h"
+#include "content/browser/preloading/prefetch/prefetch_servable_state.h"
 #include "content/browser/preloading/prefetch/prefetch_service.h"
 #include "content/browser/preloading/prefetch/prefetch_test_util_internal.h"
 #include "content/browser/preloading/prefetch/prefetch_type.h"
@@ -175,19 +176,29 @@ class TestPrefetchServiceForInterceptor final : public PrefetchService {
     return test_origin_prober_.get();
   }
 
-  void CopyIsolatedCookies(const PrefetchContainer::Reader& reader) override {
-    if (!reader.IsIsolatedNetworkContextRequiredToServe()) {
+  void CopyIsolatedCookies(
+      const PrefetchServingHandle& serving_handle) override {
+    if (!serving_handle.IsIsolatedNetworkContextRequiredToServe()) {
       return;
     }
 
-    reader.OnIsolatedCookieCopyStart();
+    serving_handle.OnIsolatedCookieCopyStart();
 
     auto itr = on_start_cookie_copy_closure_.find(
-        std::make_pair(reader.GetPrefetchContainer()->GetURL(),
-                       reader.GetCurrentURLToServe()));
+        std::make_pair(serving_handle.GetPrefetchContainer()->GetURL(),
+                       serving_handle.GetCurrentURLToServe()));
     EXPECT_TRUE(itr != on_start_cookie_copy_closure_.end());
     EXPECT_TRUE(itr->second);
     std::move(itr->second).Run();
+  }
+
+  void OnPrefetchCompletedOrFailed(
+      PrefetchContainer& prefetch_container,
+      const network::URLLoaderCompletionStatus& completion_status,
+      const std::optional<int>& response_code) override {
+    // Skip `active_prefetch_` check and related prefetch queue processing in
+    // `PrefetchService`, because it's not set/used in
+    // `TestPrefetchServiceForInterceptor`.
   }
 
   std::unique_ptr<TestPrefetchOriginProber> test_origin_prober_;
@@ -420,11 +431,12 @@ class PrefetchURLLoaderInterceptorTestBase : public PrefetchingMetricsTestBase {
   }
 
   void SimulateCookieCopyProcess(PrefetchContainer& prefetch_container) {
-    PrefetchContainer::Reader reader = prefetch_container.CreateReader();
-    ASSERT_TRUE(reader.IsIsolatedNetworkContextRequiredToServe());
-    reader.OnIsolatedCookieCopyStart();
+    PrefetchServingHandle serving_handle =
+        prefetch_container.CreateServingHandle();
+    ASSERT_TRUE(serving_handle.IsIsolatedNetworkContextRequiredToServe());
+    serving_handle.OnIsolatedCookieCopyStart();
     task_environment()->FastForwardBy(base::Milliseconds(10));
-    reader.OnIsolatedCookieCopyComplete();
+    serving_handle.OnIsolatedCookieCopyComplete();
   }
 
   // When prefetch is served for navigation (depending on the `GetParam()`
@@ -465,30 +477,9 @@ class PrefetchURLLoaderInterceptorTestBase : public PrefetchingMetricsTestBase {
 namespace {
 
 class PrefetchURLLoaderInterceptorTest
-    : public PrefetchURLLoaderInterceptorTestBase,
-      public ::testing::WithParamInterface<PrefetchReusableForTests> {
-  void SetUp() override {
-    PrefetchURLLoaderInterceptorTestBase::SetUp();
+    : public PrefetchURLLoaderInterceptorTestBase {};
 
-    switch (GetParam()) {
-      case PrefetchReusableForTests::kDisabled:
-        scoped_feature_list_for_reusable_.InitAndDisableFeature(
-            features::kPrefetchReusable);
-        break;
-      case PrefetchReusableForTests::kEnabled:
-        scoped_feature_list_for_reusable_.InitAndEnableFeature(
-            features::kPrefetchReusable);
-        break;
-    }
-  }
-};
-
-INSTANTIATE_TEST_SUITE_P(
-    /* no prefix */,
-    PrefetchURLLoaderInterceptorTest,
-    testing::ValuesIn(PrefetchReusableValuesForTests()));
-
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(InterceptNavigationCookieCopyCompleted)) {
   const GURL kTestUrl("https://foo.com");
 
@@ -547,7 +538,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
       kTestUrl);
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(InterceptNavigationCookieCopyInProgress)) {
   const GURL kTestUrl("https://example.com");
 
@@ -578,8 +569,8 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
 
   // Simulate the cookie copy process starting, but not finishing until after
   // |MaybeCreateLoader| is called.
-  auto reader = prefetch_container->CreateReader();
-  reader.OnIsolatedCookieCopyStart();
+  auto serving_handle = prefetch_container->CreateServingHandle();
+  serving_handle.OnIsolatedCookieCopyStart();
   task_environment()->FastForwardBy(base::Milliseconds(10));
 
   AddPrefetch(std::move(prefetch_container));
@@ -598,7 +589,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
 
   task_environment()->FastForwardBy(base::Milliseconds(20));
 
-  reader.OnIsolatedCookieCopyComplete();
+  serving_handle.OnIsolatedCookieCopyComplete();
   WaitForCallback(kTestUrl);
 
   EXPECT_TRUE(was_intercepted(kTestUrl).has_value());
@@ -614,7 +605,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
       kTestUrl);
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(InterceptNavigationNoCookieCopyNeeded)) {
   const GURL kTestUrl("https://example.com");
 
@@ -668,11 +659,8 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
       kTestUrl);
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(InterceptNavigation_Embedder)) {
-  base::test::ScopedFeatureList scoped_feature_list(
-      features::kPrefetchBrowserInitiatedTriggers);
-
   const GURL kTestUrl("https://example.com");
 
   EXPECT_CALL(*test_content_browser_client(),
@@ -728,7 +716,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
             PrefetchStatus::kPrefetchResponseUsed);
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(DoNotInterceptNavigationNoPrefetch)) {
   const GURL kTestUrl("https://example.com");
 
@@ -763,11 +751,8 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
 // prefetch. Currently, a referring DocumentToken (note that thiswill be nullopt
 // when browser-initiated prefetch) and a prefetch url (which compose
 // PrefetchContainer::Key) will be taken into account when matching.
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(DoNotInterceptNavigationNoMatching)) {
-  base::test::ScopedFeatureList scoped_feature_list(
-      features::kPrefetchBrowserInitiatedTriggers);
-
   const GURL kTestUrl("https://example.com");
 
   EXPECT_CALL(*test_content_browser_client(), WillCreateURLLoaderFactory)
@@ -841,7 +826,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
   EXPECT_FALSE(was_intercepted(kTestUrl).value());
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(DoNotInterceptNavigationPrefetchNotStarted)) {
   const GURL kTestUrl("https://example.com");
 
@@ -878,7 +863,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
   ExpectCorrectUkmLogs({.outcome = PreloadingTriggeringOutcome::kUnspecified});
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(DoNotInterceptNavigationStalePrefetchedResponse)) {
   const GURL kTestUrl("https://example.com");
 
@@ -921,7 +906,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
   ExpectCorrectUkmLogs({});
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(DoNotInterceptNavigationCookiesChanged)) {
   const GURL kTestUrl("https://example.com");
 
@@ -990,7 +975,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
                         .expect_ready_time = true});
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(ProbeSuccess)) {
+TEST_F(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(ProbeSuccess)) {
   const GURL kTestUrl("https://cross-site.example");
 
   EXPECT_CALL(*test_content_browser_client(),
@@ -1041,7 +1026,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(ProbeSuccess)) {
       kTestUrl);
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(ProbeFailure)) {
+TEST_F(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(ProbeFailure)) {
   const GURL kTestUrl("https://cross-site.example");
 
   EXPECT_CALL(*test_content_browser_client(), WillCreateURLLoaderFactory)
@@ -1097,24 +1082,7 @@ enum class NotServableReason {
 
 class PrefetchURLLoaderInterceptorBecomeNotServableTest
     : public PrefetchURLLoaderInterceptorTestBase,
-      public ::testing::WithParamInterface<
-          std::tuple<PrefetchReusableForTests,
-                     NotServableReason>> {
-  void SetUp() override {
-    PrefetchURLLoaderInterceptorTestBase::SetUp();
-
-    switch (std::get<0>(GetParam())) {
-      case PrefetchReusableForTests::kDisabled:
-        scoped_feature_list_for_reusable_.InitAndDisableFeature(
-            features::kPrefetchReusable);
-        break;
-      case PrefetchReusableForTests::kEnabled:
-        scoped_feature_list_for_reusable_.InitAndEnableFeature(
-            features::kPrefetchReusable);
-        break;
-    }
-  }
-};
+      public ::testing::WithParamInterface<NotServableReason> {};
 
 TEST_P(PrefetchURLLoaderInterceptorBecomeNotServableTest, DISABLE_ASAN(Basic)) {
   // It is possible for a prefetch to initially be marked as servable, but
@@ -1154,8 +1122,8 @@ TEST_P(PrefetchURLLoaderInterceptorBecomeNotServableTest, DISABLE_ASAN(Basic)) {
 
   // Simulate the cookie copy process starting, but not finishing until after
   // |MaybeCreateLoader| is called.
-  auto reader = prefetch_container->CreateReader();
-  reader.OnIsolatedCookieCopyStart();
+  auto serving_handle = prefetch_container->CreateServingHandle();
+  serving_handle.OnIsolatedCookieCopyStart();
   task_environment()->FastForwardBy(base::Milliseconds(10));
 
   auto weak_prefetch_container = prefetch_container->GetWeakPtr();
@@ -1184,7 +1152,7 @@ TEST_P(PrefetchURLLoaderInterceptorBecomeNotServableTest, DISABLE_ASAN(Basic)) {
 
   // Simulate the prefetch becoming not servable anymore.
   PrefetchRequestHandler another_request;
-  switch (std::get<1>(GetParam())) {
+  switch (GetParam()) {
     case NotServableReason::kOnCompleteFailure:
       producer_handle.reset();
       pending_request.client->OnComplete(
@@ -1194,15 +1162,17 @@ TEST_P(PrefetchURLLoaderInterceptorBecomeNotServableTest, DISABLE_ASAN(Basic)) {
     case NotServableReason::kAnotherRequest:
       // Another request is created for the same PrefetchContainer while
       // prefetching is still ongoing.
-      another_request =
-          weak_prefetch_container->CreateReader().CreateRequestHandler().first;
+      another_request = weak_prefetch_container->CreateServingHandle()
+                            .CreateRequestHandler()
+                            .first;
       break;
 
     case NotServableReason::kAnotherRequestCompleted:
       // Another request is created for the same PrefetchContainer while
       // prefetching is still ongoing,
-      another_request =
-          weak_prefetch_container->CreateReader().CreateRequestHandler().first;
+      another_request = weak_prefetch_container->CreateServingHandle()
+                            .CreateRequestHandler()
+                            .first;
 
       // and, prefetch and the other request completed.
       {
@@ -1226,12 +1196,12 @@ TEST_P(PrefetchURLLoaderInterceptorBecomeNotServableTest, DISABLE_ASAN(Basic)) {
 
   task_environment()->RunUntilIdle();
 
-  reader.OnIsolatedCookieCopyComplete();
+  serving_handle.OnIsolatedCookieCopyComplete();
   WaitForCallback(kTestUrl);
 
   EXPECT_TRUE(was_intercepted(kTestUrl).has_value());
 
-  switch (std::get<1>(GetParam())) {
+  switch (GetParam()) {
     case NotServableReason::kOnCompleteFailure:
       EXPECT_FALSE(was_intercepted(kTestUrl).value());
       ExpectCorrectUkmLogs({.is_accurate = true}, kTestUrl);
@@ -1249,17 +1219,9 @@ TEST_P(PrefetchURLLoaderInterceptorBecomeNotServableTest, DISABLE_ASAN(Basic)) {
       break;
 
     case NotServableReason::kAnotherRequestCompleted:
-      switch (std::get<0>(GetParam())) {
-        case PrefetchReusableForTests::kDisabled:
-          EXPECT_FALSE(was_intercepted(kTestUrl).value());
-          break;
-        case PrefetchReusableForTests::kEnabled:
-          // The first request doesn't become non-servable if
-          // `kPrefetchReusable` is enabled, because after the other
-          // request is done, the body tee is clonable again.
-          EXPECT_TRUE(was_intercepted(kTestUrl).value());
-          break;
-      }
+      // The first request doesn't become non-servable, because after the other
+      // request is done, the body tee is clonable again.
+      EXPECT_TRUE(was_intercepted(kTestUrl).value());
       ExpectCorrectUkmLogs({.outcome = PreloadingTriggeringOutcome::kSuccess,
                             .is_accurate = true},
                            kTestUrl);
@@ -1276,13 +1238,11 @@ TEST_P(PrefetchURLLoaderInterceptorBecomeNotServableTest, DISABLE_ASAN(Basic)) {
 INSTANTIATE_TEST_SUITE_P(
     ,
     PrefetchURLLoaderInterceptorBecomeNotServableTest,
-    testing::Combine(
-        testing::ValuesIn(PrefetchReusableValuesForTests()),
-        testing::Values(NotServableReason::kOnCompleteFailure,
-                        NotServableReason::kAnotherRequest,
-                        NotServableReason::kAnotherRequestCompleted)));
+    testing::Values(NotServableReason::kOnCompleteFailure,
+                    NotServableReason::kAnotherRequest,
+                    NotServableReason::kAnotherRequestCompleted));
 
-TEST_P(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(HandleRedirects)) {
+TEST_F(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(HandleRedirects)) {
   const GURL kTestUrl("https://example.com");
   const GURL kRedirectUrl("https://redirect.com");
 
@@ -1334,9 +1294,9 @@ TEST_P(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(HandleRedirects)) {
   MaybeCreateLoader(kRedirectUrl);
   on_start_cookie_copy_run_loop.Run();
   task_environment()->FastForwardBy(base::Milliseconds(20));
-  auto reader = weak_prefetch_container->CreateReader();
-  reader.AdvanceCurrentURLToServe();
-  reader.OnIsolatedCookieCopyComplete();
+  auto serving_handle = weak_prefetch_container->CreateServingHandle();
+  serving_handle.AdvanceCurrentURLToServe();
+  serving_handle.OnIsolatedCookieCopyComplete();
   WaitForCallback(kRedirectUrl);
 
   EXPECT_TRUE(was_intercepted(kTestUrl).has_value());
@@ -1361,7 +1321,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(HandleRedirects)) {
       kTestUrl);
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(HandleRedirectsWithSwitchInNetworkContext)) {
   const GURL kTestUrl("https://example.com");
   const GURL kRedirectUrl("https://redirect.com");
@@ -1413,11 +1373,11 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
 
   MaybeCreateLoader(kRedirectUrl);
 
-  auto reader = weak_prefetch_container->CreateReader();
+  auto serving_handle = weak_prefetch_container->CreateServingHandle();
   on_start_cookie_copy_run_loop.Run();
   task_environment()->FastForwardBy(base::Milliseconds(20));
-  reader.AdvanceCurrentURLToServe();
-  reader.OnIsolatedCookieCopyComplete();
+  serving_handle.AdvanceCurrentURLToServe();
+  serving_handle.OnIsolatedCookieCopyComplete();
   WaitForCallback(kRedirectUrl);
 
   EXPECT_TRUE(was_intercepted(kTestUrl).has_value());
@@ -1442,7 +1402,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
       kTestUrl);
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(HandleRedirectsWithCookieChange)) {
   IgnoreWillCreateURLLoaderFactoryForNavigation();
 
@@ -1497,7 +1457,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
 }
 
 // Regression test for crbug.com/327289525.
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(ProbeFailsAfterPrefetchBecomesNotServable)) {
   const GURL kTestUrl("https://cross-site.example");
 
@@ -1536,7 +1496,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
   auto weak_prefetch_container = prefetch_container->GetWeakPtr();
   AddPrefetch(std::move(prefetch_container));
   ASSERT_EQ(weak_prefetch_container->GetServableState(base::TimeDelta::Max()),
-            PrefetchContainer::ServableState::kServable);
+            PrefetchServableState::kServable);
 
   CreateInterceptor(MainDocumentToken());
   MaybeCreateLoader(kTestUrl);
@@ -1570,7 +1530,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
   EXPECT_FALSE(was_intercepted(kTestUrl).value());
 }
 
-TEST_P(PrefetchURLLoaderInterceptorTest,
+TEST_F(PrefetchURLLoaderInterceptorTest,
        DISABLE_ASAN(PrefetchFailsAfterProbeFails)) {
   const GURL kTestUrl("https://cross-site.example");
 
@@ -1609,7 +1569,7 @@ TEST_P(PrefetchURLLoaderInterceptorTest,
   auto weak_prefetch_container = prefetch_container->GetWeakPtr();
   AddPrefetch(std::move(prefetch_container));
   ASSERT_EQ(weak_prefetch_container->GetServableState(base::TimeDelta::Max()),
-            PrefetchContainer::ServableState::kServable);
+            PrefetchServableState::kServable);
 
   CreateInterceptor(MainDocumentToken());
   MaybeCreateLoader(kTestUrl);

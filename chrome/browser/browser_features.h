@@ -33,7 +33,8 @@ BASE_DECLARE_FEATURE(kAllowUnmutedAutoplayForTWA);
 #endif  // BUILDFLAG(IS_ANDROID)
 BASE_DECLARE_FEATURE(kAutocompleteActionPredictorConfidenceCutoff);
 BASE_DECLARE_FEATURE(kBookmarksTreeView);
-BASE_DECLARE_FEATURE(kBookmarkTriggerForPrerender2);
+BASE_DECLARE_FEATURE(kBookmarkTriggerForPrerender2KillSwitch);
+BASE_DECLARE_FEATURE(kBookmarkTriggerForPreconnect);
 BASE_DECLARE_FEATURE(kCertificateTransparencyAskBeforeEnabling);
 BASE_DECLARE_FEATURE(kCertVerificationNetworkTime);
 BASE_DECLARE_FEATURE(kClearUserDataUponProfileDestruction);
@@ -46,10 +47,6 @@ BASE_DECLARE_FEATURE(kUseFreedesktopSecretKeyProvider);
 BASE_DECLARE_FEATURE(kDestroyProfileOnBrowserClose);
 BASE_DECLARE_FEATURE(kDestroySystemProfiles);
 
-#if BUILDFLAG(IS_CHROMEOS)
-BASE_DECLARE_FEATURE(kDoubleTapToZoomInTabletMode);
-#endif
-
 BASE_DECLARE_FEATURE(kFlexOrgManagementDisclosure);
 BASE_DECLARE_FEATURE(kIncomingCallNotifications);
 
@@ -59,25 +56,10 @@ BASE_DECLARE_FEATURE(kMuteNotificationSnoozeAction);
 
 BASE_DECLARE_FEATURE(kNetworkAnnotationMonitoring);
 BASE_DECLARE_FEATURE(kNewTabPageTriggerForPrerender2);
-// This parameter is used to set a time threshold for triggering onMouseHover
-// prerender. For example, if the value is 300, the New Tab Page prerender
-// will start after 300ms after mouseHover duration is over 300ms.
-const base::FeatureParam<int>
-    kNewTabPagePrerenderStartDelayOnMouseHoverByMiliSeconds{
-        &features::kNewTabPageTriggerForPrerender2,
-        "prerender_start_delay_on_mouse_hover_ms", 300};
 const base::FeatureParam<int>
     kNewTabPagePreconnectStartDelayOnMouseHoverByMiliSeconds{
         &features::kNewTabPageTriggerForPrerender2,
         "preconnect_start_delay_on_mouse_hover_ms", 100};
-const base::FeatureParam<bool> kPrerenderNewTabPageOnMousePressedTrigger{
-    &features::kNewTabPageTriggerForPrerender2,
-    "prerender_new_tab_page_on_mouse_pressed_trigger", true};
-// The hover trigger is not enabled as we're aware that this negatively
-// affects other navigations like Omnibox search.
-const base::FeatureParam<bool> kPrerenderNewTabPageOnMouseHoverTrigger{
-    &features::kNewTabPageTriggerForPrerender2,
-    "prerender_new_tab_page_on_mouse_hover_trigger", false};
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_DECLARE_FEATURE(kNotificationOneTapUnsubscribe);
@@ -87,10 +69,6 @@ extern base::FeatureParam<bool>
 
 BASE_DECLARE_FEATURE(kPromoBrowserCommands);
 extern const char kBrowserCommandIdParam[];
-
-#if !BUILDFLAG(IS_ANDROID)
-BASE_DECLARE_FEATURE(kReadAnythingPermanentAccessibility);
-#endif
 
 #if BUILDFLAG(IS_WIN) && BUILDFLAG(GOOGLE_CHROME_BRANDING)
 BASE_DECLARE_FEATURE(kRegisterOsUpdateHandlerWin);

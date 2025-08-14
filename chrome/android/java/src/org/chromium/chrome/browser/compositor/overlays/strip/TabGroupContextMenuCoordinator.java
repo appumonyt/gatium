@@ -26,6 +26,7 @@ import androidx.appcompat.content.res.AppCompatResources;
 import org.chromium.base.Token;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.supplier.Supplier;
+import org.chromium.build.annotations.Initializer;
 import org.chromium.build.annotations.MonotonicNonNull;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
@@ -55,7 +56,7 @@ import org.chromium.chrome.browser.tasks.tab_management.TabGroupOverflowMenuCoor
 import org.chromium.chrome.browser.tasks.tab_management.TabShareUtils;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiUtils;
 import org.chromium.chrome.tab_ui.R;
-import org.chromium.components.browser_ui.widget.BrowserUiListMenuUtils;
+import org.chromium.components.browser_ui.widget.ListItemBuilder;
 import org.chromium.components.collaboration.CollaborationService;
 import org.chromium.components.collaboration.CollaborationServiceLeaveOrDeleteEntryPoint;
 import org.chromium.components.collaboration.CollaborationServiceShareOrManageEntryPoint;
@@ -80,13 +81,12 @@ import org.chromium.ui.widget.RectProvider;
  */
 @NullMarked
 public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordinator {
-    @MonotonicNonNull private View mContentView;
-    @MonotonicNonNull private Context mContext;
-    @MonotonicNonNull private EditText mGroupTitleEditText;
-    @MonotonicNonNull private ColorPickerCoordinator mColorPickerCoordinator;
+    private @MonotonicNonNull View mContentView;
+    private @MonotonicNonNull Context mContext;
+    private @MonotonicNonNull EditText mGroupTitleEditText;
+    private @MonotonicNonNull ColorPickerCoordinator mColorPickerCoordinator;
     private TabGroupModelFilter mTabGroupModelFilter;
-    private @Nullable Token mTabGroupId;
-    private int mGroupRootId;
+    private Token mTabGroupId;
 
     // Title currently modified by the user through the edit box. This does not include previously
     // updated or default title.
@@ -94,19 +94,23 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
     private boolean mIsPresetTitleUsed;
     private final WindowAndroid mWindowAndroid;
     private final KeyboardVisibilityDelegate.KeyboardVisibilityListener mKeyboardVisibilityListener;
+
+    @SuppressWarnings("HidingField")
     protected CollaborationService mCollaborationService;
+
     private final TabGroupModelFilterObserver mTabGroupModelFilterObserver =
             new TabGroupModelFilterObserver() {
                 @Override
-                public void didChangeTabGroupTitle(int rootId, @Nullable String newTitle) {
-                    if (isMenuShowing() && rootId == mGroupRootId) {
+                public void didChangeTabGroupTitle(Token tabGroupId, @Nullable String newTitle) {
+                    if (isMenuShowing() && mTabGroupId.equals(tabGroupId)) {
                         setExistingOrDefaultTitle(newTitle);
                     }
                 }
 
                 @Override
-                public void didChangeTabGroupColor(int rootId, @TabGroupColorId int newColor) {
-                    if (isMenuShowing() && rootId == mGroupRootId) {
+                public void didChangeTabGroupColor(
+                        Token tabGroupId, @TabGroupColorId int newColor) {
+                    if (isMenuShowing() && mTabGroupId.equals(tabGroupId)) {
                         setSelectedColorItem(newColor);
                     }
                 }
@@ -190,10 +194,10 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
 
             if (tabId == Tab.INVALID_TAB_ID) return;
 
-            if (menuId == org.chromium.chrome.R.id.ungroup_tab) {
+            if (menuId == R.id.ungroup_tab) {
                 TabUiUtils.ungroupTabGroup(tabGroupModelFilter, tabGroupId);
                 RecordUserAction.record("MobileToolbarTabGroupMenu.Ungroup");
-            } else if (menuId == org.chromium.chrome.R.id.close_tab_group) {
+            } else if (menuId == R.id.close_tab_group) {
                 boolean allowUndo = TabClosureParamsUtils.shouldAllowUndo(listViewTouchTracker);
                 TabUiUtils.closeTabGroup(
                         tabGroupModelFilter,
@@ -203,7 +207,7 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
                         /* hideTabGroups= */ true,
                         /* didCloseCallback= */ null);
                 RecordUserAction.record("MobileToolbarTabGroupMenu.CloseGroup");
-            } else if (menuId == org.chromium.chrome.R.id.delete_tab_group) {
+            } else if (menuId == R.id.delete_tab_group) {
                 boolean allowUndo = TabClosureParamsUtils.shouldAllowUndo(listViewTouchTracker);
                 TabUiUtils.closeTabGroup(
                         tabGroupModelFilter,
@@ -213,7 +217,7 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
                         /* hideTabGroups= */ false,
                         /* didCloseCallback= */ null);
                 RecordUserAction.record("MobileToolbarTabGroupMenu.DeleteGroup");
-            } else if (menuId == org.chromium.chrome.R.id.open_new_tab_in_group) {
+            } else if (menuId == R.id.open_new_tab_in_group) {
                 TabGroupUtils.openUrlInGroup(
                         tabGroupModelFilter,
                         UrlConstants.NTP_URL,
@@ -229,6 +233,7 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
                 TabModel tabModel = tabModelSupplier.get();
                 @Nullable TabGroupMetadata tabGroupMetadata =
                         TabGroupMetadataExtractor.extractTabGroupMetadata(
+                                tabGroupModelFilter,
                                 tabGroupModelFilter.getTabsInGroup(tabGroupId),
                                 TabWindowManagerSingleton.getInstance().getIdForWindow(activity),
                                 assumeNonNull(tabModel.getTabAt(tabModel.index())).getId(),
@@ -236,7 +241,7 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
                 if (tabGroupMetadata != null) {
                     multiInstanceManager.moveTabGroupToOtherWindow(tabGroupMetadata);
                 }
-            } else if (menuId == org.chromium.chrome.R.id.share_group) {
+            } else if (menuId == R.id.share_group) {
                 // Create the group share flow and display the share bottom sheet.
                 dataSharingTabManager.createOrManageFlow(
                         eitherId,
@@ -278,9 +283,9 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
      *     coordinates.
      * @param tabGroupId The tab group ID of the interacting tab group.
      */
+    @Initializer
     public void showMenu(RectProvider anchorViewRectProvider, Token tabGroupId) {
         mTabGroupId = tabGroupId;
-        mGroupRootId = mTabGroupModelFilter.getRootIdFromTabGroupId(tabGroupId);
         createAndShowMenu(
                 anchorViewRectProvider,
                 tabGroupId,
@@ -310,20 +315,21 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
                 TabShareUtils.isCollaborationIdValid(collaborationId)
                         && mCollaborationService.getServiceStatus().isAllowedToJoin();
         itemList.add(buildMenuDivider(isIncognito));
+
         itemList.add(
-                BrowserUiListMenuUtils.buildMenuListItemWithIncognitoBranding(
-                        R.string.open_new_tab_in_group_context_menu_item,
-                        R.id.open_new_tab_in_group,
-                        isIncognito,
-                        /* enabled= */ true));
+                new ListItemBuilder()
+                        .withTitleRes(R.string.open_new_tab_in_group_context_menu_item)
+                        .withMenuId(R.id.open_new_tab_in_group)
+                        .withIsIncognito(isIncognito)
+                        .build());
 
         if (!hasCollaborationData) {
             itemList.add(
-                    BrowserUiListMenuUtils.buildMenuListItemWithIncognitoBranding(
-                            R.string.ungroup_tab_group_menu_item,
-                            R.id.ungroup_tab,
-                            isIncognito,
-                            /* enabled= */ true));
+                    new ListItemBuilder()
+                            .withTitleRes(R.string.ungroup_tab_group_menu_item)
+                            .withMenuId(R.id.ungroup_tab)
+                            .withIsIncognito(isIncognito)
+                            .build());
         }
 
         if (!isIncognito
@@ -331,19 +337,18 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
                 && mCollaborationService.getServiceStatus().isAllowedToCreate()
                 && !hasCollaborationData) {
             itemList.add(
-                    BrowserUiListMenuUtils.buildMenuListItem(
-                            R.string.share_tab_group_context_menu_item,
-                            R.id.share_group,
-                            /* startIconId= */ 0,
-                            /* enabled= */ true));
+                    new ListItemBuilder()
+                            .withTitleRes(R.string.share_tab_group_context_menu_item)
+                            .withMenuId(R.id.share_group)
+                            .build());
         }
 
         itemList.add(
-                BrowserUiListMenuUtils.buildMenuListItemWithIncognitoBranding(
-                        R.string.tab_grid_dialog_toolbar_close_group,
-                        R.id.close_tab_group,
-                        isIncognito,
-                        /* enabled= */ true));
+                new ListItemBuilder()
+                        .withTitleRes(R.string.tab_grid_dialog_toolbar_close_group)
+                        .withMenuId(R.id.close_tab_group)
+                        .withIsIncognito(isIncognito)
+                        .build());
 
         if (MultiWindowUtils.isMultiInstanceApi31Enabled()) {
             // TODO(crbug.com/417272356): Update text; Currently shows "Move to new window" instead
@@ -351,27 +356,29 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
             // This is called after showMenu, which assumes Activity is non-null, so it is OK to
             // continue to make this assumption here.
             Activity activity = assumeNonNull(mWindowAndroid.getActivity().get());
+            String title =
+                    activity.getResources()
+                            .getQuantityString(
+                                    R.plurals.move_group_to_another_window_context_menu_item,
+                                    MultiWindowUtils.getInstanceCount());
+
             itemList.add(
-                    BrowserUiListMenuUtils.buildMenuListItemWithIncognitoBranding(
-                            activity.getResources()
-                                    .getQuantityString(
-                                            R.plurals
-                                                    .move_group_to_another_window_context_menu_item,
-                                            MultiWindowUtils.getInstanceCount()),
-                            R.id.move_to_other_window_menu_id,
-                            isIncognito,
-                            /* enabled= */ true));
+                    new ListItemBuilder()
+                            .withTitle(title)
+                            .withMenuId(R.id.move_to_other_window_menu_id)
+                            .withIsIncognito(isIncognito)
+                            .build());
         }
 
         // Delete does not make sense for incognito since the tab group is not saved to sync.
         if ((mTabGroupSyncService != null) && !isIncognito && !hasCollaborationData) {
             itemList.add(buildMenuDivider(isIncognito));
+
             itemList.add(
-                    BrowserUiListMenuUtils.buildMenuListItem(
-                            R.string.tab_grid_dialog_toolbar_delete_group,
-                            R.id.delete_tab_group,
-                            /* startIconId= */ 0,
-                            /* enabled= */ true));
+                    new ListItemBuilder()
+                            .withTitleRes(R.string.tab_grid_dialog_toolbar_delete_group)
+                            .withMenuId(R.id.delete_tab_group)
+                            .build());
         }
     }
 
@@ -379,38 +386,38 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
     public void buildCollaborationMenuItems(ModelList itemList, @MemberRole int memberRole) {
         if (memberRole != MemberRole.UNKNOWN) {
             int insertionIndex = getMenuItemIndex(itemList, R.id.close_tab_group);
+
             itemList.add(
                     insertionIndex++,
-                    BrowserUiListMenuUtils.buildMenuListItem(
-                            R.string.tab_grid_dialog_toolbar_manage_sharing,
-                            R.id.manage_sharing,
-                            /* startIconId= */ 0,
-                            /* enabled= */ true));
+                    new ListItemBuilder()
+                            .withTitleRes(R.string.tab_grid_dialog_toolbar_manage_sharing)
+                            .withMenuId(R.id.manage_sharing)
+                            .build());
+
             itemList.add(
                     insertionIndex++,
-                    BrowserUiListMenuUtils.buildMenuListItem(
-                            R.string.tab_grid_dialog_toolbar_recent_activity,
-                            R.id.recent_activity,
-                            /* startIconId= */ 0,
-                            /* enabled= */ true));
+                    new ListItemBuilder()
+                            .withTitleRes(R.string.tab_grid_dialog_toolbar_recent_activity)
+                            .withMenuId(R.id.recent_activity)
+                            .build());
         }
 
         if (memberRole == MemberRole.OWNER) {
             itemList.add(buildMenuDivider(/* isIncognito= */ false));
+
             itemList.add(
-                    BrowserUiListMenuUtils.buildMenuListItem(
-                            R.string.tab_grid_dialog_toolbar_delete_group,
-                            R.id.delete_shared_group,
-                            /* startIconId= */ 0,
-                            /* enabled= */ true));
+                    new ListItemBuilder()
+                            .withTitleRes(R.string.tab_grid_dialog_toolbar_delete_group)
+                            .withMenuId(R.id.delete_shared_group)
+                            .build());
         } else if (memberRole == MemberRole.MEMBER) {
             itemList.add(buildMenuDivider(/* isIncognito= */ false));
+
             itemList.add(
-                    BrowserUiListMenuUtils.buildMenuListItem(
-                            R.string.tab_grid_dialog_toolbar_leave_group,
-                            R.id.leave_group,
-                            /* startIconId= */ 0,
-                            /* enabled= */ true));
+                    new ListItemBuilder()
+                            .withTitleRes(R.string.tab_grid_dialog_toolbar_leave_group)
+                            .withMenuId(R.id.leave_group)
+                            .build());
         }
         resizeMenu();
     }
@@ -471,7 +478,7 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
     private void updateTabGroupColor() {
         if (mColorPickerCoordinator == null) return;
         @TabGroupColorId int newColor = mColorPickerCoordinator.getSelectedColorSupplier().get();
-        if (TabUiUtils.updateTabGroupColor(mTabGroupModelFilter, mGroupRootId, newColor)) {
+        if (TabUiUtils.updateTabGroupColor(mTabGroupModelFilter, mTabGroupId, newColor)) {
             RecordUserAction.record("MobileToolbarTabGroupMenu.ColorChanged");
         }
     }
@@ -487,10 +494,10 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
         if (newTitle == null) {
             return;
         } else if (TextUtils.isEmpty(newTitle) || newTitle.equals(getDefaultTitle())) {
-            mTabGroupModelFilter.deleteTabGroupTitle(mGroupRootId);
+            mTabGroupModelFilter.deleteTabGroupTitle(mTabGroupId);
             RecordUserAction.record("MobileToolbarTabGroupMenu.TitleReset");
             setExistingOrDefaultTitle(getDefaultTitle());
-        } else if (TabUiUtils.updateTabGroupTitle(mTabGroupModelFilter, mGroupRootId, newTitle)) {
+        } else if (TabUiUtils.updateTabGroupTitle(mTabGroupModelFilter, mTabGroupId, newTitle)) {
             RecordUserAction.record("MobileToolbarTabGroupMenu.TitleChanged");
         }
         mCurrentModifiedTitle = null;
@@ -516,8 +523,7 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
         if (isIncognito) {
             mGroupTitleEditText.setBackgroundTintList(
                     AppCompatResources.getColorStateList(
-                            context,
-                            org.chromium.chrome.R.color.menu_edit_text_bg_tint_list_baseline));
+                            context, R.color.menu_edit_text_bg_tint_list_baseline));
             mGroupTitleEditText.setTextAppearance(
                     R.style.TextAppearance_TextLarge_Primary_Baseline_Light);
         }
@@ -534,14 +540,8 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
                     }
                 });
 
-        // Set the initial text to the existing group title, defaulting to "N tabs" if no title name
-        // is set.
-        String curGroupTitle = mTabGroupModelFilter.getTabGroupTitle(mGroupRootId);
-        if (curGroupTitle == null || curGroupTitle.isEmpty()) {
-            setExistingOrDefaultTitle(getDefaultTitle());
-        } else {
-            setExistingOrDefaultTitle(curGroupTitle);
-        }
+        setExistingOrDefaultTitle(
+                TabGroupTitleUtils.getDisplayableTitle(context, mTabGroupModelFilter, mTabGroupId));
 
         // Add listener to group title EditText to update group title when keyboard starts hiding.
         mWindowAndroid
@@ -572,7 +572,7 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
 
         // The color picker should select the current color of the tab group when it is displayed.
         @TabGroupColorId
-        int curGroupColor = mTabGroupModelFilter.getTabGroupColorWithFallback(mGroupRootId);
+        int curGroupColor = mTabGroupModelFilter.getTabGroupColorWithFallback(mTabGroupId);
         mColorPickerCoordinator.setSelectedColorItem(curGroupColor);
     }
 
@@ -597,8 +597,7 @@ public class TabGroupContextMenuCoordinator extends TabGroupOverflowMenuCoordina
         return mKeyboardVisibilityListener;
     }
 
-    void setGroupDataForTesting(int id, Token tabGroupId) {
-        mGroupRootId = id;
+    void setGroupDataForTesting(Token tabGroupId) {
         mTabGroupId = tabGroupId;
     }
 }

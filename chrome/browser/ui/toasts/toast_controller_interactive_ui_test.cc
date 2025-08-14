@@ -31,7 +31,7 @@
 #include "chrome/test/interaction/interactive_browser_test.h"
 #include "components/omnibox/browser/omnibox_edit_model.h"
 #include "components/omnibox/browser/omnibox_view.h"
-#include "components/plus_addresses/features.h"
+#include "components/plus_addresses/core/common/features.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "net/dns/mock_host_resolver.h"
@@ -225,8 +225,7 @@ IN_PROC_BROWSER_TEST_F(ToastControllerInteractiveTest, FocusNextPane) {
                   return !toast->GetFocusManager()->GetFocusedView();
                 }),
       SendAccelerator(kBrowserViewElementId, next_pane),
-      WaitForState(views::test::kCurrentWidgetFocus,
-                   [&]() { return toast_widget->GetNativeView(); }),
+      WaitForState(views::test::kCurrentWidgetFocus, std::ref(toast_widget)),
       CheckView(toasts::ToastView::kToastViewId, [](toasts::ToastView* toast) {
         return toast->GetFocusManager()->GetFocusedView() ==
                toast->action_button_for_testing();
@@ -238,7 +237,6 @@ IN_PROC_BROWSER_TEST_F(ToastControllerInteractiveTest, ReverseFocusTraversal) {
   ASSERT_TRUE(BrowserView::GetBrowserViewForBrowser(browser())->GetAccelerator(
       IDC_FOCUS_NEXT_PANE, &next_pane));
   RunTestSequence(
-      ObserveState(views::test::kCurrentWidgetFocus),
       ShowToast(ToastParams(ToastId::kAddedToReadingList)),
       WaitForShow(toasts::ToastView::kToastViewId),
       ActivateSurface(toasts::ToastView::kToastViewId),
@@ -265,7 +263,6 @@ IN_PROC_BROWSER_TEST_F(ToastControllerInteractiveTest, ForwardFocusTraversal) {
   ASSERT_TRUE(BrowserView::GetBrowserViewForBrowser(browser())->GetAccelerator(
       IDC_FOCUS_NEXT_PANE, &next_pane));
   RunTestSequence(
-      ObserveState(views::test::kCurrentWidgetFocus),
       ShowToast(ToastParams(ToastId::kAddedToReadingList)),
       WaitForShow(toasts::ToastView::kToastViewId),
       ActivateSurface(toasts::ToastView::kToastViewId),

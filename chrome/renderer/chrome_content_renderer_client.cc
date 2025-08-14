@@ -37,8 +37,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
-#include "chrome/common/pepper_permission_util.h"
-#include "chrome/common/ppapi_utils.h"
 #include "chrome/common/profiler/chrome_thread_group_profiler_client.h"
 #include "chrome/common/profiler/chrome_thread_profiler_client.h"
 #include "chrome/common/profiler/core_unwinders.h"
@@ -70,6 +68,7 @@
 #include "chrome/renderer/v8_unwinder.h"
 #include "chrome/renderer/web_link_preview_triggerer_impl.h"
 #include "chrome/renderer/websocket_handshake_throttle_provider_impl.h"
+#include "chrome/renderer/webui_browser/webui_browser_renderer_extension.h"
 #include "chrome/renderer/worker_content_settings_client.h"
 #include "chrome/services/speech/buildflags/buildflags.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
@@ -120,6 +119,7 @@
 #include "components/subresource_filter/content/renderer/subresource_filter_agent.h"
 #include "components/subresource_filter/content/renderer/unverified_ruleset_dealer.h"
 #include "components/subresource_filter/core/common/common_features.h"
+#include "components/subresource_filter/core/common/memory_mapped_ruleset.h"
 #include "components/variations/net/variations_http_headers.h"
 #include "components/variations/variations_switches.h"
 #include "components/version_info/version_info.h"
@@ -137,14 +137,12 @@
 #include "content/public/renderer/render_frame_visitor.h"
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/renderer/extensions_renderer_api_provider.h"
-#include "ipc/ipc_sync_channel.h"
 #include "media/base/media_switches.h"
 #include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/generic_pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/net_errors.h"
 #include "pdf/buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
@@ -232,10 +230,6 @@
 #include "chrome/renderer/plugins/chrome_plugin_placeholder.h"
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
 
-#if BUILDFLAG(ENABLE_PPAPI)
-#include "ppapi/shared_impl/ppapi_switches.h"  // nogncheck crbug.com/1125897
-#endif
-
 #if BUILDFLAG(ENABLE_PRINTING)
 #include "chrome/renderer/printing/chrome_print_render_frame_helper_delegate.h"
 #include "components/printing/renderer/print_render_frame_helper.h"  // nogncheck
@@ -293,13 +287,6 @@ using UsesKeyboardAccessoryForSuggestions =
     autofill::AutofillAgent::UsesKeyboardAccessoryForSuggestions;
 
 namespace {
-
-// Allow PPAPI for Android Runtime for Chromium. (See crbug.com/383937)
-#if BUILDFLAG(ENABLE_PLUGINS)
-const char* const kPredefinedAllowedCameraDeviceOrigins[] = {
-    "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",
-    "4EB74897CB187C7633357C2FE832E0AD6A44883A"};
-#endif
 
 #if BUILDFLAG(ENABLE_PDF)
 std::vector<url::Origin> GetAdditionalPdfInternalPluginAllowedOrigins() {
@@ -370,10 +357,6 @@ ChromeContentRendererClient::ChromeContentRendererClient()
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   EnsureExtensionsClientInitialized();
   ChromeExtensionsRendererClient::Create();
-#endif
-#if BUILDFLAG(ENABLE_PLUGINS)
-  for (const char* origin : kPredefinedAllowedCameraDeviceOrigins)
-    allowed_camera_device_origins_.insert(origin);
 #endif
 }
 
@@ -606,10 +589,6 @@ void ChromeContentRendererClient::RenderFrameCreated(
                                                                   registry);
 #endif
 
-#if BUILDFLAG(ENABLE_PPAPI)
-  new PepperHelper(render_frame);
-#endif
-
 #if BUILDFLAG(SAFE_BROWSING_DB_LOCAL) || BUILDFLAG(SAFE_BROWSING_DB_REMOTE)
   safe_browsing::ThreatDOMDetails::Create(render_frame, registry);
 #endif
@@ -708,12 +687,18 @@ void ChromeContentRendererClient::RenderFrameCreated(
     subresource_filter_agent->Initialize();
   }
 
-  if (fingerprinting_protection_filter::features::
-          IsFingerprintingProtectionFeatureEnabled() &&
+  if (render_frame->IsMainFrame() && !render_frame->IsInFencedFrameTree()) {
+    // This web pref applies at the level of the current browser session and may
+    // change when settings are modified, so we copy the latest value every time
+    // a new top-level main frame is created for a new page.
+    content_based_fingerprinting_protection_enabled_ =
+        render_frame->GetBlinkPreferences()
+            .content_based_fingerprinting_protection_enabled;
+  }
+  if (content_based_fingerprinting_protection_enabled_ &&
       fingerprinting_protection_ruleset_dealer_) {
     auto* fingerprinting_protection_renderer_agent =
-        new fingerprinting_protection_filter::RendererAgent(
-            render_frame, fingerprinting_protection_ruleset_dealer_.get());
+        new fingerprinting_protection_filter::RendererAgent(render_frame);
     fingerprinting_protection_renderer_agent->Initialize();
   }
 
@@ -757,6 +742,12 @@ void ChromeContentRendererClient::RenderFrameCreated(
   if (base::FeatureList::IsEnabled(features::kBoardingPassDetector) &&
       render_frame->IsMainFrame()) {
     new wallet::BoardingPassExtractor(render_frame, registry);
+  }
+#endif
+
+#if !BUILDFLAG(IS_ANDROID)
+  if (base::FeatureList::IsEnabled(features::kWebium)) {
+    WebUIBrowserRendererExtension::Create(render_frame);
   }
 #endif
 }
@@ -1102,25 +1093,6 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
 }
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
 
-// For NaCl content handling plugins, the NaCl manifest is stored in an
-// additonal 'nacl' param associated with the MIME type.
-//  static
-GURL ChromeContentRendererClient::GetNaClContentHandlerURL(
-    const std::string& actual_mime_type,
-    const content::WebPluginInfo& plugin) {
-  // Look for the manifest URL among the MIME type's additonal parameters.
-  for (const auto& mime_type : plugin.mime_types) {
-    if (mime_type.mime_type == actual_mime_type) {
-      for (const auto& p : mime_type.additional_params) {
-        if (p.name == u"nacl")
-          return GURL(p.value);
-      }
-      break;
-    }
-  }
-  return GURL();
-}
-
 void ChromeContentRendererClient::GetInterface(
     const std::string& interface_name,
     mojo::ScopedMessagePipeHandle interface_pipe) {
@@ -1308,16 +1280,6 @@ ChromeContentRendererClient::CreatePrescientNetworking(
       render_frame);
 }
 
-#if BUILDFLAG(ENABLE_PLUGINS) && BUILDFLAG(ENABLE_EXTENSIONS)
-bool ChromeContentRendererClient::IsExtensionOrSharedModuleAllowed(
-    const GURL& url,
-    const std::set<std::string>& allowlist) {
-  const extensions::ExtensionSet* extension_set =
-      extensions::RendererExtensionRegistry::Get()->GetMainThreadExtensionSet();
-  return ::IsExtensionOrSharedModuleAllowed(url, extension_set, allowlist);
-}
-#endif
-
 #if BUILDFLAG(ENABLE_SPELLCHECK)
 void ChromeContentRendererClient::InitSpellCheck() {
   spellcheck_ = std::make_unique<SpellCheck>(this);
@@ -1357,7 +1319,7 @@ ChromeContentRendererClient::CreateWebSocketHandshakeThrottleProvider() {
 bool ChromeContentRendererClient::ShouldUseCodeCacheWithHashing(
     const blink::WebURL& request_url) const {
   if (content::HasWebUIScheme(request_url)) {
-    return chrome::ShouldUseCodeCacheForWebUIUrl(GURL(request_url));
+    return ShouldUseCodeCacheForWebUIUrl(GURL(request_url));
   }
   return true;
 }
@@ -1396,22 +1358,6 @@ ChromeContentRendererClient::CreateSpeechRecognitionClient(
   return std::make_unique<ChromeSpeechRecognitionClient>(render_frame);
 }
 #endif  // BUILDFLAG(ENABLE_SPEECH_SERVICE)
-
-bool ChromeContentRendererClient::IsPluginAllowedToUseCameraDeviceAPI(
-    const GURL& url) {
-#if BUILDFLAG(ENABLE_PLUGINS) && BUILDFLAG(ENABLE_EXTENSIONS)
-#if BUILDFLAG(ENABLE_PPAPI)
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnablePepperTesting))
-    return true;
-#endif  // BUILDFLAG(ENABLE_PPAPI)
-
-  if (IsExtensionOrSharedModuleAllowed(url, allowed_camera_device_origins_))
-    return true;
-#endif
-
-  return false;
-}
 
 void ChromeContentRendererClient::RunScriptsAtDocumentStart(
     content::RenderFrame* render_frame) {
@@ -1645,6 +1591,22 @@ void ChromeContentRendererClient::AppendContentSecurityPolicy(
                   network::mojom::ContentSecurityPolicyType::kEnforce,
                   network::mojom::ContentSecurityPolicySource::kHTTP});
 #endif
+}
+
+bool ChromeContentRendererClient::
+    IsContentBasedFingerprintingProtectionEnabled() {
+  return content_based_fingerprinting_protection_enabled_;
+}
+
+scoped_refptr<const subresource_filter::MemoryMappedRuleset>
+ChromeContentRendererClient::GetFingerprintingProtectionRuleset() {
+  if (fingerprinting_protection_ruleset_dealer_) {
+    // Returns nullptr if no ruleset file is available.
+    fingerprinting_protection_ruleset_ =
+        fingerprinting_protection_ruleset_dealer_->GetRuleset();
+    return fingerprinting_protection_ruleset_;
+  }
+  return nullptr;
 }
 
 std::unique_ptr<blink::WebLinkPreviewTriggerer>

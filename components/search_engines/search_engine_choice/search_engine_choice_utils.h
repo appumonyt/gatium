@@ -33,8 +33,14 @@ inline constexpr char
         "Search.ChoiceScreenProfileInitConditions";
 inline constexpr char kSearchEngineChoiceScreenNavigationConditionsHistogram[] =
     "Search.ChoiceScreenNavigationConditions";
+inline constexpr char kChoiceScreenProfileInitConditionsPostRestoreHistogram[] =
+    "Search.ChoiceScreenProfileInitConditions.PostRestore";
+inline constexpr char kChoiceScreenNavigationConditionsPostRestoreHistogram[] =
+    "Search.ChoiceScreenNavigationConditions.PostRestore";
 inline constexpr char kSearchEngineChoiceScreenEventsHistogram[] =
     "Search.ChoiceScreenEvents";
+inline constexpr char kChoiceScreenEventsPostRestoreHistogram[] =
+    "Search.ChoiceScreenEvents.PostRestore";
 inline constexpr char
     kSearchEngineChoiceScreenDefaultSearchEngineTypeHistogram[] =
         "Search.ChoiceScreenDefaultSearchEngineType";
@@ -154,11 +160,12 @@ enum class SearchEngineChoiceWipeReason {
   kInvalidMetadataVersion = 2,
   kFinchBasedReprompt = 3,
   kCommandLineFlag = 4,
-  kDeviceRestored = 5,
+  // kDeviceRestored = 5, // Deprecated
   kInvalidMetadata = 6,
   kMissingDefaultSearchEngine = 7,
+  kChoiceRemadeAfterImport = 8,
 
-  kMaxValue = kMissingDefaultSearchEngine,
+  kMaxValue = kChoiceRemadeAfterImport,
 };
 
 // Exposed for testing.
@@ -246,9 +253,6 @@ class ChoiceScreenData {
   const ChoiceScreenDisplayState display_state_;
 };
 
-// Records the specified choice screen event.
-void RecordChoiceScreenEvent(SearchEngineChoiceScreenEvents event);
-
 // Records the type of the default search engine that was chosen by the user
 // in the search engine choice screen or in the settings page.
 void RecordChoiceScreenDefaultSearchProviderType(
@@ -310,20 +314,6 @@ std::optional<base::Time> GetChoiceScreenCompletionTimestamp(
 void ClearSearchEngineChoiceInvalidation(PrefService& prefs);
 
 bool IsSearchEngineChoiceInvalid(PrefService& prefs);
-
-#if !BUILDFLAG(IS_ANDROID)
-// Returns the engine marketing snippet string resource id or -1 if the snippet
-// was not found.
-// The function definition is generated in `generated_marketing_snippets.cc`.
-// `engine_keyword` is the search engine keyword.
-int GetMarketingSnippetResourceId(const std::u16string& engine_keyword);
-
-// Returns the marketing snippet string or the fallback string if the search
-// engine didn't provide its own.
-std::u16string GetMarketingSnippetString(
-    const TemplateURLData& template_url_data);
-
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace search_engines
 

@@ -399,7 +399,7 @@ Node* Node::PseudoAwarePreviousSibling() const {
   // corresponds to the ordering of pseudo-elements in a traversal:
   // ::scroll-marker-group(before), ::marker, ::scroll-marker,
   // ::scroll-button(), ::checkmark,
-  // ::before, non-pseudo Elements, ::after, ::picker-icon,
+  // ::before, non-pseudo Elements, ::after, ::picker-icon, ::interest-hint,
   // ::scroll-marker-group(after), ::view-transition. The fallthroughs ensure
   // this ordering by checking for each kind of node in-turn.
   switch (GetPseudoId()) {
@@ -410,6 +410,11 @@ Node* Node::PseudoAwarePreviousSibling() const {
       }
       [[fallthrough]];
     case kPseudoIdScrollMarkerGroupAfter:
+      if (Node* next = parent->GetPseudoElement(kPseudoIdInterestHint)) {
+        return next;
+      }
+      [[fallthrough]];
+    case kPseudoIdInterestHint:
       if (Node* next = parent->GetPseudoElement(kPseudoIdPickerIcon)) {
         return next;
       }
@@ -602,6 +607,11 @@ Node* Node::PseudoAwareNextSibling() const {
       }
       [[fallthrough]];
     case kPseudoIdPickerIcon:
+      if (Node* next = parent->GetPseudoElement(kPseudoIdInterestHint)) {
+        return next;
+      }
+      [[fallthrough]];
+    case kPseudoIdInterestHint:
       if (Node* next =
               parent->GetPseudoElement(kPseudoIdScrollMarkerGroupAfter)) {
         return next;
@@ -728,6 +738,10 @@ Node* Node::PseudoAwareFirstChild() const {
     if (Node* first = current_element->GetPseudoElement(kPseudoIdPickerIcon)) {
       return first;
     }
+    if (Node* first =
+            current_element->GetPseudoElement(kPseudoIdInterestHint)) {
+      return first;
+    }
     if (Node* first = current_element->GetPseudoElement(
             kPseudoIdScrollMarkerGroupAfter)) {
       return first;
@@ -782,6 +796,9 @@ Node* Node::PseudoAwareLastChild() const {
     }
     if (Node* last = current_element->GetPseudoElement(
             kPseudoIdScrollMarkerGroupAfter)) {
+      return last;
+    }
+    if (Node* last = current_element->GetPseudoElement(kPseudoIdInterestHint)) {
       return last;
     }
     if (Node* last = current_element->GetPseudoElement(kPseudoIdPickerIcon)) {
@@ -2777,6 +2794,10 @@ static void AppendMarkedTree(const String& base_indent,
         AppendMarkedTree(indent_string, pseudo, marked_node1, marked_label1,
                          marked_node2, marked_label2, builder);
       }
+      if (Element* pseudo = element->GetPseudoElement(kPseudoIdInterestHint)) {
+        AppendMarkedTree(indent_string, pseudo, marked_node1, marked_label1,
+                         marked_node2, marked_label2, builder);
+      }
       if (Element* pseudo =
               element->GetPseudoElement(kPseudoIdScrollMarkerGroupAfter)) {
         AppendMarkedTree(indent_string, pseudo, marked_node1, marked_label1,
@@ -2936,11 +2957,18 @@ void Node::WillMoveToNewDocument(Document& new_document) {
     old_document.SetFocusedElement(nullptr, params);
   }
 
+  const LocalFrame* old_frame = old_document.GetFrame();
+  const LocalFrame* new_frame = new_document.GetFrame();
+  const bool moving_from_connected_local_root_to_different_local_root =
+      old_frame && (!new_frame || &old_frame->LocalFrameRoot() !=
+                                      &new_frame->LocalFrameRoot());
+  if (moving_from_connected_local_root_to_different_local_root) {
+    old_frame->GetEventHandlerRegistry().DidMoveOutOfLocalRoot(*this);
+  }
+
   if (!old_document.GetPage() ||
       old_document.GetPage() == new_document.GetPage())
     return;
-
-  old_document.GetFrame()->GetEventHandlerRegistry().DidMoveOutOfPage(*this);
 
   if (auto* this_element = DynamicTo<Element>(this)) {
     StylePropertyMapReadOnly* computed_style_map_item =
@@ -3043,9 +3071,13 @@ void Node::MoveEventListenersToNewDocument(Document& old_document,
     }
   }
 
-  if (new_document.GetPage() &&
-      new_document.GetPage() != old_document.GetPage()) {
-    new_document.GetFrame()->GetEventHandlerRegistry().DidMoveIntoPage(*this);
+  const LocalFrame* old_frame = old_document.GetFrame();
+  const LocalFrame* new_frame = new_document.GetFrame();
+  const bool moving_into_different_connected_local_root =
+      new_frame && (!old_frame || &new_frame->LocalFrameRoot() !=
+                                      &old_frame->LocalFrameRoot());
+  if (moving_into_different_connected_local_root) {
+    new_frame->GetEventHandlerRegistry().DidMoveIntoLocalRoot(*this);
   }
 }
 
@@ -3257,8 +3289,9 @@ void Node::DispatchSimulatedClick(const Event* underlying_event,
 }
 
 void Node::DefaultEventHandler(Event& event) {
-  if (event.target() != this)
+  if (event.RawTarget() != this) {
     return;
+  }
   const AtomicString& event_type = event.type();
   if (event_type == event_type_names::kKeydown ||
       event_type == event_type_names::kKeypress ||

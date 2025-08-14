@@ -143,8 +143,7 @@ class Page;
 // higher-level dependencies. In short: code that uses RenderFrameHost must be
 // back-forward cache aware, and code that does not use RenderFrameHost should
 // not have to be back-forward cache aware.
-class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
-                                       public IPC::Sender {
+class CONTENT_EXPORT RenderFrameHost : public IPC::Listener {
   // Do not remove this macro!
   // The macro is maintained by the memory safety team.
   ADVANCED_MEMORY_SAFETY_CHECKS();
@@ -161,7 +160,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
       const GlobalRenderFrameHostToken& frame_token);
 
   // Globally allows for injecting JavaScript into the main world. This feature
-  // is present only to support Android WebView, WebLayer, Fuchsia web.Contexts,
+  // is present only to support Android WebView, Fuchsia web.Contexts,
   // and CastOS content shell. It must not be used in other configurations.
   static void AllowInjectingJavaScript();
 
@@ -192,6 +191,9 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
 
 #if BUILDFLAG(IS_ANDROID)
   // Returns the RenderFrameHost object associated with a Java native pointer.
+  // Note: It is recommended to use jni_zero::FromJniType<RenderFrameHost*>()
+  // instead of this method. This enables the use of @JniType for automatic
+  // conversion in Java.
   static RenderFrameHost* FromJavaRenderFrameHost(
       const base::android::JavaRef<jobject>& jrender_frame_host_android);
 #endif
@@ -857,6 +859,8 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
 
 #if BUILDFLAG(IS_ANDROID)
   // Returns the Java object of this instance.
+  // Note: It is recommended to use jni_zero::ToJniType() instead. This enables
+  // the use of @JniType for automatic conversion in Java.
   virtual jni_zero::ScopedJavaLocalRef<jobject> GetJavaRenderFrameHost() = 0;
 
   // Returns an InterfaceProvider for Java-implemented interfaces that are
@@ -1188,5 +1192,24 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
 };
 
 }  // namespace content
+
+#if BUILDFLAG(IS_ANDROID)
+namespace jni_zero {
+
+// @JniType conversion function.
+template <>
+inline content::RenderFrameHost* FromJniType<content::RenderFrameHost*>(
+    JNIEnv* env,
+    const JavaRef<jobject>& j_obj) {
+  return content::RenderFrameHost::FromJavaRenderFrameHost(j_obj);
+}
+template <>
+inline ScopedJavaLocalRef<jobject> ToJniType(JNIEnv* env,
+                                             content::RenderFrameHost* obj) {
+  return obj->GetJavaRenderFrameHost();
+}
+
+}  // namespace jni_zero
+#endif
 
 #endif  // CONTENT_PUBLIC_BROWSER_RENDER_FRAME_HOST_H_

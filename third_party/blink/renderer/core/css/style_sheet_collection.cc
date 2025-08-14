@@ -28,49 +28,241 @@
 
 #include "third_party/blink/renderer/core/css/style_sheet_collection.h"
 
+#include "third_party/blink/renderer/core/css/active_style_sheets.h"
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
 #include "third_party/blink/renderer/core/css/rule_set.h"
 #include "third_party/blink/renderer/core/css/rule_set_diff.h"
+#include "third_party/blink/renderer/core/css/style_engine.h"
+#include "third_party/blink/renderer/core/css/style_rule_import.h"
+#include "third_party/blink/renderer/core/css/style_sheet_candidate.h"
+#include "third_party/blink/renderer/core/css/style_sheet_contents.h"
+#include "third_party/blink/renderer/core/dom/element.h"
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
 
 namespace blink {
 
-StyleSheetCollection::StyleSheetCollection() = default;
+static void CreateRuleSets(const StyleEngine& engine,
+                           const MediaQueryEvaluator& medium,
+                           const MixinMap& effective_mixins,
+                           ActiveStyleSheetVector& active_style_sheets,
+                           HeapVector<Member<RuleSetDiff>>& rule_set_diffs);
 
-void StyleSheetCollection::Dispose() {
-  style_sheets_for_style_sheet_list_.clear();
-  active_style_sheets_.clear();
+void StyleSheetCollection::FinishUpdateActiveStyleSheets(
+    const MediaQueryEvaluator& medium,
+    const MixinMap& effective_mixins) {
+  HeapVector<Member<RuleSetDiff>> rule_set_diffs;
+  CreateRuleSets(GetDocument().GetStyleEngine(), medium, effective_mixins,
+                 pending_active_style_sheets_, rule_set_diffs);
+
+  GetDocument().GetStyleEngine().ApplyRuleSetChanges(
+      *tree_scope_, active_style_sheets_, pending_active_style_sheets_,
+      rule_set_diffs);
+
+  active_style_sheets_ = std::move(pending_active_style_sheets_);
+  pending_active_style_sheets_.clear();
 }
 
-void StyleSheetCollection::Swap(StyleSheetCollection& other) {
-  swap(style_sheets_for_style_sheet_list_,
-       other.style_sheets_for_style_sheet_list_);
-  active_style_sheets_.swap(other.active_style_sheets_);
-  sheet_list_dirty_ = false;
+// FIXME(sesse): Store this somewhere (including the two-level Eval() form),
+// so that we know when we need to invalidate.
+static bool MatchMediaForMixins(const MediaQueryEvaluator& evaluator,
+                                const MediaQuerySet* media_queries) {
+  if (!media_queries) {
+    return true;
+  }
+  return evaluator.Eval(*media_queries);
 }
 
-void StyleSheetCollection::SwapSheetsForSheetList(
-    HeapVector<Member<StyleSheet>>& sheets) {
-  swap(style_sheets_for_style_sheet_list_, sheets);
-  sheet_list_dirty_ = false;
+static void ExtractMixinsFromRules(
+    base::span<const Member<StyleRuleBase>> rules,
+    const MediaQueryEvaluator& medium,
+    MixinMap& mixins) {
+  for (StyleRuleBase* rule : rules) {
+    // TODO(sesse): @container, @layer, @scope, @starting-style are waiting for
+    // a resolution in https://github.com/w3c/csswg-drafts/issues/12417.
+    if (auto* media_rule = DynamicTo<StyleRuleMedia>(rule)) {
+      if (MatchMediaForMixins(medium, media_rule->MediaQueries())) {
+        ExtractMixinsFromRules(media_rule->ChildRules(), medium, mixins);
+      }
+    } else if (auto* supports_rule = DynamicTo<StyleRuleSupports>(rule)) {
+      if (supports_rule->ConditionIsSupported()) {
+        ExtractMixinsFromRules(supports_rule->ChildRules(), medium, mixins);
+      }
+    } else if (auto* mixin_rule = DynamicTo<StyleRuleMixin>(rule)) {
+      mixins.Set(mixin_rule->GetName(), mixin_rule);
+    }
+  }
 }
 
-void StyleSheetCollection::AppendActiveStyleSheet(
-    const ActiveStyleSheet& active_sheet) {
-  active_style_sheets_.push_back(active_sheet);
+static void ExtractMixinsFromSheet(const StyleSheetContents& contents,
+                                   const MediaQueryEvaluator& medium,
+                                   MixinMap& mixins) {
+  for (const StyleRuleImport* import_rule : contents.ImportRules()) {
+    if (!import_rule->GetStyleSheet()) {
+      continue;
+    }
+    if (!import_rule->IsSupported()) {
+      continue;
+    }
+    if (!MatchMediaForMixins(medium, import_rule->MediaQueries())) {
+      continue;
+    }
+    ExtractMixinsFromSheet(*import_rule->GetStyleSheet(), medium, mixins);
+  }
+  ExtractMixinsFromRules(contents.ChildRules(), medium, mixins);
 }
 
-void StyleSheetCollection::AppendSheetForList(StyleSheet* sheet) {
-  style_sheets_for_style_sheet_list_.push_back(sheet);
-}
+// Creates RuleSets for everything in active_style_sheets.
+// This is done as a separate pass, because we do not know what mixins
+// we have (which is required to create RuleSets) before we've seen
+// all stylesheets.
+//
+// Can only be called once.
+static void CreateRuleSets(const StyleEngine& engine,
+                           const MediaQueryEvaluator& medium,
+                           const MixinMap& effective_mixins,
+                           ActiveStyleSheetVector& active_style_sheets,
+                           HeapVector<Member<RuleSetDiff>>& rule_set_diffs) {
+  // Keep track of ensured RuleSets with @layer rules to detect
+  // StyleSheetContents sharing; RuleSets should not be shared
+  // between two equal sheets with @layer rules, since anonymous
+  // layers need to be unique.
+  HeapHashSet<Member<const RuleSet>> layer_rule_sets;
 
-void StyleSheetCollection::AppendRuleSetDiff(Member<RuleSetDiff> diff) {
-  rule_set_diffs_.push_back(diff);
+  for (auto& [css_sheet, rule_set] : active_style_sheets) {
+    CHECK_EQ(rule_set, nullptr);
+    rule_set = engine.RuleSetForSheet(*css_sheet, effective_mixins);
+
+    // NOTE: If the user has specified the same CSSStyleSheet object multiple
+    // times (which is only possible for constructible stylesheets, in
+    // adoptedStyleSheets), then we will not deduplicate them here
+    // (HasSingleOwnerNode() returns false, because the StyleSheetContents is
+    // indeed owned by only one CSSStyleSheet; we just send in that
+    // CSSStyleSheet twice). This means we could get confusing layer ordering if
+    // there were other stylesheets with anonymous layers between the
+    // duplicates.
+    //
+    // It is possible that we should change this; our current behavior differs
+    // from both Gecko and WebKit. It does not appear to be clear from the
+    // standard, though.
+    if (rule_set && rule_set->HasCascadeLayers() &&
+        !css_sheet->Contents()->HasSingleOwnerNode() &&
+        !layer_rule_sets.insert(rule_set).is_new_entry) {
+      // The condition above is met for a stylesheet with cascade layers which
+      // shares StyleSheetContents with another stylesheet in this TreeScope.
+      // WillMutateRules() creates a unique StyleSheetContents for this sheet to
+      // avoid incorrectly identifying two separate anonymous layers as the same
+      // layer.
+      //
+      // TODO(sesse): Can we detect this before creating the RuleSet?
+      css_sheet->WillMutateRules();
+      rule_set = engine.RuleSetForSheet(*css_sheet, effective_mixins);
+    }
+
+    if (css_sheet->Contents()->GetRuleSetDiff()) {
+      rule_set_diffs.push_back(css_sheet->Contents()->GetRuleSetDiff());
+      css_sheet->Contents()->ClearRuleSetDiff();
+    }
+  }
 }
 
 void StyleSheetCollection::Trace(Visitor* visitor) const {
   visitor->Trace(active_style_sheets_);
+  visitor->Trace(pending_active_style_sheets_);
   visitor->Trace(style_sheets_for_style_sheet_list_);
-  visitor->Trace(rule_set_diffs_);
+  visitor->Trace(tree_scope_);
+  visitor->Trace(style_sheet_candidate_nodes_);
+  visitor->Trace(mixins_);
+}
+
+StyleSheetCollection::StyleSheetCollection(TreeScope& tree_scope)
+    : tree_scope_(tree_scope), is_shadow_tree_(IsA<ShadowRoot>(tree_scope)) {
+  if (is_shadow_tree_) {
+    DCHECK_NE(tree_scope.RootNode(), tree_scope.RootNode().GetDocument());
+  } else {
+    DCHECK_EQ(tree_scope.RootNode(), tree_scope.RootNode().GetDocument());
+  }
+}
+
+void StyleSheetCollection::AddStyleSheetCandidateNode(Node& node) {
+  if (node.isConnected()) {
+    style_sheet_candidate_nodes_.Add(&node);
+  }
+}
+
+void StyleSheetCollection::UpdateStyleSheetList() {
+  if (!sheet_list_dirty_) {
+    return;
+  }
+
+  HeapVector<Member<StyleSheet>> new_list;
+  for (Node* node : style_sheet_candidate_nodes_) {
+    StyleSheetCandidate candidate(*node);
+    DCHECK(!candidate.IsXSL());
+    if (candidate.IsEnabledAndLoading()) {
+      continue;
+    }
+    if (StyleSheet* sheet = candidate.Sheet()) {
+      new_list.push_back(sheet);
+    }
+  }
+
+  style_sheets_for_style_sheet_list_ = std::move(new_list);
+  sheet_list_dirty_ = false;
+}
+
+void StyleSheetCollection::PrepareUpdateActiveStyleSheets(
+    const MediaQueryEvaluator& medium) {
+  ActiveStyleSheetVector new_active_style_sheets;
+  const String& preferred_name =
+      is_shadow_tree_
+          ? g_null_atom
+          : GetDocument().GetStyleEngine().PreferredStylesheetSetName();
+
+  if (!is_shadow_tree_) {
+    for (auto& sheet :
+         GetDocument().GetStyleEngine().InjectedAuthorStyleSheets()) {
+      new_active_style_sheets.push_back(std::pair(sheet.second, nullptr));
+    }
+  }
+
+  for (Node* n : style_sheet_candidate_nodes_) {
+    StyleSheetCandidate candidate(*n);
+
+    DCHECK(!candidate.IsXSL());
+    if (candidate.IsEnabledAndLoading()) {
+      continue;
+    }
+
+    StyleSheet* sheet = candidate.Sheet();
+    if (sheet && candidate.CanBeActivated(preferred_name)) {
+      CSSStyleSheet* css_sheet = To<CSSStyleSheet>(sheet);
+      new_active_style_sheets.push_back(std::pair(css_sheet, nullptr));
+    }
+  }
+
+  if (tree_scope_->HasAdoptedStyleSheets()) {
+    for (CSSStyleSheet* sheet : *tree_scope_->AdoptedStyleSheets()) {
+      if (sheet && sheet->CanBeActivated(preferred_name)) {
+        DCHECK_EQ(GetDocument(), sheet->ConstructorDocument());
+        new_active_style_sheets.push_back(std::pair(sheet, nullptr));
+      }
+    }
+  }
+
+  if (!is_shadow_tree_) {
+    for (CSSStyleSheet* inspector_sheet :
+         GetDocument().GetStyleEngine().InspectorStyleSheets()) {
+      new_active_style_sheets.push_back(std::pair(inspector_sheet, nullptr));
+    }
+  }
+
+  mixins_.clear();
+  for (auto& [css_sheet, rule_set] : new_active_style_sheets) {
+    ExtractMixinsFromSheet(*css_sheet->Contents(), medium, mixins_);
+  }
+
+  DCHECK(pending_active_style_sheets_.empty());
+  pending_active_style_sheets_ = std::move(new_active_style_sheets);
 }
 
 }  // namespace blink

@@ -15,6 +15,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Features;
@@ -31,7 +32,7 @@ import org.chromium.chrome.test.transit.hub.RegularTabSwitcherStation;
 import org.chromium.chrome.test.transit.hub.TabSwitcherGroupCardFacility;
 import org.chromium.chrome.test.transit.ntp.IncognitoNewTabPageStation;
 import org.chromium.chrome.test.transit.ntp.RegularNewTabPageStation;
-import org.chromium.chrome.test.transit.page.PageStation;
+import org.chromium.chrome.test.transit.page.CtaPageStation;
 import org.chromium.chrome.test.transit.page.WebPageStation;
 
 /**
@@ -163,12 +164,14 @@ public class TabGroupListBottomSheetTest {
         assertFinalDestination(finalStation);
     }
 
-    private static void assertTabGroupsExist(PageStation pageStation) {
-        int tabGroupCount = pageStation.getTabGroupModelFilter().getTabGroupCount();
+    private static void assertTabGroupsExist(CtaPageStation pageStation) {
+        int tabGroupCount =
+                ThreadUtils.runOnUiThreadBlocking(
+                        () -> pageStation.getTabGroupModelFilter().getTabGroupCount());
         assertTrue(tabGroupCount > 0);
     }
 
-    private static void assertCurrentTabIsNotInGroup(PageStation pageStation) {
+    private static void assertCurrentTabIsNotInGroup(CtaPageStation pageStation) {
         Tab currentTab = pageStation.getTab();
         assertNull(currentTab.getTabGroupId());
     }

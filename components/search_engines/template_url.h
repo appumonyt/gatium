@@ -124,6 +124,8 @@ class TemplateURLRef {
       // translation is forced using |source_lang|. Note that this only supports
       // Partial Translate and so may only be enabled for select clients on the
       // server.
+      // The |use_snippet_as_subtitle| specifies whether or not the entity
+      // snippet should be used as the subtitle of the card.
       ContextualSearchParams(int version,
                              int contextual_cards_version,
                              std::string home_country,
@@ -134,7 +136,8 @@ class TemplateURLRef {
                              std::string target_lang,
                              std::string fluent_languages,
                              std::string related_searches_stamp,
-                             bool apply_lang_hint);
+                             bool apply_lang_hint,
+                             bool use_snippet_as_subtitle);
       ContextualSearchParams(const ContextualSearchParams& other);
       ~ContextualSearchParams();
 
@@ -183,6 +186,9 @@ class TemplateURLRef {
 
       // Whether hinted language detection should be used on the backend.
       bool apply_lang_hint = false;
+
+      // Whether the snippet should be used as the subtitle.
+      bool use_snippet_as_subtitle = false;
     };
 
     // Estimates dynamic memory usage.
@@ -695,6 +701,7 @@ class TemplateURL {
 
   TemplateURL(const TemplateURL&) = delete;
   TemplateURL& operator=(const TemplateURL&) = delete;
+  TemplateURL(TemplateURL&& other);
 
   ~TemplateURL();
 
@@ -876,6 +883,10 @@ class TemplateURL {
   // with this template URL, or an empty string is none is associated with it.
   std::string GetBuiltinImageResourceId() const;
 
+  // Returns the marketing snippet string for the search engine, either the
+  // built-in one or a fallback variant.
+  std::u16string GetMarketingSnippet() const;
+
   // Returns the type of this search engine, or SEARCH_ENGINE_OTHER if no
   // engines match.
   SearchEngineType GetEngineType(
@@ -1021,6 +1032,11 @@ class TemplateURL {
   // Returns the resource ID base associated with this template URL, if it is
   // provided from built-in data.
   std::optional<std::string_view> GetBaseBuiltinResourceId() const;
+
+  // Returns the built-in marketing snippet string for the search engine, or
+  // `std::nullopt` if a marketing snippets are not included in this build of
+  // unavailable for this search engine.
+  std::optional<std::u16string> GetBuiltinMarketingSnippet() const;
 
   TemplateURLData& active_data();
 

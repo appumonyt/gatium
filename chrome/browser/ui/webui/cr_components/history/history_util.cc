@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 #include "chrome/browser/ui/webui/cr_components/history/history_util.h"
 
 #include "chrome/browser/history_embeddings/history_embeddings_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/signin_ui_util.h"
+#include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/webui/cr_components/history_clusters/history_clusters_util.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/grit/generated_resources.h"
@@ -23,21 +23,42 @@
 #include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/sync/base/features.h"
+#include "components/sync/base/user_selectable_type.h"
+#include "components/sync/service/sync_service.h"
+#include "components/sync/service/sync_user_settings.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "ui/webui/webui_util.h"
 
 // Static
-bool HistoryUtil::IsUserSignedIn(Profile* profile) {
-  signin::IdentityManager* identity_manager =
-      IdentityManagerFactory::GetForProfile(profile);
-  return identity_manager &&
-         identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync);
+HistorySignInState HistoryUtil::GetSignInState(Profile* profile) {
+  if (base::FeatureList::IsEnabled(
+          syncer::kReplaceSyncPromosWithSignInPromos)) {
+    syncer::SyncService* sync_service =
+        SyncServiceFactory::GetForProfile(profile);
+    // TODO(crbug.com/418144047): Distinguish additional signin states (like
+    // signed in without history).
+    return sync_service &&
+                   sync_service->GetUserSettings()->GetSelectedTypes().Has(
+                       syncer::UserSelectableType::kHistory)
+               ? HistorySignInState::kSignedIn
+               : HistorySignInState::kSignedOut;
+  } else {
+    signin::IdentityManager* identity_manager =
+        IdentityManagerFactory::GetForProfile(profile);
+    // Note: This intentionally does not check whether the history data type is
+    // actually enabled (for historical reasons, mostly).
+    return identity_manager && identity_manager->HasPrimaryAccount(
+                                   signin::ConsentLevel::kSync)
+               ? HistorySignInState::kSignedIn
+               : HistorySignInState::kSignedOut;
+  }
 }
 
 // Static
-content::WebUIDataSource* HistoryUtil::PopulateSourceForSidePanelHistory(
+content::WebUIDataSource* HistoryUtil::PopulateCommonSourceForHistory(
     content::WebUIDataSource* source,
     Profile* profile) {
   static constexpr webui::LocalizedString kStrings[] = {
@@ -66,6 +87,7 @@ content::WebUIDataSource* HistoryUtil::PopulateSourceForSidePanelHistory(
       {"menu", IDS_MENU},
       {"moreFromSite", IDS_HISTORY_MORE_FROM_SITE},
       {"openAll", IDS_HISTORY_OTHER_SESSIONS_OPEN_ALL},
+      {"openSelected", IDS_HISTORY_OPEN},
       {"openTabsMenuItem", IDS_HISTORY_OPEN_TABS_MENU_ITEM},
       {"noResults", IDS_HISTORY_NO_RESULTS},
       {"noSearchResults", IDS_HISTORY_NO_SEARCH_RESULTS},
@@ -90,7 +112,8 @@ content::WebUIDataSource* HistoryUtil::PopulateSourceForSidePanelHistory(
   source->AddBoolean("isSignInAllowed",
                      prefs->GetBoolean(prefs::kSigninAllowed));
 
-  source->AddBoolean(kIsUserSignedInKey, IsUserSignedIn(profile));
+  source->AddInteger(kSignInStateKey,
+                     static_cast<int>(GetSignInState(profile)));
 
   source->AddInteger(
       "lastSelectedTab",

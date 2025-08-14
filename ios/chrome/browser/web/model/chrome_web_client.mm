@@ -54,8 +54,7 @@
 #import "ios/chrome/browser/permissions/model/features.h"
 #import "ios/chrome/browser/permissions/model/geolocation_api_usage_java_script_feature.h"
 #import "ios/chrome/browser/permissions/model/media_api_usage_java_script_feature.h"
-#import "ios/chrome/browser/prerender/model/prerender_service.h"
-#import "ios/chrome/browser/prerender/model/prerender_service_factory.h"
+#import "ios/chrome/browser/prerender/model/prerender_tab_helper.h"
 #import "ios/chrome/browser/reader_mode/model/features.h"
 #import "ios/chrome/browser/reader_mode/model/reader_mode_java_script_feature.h"
 #import "ios/chrome/browser/reading_list/model/offline_page_tab_helper.h"
@@ -142,10 +141,6 @@ NSString* GetSafeBrowsingErrorPageHTML(web::WebState* web_state,
   switch (static_cast<SafeBrowsingErrorCode>(error_code)) {
     case SafeBrowsingErrorCode::kUnsafeResource: {
       page = SafeBrowsingBlockingPage::Create(*resource);
-      // Report the unsafe site visits events, guarding it behind a feature
-      // flag.
-      if (base::FeatureList::IsEnabled(
-              enterprise_connectors::kEnterpriseRealtimeEventReportingOnIOS)) {
         ProfileIOS* profile =
             ProfileIOS::FromBrowserState(web_state->GetBrowserState());
         PrefService* prefs = profile->GetPrefs();
@@ -163,7 +158,6 @@ NSString* GetSafeBrowsingErrorPageHTML(web::WebState* web_state,
               prefs->GetBoolean(prefs::kSafeBrowsingProceedAnywayDisabled),
               referrer_chain);
         }
-      }
       break;
     }
     case SafeBrowsingErrorCode::kEnterpriseBlock:
@@ -605,11 +599,8 @@ void ChromeWebClient::CleanupNativeRestoreURLs(web::WebState* web_state) const {
 void ChromeWebClient::WillDisplayMediaCapturePermissionPrompt(
     web::WebState* web_state) const {
   // When a prendered page displays a prompt, cancel the prerender.
-  PrerenderService* prerender_service = PrerenderServiceFactory::GetForProfile(
-      ProfileIOS::FromBrowserState(web_state->GetBrowserState()));
-  if (prerender_service &&
-      prerender_service->IsWebStatePrerendered(web_state)) {
-    prerender_service->CancelPrerender();
+  if (auto* tab_helper = PrerenderTabHelper::FromWebState(web_state)) {
+    tab_helper->CancelPrerender();
   }
 }
 

@@ -138,12 +138,16 @@ void CompositorFrameSinkImpl::SetNeedsBeginFrame(bool needs_begin_frame) {
   support_->SetNeedsBeginFrame(needs_begin_frame);
 }
 
-void CompositorFrameSinkImpl::SetWantsAnimateOnlyBeginFrames() {
-  support_->SetWantsAnimateOnlyBeginFrames();
-}
-
-void CompositorFrameSinkImpl::SetAutoNeedsBeginFrame() {
-  support_->SetAutoNeedsBeginFrame();
+void CompositorFrameSinkImpl::SetParams(
+    mojom::CompositorFrameSinkParamsPtr params) {
+  DCHECK(!params_set_ && !support_->last_created_surface_id().is_valid());
+  params_set_ = true;
+  if (params->wants_animate_only_begin_frames) {
+    support_->SetWantsAnimateOnlyBeginFrames();
+  }
+  if (params->auto_needs_begin_frame) {
+    support_->SetAutoNeedsBeginFrame();
+  }
 }
 
 void CompositorFrameSinkImpl::SubmitCompositorFrame(
@@ -153,31 +157,10 @@ void CompositorFrameSinkImpl::SubmitCompositorFrame(
     uint64_t submit_time) {
   // Non-root surface frames should not have display transform hint.
   DCHECK_EQ(gfx::OVERLAY_TRANSFORM_NONE, frame.metadata.display_transform_hint);
-  SubmitCompositorFrameInternal(local_surface_id, std::move(frame),
-                                std::move(hit_test_region_list), submit_time,
-                                SubmitCompositorFrameSyncCallback());
-}
 
-void CompositorFrameSinkImpl::SubmitCompositorFrameSync(
-    const LocalSurfaceId& local_surface_id,
-    CompositorFrame frame,
-    std::optional<HitTestRegionList> hit_test_region_list,
-    uint64_t submit_time,
-    SubmitCompositorFrameSyncCallback callback) {
-  SubmitCompositorFrameInternal(local_surface_id, std::move(frame),
-                                std::move(hit_test_region_list), submit_time,
-                                std::move(callback));
-}
-
-void CompositorFrameSinkImpl::SubmitCompositorFrameInternal(
-    const LocalSurfaceId& local_surface_id,
-    CompositorFrame frame,
-    std::optional<HitTestRegionList> hit_test_region_list,
-    uint64_t submit_time,
-    mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback callback) {
   const auto result = support_->MaybeSubmitCompositorFrame(
       local_surface_id, std::move(frame), std::move(hit_test_region_list),
-      submit_time, std::move(callback));
+      submit_time);
   if (result == SubmitResult::ACCEPTED)
     return;
 
@@ -219,8 +202,8 @@ void CompositorFrameSinkImpl::OnClientConnectionLost() {
   // has done something invalid and the connection to the client was terminated.
   // Destroy |this| to free up resources as it's no longer useful.
   FrameSinkId frame_sink_id = support_->frame_sink_id();
-  support_->frame_sink_manager()->DestroyCompositorFrameSink(
-      frame_sink_id, std::nullopt, base::DoNothing());
+  support_->frame_sink_manager()->DestroyCompositorFrameSink(frame_sink_id,
+                                                             base::DoNothing());
 }
 
 }  // namespace viz

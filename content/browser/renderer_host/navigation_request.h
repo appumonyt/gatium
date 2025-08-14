@@ -27,6 +27,7 @@
 #include "content/browser/loader/navigation_url_loader_delegate.h"
 #include "content/browser/loader/subresource_proxying_url_loader_service.h"
 #include "content/browser/navigation_subresource_loader_params.h"
+#include "content/browser/preloading/prerender/reserved_prerender_host_info.h"
 #include "content/browser/renderer_host/browsing_context_group_swap.h"
 #include "content/browser/renderer_host/commit_deferring_condition_runner.h"
 #include "content/browser/renderer_host/cookie_access_observers.h"
@@ -43,6 +44,7 @@
 #include "content/browser/webui/web_ui_impl.h"
 #include "content/common/content_export.h"
 #include "content/common/navigation_client.mojom-forward.h"
+#include "content/public/browser/error_navigation_trigger.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle.h"
@@ -236,59 +238,6 @@ class CONTENT_EXPORT NavigationRequest
     kPostCommit,
   };
 
-  // A detailed reason on why errors in navigation happened, to be assigned in
-  // the extended error code field. Mostly focusing on `net::ERR_ABORTED`
-  // failures.
-  //
-  // These values are persisted to logs. Entries should not be renumbered and
-  // numeric values should never be reused.
-  //
-  // LINT.IfChange(ErrorNavigationTrigger)
-  enum class ErrorNavigationTrigger {
-    // An unknown trigger caused navigation abort.
-    kUnknown = 0,
-
-    // Caused by the cancelation from the navigation throttle.
-    kNavigationThrottleCancel,
-
-    // Caused by being blocked by the navigation throtle.
-    kNavigationThrottleBlock,
-
-    // Caused by the redirect not allowed due to the security policy.
-    kRedirectNotAllowed,
-
-    // Caused by the Credentialed subresource check blocked.
-    kCredentialedSubresourceBlocked,
-
-    // Caused by the embedder-initiated navigation of FencedFrame being blocked.
-    kFencedFrameEmbedderInitiatedNavigation,
-
-    // Caused by the permission policy of fenced frames being blocked.
-    kFencedFramesPermissionPolicyBlocked,
-
-    // Caused by the content decoder data pipe creation failing.
-    kContentDecoderDataPipeCreationFailed,
-
-    // The response should not be rendered (e.g. a download).
-    kShouldNotRenderResponse,
-
-    // The embedder overrides/blocks the URL load.
-    kShouldOverrideUrlLoading,
-
-    // The render initiated cross process navigation is not allowed, and blocked
-    // the navigation.
-    kRenderInitiatedCrossProcessNavigationNotAllowed,
-
-    // The render initiated navigation could not request the URL.
-    kRendererInitiatedCanNotRequestURL,
-
-    // The response rendered fallback content, due to e.g. Http errors.
-    kShouldRenderFallbackContent,
-
-    kMaxValue = kShouldRenderFallbackContent,
-  };
-  // LINT.ThenChange(//tools/metrics/histograms/metadata/navigation/enums.xml:ErrorNavigationTrigger)
-
   // Creates a request for a browser-initiated navigation.
   static std::unique_ptr<NavigationRequest> CreateBrowserInitiated(
       FrameTreeNode* frame_tree_node,
@@ -449,6 +398,7 @@ class CONTENT_EXPORT NavigationRequest
   bool IsExternalProtocol() override;
   net::Error GetNetErrorCode() override;
   int GetNetExtendedErrorCode() override;
+  std::optional<ErrorNavigationTrigger> GetErrorNavigationTrigger() override;
   RenderFrameHostImpl* GetRenderFrameHost() const override;
   bool IsSameDocument() const override;
   bool IsHistory() const override;
@@ -526,6 +476,7 @@ class CONTENT_EXPORT NavigationRequest
   void GetResponseBody(ResponseBodyCallback callback) override;
   PreloadingTriggerType GetPrerenderTriggerType() override;
   std::string GetPrerenderEmbedderHistogramSuffix() override;
+  bool IsPrerenderHostReused() override;
 #if BUILDFLAG(IS_ANDROID)
   const base::android::JavaRef<jobject>& GetJavaNavigationHandle() override;
 #endif
@@ -1247,11 +1198,7 @@ class CONTENT_EXPORT NavigationRequest
   }
 
   void set_keep_alive_url_loader_factory_context(
-      base::WeakPtr<KeepAliveURLLoaderService::FactoryContext>
-          factory_context) {
-    DCHECK(!keep_alive_url_loader_factory_context_);
-    keep_alive_url_loader_factory_context_ = factory_context;
-  }
+      base::WeakPtr<KeepAliveURLLoaderService::FactoryContext> factory_context);
 
   base::WeakPtr<KeepAliveURLLoaderService::FactoryContext>
   fetch_later_loader_factory_context() {
@@ -1259,11 +1206,12 @@ class CONTENT_EXPORT NavigationRequest
   }
 
   void set_fetch_later_loader_factory_context(
-      base::WeakPtr<KeepAliveURLLoaderService::FactoryContext>
-          factory_context) {
-    DCHECK(!fetch_later_loader_factory_context_);
-    fetch_later_loader_factory_context_ = factory_context;
-  }
+      base::WeakPtr<KeepAliveURLLoaderService::FactoryContext> factory_context);
+
+  void SetKeepAliveURLLoaderFactoryContextForTesting(
+      base::WeakPtr<KeepAliveURLLoaderService::FactoryContext> factory_context);
+  void SetFetchLaterLoaderFactoryContextForTesting(
+      base::WeakPtr<KeepAliveURLLoaderService::FactoryContext> factory_context);
 
   // Helper for logging crash keys related to a NavigationRequest (e.g.
   // "navigation_request_url", "navigation_request_initiator", and
@@ -1284,15 +1232,6 @@ class CONTENT_EXPORT NavigationRequest
     url::debug::ScopedUrlCrashKey url_;
     base::debug::ScopedCrashKeyString is_same_document_;
   };
-
-  // Prerender2:
-  void set_prerender_trigger_type(PreloadingTriggerType type) {
-    DCHECK(!prerender_trigger_type_.has_value());
-    prerender_trigger_type_ = type;
-  }
-  void set_prerender_embedder_histogram_suffix(const std::string& suffix) {
-    prerender_embedder_histogram_suffix_ = suffix;
-  }
 
   // Used in tests to indicate this navigation should force a BrowsingInstance
   // swap.
@@ -1517,6 +1456,17 @@ class CONTENT_EXPORT NavigationRequest
     navigation_discard_reason_ = navigation_discard_reason;
   }
 
+  void set_extended_error_code(int extended_error_code) {
+    CHECK(!extended_error_code_);
+    extended_error_code_ = extended_error_code;
+  }
+
+  void set_error_navigation_trigger(
+      ErrorNavigationTrigger error_navigation_trigger) {
+    CHECK(!error_navigation_trigger_.has_value());
+    error_navigation_trigger_ = error_navigation_trigger;
+  }
+
   // Returns the type of this navigation (e.g. history, browser-initiated, etc)
   // to set as a discard reason on another navigation that is being discarded
   // because this navigation is taking its place in the FrameTreeNode.
@@ -1535,6 +1485,17 @@ class CONTENT_EXPORT NavigationRequest
   // NavigationRequest is no longer tied to the original entry.
   int64_t frame_entry_document_sequence_number() const {
     return frame_entry_document_sequence_number_;
+  }
+
+  // Returns the canvas noise token used for canvas noising on the renderer.
+  // Only one token should be generated per page and should use the main frame's
+  // origin to generate such. Main frames should use this accessor to populate
+  // the content::Page and subsequent blink::Pages. Subframes should not use
+  // this accessor, but instead should use `PageImpl::canvas_noise_token()` to
+  // get the canvas noise token.
+  std::optional<uint64_t> canvas_noise_token() {
+    CHECK(IsInMainFrame());
+    return canvas_noise_token_;
   }
 
   // Called when the browser process is about to process beforeunload handlers
@@ -1844,6 +1805,7 @@ class CONTENT_EXPORT NavigationRequest
   std::optional<NavigationEarlyHintsManagerParams>
   CreateNavigationEarlyHintsManagerParams(
       const network::mojom::EarlyHints& early_hints) override;
+  bool ShouldClearParsedHeadersOnTestReceiveRedirect() override;
 
   // Selecting a `RenderFrameHost` to commit a navigation may occasionally fail.
   // When this happens, the navigation will bind a closure to continue the
@@ -2606,6 +2568,9 @@ class CONTENT_EXPORT NavigationRequest
   net::Error net_error_ = net::OK;
   int extended_error_code_ = 0;
 
+  // The trigger for the error navigation.
+  std::optional<ErrorNavigationTrigger> error_navigation_trigger_;
+
   // Detailed host resolution error information. The error code in
   // |resolve_error_info_.error| should be consistent with (but not necessarily
   // the same as) |net_error_|. In the case of a host resolution error, for
@@ -3009,6 +2974,8 @@ class CONTENT_EXPORT NavigationRequest
   // only know whether this is the case when BeginNavigation is called so the
   // optional will be empty until then and callers must not query its value
   // before it's been computed.
+  // TODO(crbug.com/427054641): Remove this field once the migration to use
+  // `reserved_prerender_host_info_` is complete.
   std::optional<FrameTreeNodeId> prerender_frame_tree_node_id_;
 
   // Contains state pertaining to a prerender activation. This is only used if
@@ -3099,12 +3066,10 @@ class CONTENT_EXPORT NavigationRequest
   std::optional<std::u16string> embedder_shared_storage_context_;
 
   // Prerender2:
-  // The type to trigger prerendering. The value is valid only when Prerender2
-  // is enabled.
-  std::optional<PreloadingTriggerType> prerender_trigger_type_;
-  // The suffix of a prerender embedder. This value is valid only when
-  // PreloadingTriggerType is kEmbedder. Only used for metrics.
-  std::string prerender_embedder_histogram_suffix_;
+  // The information about the reserved prerender host. This is used to pass
+  // information about the reserved host including information required for
+  // metrics collection.
+  std::optional<ReservedPrerenderHostInfo> reserved_prerender_host_info_;
 
   // Prevents the compositor from requesting main frame updates early in
   // navigation.
@@ -3174,6 +3139,11 @@ class CONTENT_EXPORT NavigationRequest
   // See also `keep_alive_url_loader_factory_context_` for the timing to update.
   base::WeakPtr<KeepAliveURLLoaderService::FactoryContext>
       fetch_later_loader_factory_context_;
+
+  // Set to true when the loaders above are set by unittests that want to avoid
+  // setting a real connection to the renderer.
+  bool did_set_keep_alive_url_loader_factory_context_for_testing_ = false;
+  bool did_set_fetch_later_url_loader_factory_context_for_testing_ = false;
 
   scoped_refptr<NavigationOrDocumentHandle> navigation_or_document_handle_;
 
@@ -3372,6 +3342,10 @@ class CONTENT_EXPORT NavigationRequest
   // instantiated.
   blink::mojom::ConfidenceLevel confidence_level_ =
       blink::mojom::ConfidenceLevel::kHigh;
+
+  // The token value for canvas noising. This should only be set on main frame
+  // navigations that subsequently set the token value on the page.
+  std::optional<uint64_t> canvas_noise_token_ = std::nullopt;
 
   base::WeakPtrFactory<NavigationRequest> weak_factory_{this};
 };

@@ -60,6 +60,7 @@
 #include "third_party/blink/renderer/platform/scheduler/main_thread/page_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/pending_user_input.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/task_type_names.h"
+#include "third_party/blink/renderer/platform/scheduler/main_thread/use_case.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/widget_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -177,14 +178,12 @@ BASE_FEATURE_PARAM(base::TimeDelta,
                    base::Milliseconds(2));
 
 void MaybeSetBusyLoop(raw_ptr<base::MessagePump> message_pump,
-                      bool backgrounded) {
+                      double scale_factor) {
   if (!message_pump || !base::FeatureList::IsEnabled(kBusyLoopOnRendererMain)) {
     return;
   }
 
-  base::TimeDelta busy_loop_duration =
-      backgrounded ? base::Microseconds(0) : kBusyLoopTime.Get();
-  message_pump->SetBusyLoop(busy_loop_duration);
+  message_pump->SetBusyLoop(kBusyLoopTime.Get() * scale_factor);
 }
 
 }  // namespace
@@ -194,7 +193,7 @@ MainThreadSchedulerImpl::MainThreadSchedulerImpl(
     : MainThreadSchedulerImpl(sequence_manager.get()) {
   owned_sequence_manager_ = std::move(sequence_manager);
   MaybeSetBusyLoop(main_thread_only().message_pump,
-                   main_thread_only().renderer_backgrounded);
+                   main_thread_only().renderer_backgrounded ? 0. : 1.);
 }
 
 MainThreadSchedulerImpl::MainThreadSchedulerImpl(
@@ -392,9 +391,7 @@ MainThreadSchedulerImpl::MainThreadOnly::MainThreadOnly(
           &main_thread_scheduler_impl->tracing_controller_,
           YesNoStateToString),
       background_status_changed_at(now),
-      metrics_helper(main_thread_scheduler_impl,
-                     now,
-                     kLaunchingProcessIsBackgrounded),
+      metrics_helper(now, kLaunchingProcessIsBackgrounded),
       task_description_for_tracing(
           std::nullopt,
           MakeNamedTrack("Scheduler.MainThreadTask", this),
@@ -773,7 +770,7 @@ void MainThreadSchedulerImpl::ShutdownEmptyDetachedTaskQueues() {
   if (main_thread_only().detached_task_queues.empty()) {
     return;
   }
-  WTF::Vector<scoped_refptr<MainThreadTaskQueue>> queues_to_delete;
+  Vector<scoped_refptr<MainThreadTaskQueue>> queues_to_delete;
   for (auto& queue : main_thread_only().detached_task_queues) {
     if (queue->IsEmpty()) {
       queues_to_delete.push_back(queue);
@@ -992,7 +989,7 @@ void MainThreadSchedulerImpl::SetRendererBackgrounded(bool backgrounded) {
   base::TimeTicks now = NowTicks();
   main_thread_only().background_status_changed_at = now;
   main_thread_only().metrics_helper.SetRendererBackgrounded(backgrounded, now);
-  MaybeSetBusyLoop(main_thread_only().message_pump, backgrounded);
+  MaybeSetBusyLoop(main_thread_only().message_pump, backgrounded ? 0. : 1.);
 
   UpdatePolicy();
 
@@ -1444,6 +1441,17 @@ void MainThreadSchedulerImpl::UpdatePolicyLocked(UpdateType update_type) {
   } else {
     main_thread_only().current_policy_expiration_time = base::TimeTicks();
   }
+
+  double busy_loop_scale_factor;
+  if (main_thread_only().renderer_backgrounded) {
+    busy_loop_scale_factor = 0.;
+  } else if (main_thread_only().current_use_case != UseCase::kNone ||
+             main_thread_only().blocking_input_expected_soon) {
+    busy_loop_scale_factor = 1.;
+  } else {
+    busy_loop_scale_factor = 0.5;
+  }
+  MaybeSetBusyLoop(main_thread_only().message_pump, busy_loop_scale_factor);
 
   // Avoid prioritizing main thread compositing (e.g., rAF) if it is extremely
   // slow, because that can cause starvation in other task sources.
@@ -2719,7 +2727,7 @@ const char* MainThreadSchedulerImpl::TimeDomainTypeToString(
   }
 }
 
-WTF::Vector<base::OnceClosure>&
+Vector<base::OnceClosure>&
 MainThreadSchedulerImpl::GetOnTaskCompletionCallbacks() {
   return main_thread_only().on_task_completion_callbacks;
 }

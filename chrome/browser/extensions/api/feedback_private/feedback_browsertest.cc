@@ -338,8 +338,7 @@ IN_PROC_BROWSER_TEST_F(FeedbackTest, DISABLED_GetTargetTabUrl) {
                                 ->GetWebContentsAt(0)
                                 ->GetLastCommittedURL());
 
-    ASSERT_EQ(expected_url,
-              chrome::GetTargetTabUrl(browser()->session_id(), 0));
+    ASSERT_EQ(expected_url, chrome::GetTargetTabUrl(browser(), 0));
 
     // Open a DevTools window.
     DevToolsWindow* devtools_window =
@@ -347,11 +346,9 @@ IN_PROC_BROWSER_TEST_F(FeedbackTest, DISABLED_GetTargetTabUrl) {
 
     // Verify the expected url returned from GetTargetTabUrl against a
     // DevTools window.
-    ASSERT_EQ(expected_url, chrome::GetTargetTabUrl(
-                                DevToolsWindowTesting::Get(devtools_window)
-                                    ->browser()
-                                    ->session_id(),
-                                0));
+    ASSERT_EQ(expected_url,
+              chrome::GetTargetTabUrl(
+                  DevToolsWindowTesting::Get(devtools_window)->browser(), 0));
 
     DevToolsWindowTesting::CloseDevToolsWindowSync(devtools_window);
   }
@@ -376,7 +373,7 @@ IN_PROC_BROWSER_TEST_F(FeedbackTest, DISABLED_SubmissionTest) {
   base::RunLoop run_loop;
   TestFeedbackUploaderDelegate delegate(run_loop.QuitClosure());
   feedback::FeedbackUploaderFactoryChrome::GetInstance()
-      ->GetForBrowserContext(browser()->profile())
+      ->GetForBrowserContext(profile())
       ->set_feedback_uploader_delegate(&delegate);
 
   // Click the send button.
@@ -395,7 +392,7 @@ IN_PROC_BROWSER_TEST_F(FeedbackTest, DISABLED_SubmissionTest) {
   // is the main case we are concerned about.
   run_loop.Run();
   feedback::FeedbackUploaderFactoryChrome::GetInstance()
-      ->GetForBrowserContext(browser()->profile())
+      ->GetForBrowserContext(profile())
       ->set_feedback_uploader_delegate(nullptr);
 }
 

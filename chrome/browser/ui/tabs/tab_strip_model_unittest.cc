@@ -41,7 +41,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_user_gesture_details.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
-#include "chrome/browser/ui/tabs/test_util.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_profile.h"
@@ -444,7 +443,8 @@ class TabStripModelTest : public testing::Test {
 
   void SetUp() override {
     tabstrip_ = std::make_unique<TabStripModel>(delegate(), profile());
-    scoped_feature_list_.InitAndEnableFeature(features::kSideBySide);
+    scoped_feature_list_.InitWithFeatures(
+        {features::kSideBySide, features::kSideBySideSessionRestore}, {});
     tabstrip()->AddObserver(observer());
     ASSERT_TRUE(tabstrip()->empty());
   }
@@ -516,7 +516,7 @@ class TabStripModelTest : public testing::Test {
   content::BrowserTaskEnvironment task_environment_;
   content::RenderViewHostTestEnabler rvh_test_enabler_;
   const std::unique_ptr<TestingProfile> profile_;
-  tabs::PreventTabFeatureInitialization prevent_;
+  const tabs::TabModel::PreventFeatureInitializationForTesting prevent_;
   TestTabStripModelDelegate delegate_;
   MockTabStripModelObserver observer_;
   base::test::ScopedFeatureList scoped_feature_list_;
@@ -793,7 +793,7 @@ TEST_F(TabStripModelTest, TestTabHandlesOutOfBounds) {
 TEST_F(TabStripModelTest, TestTabHandlesAcrossModels) {
   MockBrowserWindowInterface bwi;
   delegate()->SetBrowserWindowInterface(&bwi);
-  ON_CALL(bwi, GetTabStripModel).WillByDefault(::testing::Return(tabstrip()));
+  ON_CALL(bwi, GetTabStripModel()).WillByDefault(::testing::Return(tabstrip()));
 
   tabstrip()->AppendWebContents(CreateWebContentsWithID(1), true);
   const tabs::TabHandle handle = tabstrip()->GetTabAtIndex(0)->GetHandle();
@@ -1969,6 +1969,21 @@ TEST_F(TabStripModelTest, SplitTabPinningBulk) {
       0, TabStripModel::CommandTogglePinned);  // tab 0
   EXPECT_EQ("1p 2p 10p 0 4s 5s 7 8s 9s 3 6 11",
             GetTabStripStateString(tabstrip()));
+
+  tabstrip()->CloseAllTabs();
+  EXPECT_TRUE(tabstrip()->empty());
+}
+
+TEST_F(TabStripModelTest, RestoreSplit) {
+  // Create five tabs with two pinned.
+  ASSERT_NO_FATAL_FAILURE(
+      PrepareTabstripForSelectionTest(tabstrip(), 5, 2, {2}));
+  split_tabs::SplitTabId split_id = split_tabs::SplitTabId::GenerateNew();
+  // Add tab at index 2 and 3 to a split.
+  tabstrip()->RestoreSplit(split_id, {2, 3}, split_tabs::SplitTabVisualData());
+
+  EXPECT_EQ("0p 1p 2s 3s 4", GetTabStripStateString(tabstrip()));
+  EXPECT_EQ(tabstrip()->GetSplitData(split_id)->ListTabs().size(), 2u);
 
   tabstrip()->CloseAllTabs();
   EXPECT_TRUE(tabstrip()->empty());
@@ -5537,7 +5552,7 @@ TEST_F(TabStripModelTest, ToggleMuteUnmuteMultipleSites) {
 TEST_F(TabStripModelTest, AppendTab) {
   MockBrowserWindowInterface bwi;
   delegate()->SetBrowserWindowInterface(&bwi);
-  ON_CALL(bwi, GetTabStripModel).WillByDefault(::testing::Return(tabstrip()));
+  ON_CALL(bwi, GetTabStripModel()).WillByDefault(::testing::Return(tabstrip()));
   ASSERT_TRUE(tabstrip()->empty());
 
   // Create a 2 tabs to serve as an opener and the previous opener.
@@ -6097,4 +6112,109 @@ TEST_F(TabStripModelTest, IteratorTestGroupOnlyTabs) {
     it++;
   }
   EXPECT_EQ(i, tabstrip()->count());
+}
+
+// A TestTabStripModelDelegate that allows controlling when the group
+// destruction callback is run.
+class CallbackControllingTabStripModelDelegate
+    : public TestTabStripModelDelegate {
+ public:
+  CallbackControllingTabStripModelDelegate() = default;
+
+  void OnGroupsDestruction(const std::vector<tab_groups::TabGroupId>& group_ids,
+                           base::OnceCallback<void()> close_callback,
+                           bool delete_groups) override {
+    callback_ = std::move(close_callback);
+  }
+
+  void RunCallback() {
+    if (callback_) {
+      std::move(callback_).Run();
+    }
+  }
+
+ private:
+  base::OnceCallback<void()> callback_;
+};
+
+class TabStripModelCallbackTest : public testing::Test {
+ public:
+  TabStripModelCallbackTest()
+      : profile_(std::make_unique<TestingProfile>()),
+        delegate_(
+            std::make_unique<CallbackControllingTabStripModelDelegate>()) {
+    ON_CALL(bwi_, GetTabStripModel())
+        .WillByDefault(::testing::Return(tabstrip_.get()));
+    ON_CALL(bwi_, GetProfile())
+        .WillByDefault(::testing::Return(profile_.get()));
+    delegate_->SetBrowserWindowInterface(&bwi_);
+    tabstrip_ =
+        std::make_unique<TabStripModel>(delegate_.get(), profile_.get());
+  }
+
+  std::unique_ptr<content::WebContents> CreateWebContents() {
+    return content::WebContentsTester::CreateTestWebContents(profile_.get(),
+                                                             nullptr);
+  }
+
+  TabStripModel* tabstrip() { return tabstrip_.get(); }
+  CallbackControllingTabStripModelDelegate* delegate() {
+    return delegate_.get();
+  }
+
+ private:
+  content::BrowserTaskEnvironment task_environment_;
+  content::RenderViewHostTestEnabler rvh_test_enabler_;
+  std::unique_ptr<TestingProfile> profile_;
+  testing::NiceMock<MockBrowserWindowInterface> bwi_;
+  std::unique_ptr<CallbackControllingTabStripModelDelegate> delegate_;
+  const tabs::TabModel::PreventFeatureInitializationForTesting prevent_;
+  std::unique_ptr<TabStripModel> tabstrip_;
+};
+
+// Tests that if a group or tab is removed before a command is executed, the
+// A tab from a group is moved to a new group, but the tab is closed before the
+// move is complete.
+TEST_F(TabStripModelCallbackTest, MoveTabToNewGroupThenCloseTab) {
+  tabstrip()->AppendWebContents(CreateWebContents(), true);
+  tabstrip()->AddToNewGroup({0});
+  tabstrip()->SelectTabAt(0);
+  tabstrip()->ExecuteContextMenuCommand(
+      0, TabStripModel::CommandAddToNewGroupFromMenuItem);
+  tabstrip()->CloseWebContentsAt(0, TabCloseTypes::CLOSE_NONE);
+  delegate()->RunCallback();
+  EXPECT_EQ(tabstrip()->group_model()->ListTabGroups().size(), 0u);
+  tabstrip()->CloseAllTabs();
+}
+
+// A tab from a group is moved to another group, but the tab is closed before
+// the move is complete.
+TEST_F(TabStripModelCallbackTest, MoveTabToExistingGroupThenCloseTab) {
+  tabstrip()->AppendWebContents(CreateWebContents(), true);
+  tabstrip()->AppendWebContents(CreateWebContents(), true);
+  tabstrip()->AddToNewGroup({0});
+  tab_groups::TabGroupId group2_id = tabstrip()->AddToNewGroup({1});
+  tabstrip()->SelectTabAt(0);
+  tabstrip()->ExecuteAddToExistingGroupCommand(0, group2_id);
+  tabstrip()->CloseWebContentsAt(0, TabCloseTypes::CLOSE_NONE);
+  delegate()->RunCallback();
+  EXPECT_EQ(
+      tabstrip()->group_model()->GetTabGroup(group2_id)->ListTabs().length(),
+      1u);
+  tabstrip()->CloseAllTabs();
+}
+
+// A tab is moved to a group, but the group is deleted before the move is
+// complete.
+TEST_F(TabStripModelCallbackTest, MoveTabToGroupThenDeleteGroup) {
+  tabstrip()->AppendWebContents(CreateWebContents(), true);
+  tabstrip()->AppendWebContents(CreateWebContents(), true);
+  tabstrip()->AddToNewGroup({0});
+  tab_groups::TabGroupId group2_id = tabstrip()->AddToNewGroup({1});
+  tabstrip()->SelectTabAt(0);
+  tabstrip()->ExecuteAddToExistingGroupCommand(0, group2_id);
+  tabstrip()->CloseAllTabsInGroup(group2_id);
+  delegate()->RunCallback();
+  EXPECT_EQ(tabstrip()->group_model()->ListTabGroups().size(), 0u);
+  tabstrip()->CloseAllTabs();
 }

@@ -41,6 +41,7 @@ import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeController;
 import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeControllerFactory;
 import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeUtils;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
+import org.chromium.chrome.browser.undo_tab_close_snackbar.UndoBarExplicitTrigger;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.desktop_windowing.DesktopWindowStateManager;
@@ -298,6 +299,8 @@ class TabListEditorCoordinator {
     private final @Nullable GridCardOnClickListenerProvider mGridCardOnClickListenerProvider;
     private final ModalDialogManager mModalDialogManager;
     private final @Nullable ObservableSupplier<EdgeToEdgeController> mEdgeToEdgeSupplier;
+    private final @Nullable UndoBarExplicitTrigger mUndoBarExplicitTrigger;
+    private final String mComponentName;
 
     private @Nullable MultiThumbnailCardProvider mMultiThumbnailCardProvider;
     private @Nullable TabListCoordinator mTabListCoordinator;
@@ -326,6 +329,10 @@ class TabListEditorCoordinator {
      * @param desktopWindowStateManager Manager to get desktop window and app header state.
      * @param edgeToEdgeSupplier Supplier to the {@link EdgeToEdgeController} instance.
      * @param creationMode Mode in which list is created e.g. full screen mode or in a dialog.
+     * @param undoBarExplicitTrigger Used to explicitly trigger the undo bar closure snackbar.
+     * @param componentName A unique string used to identify the parent component. Null if the
+     *     originating component is not important and the current component name is preferred.
+     *     Recommended to use the class name or make sure the string is unique.
      */
     public TabListEditorCoordinator(
             Activity activity,
@@ -344,7 +351,9 @@ class TabListEditorCoordinator {
             ModalDialogManager modalDialogManager,
             @Nullable DesktopWindowStateManager desktopWindowStateManager,
             @Nullable ObservableSupplier<EdgeToEdgeController> edgeToEdgeSupplier,
-            @CreationMode int creationMode) {
+            @CreationMode int creationMode,
+            @Nullable UndoBarExplicitTrigger undoBarExplicitTrigger,
+            @Nullable String componentName) {
         try (TraceEvent e = TraceEvent.scoped("TabListEditorCoordinator.constructor")) {
             mActivity = activity;
             mRootView = rootView;
@@ -360,6 +369,8 @@ class TabListEditorCoordinator {
             mGridCardOnClickListenerProvider = gridCardOnClickListenerProvider;
             mModalDialogManager = modalDialogManager;
             mEdgeToEdgeSupplier = edgeToEdgeSupplier;
+            mUndoBarExplicitTrigger = undoBarExplicitTrigger;
+            mComponentName = componentName == null ? COMPONENT_NAME : componentName;
 
             // The change processor isn't created until TabListCoordinator is created (lazily).
             mTabListEditorLayout =
@@ -573,7 +584,7 @@ class TabListEditorCoordinator {
                         /* priceWelcomeMessageControllerSupplier= */ null,
                         mTabListEditorLayout,
                         /* attachToParent= */ false,
-                        COMPONENT_NAME,
+                        mComponentName,
                         /* onModelTokenChange= */ null,
                         /* hasEmptyView= */ false,
                         /* emptyImageResId= */ Resources.ID_NULL,
@@ -581,7 +592,8 @@ class TabListEditorCoordinator {
                         /* emptySubheadingStringResId= */ Resources.ID_NULL,
                         /* onTabGroupCreation= */ null,
                         /* allowDragAndDrop= */ false,
-                        /* tabSwitcherDragHandler= */ null);
+                        /* tabSwitcherDragHandler= */ null,
+                        mUndoBarExplicitTrigger);
 
         // Note: The TabListEditorCoordinator is always created after native is initialized.
         mTabListCoordinator.initWithNative(regularProfile);

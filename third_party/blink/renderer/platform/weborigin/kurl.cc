@@ -650,18 +650,19 @@ void KURL::RemovePort() {
   ReplaceComponents(replacements);
 }
 
-void KURL::SetPort(const String& input) {
+bool KURL::SetPort(const String& input) {
   String port = RemoveURLWhitespace(input);
   String parsed_port = ParsePortFromStringPosition(port, 0);
   if (parsed_port.empty()) {
-    return;
+    return false;
   }
   bool to_uint_ok;
   unsigned port_value = parsed_port.ToUInt(&to_uint_ok);
   if (port_value > UINT16_MAX || !to_uint_ok) {
-    return;
+    return false;
   }
   SetPort(port_value);
+  return true;
 }
 
 void KURL::SetPort(uint16_t port) {
@@ -974,10 +975,10 @@ void KURL::InitProtocolMetadata() {
   DCHECK(!string_.IsNull());
   StringView protocol = ComponentStringView(parsed_.scheme);
   protocol_is_in_http_family_ = true;
-  if (protocol == WTF::g_https_atom) {
-    protocol_ = WTF::g_https_atom;
-  } else if (protocol == WTF::g_http_atom) {
-    protocol_ = WTF::g_http_atom;
+  if (protocol == g_https_atom) {
+    protocol_ = g_https_atom;
+  } else if (protocol == g_http_atom) {
+    protocol_ = g_http_atom;
   } else {
     protocol_ = protocol.ToAtomicString();
     protocol_is_in_http_family_ = false;

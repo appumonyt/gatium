@@ -4,14 +4,13 @@
 
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/grid/grid_cell.h"
 
-#import <MaterialComponents/MaterialActivityIndicator.h>
-
 #import <ostream>
 
 #import "base/check.h"
 #import "base/check_op.h"
 #import "base/debug/dump_without_crashing.h"
 #import "base/notreached.h"
+#import "base/strings/sys_string_conversions.h"
 #import "ios/chrome/browser/shared/ui/elements/extended_touch_target_button.h"
 #import "ios/chrome/browser/shared/ui/elements/top_aligned_image_view.h"
 #import "ios/chrome/browser/shared/ui/symbols/symbols.h"
@@ -29,8 +28,8 @@ namespace {
 // The size of symbol icons.
 NSInteger kIconSymbolPointSize = 13;
 
-// Size of activity indicator replacing fav icon when active.
-const CGFloat kIndicatorSize = 16.0;
+// Scale of activity indicator replacing fav icon when active.
+const CGFloat kIndicatorScale = 0.75;
 
 // Frame-based layout utilities for GridTransitionCell.
 // Scales the size of `view`'s frame by `factor` in both height and width. This
@@ -80,7 +79,7 @@ void PositionView(UIView* view, CGPoint point) {
 @property(nonatomic, weak) UILabel* titleLabel;
 @property(nonatomic, weak) UIImageView* closeIconView;
 @property(nonatomic, weak) UIImageView* selectIconView;
-@property(nonatomic, weak) MDCActivityIndicator* activityIndicator;
+@property(nonatomic, weak) UIActivityIndicatorView* activityIndicator;
 // Since the close icon dimensions are smaller than the recommended tap target
 // size, use an overlaid tap target button.
 @property(nonatomic, weak) UIButton* closeTapTargetButton;
@@ -186,37 +185,24 @@ void PositionView(UIView* view, CGPoint point) {
     ];
     [NSLayoutConstraint activateConstraints:constraints];
 
-    if (@available(iOS 17, *)) {
-      NSArray<UITrait>* traits = TraitCollectionSetForTraits(
-          @[ UITraitPreferredContentSizeCategory.class ]);
-      __weak __typeof(self) weakSelf = self;
-      UITraitChangeHandler handler = ^(id<UITraitEnvironment> traitEnvironment,
-                                       UITraitCollection* previousCollection) {
-        [weakSelf updateUIOnTraitChange:previousCollection];
-      };
-      [self registerForTraitChanges:traits withHandler:handler];
-    }
+    NSArray<UITrait>* traits = TraitCollectionSetForTraits(
+        @[ UITraitPreferredContentSizeCategory.class ]);
+    __weak __typeof(self) weakSelf = self;
+    UITraitChangeHandler handler = ^(id<UITraitEnvironment> traitEnvironment,
+                                     UITraitCollection* previousCollection) {
+      [weakSelf updateUIOnTraitChange:previousCollection];
+    };
+    [self registerForTraitChanges:traits withHandler:handler];
   }
   return self;
 }
 
 #pragma mark - UIView
 
-#if !defined(__IPHONE_17_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_17_0
-- (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
-  [super traitCollectionDidChange:previousTraitCollection];
-  if (@available(iOS 17, *)) {
-    return;
-  }
-  [self updateUIOnTraitChange:previousTraitCollection];
-}
-#endif
-
 - (void)didMoveToWindow {
+  [super didMoveToWindow];
   if (self.theme == GridThemeLight) {
-    if (@available(iOS 17, *)) {
-      [self updateInterfaceStyleForWindow:self.window];
-    }
+    [self updateInterfaceStyleForWindow:self.window];
   }
 }
 
@@ -283,11 +269,7 @@ void PositionView(UIView* view, CGPoint point) {
   // enough here.
   switch (theme) {
     case GridThemeLight:
-      if (@available(iOS 17, *)) {
-        [self updateInterfaceStyleForWindow:self.window];
-      } else {
-        self.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-      }
+      [self updateInterfaceStyleForWindow:self.window];
       self.border.layer.borderColor =
           [UIColor colorNamed:kStaticBlue400Color].CGColor;
       break;
@@ -349,21 +331,13 @@ void PositionView(UIView* view, CGPoint point) {
 
 - (void)setPriceDrop:(NSString*)price previousPrice:(NSString*)previousPrice {
   [self.priceCardView setPriceDrop:price previousPrice:previousPrice];
-  // Only append PriceCardView accessibility text if it doesn't already exist in
-  // the accessibility label.
-  if ([self.accessibilityLabel
-          rangeOfString:self.priceCardView.accessibilityLabel]
-          .location == NSNotFound) {
-    self.accessibilityLabel =
-        [@[ self.accessibilityLabel, self.priceCardView.accessibilityLabel ]
-            componentsJoinedByString:@". "];
-  }
+  [self updateAccessibilityLabel];
 }
 
 - (void)setTitle:(NSString*)title {
   self.titleLabel.text = title;
-  self.accessibilityLabel = title;
   _title = title;
+  [self updateAccessibilityLabel];
 }
 
 - (void)setTitleHidden:(BOOL)titleHidden {
@@ -396,7 +370,29 @@ void PositionView(UIView* view, CGPoint point) {
                               underName:kSelectedRegularCellGuide];
 }
 
+- (void)setActivityLabelData:(ActivityLabelData*)activityLabelData {
+  [super setActivityLabelData:activityLabelData];
+  [self updateAccessibilityLabel];
+}
+
 #pragma mark - Private
+
+// Updates the accessibility label.
+- (void)updateAccessibilityLabel {
+  NSString* accessibilityLabel;
+  if (self.activityLabelData) {
+    accessibilityLabel = l10n_util::GetNSStringF(
+        IDS_IOS_TAB_GRID_CELL_UPDATED, base::SysNSStringToUTF16(self.title));
+  } else {
+    accessibilityLabel = self.title;
+  }
+  if (accessibilityLabel && self.priceCardView.accessibilityLabel) {
+    accessibilityLabel =
+        [@[ accessibilityLabel, self.priceCardView.accessibilityLabel ]
+            componentsJoinedByString:@". "];
+  }
+  self.accessibilityLabel = accessibilityLabel;
+}
 
 // Sets up the top bar with icon, title, and close button.
 - (UIView*)setupTopBar {
@@ -411,12 +407,12 @@ void PositionView(UIView* view, CGPoint point) {
   iconView.backgroundColor = UIColor.clearColor;
   iconView.tintColor = [UIColor colorNamed:kGrey400Color];
 
-  CGRect indicatorFrame = CGRectMake(0, 0, kIndicatorSize, kIndicatorSize);
-  MDCActivityIndicator* activityIndicator =
-      [[MDCActivityIndicator alloc] initWithFrame:indicatorFrame];
+  UIActivityIndicatorView* activityIndicator =
+      [[UIActivityIndicatorView alloc] init];
   activityIndicator.translatesAutoresizingMaskIntoConstraints = NO;
-  activityIndicator.cycleColors = @[ [UIColor colorNamed:kBlueColor] ];
-  activityIndicator.radius = ui::AlignValueToUpperPixel(kIndicatorSize / 2);
+  activityIndicator.color = [UIColor colorNamed:kBlueColor];
+  activityIndicator.transform = CGAffineTransformScale(
+      activityIndicator.transform, kIndicatorScale, kIndicatorScale);
 
   UILabel* titleLabel = [[UILabel alloc] init];
   titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -659,15 +655,13 @@ void PositionView(UIView* view, CGPoint point) {
   if (!window) {
     return;
   }
-  if (@available(iOS 17, *)) {
-    [self.window.windowScene
-        registerForTraitChanges:@[ UITraitUserInterfaceStyle.class ]
-                     withTarget:self
-                         action:@selector(interfaceStyleChangedForWindow:
-                                                         traitCollection:)];
-    self.overrideUserInterfaceStyle =
-        self.window.windowScene.traitCollection.userInterfaceStyle;
-  }
+  [self.window.windowScene
+      registerForTraitChanges:@[ UITraitUserInterfaceStyle.class ]
+                   withTarget:self
+                       action:@selector(interfaceStyleChangedForWindow:
+                                                       traitCollection:)];
+  self.overrideUserInterfaceStyle =
+      self.window.windowScene.traitCollection.userInterfaceStyle;
 }
 
 // Callback for the observation of the user interface style trait of the window

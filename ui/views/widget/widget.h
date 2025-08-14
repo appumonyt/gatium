@@ -9,6 +9,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/callback_list.h"
@@ -36,6 +37,7 @@
 #include "ui/native_theme/native_theme.h"
 #include "ui/native_theme/native_theme_observer.h"
 #include "ui/views/focus/focus_manager.h"
+#include "ui/views/view_utils.h"
 #include "ui/views/widget/native_widget_delegate.h"
 #include "ui/views/window/client_view.h"
 #include "ui/views/window/non_client_view.h"
@@ -601,9 +603,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
       gfx::NativeWindow context,
       const gfx::Rect& bounds = gfx::Rect());
 
-  // Closes all Widgets that aren't identified as "secondary widgets". Called
-  // during application shutdown when the last non-secondary widget is closed.
-  static void CloseAllSecondaryWidgets();
+  // Closes all platform Widgets. Called during application shutdown to ensure
+  // no platform Widgets remain.
+  static void CloseAllWidgets();
 
   // Retrieves the Widget implementation associated with the given
   // NativeView or Window, or NULL if the supplied handle has no associated
@@ -625,6 +627,11 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Returns all Widgets owned by |native_view| (including child widgets, but
   // not including itself).
   static Widgets GetAllOwnedWidgets(gfx::NativeView native_view);
+
+  // Iterates over all owned widgets, running `on_widget` for each. This is
+  // robust against widgets being destroyed during iteration.
+  static void ForEachOwnedWidget(gfx::NativeView native_view,
+                                 base::FunctionRef<void(Widget*)> on_widget);
 
   // https://crbug.com/391414831: This is only used by some views
   // implementation details for content::WebContents glue, and for ChromeOS.
@@ -737,12 +744,46 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
   // NOTE: This may not be the same view as WidgetDelegate::GetContentsView().
   // See RootView::GetContentsView().
-  View* GetContentsView();
+  View* GetContentsView() const;
+
+  // Sets the specified view as the client content view that corresponds to the
+  // view returned from WidgetDelegate::GetContentsView(). This will take into
+  // account of whether there is a non_client_view_ present or not. IOW, It will
+  // not overwrite the root_view_ contents view. This will *replace* the
+  // existing client content view if one exists, possibly destroying that view.
+  // Use RemoveClientContentsView if you wish to remove it and retain ownership
+  // before calling this function.
+  template <typename T>
+  T* SetClientContentsView(std::unique_ptr<T> view) {
+    DCHECK(!view->owned_by_client())
+        << "This should only be called if the client is passing over the "
+           "ownership of |view|.";
+    T* raw_pointer = view.get();
+    SetClientContentsViewInternal(std::move(view));
+    return raw_pointer;
+  }
 
   // This returns the client content view that corresponds to the view returned
   // from WidgetDelegate::GetContentsView(). Alternatively, if
   // Widget::SetContentView() was explicitly called, this will return that view.
-  View* GetClientContentsView();
+  template <typename T>
+  T* GetClientContentsView() const {
+    View* client_contents = GetClientContentsView();
+    T* typed_client_contents = AsViewClass<T>(client_contents);
+    CHECK(typed_client_contents)
+        << "Expected class of type: " << T::MetaData()->type_name()
+        << ", but found class of type: "
+        << client_contents->GetClassMetaData()->type_name();
+    return typed_client_contents;
+  }
+  View* GetClientContentsView() const;
+
+  template <typename T>
+  std::unique_ptr<T> RemoveClientContentsView() {
+    T* client_contents = GetClientContentsView<T>();
+    return client_contents->parent()->template RemoveChildViewT<T>(
+        client_contents);
+  }
 
   // Returns the bounds of the Widget in screen coordinates.
   gfx::Rect GetWindowBoundsInScreen() const;
@@ -840,9 +881,11 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   void CloseWithReason(ClosedReason closed_reason);
 
   // This method is used by clients to intercept calls to Close() from other
-  // code in //ui such as DialogDelegate. The only valid use case is to allow
-  // clients to implement a synchronous version of Close() by resetting the
-  // unique_ptr.
+  // code in //ui such as DialogDelegate. The callback is called when Close()
+  // is called, or when the user clicks the close button.
+  //
+  // Typically the client should reset the
+  // unique_ptr<Widget> in the callback.
   //
   //  widget_->MakeCloseSynchronous(
   //      base::BindOnce(&Client::CloseWidget, this));
@@ -858,6 +901,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   //  Client::ClientCloseWidget() {
   //    CloseWidget(CloseReason::kUnspecified);
   //  }
+  //
+  // It is OK to not reset the Widget in the callback. This blocks the window
+  // from closing. Used for example in web page unload handlers that shows a
+  // dialog to the user to confirm whether to discard changes.
   void MakeCloseSynchronous(
       base::OnceCallback<void(ClosedReason)> override_close);
 
@@ -884,6 +931,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
   // Returns the reason the widget was closed, if it was specified.
   ClosedReason closed_reason() const { return closed_reason_; }
+
+  // True if the Widget is being destroyed and running its destructor.
+  bool is_destroying() const { return is_destroying_; }
 
   // Shows the widget. The widget is activated if during initialization the
   // can_activate flag in the InitParams structure is set to true.
@@ -1440,6 +1490,11 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Set the native theme from which this widget gets color from.
   void SetNativeTheme(ui::NativeTheme* native_theme);
 
+  // Invokes SaveWindowPlacement() if the native widget has been initialized.
+  // This is called at times when the native widget may not have been
+  // initialized.
+  void SaveWindowPlacementIfNeeded();
+
   // The following methods are used by the property access system described in
   // the comments on views::View. They follow the required naming convention in
   // order to allow them to be visible via the metadata.
@@ -1492,11 +1547,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // window delegate.
   void SaveWindowPlacement();
 
-  // Invokes SaveWindowPlacement() if the native widget has been initialized.
-  // This is called at times when the native widget may not have been
-  // initialized.
-  void SaveWindowPlacementIfNeeded();
-
   // Sizes and positions the window just after it is created.
   void SetInitialBounds(const gfx::Rect& bounds);
 
@@ -1537,6 +1587,11 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // This is called by a task posted by OnRootViewLayoutInvalidated().
   // Resize the widget to delegate's desired bounds.
   void ResizeToDelegateDesiredBounds();
+
+  // Sets the actual client contents view, taking into account whether there is
+  // a non_client_view_ present or not. This will *replace* the current client
+  // contents view, possibly removing and destroying that view.
+  void SetClientContentsViewInternal(std::unique_ptr<View> view);
 
   static DisableActivationChangeHandlingType
       g_disable_activation_change_handling_;
@@ -1626,6 +1681,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
   // Set to true if the widget is in the process of closing.
   bool widget_closed_ = false;
+
+  // Set to true if the widget is in the process of being destroyed.
+  bool is_destroying_ = false;
 
   // Set to true after OnWidgetDestroyed called.
   bool native_widget_destroyed_ = false;

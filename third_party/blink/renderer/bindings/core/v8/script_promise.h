@@ -168,7 +168,9 @@ class CORE_EXPORT ThenCallable : public ScriptFunction {
     // Finally: apply exception context and rethrow if needed, and return the
     // result.
     if (try_catch.HasCaught()) [[unlikely]] {
-      ApplyContextToException(script_state, try_catch.Exception(), context_);
+      ApplyContextToException(script_state, try_catch.Exception(),
+                              context_.GetType(), context_.GetClassName(),
+                              context_.GetPropertyName());
       try_catch.ReThrow();
     }
     return return_value;
@@ -412,17 +414,13 @@ class EmptyPromise {
   }
 };
 
-}  // namespace blink
-
-namespace WTF {
-
 template <typename T>
-struct VectorTraits<blink::MemberScriptPromise<T>>
-    : VectorTraitsBase<blink::MemberScriptPromise<T>> {
+struct VectorTraits<MemberScriptPromise<T>>
+    : VectorTraitsBase<MemberScriptPromise<T>> {
   STATIC_ONLY(VectorTraits);
   static constexpr bool kCanClearUnusedSlotsWithMemset = true;
 };
 
-}  // namespace WTF
+}  // namespace blink
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_SCRIPT_PROMISE_H_

@@ -20,19 +20,11 @@ namespace {
 views::View* GetZoomView(Browser* browser) {
   auto* toolbar_button_provider =
       BrowserView::GetBrowserViewForBrowser(browser)->toolbar_button_provider();
-
-  if (IsPageActionMigrated(PageActionIconType::kZoom)) {
-    return toolbar_button_provider->GetPageActionView(kActionZoomNormal);
-  }
-
-  return toolbar_button_provider->GetPageActionIconView(
-      PageActionIconType::kZoom);
+  return toolbar_button_provider->GetPageActionView(kActionZoomNormal);
 }
 
 }  // namespace
 
-// https://crbug.com/900134: Zoom icons in inactive windows should not be
-// visible when zoom is reset back to default.
 IN_PROC_BROWSER_TEST_F(ZoomViewBrowserTest, SharedPageVisibility) {
   auto* zoom_icon = GetZoomView(browser());
   auto* second_zoom_icon = GetZoomView(CreateBrowser(browser()->profile()));
